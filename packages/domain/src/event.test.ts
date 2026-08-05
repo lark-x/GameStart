@@ -8,6 +8,7 @@ import {
   StoryMode,
   TriggerSource,
   annualOccurrenceKey,
+  assertWorldEventDefinition,
   createCharacter,
   createScheduledOccurrence,
   createStoryWorld,
@@ -211,4 +212,54 @@ test("supports retrying failed occurrences and rejects malformed local times", (
     }),
     { name: "TypeError", message: /HH:mm/ },
   );
+});
+
+test("covers recurrence, priority, definition, and annual-key validation boundaries", () => {
+  const base = {
+    id: "event-boundary",
+    storyWorld: world,
+    eventKey: "manual:boundary",
+    name: "Boundary event",
+    triggerSource: TriggerSource.MANUAL,
+    recurrence: { kind: EventRecurrenceKind.ANNUAL, month: 1, day: 1, localTime: "00:00" } as const,
+    createdAt,
+  };
+
+  for (const recurrence of [
+    { ...base.recurrence, month: 0 },
+    { ...base.recurrence, day: 0 },
+  ]) {
+    assert.throws(
+      () => createWorldEventDefinition({ ...base, recurrence }),
+      { name: "RangeError", message: /between/ },
+    );
+  }
+  assert.throws(
+    () => createWorldEventDefinition({ ...base, recurrence: null as never }),
+    { name: "TypeError", message: /event recurrence/ },
+  );
+  assert.throws(
+    () => createWorldEventDefinition({ ...base, priority: -1 }),
+    { name: "RangeError", message: /priority/ },
+  );
+  assert.throws(
+    () => createWorldEventDefinition({ ...base, cooldownSeconds: -1 }),
+    { name: "RangeError", message: /cooldownSeconds/ },
+  );
+
+  const definition = createWorldEventDefinition(base);
+  assert.throws(
+    () => assertWorldEventDefinition({ ...definition, priority: -1 }),
+    { name: "RangeError", message: /priority/ },
+  );
+  assert.throws(
+    () => assertWorldEventDefinition({ ...definition, cooldownSeconds: -1 }),
+    { name: "RangeError", message: /cooldownSeconds/ },
+  );
+  assert.throws(
+    () => assertWorldEventDefinition({ ...definition, enabled: "yes" as never }),
+    { name: "TypeError", message: /enabled/ },
+  );
+  assert.throws(() => annualOccurrenceKey(definition, 0), { name: "RangeError", message: /year/ });
+  assert.throws(() => annualOccurrenceKey(definition, 10_000), { name: "RangeError", message: /year/ });
 });

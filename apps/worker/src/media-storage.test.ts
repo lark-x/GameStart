@@ -14,6 +14,17 @@ test("LocalMediaStore hashes content and rejects unsafe references", async () =>
     assert.match(saved.mediaRef, /^media:\/\/local\/[a-f0-9]{64}\.png$/);
     const loaded = await store.get(saved.mediaRef);
     assert.equal(new TextDecoder().decode(loaded.bytes), "image-bytes");
+    const repeated = await store.put(new TextEncoder().encode("image-bytes"), "image/png", "result.png");
+    assert.equal(repeated.mediaRef, saved.mediaRef);
+    const jpeg = await store.put(new Uint8Array([1]), "image/jpeg", ".");
+    assert.match(jpeg.mediaRef, /\.jpg$/);
+    const binary = await store.put(new Uint8Array([2]), "application/octet", "bad name");
+    assert.match(binary.mediaRef, /\.bin$/);
+    const jpg = await store.get(jpeg.mediaRef);
+    assert.equal(jpg.contentType, "image/jpeg");
+    await assert.rejects(store.put(new Uint8Array(), "image/png"), /must not be empty/);
+    await assert.rejects(store.put(new Uint8Array([1]), "not-a-content-type"), /contentType is invalid/);
+    await assert.rejects(store.get("https://example.test/image.png"), /unsupported local media reference/);
     await assert.rejects(store.get("media://local/../../secret"), /invalid local media reference/);
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -34,6 +45,21 @@ test("StoringComfyUiClient validates and stores image results", async () => {
     );
     const result = await client.getResult("external-1");
     assert.match(result.mediaRef, /^media:\/\/local\//);
+    assert.deepEqual(await client.submit({ value: 1 }), { externalJobId: "external-1" });
+
+    const failedDownload = new StoringComfyUiClient(
+      { async submit() { return { externalJobId: "job" }; }, async getResult() { return { externalJobId: "job", mediaRef: "https://comfy.example/fail" }; } },
+      store,
+      async () => new Response("offline", { status: 503 }),
+    );
+    await assert.rejects(failedDownload.getResult("job"), /HTTP 503/);
+
+    const nonImage = new StoringComfyUiClient(
+      { async submit() { return { externalJobId: "job" }; }, async getResult() { return { externalJobId: "job", mediaRef: "https://comfy.example/text" }; } },
+      store,
+      async () => new Response("text", { status: 200, headers: { "content-type": "text/plain" } }),
+    );
+    await assert.rejects(nonImage.getResult("job"), /not an image/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

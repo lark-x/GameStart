@@ -192,3 +192,49 @@ test("manual review mode blocks publication until explicitly approved", async ()
   });
   assert.equal(published.id, "manual-review-moment");
 });
+
+test("validates publication repository, draft, audience, and image boundaries", async () => {
+  const store = repositories();
+  assert.throws(() => new MomentPublicationCoordinator({ ...store, momentDrafts: undefined, moments: undefined } as unknown as typeof store), /repositories are not configured/);
+  const coordinator = new MomentPublicationCoordinator(store);
+  await assert.rejects(coordinator.publish({ id: "missing-draft", draftId: "missing", publishedAt: createdAt }), /Moment draft not found/);
+  const notReadyStore = createInMemoryRepositories({
+    worlds: [world],
+    characters: [author, reader],
+    worldEventDefinitions: [definition],
+    scheduledOccurrences: [occurrence],
+    eventExecutions: [execution],
+    behaviorActions: [action],
+    momentDrafts: [{ ...readyDraft, status: MomentDraftStatus.DRAFT }],
+    imageJobs: [succeededImageJob],
+  });
+  await assert.rejects(new MomentPublicationCoordinator(notReadyStore).publish({ id: "not-ready", draftId: readyDraft.id, publishedAt: createdAt }), /READY/);
+
+  const unknownAudience = await assert.rejects(coordinator.publish({ id: "unknown-audience", draftId: readyDraft.id, publishedAt: createdAt, audienceCharacterIds: ["missing"] }), /Unknown moment audience/);
+  assert.equal(unknownAudience, undefined);
+
+  const imageDraft = { ...readyDraft, imageJobId: "missing-image" };
+  const imageStore = createInMemoryRepositories({
+    worlds: [world],
+    characters: [author, reader],
+    worldEventDefinitions: [definition],
+    scheduledOccurrences: [occurrence],
+    eventExecutions: [execution],
+    behaviorActions: [action],
+    momentDrafts: [imageDraft],
+    imageJobs: [],
+  });
+  await assert.rejects(new MomentPublicationCoordinator(imageStore).publish({ id: "missing-image-moment", draftId: imageDraft.id, publishedAt: createdAt }), /Image job not found/);
+  const { imageJobId: _imageJobId, ...textOnly } = readyDraft;
+  const textStore = createInMemoryRepositories({
+    worlds: [world],
+    characters: [author, reader],
+    worldEventDefinitions: [definition],
+    scheduledOccurrences: [occurrence],
+    eventExecutions: [execution],
+    behaviorActions: [action],
+    momentDrafts: [textOnly],
+  });
+  const textMoment = await new MomentPublicationCoordinator(textStore).publish({ id: "text-only-moment", draftId: textOnly.id, publishedAt: createdAt, audienceCharacterIds: [author.id, reader.id] });
+  assert.equal(textMoment.imageMediaRef, undefined);
+});

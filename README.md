@@ -106,8 +106,11 @@ docker compose --env-file .env -f infra/compose/docker-compose.yml down
 ```sh
 pnpm typecheck
 pnpm test
+pnpm test:coverage
 pnpm test:integration
 ```
+
+`pnpm test:coverage` 运行 API、Worker、Web、各共享包以及 MVP/基础设施测试，并将行覆盖率设为 100% 门槛。进程启动入口（`main.ts`、`persistent-main.ts`）属于运行时装配层，使用启动/运行时测试验证，未计入单元覆盖率门槛。
 
 一次执行全部检查：
 

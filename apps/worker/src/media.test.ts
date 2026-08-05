@@ -11,6 +11,7 @@ import {
   TriggerSource,
   createCharacter,
   createEventExecution,
+  createImageWorkflowTemplate,
   createScheduledOccurrence,
   createStoryWorld,
   createWorldEventDefinition,
@@ -21,6 +22,7 @@ import {
   ComfyUiError,
   ComfyUiHttpClient,
   FakeComfyUiClient,
+  createRepositoryImageWorkflowResolver,
   type ComfyUiFetchImplementation,
   createBehaviorMediaCoordinator,
 } from "./index.ts";
@@ -300,4 +302,114 @@ test("retries a not-ready image result within a bounded polling window", async (
   const completed = await coordinator.completeImageJobWithRetry(job.id, { maxAttempts: 2, delayMs: 0 });
   assert.equal(completed.status, ImageJobStatus.SUCCEEDED);
   assert.equal(calls, 2);
+});
+
+test("validates ComfyUI configuration, response shapes, and retry boundaries", async () => {
+  assert.throws(() => new ComfyUiHttpClient({ baseUrl: "" }), /baseUrl is required/);
+  assert.throws(() => new ComfyUiHttpClient({ baseUrl: "not-a-url" }), /valid URL/);
+  assert.throws(() => new ComfyUiHttpClient({ baseUrl: "http://comfy.example", timeoutMs: 0 }), /timeoutMs/);
+  const fixtureClient = new ComfyUiHttpClient({ baseUrl: "http://comfy.example" }, async () => new Response("{}"));
+  await assert.rejects(fixtureClient.submit({ jobId: "job", workflowVersion: "v1", prompt: "prompt" }), /workflow is required/);
+  await assert.rejects(fixtureClient.getResult("  "), /externalJobId is required/);
+
+  const invalidJson = new ComfyUiHttpClient({ baseUrl: "http://comfy.example" }, async () => new Response("not-json"));
+  await assert.rejects(invalidJson.submit({ jobId: "job", workflowVersion: "v1", prompt: "prompt", workflow: {} }), /not valid JSON/);
+  const missingPromptId = new ComfyUiHttpClient({ baseUrl: "http://comfy.example" }, async () => new Response(JSON.stringify({})));
+  await assert.rejects(missingPromptId.submit({ jobId: "job", workflowVersion: "v1", prompt: "prompt", workflow: {} }), /no prompt_id/);
+
+  const historyCases = [null, { job: {} }, { job: { outputs: null } }, { job: { outputs: { one: { images: [{}] } } } }];
+  for (const value of historyCases) {
+    const client = new ComfyUiHttpClient({ baseUrl: "http://comfy.example" }, async () => new Response(JSON.stringify(value)));
+    await assert.rejects(client.getResult("job"), /ComfyUI/);
+  }
+  const outputClient = new ComfyUiHttpClient({ baseUrl: "http://comfy.example" }, async () => new Response(JSON.stringify({
+    job: { outputs: { one: "skip", two: { images: [{ filename: "result.png" }] } } },
+  })));
+  const result = await outputClient.getResult("job");
+  assert.match(result.mediaRef, /filename=result.png/);
+
+  const networkClient = new ComfyUiHttpClient({ baseUrl: "http://comfy.example" }, async () => { throw new Error("network"); });
+  await assert.rejects(networkClient.getResult("job"), (error: unknown) => {
+    assert.ok(error instanceof ComfyUiError);
+    assert.equal(error.code, "NETWORK_ERROR");
+    return true;
+  });
+  const timeoutClient = new ComfyUiHttpClient({ baseUrl: "http://comfy.example", timeoutMs: 1 }, async (_input, init) => {
+    await new Promise((_, reject) => init?.signal?.addEventListener("abort", () => reject(new Error("aborted"))));
+    throw new Error("unreachable");
+  });
+  await assert.rejects(timeoutClient.getResult("job"), /timed out/);
+  const unreadableError = new ComfyUiHttpClient({ baseUrl: "http://comfy.example" }, async () => ({
+    ok: false,
+    status: 400,
+    text: async () => { throw new Error("unreadable"); },
+  } as unknown as Response));
+  await assert.rejects(unreadableError.getResult("job"), /returned an error/);
+  const invalidHistoryJson = new ComfyUiHttpClient({ baseUrl: "http://comfy.example" }, async () => new Response("not-json"));
+  await assert.rejects(invalidHistoryJson.getResult("job"), /history response is not valid JSON/);
+});
+
+test("covers fake client identity, resolver boundaries, and coordinator lifecycle validation", async () => {
+  const fake = new FakeComfyUiClient();
+  await assert.rejects(fake.getResult("external"), /does not recognize/);
+  await assert.rejects(fake.getResult("fake-comfy:missing"), /job not found/);
+  const repositories = makeRepositories().repositories;
+  assert.throws(
+    () => createRepositoryImageWorkflowResolver({ ...repositories, characterVisualIdentities: undefined, imageWorkflowTemplates: undefined } as unknown as typeof repositories),
+    /repositories are not configured/,
+  );
+  if (!repositories.imageJobs) throw new Error("fixture image repository missing");
+  assert.equal(await repositories.imageJobs.getById("missing"), undefined);
+  const coordinator = createBehaviorMediaCoordinator(repositories, fake, () => createdAt);
+  await assert.rejects(coordinator.submitImageJob("missing"), /Unknown image job/);
+  await assert.rejects(coordinator.completeImageJob("missing"), /Unknown image job/);
+  await assert.rejects(coordinator.failImageJob("missing", "failed"), /Unknown image job/);
+  await assert.rejects(coordinator.retryImageJob("missing"), /Unknown image job/);
+  await assert.rejects(coordinator.completeImageJobWithRetry("missing", { maxAttempts: 0 }), /maxAttempts/);
+  await assert.rejects(coordinator.completeImageJobWithRetry("missing", { delayMs: 60_001 }), /delayMs/);
+  const action = await coordinator.planAction({
+    id: "edge-send-action",
+    executionId: "media-worker-execution",
+    actorCharacterId: "media-worker-character",
+    kind: ActionKind.SEND_MESSAGE,
+    payload: { text: "hello" },
+  });
+  assert.equal(action.kind, ActionKind.SEND_MESSAGE);
+  await assert.rejects(coordinator.planAction({
+    id: "unknown-execution-action",
+    executionId: "missing",
+    actorCharacterId: "media-worker-character",
+    kind: ActionKind.NOOP,
+    payload: {},
+  }), /Unknown event execution/);
+  const queuedAction = await coordinator.planAction({
+    id: "queued-complete-action",
+    executionId: "media-worker-execution",
+    actorCharacterId: "media-worker-character",
+    kind: ActionKind.REQUEST_IMAGE,
+    payload: { prompt: "queued", workflowVersion: "invalid-workflow-version" },
+  });
+  const queuedJob = await repositories.imageJobs!.getByActionId(queuedAction.id);
+  assert.ok(queuedJob);
+  await assert.rejects(coordinator.completeImageJob(queuedJob.id), /not submitted/);
+
+  const resolver = createRepositoryImageWorkflowResolver({
+    ...repositories,
+    characterVisualIdentities: {
+      ...repositories.characterVisualIdentities!,
+      getByCharacterId: async () => undefined,
+    },
+    imageWorkflowTemplates: {
+      ...repositories.imageWorkflowTemplates!,
+      getById: async () => createImageWorkflowTemplate({
+        id: "template",
+        version: "v1",
+        workflow: { node: { inputs: { text: "placeholder" } } },
+        positivePromptPath: ["node", "inputs", "text"],
+      }),
+    },
+  });
+  assert.ok(resolver);
+  await assert.rejects(resolver.resolve(queuedJob), /templateId@version/);
+  await assert.rejects(resolver.resolve({ ...queuedJob, workflowVersion: "template@v1" }), /visual identity/);
 });

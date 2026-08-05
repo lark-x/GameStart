@@ -117,3 +117,131 @@ test("rejects invalid setup/input and supports optional config construction", ()
     { name: "ProviderError", message: /At least one/ },
   );
 });
+
+test("validates every completion input and provider configuration boundary", async () => {
+  const validMessage = [{ role: "user" as const, content: "hello" }];
+  const provider = new OpenAICompatibleProvider({ baseUrl: "https://llm.example", model: "m" }, async () => {
+    return new Response(JSON.stringify({ id: "id", model: "m", choices: [{ message: { content: "ok" } }] }));
+  });
+  await assert.rejects(provider.complete({ messages: [] }), /At least one/);
+  await assert.rejects(provider.complete({ messages: [{ role: "user", content: "  " }] }), /empty content/);
+  await assert.rejects(new OpenAICompatibleProvider({ baseUrl: "https://llm.example" }).complete({ messages: validMessage }), /model is required/);
+  await assert.rejects(provider.complete({ messages: validMessage, temperature: Number.NaN }), /temperature/);
+  await assert.rejects(provider.complete({ messages: validMessage, temperature: -1 }), /temperature/);
+  await assert.rejects(provider.complete({ messages: validMessage, maxTokens: 0 }), /maxTokens/);
+  await assert.rejects(provider.complete({ messages: validMessage, maxTokens: 1.5 }), /maxTokens/);
+  assert.throws(() => new OpenAICompatibleProvider({ baseUrl: "" }), /baseUrl is required/);
+  assert.throws(() => new OpenAICompatibleProvider({ baseUrl: "not-a-url" }), /valid URL/);
+  assert.throws(() => new OpenAICompatibleProvider({ baseUrl: "https://llm.example", timeoutMs: 0 }), /timeoutMs/);
+  assert.ok(createProviderFromConfig({ baseUrl: "https://llm.example" }));
+});
+
+test("normalizes invalid completion and stream responses", async () => {
+  const invalid = (payload: unknown) => new OpenAICompatibleProvider(
+    { baseUrl: "https://llm.example", model: "m" },
+    async () => new Response(JSON.stringify(payload)),
+  );
+  await assert.rejects(invalid(null).complete({ messages: request.messages }), /must be an object/);
+  await assert.rejects(invalid({ choices: [] }).complete({ messages: request.messages }), /no choices/);
+  await assert.rejects(invalid({ choices: [{}] }).complete({ messages: request.messages }), /no text content/);
+  await assert.rejects(invalid({ choices: [{ message: { content: "ok" } }] }).complete({ messages: request.messages }), /missing id or model/);
+  const emptyUsage = await invalid({
+    id: "id",
+    model: "m",
+    choices: [{ message: { content: "ok" } }],
+    usage: { prompt_tokens: "bad" },
+  }).complete({ messages: request.messages });
+  assert.deepEqual(emptyUsage.usage, {});
+
+  const invalidJson = new OpenAICompatibleProvider({ baseUrl: "https://llm.example", model: "m" }, async () => ({
+    ok: true,
+    json: async () => { throw new Error("bad json"); },
+  } as unknown as Response));
+  await assert.rejects(invalidJson.complete({ messages: request.messages }), /not valid JSON/);
+
+  const nullBody = new OpenAICompatibleProvider({ baseUrl: "https://llm.example", model: "m" }, async () => new Response(null));
+  await assert.rejects(nullBody.stream({ messages: request.messages }).next(), /no stream body/);
+
+  const badStream = new OpenAICompatibleProvider({ baseUrl: "https://llm.example", model: "m" }, async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("data: not-json\n\n"));
+        controller.close();
+      },
+    });
+    return new Response(stream);
+  });
+  await assert.rejects(badStream.stream({ messages: request.messages }).next(), /not valid JSON/);
+
+  const wrongShape = new OpenAICompatibleProvider({ baseUrl: "https://llm.example", model: "m" }, async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("data: {}\n\n"));
+        controller.close();
+      },
+    });
+    return new Response(stream);
+  });
+  await assert.rejects(wrongShape.stream({ messages: request.messages }).next(), /invalid shape/);
+});
+
+test("covers provider network, timeout, and error-body handling", async () => {
+  const network = new OpenAICompatibleProvider({ baseUrl: "https://llm.example", model: "m" }, async () => {
+    throw new Error("socket closed");
+  });
+  await assert.rejects(network.complete({ messages: request.messages }), (error: unknown) => {
+    assert.ok(error instanceof ProviderError);
+    assert.equal(error.code, "NETWORK_ERROR");
+    assert.equal(error.retryable, true);
+    return true;
+  });
+
+  const timeout = new OpenAICompatibleProvider({ baseUrl: "https://llm.example", model: "m", timeoutMs: 1 }, async (_input, init) => {
+    await new Promise((_, reject) => init?.signal?.addEventListener("abort", () => reject(new Error("aborted"))));
+    throw new Error("unreachable");
+  });
+  await assert.rejects(timeout.complete({ messages: request.messages }), (error: unknown) => {
+    assert.ok(error instanceof ProviderError);
+    assert.equal(error.code, "TIMEOUT");
+    return true;
+  });
+
+  const genericBody = new OpenAICompatibleProvider({ baseUrl: "https://llm.example", model: "m" }, async () => ({
+    ok: false,
+    status: 400,
+    text: async () => { throw new Error("cannot read"); },
+  } as unknown as Response));
+  await assert.rejects(genericBody.complete({ messages: request.messages }), (error: unknown) => {
+    assert.ok(error instanceof ProviderError);
+    assert.equal(error.code, "HTTP_ERROR");
+    assert.equal(error.retryable, false);
+    assert.equal(error.message, "LLM provider returned an error");
+    return true;
+  });
+
+  const finalEvent = new OpenAICompatibleProvider({ baseUrl: "https://llm.example", model: "m" }, async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"tail"}}]}'));
+        controller.close();
+      },
+    });
+    return new Response(stream);
+  });
+  const finalDeltas = [];
+  for await (const delta of finalEvent.stream({ messages: request.messages })) finalDeltas.push(delta);
+  assert.deepEqual(finalDeltas, [{ content: "tail" }]);
+
+  const brokenStream = new OpenAICompatibleProvider({ baseUrl: "https://llm.example", model: "m" }, async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) { controller.error(new Error("stream socket closed")); },
+    });
+    return new Response(stream);
+  });
+  await assert.rejects(brokenStream.stream({ messages: request.messages }).next(), (error: unknown) => {
+    assert.ok(error instanceof ProviderError);
+    assert.equal(error.code, "STREAM_ERROR");
+    assert.equal(error.retryable, true);
+    return true;
+  });
+});

@@ -10,6 +10,8 @@ import {
   MomentVisibility,
   StoryMode,
   TriggerSource,
+  assertMoment,
+  assertMomentInteraction,
   createBehaviorAction,
   createCharacter,
   createEventExecution,
@@ -19,6 +21,7 @@ import {
   createScheduledOccurrence,
   createStoryWorld,
   createWorldEventDefinition,
+  isMomentVisibleTo,
   transitionMomentDraft,
 } from "./index.ts";
 
@@ -45,7 +48,7 @@ const reader = createCharacter({
 });
 const createdAt = "2026-08-05T17:00:00.000Z";
 
-function readyDraft() {
+function readyDraft(visibility: MomentVisibility = MomentVisibility.PUBLIC) {
   const definition = createWorldEventDefinition({
     id: "social-event",
     storyWorld: world,
@@ -82,7 +85,7 @@ function readyDraft() {
   const draft = createMomentDraft({
     id: "social-draft",
     action,
-    visibility: MomentVisibility.PUBLIC,
+    visibility,
     createdAt,
   });
   return transitionMomentDraft(draft, MomentDraftStatus.READY, createdAt);
@@ -141,4 +144,88 @@ test("enforces comment/like payloads and actor world ownership", () => {
     }),
     { name: "TypeError", message: /LIKE interaction/ },
   );
+});
+
+test("covers social visibility, audience, and interaction validation boundaries", () => {
+  const privateMoment = createMoment({
+    id: "moment-private",
+    draft: readyDraft(MomentVisibility.PRIVATE),
+    publishedAt: "2026-08-06T10:05:00.000Z",
+    audienceCharacters: [author],
+  });
+  assert.equal(isMomentVisibleTo(privateMoment, author.id), true);
+  assert.equal(isMomentVisibleTo(privateMoment, reader.id), false);
+  assert.throws(() => isMomentVisibleTo(privateMoment, ""), /readerCharacterId/);
+
+  assert.throws(
+    () => createMoment({
+      id: "moment-private-no-author",
+      draft: readyDraft(MomentVisibility.PRIVATE),
+      publishedAt: createdAt,
+    }),
+    { name: "TypeError", message: /include its author/ },
+  );
+  assert.throws(
+    () => createMoment({
+      id: "moment-group-no-audience",
+      draft: readyDraft(MomentVisibility.GROUP),
+      publishedAt: createdAt,
+    }),
+    { name: "TypeError", message: /requires audienceCharacters/ },
+  );
+  assert.throws(() => createMoment({
+    id: "moment-empty-image",
+    draft: readyDraft(),
+    publishedAt: createdAt,
+    imageMediaRef: " ",
+  }), /imageMediaRef/);
+
+  assert.throws(() => assertMoment({ ...privateMoment, audienceCharacterIds: [author.id, author.id] }), {
+    name: "TypeError",
+    message: /duplicate character/,
+  });
+  assert.throws(() => assertMoment({ ...privateMoment, audienceCharacterIds: [] }), {
+    name: "TypeError",
+    message: /include its author/,
+  });
+  assert.throws(() => assertMoment({ ...privateMoment, visibility: MomentVisibility.GROUP, audienceCharacterIds: [] }), {
+    name: "TypeError",
+    message: /requires audienceCharacterIds/,
+  });
+  const like = createMomentInteraction({
+    id: "like-boundary",
+    moment: privateMoment,
+    actor: author,
+    kind: MomentInteractionKind.LIKE,
+    createdAt,
+    idempotencyKey: "like-boundary-key",
+  });
+  assert.throws(() => assertMomentInteraction({ ...like, text: "not allowed" }), {
+    name: "TypeError",
+    message: /LIKE interaction/,
+  });
+  assert.throws(() => createMomentInteraction({
+    id: "comment-empty",
+    moment: privateMoment,
+    actor: author,
+    kind: MomentInteractionKind.COMMENT,
+    text: " ",
+    createdAt,
+    idempotencyKey: "comment-empty-key",
+  }), /momentInteraction.text/);
+  const outsider = createCharacter({
+    id: "social-outsider",
+    displayName: "Outsider",
+    role: CharacterRole.AI,
+    storyWorldId: "other-social-world",
+    timezone: "UTC",
+  });
+  assert.throws(() => createMomentInteraction({
+    id: "like-outsider",
+    moment: privateMoment,
+    actor: outsider,
+    kind: MomentInteractionKind.LIKE,
+    createdAt,
+    idempotencyKey: "like-outsider-key",
+  }), /storyWorld/);
 });

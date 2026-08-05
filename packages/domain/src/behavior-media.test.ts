@@ -12,6 +12,8 @@ import {
   StoryMode,
   TriggerSource,
   attachMomentImageJob,
+  assertBehaviorAction,
+  assertImageJob,
   completeImageJob,
   createBehaviorAction,
   createEventExecution,
@@ -163,6 +165,9 @@ test("keeps image job lifecycle explicit for Fake ComfyUI adapters", () => {
   const succeeded = completeImageJob(submitted, "media://fake-comfy-job-1.png", createdAt);
   assert.equal(succeeded.status, ImageJobStatus.SUCCEEDED);
   assert.equal(succeeded.mediaRef, "media://fake-comfy-job-1.png");
+  assert.throws(() => submitImageJob(succeeded, "another-job", createdAt), /cannot submit/);
+  assert.throws(() => completeImageJob(job, "media://not-ready.png", createdAt), /cannot complete/);
+  assert.throws(() => failImageJob(succeeded, "too late", createdAt), /cannot fail/);
   const failed = failImageJob(job, "Fake ComfyUI offline", createdAt);
   assert.equal(failed.status, ImageJobStatus.FAILED);
   assert.equal(execution.status, EventExecutionStatus.RUNNING);
@@ -177,4 +182,63 @@ test("keeps image job lifecycle explicit for Fake ComfyUI adapters", () => {
     () => retryImageJob(failedThird, createdAt, 3),
     { name: "RangeError", message: /maximum retry/ },
   );
+});
+
+test("covers behavior/media validation branches and terminal guards", () => {
+  assert.throws(() => createBehaviorAction({
+    id: "invalid-seed-action",
+    execution,
+    actorCharacterId: character.id,
+    kind: ActionKind.REQUEST_IMAGE,
+    payload: { prompt: "image", workflowVersion: "wf-v1", seed: -1 },
+    createdAt,
+  }), /non-negative integer/);
+  const action = createBehaviorAction({
+    id: "edge-action",
+    execution,
+    actorCharacterId: character.id,
+    kind: ActionKind.SEND_MESSAGE,
+    payload: { text: "hello" },
+    createdAt,
+  });
+  assert.throws(() => createBehaviorAction({
+    id: "invalid-priority",
+    execution,
+    actorCharacterId: character.id,
+    kind: ActionKind.SEND_MESSAGE,
+    payload: { text: "hello" },
+    priority: -1,
+    createdAt,
+  }), /priority/);
+  const accepted = transitionBehaviorAction(action, ActionStatus.ACCEPTED);
+  assert.deepEqual(transitionBehaviorAction(accepted, ActionStatus.ACCEPTED), accepted);
+  assert.throws(() => transitionBehaviorAction(accepted, ActionStatus.REJECTED), /cannot transition action/);
+  assert.throws(() => assertBehaviorAction({ ...action, priority: -1 }), /priority/);
+  assert.throws(() => createMomentDraft({ id: "wrong-draft", action, visibility: MomentVisibility.PUBLIC, createdAt }), /CREATE_MOMENT/);
+  const momentAction = createBehaviorAction({
+    id: "edge-moment-action",
+    execution,
+    actorCharacterId: character.id,
+    kind: ActionKind.CREATE_MOMENT,
+    payload: { body: "body", imagePrompt: "prompt", workflowVersion: "wf-v1" },
+    createdAt,
+  });
+  const draft = createMomentDraft({ id: "edge-draft", action: momentAction, visibility: MomentVisibility.PUBLIC, createdAt });
+  const rejected = transitionMomentDraft(draft, MomentDraftStatus.REJECTED, createdAt);
+  assert.throws(() => attachMomentImageJob(rejected, "image", createdAt), /cannot attach/);
+  const published = { ...draft, status: MomentDraftStatus.PUBLISHED };
+  assert.doesNotThrow(() => {
+    // A published text-only moment intentionally has no image job.
+    transitionMomentDraft(published, MomentDraftStatus.PUBLISHED, createdAt);
+  });
+  assert.throws(() => createImageJob({ id: "wrong-kind", action, createdAt }), /REQUEST_IMAGE or CREATE_MOMENT/);
+  const job = createImageJob({ id: "edge-job", action: momentAction, createdAt });
+  assert.throws(() => assertImageJob({ ...job, attempt: 0 }), /attempt/);
+  assert.throws(() => assertImageJob({ ...job, seed: -1 }), /seed/);
+  assert.throws(() => assertImageJob({ ...job, status: ImageJobStatus.QUEUED, externalJobId: "external" }), /QUEUED/);
+  assert.throws(() => assertImageJob({ ...job, status: ImageJobStatus.SUBMITTED }), /SUBMITTED/);
+  assert.throws(() => assertImageJob({ ...job, status: ImageJobStatus.SUCCEEDED, externalJobId: "external" }), /SUCCEEDED/);
+  assert.throws(() => assertImageJob({ ...job, status: ImageJobStatus.FAILED }), /FAILED/);
+  assert.throws(() => retryImageJob(job, createdAt, 0), /maxAttempts/);
+  assert.throws(() => retryImageJob(job, createdAt), /cannot retry/);
 });

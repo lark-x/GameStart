@@ -78,6 +78,16 @@ test("creates private and group conversations with immutable member snapshots", 
 test("rejects invalid conversation cardinality, duplicates, and cross-world members", () => {
   assert.throws(
     () => createConversation({
+      id: "invalid-type",
+      storyWorld: world,
+      type: "DIRECT" as never,
+      createdAt,
+      members: [user, ai],
+    }),
+    { name: "TypeError", message: /PRIVATE or GROUP/ },
+  );
+  assert.throws(
+    () => createConversation({
       id: "private-one",
       storyWorld: world,
       type: ConversationType.PRIVATE,
@@ -225,5 +235,81 @@ test("rejects messages without active authors or valid kind payloads", () => {
       idempotencyKey: "idem-outsider",
     }),
     { name: "TypeError", message: /storyWorld/ },
+  );
+  assert.throws(
+    () => createMessage({
+      id: "invalid-kind",
+      conversation,
+      author: user,
+      kind: "AUDIO" as never,
+      text: "invalid",
+      createdAt,
+      idempotencyKey: "idem-invalid-kind",
+    }),
+    { name: "TypeError", message: /TEXT, IMAGE, STICKER, or SYSTEM/ },
+  );
+  assert.throws(
+    () => createMessage({
+      id: "inactive-member",
+      conversation: {
+        ...conversation,
+        members: conversation.members.map((member) => ({ ...member, leftAt: createdAt })),
+      },
+      author: user,
+      kind: MessageKind.TEXT,
+      text: "invalid",
+      createdAt,
+      idempotencyKey: "idem-inactive",
+    }),
+    { name: "TypeError", message: /active conversation member/ },
+  );
+  assert.throws(
+    () => createMessage({
+      id: "empty-text",
+      conversation,
+      author: user,
+      kind: MessageKind.TEXT,
+      text: "   ",
+      createdAt,
+      idempotencyKey: "idem-empty-text",
+    }),
+    { name: "TypeError", message: /message.text/ },
+  );
+  assert.throws(
+    () => createMessage({
+      id: "missing-text",
+      conversation,
+      author: user,
+      kind: MessageKind.TEXT,
+      createdAt,
+      idempotencyKey: "idem-missing-text",
+    }),
+    { name: "TypeError", message: /requires text/ },
+  );
+  assert.throws(
+    () => createMessage({
+      id: "text-with-media",
+      conversation,
+      author: user,
+      kind: MessageKind.TEXT,
+      text: "invalid",
+      mediaRef: "media://extra",
+      createdAt,
+      idempotencyKey: "idem-text-media",
+    }),
+    { name: "TypeError", message: /cannot include media/ },
+  );
+  assert.throws(
+    () => createMessage({
+      id: "sticker-with-media",
+      conversation,
+      author: user,
+      kind: MessageKind.STICKER,
+      stickerId: "sticker:wave",
+      mediaRef: "media://extra",
+      createdAt,
+      idempotencyKey: "idem-sticker-media",
+    }),
+    { name: "TypeError", message: /cannot include mediaRef/ },
   );
 });

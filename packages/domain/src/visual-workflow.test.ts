@@ -115,3 +115,21 @@ test("validates every configured workflow binding before external submission", (
     { name: "TypeError", message: /workflow path/ },
   );
 });
+
+test("rejects invalid revisions and scene seeds", () => {
+  assert.throws(
+    () => createCharacterVisualIdentity({
+      id: "invalid-revision",
+      characterId: "char-1",
+      storyWorldId: "world-1",
+      positivePrompt: "prompt",
+      updatedAt,
+      revision: 0,
+    }),
+    /revision must be a positive integer/,
+  );
+  assert.throws(
+    () => compileImageWorkflow(makeTemplate(), makeIdentity(), { prompt: "scene", seed: -1 }),
+    /scene\.seed/,
+  );
+});

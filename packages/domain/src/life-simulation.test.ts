@@ -8,6 +8,11 @@ import {
   PlanInterruptibility,
   StoryMode,
   TriggerSource,
+  assertCharacterPlan,
+  assertEventExecution,
+  assertJsonValue,
+  assertProactiveMessageBudget,
+  canConsumeProactiveMessages,
   cancelEventExecution,
   completeEventExecution,
   consumeProactiveMessages,
@@ -157,4 +162,132 @@ test("enforces proactive message windows and consumption limits", () => {
     () => consumeProactiveMessages(exhausted, 1, "2026-08-06T14:00:00.000Z"),
     { name: "RangeError", message: /budget exhausted/ },
   );
+});
+
+test("covers life-simulation validation and terminal-shape boundaries", () => {
+  const plan = createCharacterPlan({
+    id: "plan-boundary",
+    storyWorld: world,
+    character,
+    startsAt: "2026-08-06T09:00:00.000Z",
+    endsAt: "2026-08-06T11:00:00.000Z",
+    activity: "Boundary activity",
+    interruptibility: PlanInterruptibility.FLEXIBLE,
+    createdAt,
+  });
+  assert.throws(
+    () => createCharacterPlan({
+      ...plan,
+      startsAt: plan.endsAt,
+      storyWorld: world,
+      character,
+    }),
+    { name: "RangeError", message: /before/ },
+  );
+  assert.throws(
+    () => assertCharacterPlan({ ...plan, endsAt: plan.startsAt }),
+    { name: "RangeError", message: /before/ },
+  );
+
+  assertJsonValue({ nested: ["ok", true, null] }, "value");
+  assert.throws(() => assertJsonValue(Symbol("bad"), "value"), {
+    name: "TypeError",
+    message: /JSON-compatible/,
+  });
+  let tooDeep: unknown = null;
+  for (let index = 0; index < 22; index += 1) tooDeep = { child: tooDeep };
+  assert.throws(() => assertJsonValue(tooDeep, "value"), {
+    name: "RangeError",
+    message: /nested too deeply/,
+  });
+
+  const execution = createEventExecution({
+    id: "execution-boundary",
+    occurrence,
+    definition,
+    ruleVersion: "rules-v1",
+    inputSnapshot: {},
+    startedAt: "2026-08-06T10:00:01.000Z",
+  });
+  assert.throws(
+    () => createEventExecution({
+      id: "execution-link-mismatch",
+      occurrence: { ...occurrence, eventKey: "other:event" },
+      definition,
+      ruleVersion: "rules-v1",
+      inputSnapshot: {},
+      startedAt: "2026-08-06T10:00:01.000Z",
+    }),
+    { name: "TypeError", message: /do not match/ },
+  );
+  assert.throws(
+    () => createEventExecution({
+      id: "execution-bad-attempt",
+      occurrence,
+      definition,
+      attempt: 0,
+      ruleVersion: "rules-v1",
+      inputSnapshot: {},
+      startedAt: "2026-08-06T10:00:01.000Z",
+    }),
+    { name: "RangeError", message: /attempt/ },
+  );
+  assert.throws(() => assertEventExecution({ ...execution, finishedAt: createdAt }), {
+    name: "TypeError",
+    message: /RUNNING execution cannot/,
+  });
+  assert.throws(() => assertEventExecution({
+    ...execution,
+    status: EventExecutionStatus.COMPLETED,
+    finishedAt: createdAt,
+  }), { name: "TypeError", message: /outputSnapshot/ });
+  assert.throws(() => assertEventExecution({
+    ...execution,
+    status: EventExecutionStatus.FAILED,
+    finishedAt: createdAt,
+  }), { name: "TypeError", message: /failureReason/ });
+  assert.throws(() => assertEventExecution({ ...execution, attempt: 0 }), {
+    name: "RangeError",
+    message: /attempt/,
+  });
+
+  const budget = createProactiveMessageBudget({
+    id: "budget-boundary",
+    storyWorld: world,
+    character,
+    windowStartsAt: "2026-08-06T00:00:00.000Z",
+    windowEndsAt: "2026-08-07T00:00:00.000Z",
+    limit: 1,
+    updatedAt: createdAt,
+  });
+  assert.equal(canConsumeProactiveMessages(budget, 1), true);
+  assert.equal(canConsumeProactiveMessages(budget, 2), false);
+  assert.throws(() => canConsumeProactiveMessages(budget, 0), { name: "RangeError", message: /positive/ });
+  assert.throws(() => createProactiveMessageBudget({
+    id: "budget-bad-limit",
+    storyWorld: world,
+    character,
+    windowStartsAt: "2026-08-06T00:00:00.000Z",
+    windowEndsAt: "2026-08-07T00:00:00.000Z",
+    limit: -1,
+    updatedAt: createdAt,
+  }), { name: "RangeError", message: /limit/ });
+  assert.throws(() => createProactiveMessageBudget({
+    id: "budget-bad-consumed",
+    storyWorld: world,
+    character,
+    windowStartsAt: "2026-08-06T00:00:00.000Z",
+    windowEndsAt: "2026-08-07T00:00:00.000Z",
+    limit: 1,
+    consumed: 2,
+    updatedAt: createdAt,
+  }), { name: "RangeError", message: /consumed/ });
+  assert.throws(() => assertProactiveMessageBudget({ ...budget, limit: -1 }), {
+    name: "RangeError",
+    message: /limit/,
+  });
+  assert.throws(() => assertProactiveMessageBudget({ ...budget, consumed: 2 }), {
+    name: "RangeError",
+    message: /consumed/,
+  });
 });

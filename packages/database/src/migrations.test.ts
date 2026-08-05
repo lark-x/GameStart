@@ -28,3 +28,21 @@ test("applyMigrations only runs missing versions in order", async () => {
   assert.deepEqual(result.applied, [2]);
   assert.equal(statements.some((statement) => statement.includes("INSERT INTO living_network_schema_migrations")), true);
 });
+
+test("applyMigrations uses the transaction boundary when provided", async () => {
+  const calls: string[] = [];
+  const database: MigrationDatabase = {
+    async query<Row extends Record<string, unknown>>(text: string): Promise<{ rows: readonly Row[] }> {
+      calls.push(`query:${text.trim().slice(0, 20)}`);
+      if (text.includes("SELECT version")) return { rows: [] };
+      return { rows: [] };
+    },
+    async transaction(operation) {
+      calls.push("transaction");
+      return operation(database);
+    },
+  };
+  const result = await applyMigrations(database, listMigrationFiles().slice(0, 1));
+  assert.deepEqual(result.applied, [1]);
+  assert.equal(calls.includes("transaction"), true);
+});

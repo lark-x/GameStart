@@ -1184,3 +1184,215 @@ test("maps and idempotently writes moment interactions", async () => {
   assert.equal(replay.interaction.id, momentInteraction.id);
   assert.match(replayClient.calls[1]?.text ?? "", /idempotency_key = \$2/);
 });
+
+test("maps optional PostgreSQL dates, arrays, JSON payloads, and lifecycle fields", async () => {
+  const endedSession = {
+    ...sessionRow(),
+    started_at: new Date(session.startedAt),
+    ended_at: new Date("2026-08-05T12:00:00.000Z"),
+    user_birth_date: new Date("2000-01-01T00:00:00.000Z"),
+  };
+  const optionalMessage = {
+    ...messageRow("message-optional"),
+    author_character_id: null,
+    text: null,
+    media_ref: "media://optional.png",
+    sticker_id: "sticker-optional",
+    created_at: new Date("2026-08-05T12:31:00.000Z"),
+  };
+  const optionalMemory = {
+    ...memoryRow(),
+    occurred_at: new Date("2026-08-05T12:40:00.000Z"),
+    subject_character_id: user.id,
+    audience_character_ids: '{"user-sql","ai-sql"}',
+    source_ref: "event:optional",
+    created_at: new Date("2026-08-05T12:40:00.000Z"),
+  };
+  const onceDefinition = createWorldEventDefinition({
+    id: "event-sql-once",
+    storyWorld: world,
+    eventKey: "world:sql-once",
+    name: "SQL once",
+    triggerSource: TriggerSource.MANUAL,
+    recurrence: { kind: EventRecurrenceKind.ONCE, runAt: "2026-08-16T10:00:00.000Z" },
+    targetCharacters: [ai],
+    createdAt: "2026-08-05T12:45:00.000Z",
+  });
+  const onceRow = {
+    ...eventDefinitionRow(onceDefinition),
+    recurrence_kind: "ONCE",
+    run_at: new Date("2026-08-16T10:00:00.000Z"),
+    recurrence_month: null,
+    recurrence_day: null,
+    recurrence_local_time: null,
+  };
+  const completedExecution = {
+    ...executionRow(),
+    input_snapshot: JSON.stringify(execution.inputSnapshot),
+    output_snapshot: JSON.stringify({ done: true }),
+    status: EventExecutionStatus.COMPLETED,
+    finished_at: new Date("2026-08-15T10:01:00.000Z"),
+  };
+  const optionalJob = imageJobRow({
+    ...imageJob,
+    status: ImageJobStatus.SUCCEEDED,
+    negativePrompt: "blurry",
+    seed: 42,
+    externalJobId: "external-job",
+    mediaRef: "media://job.png",
+  });
+  const optionalIdentity = { ...visualIdentityRow(), style_tags: '{"anime","soft"}', reference_image_refs: "{}" };
+  const optionalTemplate = { ...workflowTemplateRow(), workflow: JSON.stringify(workflowTemplate.workflow), positive_prompt_path: '{"node","inputs","text"}', negative_prompt_path: '{"node","inputs","negative"}', seed_path: null };
+  const optionalPack = { ...momentRow(), audience_character_ids: '{"user-sql"}' };
+  const optionalSticker = { ...momentInteractionRow(), kind: MomentInteractionKind.COMMENT, text: "comment" };
+  const client = new RecordingSqlClient([
+    [endedSession],
+    [optionalMessage],
+    [optionalMemory],
+    [onceRow],
+    [completedExecution],
+    [optionalJob],
+    [optionalIdentity],
+    [optionalTemplate],
+    [optionalPack],
+    [optionalSticker],
+  ]);
+  const repositories = createSqlRepositories(client);
+  assert.equal((await repositories.actorSessions.getById(session.id))?.endedAt, "2026-08-05T12:00:00.000Z");
+  const optionalMessageResult = (await repositories.messages.listByConversation("conversation-sql"))[0];
+  assert.equal(optionalMessageResult?.id, "message-optional");
+  assert.equal(optionalMessageResult?.authorCharacterId, undefined);
+  assert.equal(optionalMessageResult?.mediaRef, "media://optional.png");
+  assert.equal(optionalMessageResult?.stickerId, "sticker-optional");
+  const memoryResult = await repositories.memories.search({ storyWorldId: world.id, readerCharacterId: user.id, queryText: "lantern", limit: 1 });
+  assert.equal(memoryResult[0]?.memory.subjectCharacterId, user.id);
+  assert.equal((await repositories.worldEventDefinitions.getById(onceDefinition.id))?.recurrence.kind, EventRecurrenceKind.ONCE);
+  assert.equal((await repositories.eventExecutions.getById(execution.id))?.status, EventExecutionStatus.COMPLETED);
+  assert.equal((await repositories.imageJobs.getById(imageJob.id))?.seed, 42);
+  assert.deepEqual((await repositories.characterVisualIdentities.getById(visualIdentity.id))?.styleTags, ["anime", "soft"]);
+  assert.equal((await repositories.imageWorkflowTemplates.getById(workflowTemplate.id, workflowTemplate.version))?.seedPath, undefined);
+  assert.equal((await repositories.moments.getById(moment.id))?.audienceCharacterIds[0], user.id);
+  assert.equal((await repositories.momentInteractions.listByMoment(moment.id))[0]?.text, "comment");
+});
+
+test("SQL repositories bound invalid limits, missing rows, and idempotency conflicts", async () => {
+  const empty = new RecordingSqlClient([[], [], [], [], [], [], [], []]);
+  const repositories = createSqlRepositories(empty);
+  await assert.rejects(repositories.scheduledOccurrences.listPending(world.id, "not-a-date", 1), /scheduledBefore/);
+  await assert.rejects(repositories.scheduledOccurrences.listPending(world.id, eventOccurrence.scheduledFor, 0), /limit/);
+  await assert.rejects(repositories.scheduledOccurrences.listByWindow(world.id, "not-a-date", eventOccurrence.scheduledFor, 1), /window/);
+  await assert.rejects(repositories.scheduledOccurrences.listByWindow(world.id, eventOccurrence.scheduledFor, eventOccurrence.scheduledFor, 1), /startsAt/);
+  await assert.rejects(repositories.moments.listFeed(world.id, user.id, 0), /moment feed limit/);
+  await assert.rejects(repositories.scheduledOccurrences.update(eventOccurrence), /Unknown scheduled occurrence/);
+  await assert.rejects(repositories.messages.save({
+    id: "message-missing-replay",
+    conversationId: "conversation-sql",
+    authorCharacterId: user.id,
+    kind: "TEXT",
+    text: "message",
+    createdAt: "2026-08-05T12:31:00.000Z",
+    idempotencyKey: "missing-replay",
+  }), /idempotency lookup/);
+  const conflict = new RecordingSqlClient([[], [messageRow()]]);
+  await assert.rejects(createSqlRepositories(conflict).messages.save({
+    id: "message-conflict",
+    conversationId: "conversation-sql",
+    authorCharacterId: ai.id,
+    kind: "TEXT",
+    text: "different",
+    createdAt: "2026-08-05T12:31:00.000Z",
+    idempotencyKey: "message-sql-key",
+  }), /idempotency key conflict/);
+});
+
+test("covers SQL row parser failures and less-traveled repository branches", async () => {
+  await assert.rejects(
+    createSqlRepositories(new RecordingSqlClient([[{ ...worldRow(world), id: " " }]])).storyWorlds.list(),
+    /must be a non-empty string/,
+  );
+  await assert.rejects(
+    createSqlRepositories(new RecordingSqlClient([[{ ...worldRow(world), relationship_dynamics_enabled: "yes" }]])).storyWorlds.list(),
+    /must be a boolean/,
+  );
+  await assert.rejects(
+    createSqlRepositories(new RecordingSqlClient([[{ ...memoryRow(), confidence: "not-a-number" }]])).memories.listForCharacter(world.id, user.id),
+    /must be a finite number/,
+  );
+  await assert.rejects(
+    createSqlRepositories(new RecordingSqlClient([[{ ...memoryRow(), audience_character_ids: "not-an-array" }]])).memories.listForCharacter(world.id, user.id),
+    /must be a string array/,
+  );
+  await assert.rejects(
+    createSqlRepositories(new RecordingSqlClient([[{ ...eventDefinitionRow(), recurrence_kind: "OTHER" }]])).worldEventDefinitions.listByStoryWorld(world.id),
+    /unsupported value/,
+  );
+  await assert.rejects(
+    createSqlRepositories(new RecordingSqlClient([[{ ...executionRow(), input_snapshot: "not-json" }]])).eventExecutions.getById(execution.id),
+    /valid JSON/,
+  );
+  await assert.rejects(
+    createSqlRepositories(new RecordingSqlClient([[{ ...actionRow(), payload: "[]" }]])).behaviorActions.getById(action.id),
+    /JSON object/,
+  );
+
+  const lookupClient = new RecordingSqlClient([[], [characterRow(user)], [], conversationRows()]);
+  const lookup = createSqlRepositories(lookupClient);
+  assert.equal(await lookup.storyWorlds.getById("missing"), undefined);
+  assert.deepEqual(await lookup.characters.listByStoryWorld(undefined), [user]);
+  const filteredCharacters = createSqlRepositories(new RecordingSqlClient([[characterRow(user)]]));
+  assert.deepEqual(await filteredCharacters.characters.listByStoryWorld(world.id), [user]);
+  assert.equal(await lookup.relationshipEdges.getById("missing"), undefined);
+  assert.deepEqual(await lookup.conversations.listByCharacter(user.id), [{
+    conversation: {
+      id: "conversation-sql",
+      storyWorldId: world.id,
+      type: "PRIVATE",
+      createdAt: "2026-08-05T12:30:00.000Z",
+    },
+    members: [
+      { conversationId: "conversation-sql", characterId: user.id, joinedAt: "2026-08-05T12:30:00.000Z" },
+      { conversationId: "conversation-sql", characterId: ai.id, joinedAt: "2026-08-05T12:30:00.000Z" },
+    ],
+  }]);
+
+  const emptyConversation = {
+    conversation: {
+      id: "empty-conversation",
+      storyWorldId: world.id,
+      type: "GROUP" as const,
+      createdAt: "2026-08-05T12:30:00.000Z",
+    },
+    members: [],
+  };
+  await assert.rejects(createSqlRepositories(new RecordingSqlClient()).conversations.save(emptyConversation), /at least one member/);
+
+  await assert.rejects(createSqlRepositories(new RecordingSqlClient()).memories.search({ storyWorldId: world.id, readerCharacterId: user.id, queryText: " " }), /queryText/);
+  await assert.rejects(createSqlRepositories(new RecordingSqlClient()).memories.search({ storyWorldId: world.id, readerCharacterId: user.id, queryText: "query", limit: 0 }), /limit/);
+
+  const missingOccurrenceClient = new RecordingSqlClient([[], []]);
+  const missingOccurrence = createSqlRepositories(missingOccurrenceClient);
+  assert.equal(await missingOccurrence.scheduledOccurrences.getById("missing"), undefined);
+  assert.equal(await missingOccurrence.scheduledOccurrences.getByOccurrenceKey(world.id, "missing"), undefined);
+  await assert.rejects(missingOccurrence.scheduledOccurrences.listByWindow(world.id, "2026-08-01T00:00:00.000Z", "2026-08-02T00:00:00.000Z", 0), /limit/);
+
+  const unresolved = createSqlRepositories(new RecordingSqlClient([[], []]));
+  await assert.rejects(unresolved.scheduledOccurrences.save(eventOccurrence), /could not be resolved/);
+
+  const changedRow = occurrenceRow({ ...eventOccurrence, definitionId: "different-definition" });
+  await assert.rejects(createSqlRepositories(new RecordingSqlClient([[changedRow]])).scheduledOccurrences.update(eventOccurrence), /identity cannot change/);
+
+  assert.equal(await createSqlRepositories(new RecordingSqlClient([[]])).stickerPacks.getById("missing"), undefined);
+
+  const interactionConflict = createSqlRepositories(new RecordingSqlClient([[], [{ ...momentInteractionRow(), kind: MomentInteractionKind.COMMENT, text: "different" }]]));
+  await assert.rejects(interactionConflict.momentInteractions.save(momentInteraction), /idempotency key conflict/);
+
+  const unsupported = createSqlRepositories(new RecordingSqlClient());
+  await assert.rejects(unsupported.transaction(async () => "never"), /does not support transactions/);
+  const transactionalClient = {
+    async query<Row extends SqlRow = SqlRow>() { return { rows: [] as readonly Row[] }; },
+    async transaction<T>(operation: (client: SqlClient) => Promise<T>) {
+      return operation(new RecordingSqlClient());
+    },
+  };
+  assert.equal(await createSqlRepositories(transactionalClient).transaction(async () => "ok"), "ok");
+});

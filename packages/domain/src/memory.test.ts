@@ -7,6 +7,7 @@ import {
   MemorySource,
   MemoryVisibility,
   StoryMode,
+  assertMemoryItem,
   createCharacter,
   createMemoryItem,
   createStoryWorld,
@@ -135,4 +136,77 @@ test("scores token overlap and confidence deterministically", () => {
   });
   assert.equal(scoreMemory(memory, "lantern ceremony"), 1.2);
   assert.equal(scoreMemory(memory, "winter"), 0);
+  assert.equal(scoreMemory(memory, "   "), 0);
+  assert.throws(() => assertMemoryItem({ ...memory, audienceCharacterIds: [user.id, user.id] }), {
+    name: "TypeError",
+    message: /duplicate character/,
+  });
+  assert.throws(() => createMemoryItem({
+    id: "relation-without-audience",
+    storyWorld: world,
+    kind: MemoryKind.EVENT_FACT,
+    visibility: MemoryVisibility.RELATION,
+    source: MemorySource.SYSTEM_EVENT,
+    content: "missing audience",
+    confidence: 0.5,
+    createdAt,
+  }), { name: "TypeError", message: /requires audienceCharacters/ });
+  assert.throws(() => createMemoryItem({
+    id: "system-with-audience",
+    storyWorld: world,
+    kind: MemoryKind.EVENT_FACT,
+    visibility: MemoryVisibility.SYSTEM,
+    source: MemorySource.SYSTEM_EVENT,
+    content: "invalid audience",
+    confidence: 0.5,
+    createdAt,
+    audienceCharacters: [user],
+  }), { name: "TypeError", message: /SYSTEM memory/ });
+});
+
+test("rejects memory references that belong to another world", () => {
+  const other = createCharacter({
+    id: "memory-outsider",
+    displayName: "Outsider",
+    role: CharacterRole.AI,
+    storyWorldId: "other-memory-world",
+    timezone: "UTC",
+  });
+  assert.throws(() => createMemoryItem({
+    id: "subject-outsider",
+    storyWorld: world,
+    kind: MemoryKind.EVENT_FACT,
+    visibility: MemoryVisibility.PRIVATE,
+    source: MemorySource.SYSTEM_EVENT,
+    content: "invalid subject",
+    confidence: 0.5,
+    createdAt,
+    subjectCharacter: other,
+  }), { name: "TypeError", message: /subjectCharacter/ });
+  assert.throws(() => createMemoryItem({
+    id: "audience-outsider",
+    storyWorld: world,
+    kind: MemoryKind.EVENT_FACT,
+    visibility: MemoryVisibility.GROUP,
+    source: MemorySource.SYSTEM_EVENT,
+    content: "invalid audience",
+    confidence: 0.5,
+    createdAt,
+    audienceCharacters: [other],
+  }), { name: "TypeError", message: /audienceCharacters/ });
+  const valid = createMemoryItem({
+    id: "memory-assert-boundary",
+    storyWorld: world,
+    kind: MemoryKind.EVENT_FACT,
+    visibility: MemoryVisibility.PUBLIC,
+    source: MemorySource.SYSTEM_EVENT,
+    content: "valid",
+    confidence: 0.5,
+    createdAt,
+  });
+  assert.throws(() => assertMemoryItem({ ...valid, confidence: 2 }), /confidence/);
+  const { subjectCharacterId: _subjectCharacterId, ...withoutSubject } = valid;
+  assert.throws(() => assertMemoryItem({ ...withoutSubject, visibility: MemoryVisibility.PRIVATE }), /subjectCharacterId/);
+  assert.throws(() => assertMemoryItem({ ...valid, visibility: MemoryVisibility.RELATION, audienceCharacterIds: [] }), /audienceCharacterIds/);
+  assert.throws(() => assertMemoryItem({ ...valid, visibility: MemoryVisibility.SYSTEM, audienceCharacterIds: [user.id] }), /SYSTEM memory/);
 });

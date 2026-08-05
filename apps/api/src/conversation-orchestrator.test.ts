@@ -90,3 +90,72 @@ test("conversation orchestrator retrieves visible memories and writes low-confid
   assert.equal(stored.some((item) => item.id === "memory:assistant:memory-orch-conversation:memory-orch-input"), true);
   assert.equal(stored.find((item) => item.id.startsWith("memory:assistant"))?.source, MemorySource.LLM_DERIVED);
 });
+
+test("validates repository/options and serializes image, sticker, and system context", async () => {
+  const world = createStoryWorld({ id: "orch-edge-world", name: "Edge", timezone: "UTC", storyMode: StoryMode.STATIC, relationshipDynamicsEnabled: false });
+  const user = createCharacter({ id: "orch-edge-user", displayName: "User", role: CharacterRole.USER, storyWorldId: world.id, timezone: world.timezone });
+  const ai = createCharacter({ id: "orch-edge-ai", displayName: "AI", role: CharacterRole.AI, storyWorldId: world.id, timezone: world.timezone });
+  const conversation = createConversation({ id: "orch-edge-conversation", storyWorld: world, type: "PRIVATE", createdAt: "2026-08-05T00:00:00.000Z", members: [user, ai] });
+  const repositories = createInMemoryRepositories({ worlds: [world], characters: [user, ai], conversations: [conversation] });
+  const provider: ChatProvider = {
+    async complete(input) {
+      assert.deepEqual(input.messages.map((message) => message.content), [
+        "[image:media://image.png]",
+        "[sticker:sticker-1]",
+        "system notice",
+      ]);
+      return { id: "edge-completion", model: "m", content: "reply" };
+    },
+    async *stream() {},
+  };
+  assert.throws(() => new ConversationOrchestrator({ ...repositories, conversations: undefined, messages: undefined } as unknown as typeof repositories, provider), /repositories are not configured/);
+  assert.throws(() => new ConversationOrchestrator(repositories, provider, { maxMemories: 0 }), /maxMemories/);
+  assert.throws(() => new ConversationOrchestrator(repositories, provider, { maxMemories: 21 }), /maxMemories/);
+  await repositories.messages!.save(createMessage({ id: "image", conversation, author: user, kind: MessageKind.IMAGE, mediaRef: "media://image.png", createdAt: "2026-08-05T00:01:00.000Z", idempotencyKey: "image" }));
+  await repositories.messages!.save(createMessage({ id: "sticker", conversation, author: user, kind: MessageKind.STICKER, stickerId: "sticker-1", createdAt: "2026-08-05T00:02:00.000Z", idempotencyKey: "sticker" }));
+  await repositories.messages!.save(createMessage({ id: "system", conversation, kind: MessageKind.SYSTEM, text: "system notice", createdAt: "2026-08-05T00:03:00.000Z", idempotencyKey: "system" }));
+  const result = await new ConversationOrchestrator(repositories, provider).completeReply(conversation.conversation.id, user.id);
+  assert.equal(result.message.text, "reply");
+});
+
+test("replays a matching assistant reply after an idempotency conflict", async () => {
+  const world = createStoryWorld({ id: "orch-replay-world", name: "Replay", timezone: "UTC", storyMode: StoryMode.STATIC, relationshipDynamicsEnabled: false });
+  const user = createCharacter({ id: "orch-replay-user", displayName: "User", role: CharacterRole.USER, storyWorldId: world.id, timezone: world.timezone });
+  const ai = createCharacter({ id: "orch-replay-ai", displayName: "AI", role: CharacterRole.AI, storyWorldId: world.id, timezone: world.timezone });
+  const conversation = createConversation({ id: "orch-replay-conversation", storyWorld: world, type: "PRIVATE", createdAt: "2026-08-05T00:00:00.000Z", members: [user, ai] });
+  const repositories = createInMemoryRepositories({ worlds: [world], characters: [user, ai], conversations: [conversation] });
+  const input = createMessage({
+    id: "orch-replay-input",
+    conversation,
+    author: user,
+    kind: MessageKind.TEXT,
+    text: "hello",
+    createdAt: "2026-08-05T00:01:00.000Z",
+    idempotencyKey: "orch-replay-input",
+  });
+  const existing = createMessage({
+    id: "assistant:orch-replay-conversation:orch-replay-input",
+    conversation,
+    author: ai,
+    kind: MessageKind.TEXT,
+    text: "replayed",
+    createdAt: "2026-08-05T00:02:00.000Z",
+    idempotencyKey: "assistant:orch-replay-conversation:orch-replay-input",
+  });
+  const originalMessages = repositories.messages!;
+  const replayRepositories = {
+    ...repositories,
+    messages: {
+      ...originalMessages,
+      listByConversation: async () => [input, existing],
+      save: async () => { throw new TypeError("idempotency conflict"); },
+    },
+  };
+  const provider: ChatProvider = {
+    async complete() { return { id: "replay-completion", model: "test", content: "replayed" }; },
+    async *stream() {},
+  };
+  const result = await new ConversationOrchestrator(replayRepositories as unknown as typeof repositories, provider).completeReply(conversation.conversation.id, user.id);
+  assert.equal(result.inserted, false);
+  assert.equal(result.message.text, "replayed");
+});

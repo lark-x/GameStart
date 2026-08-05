@@ -4,6 +4,8 @@ import test from "node:test";
 import {
   CharacterRole,
   StoryMode,
+  applyRelationshipDelta,
+  assertRelationshipState,
   createActorSession,
   createCharacter,
   createRelationshipEdge,
@@ -135,6 +137,20 @@ test("rejects self edges, cross-world edges, and invalid initial state", () => {
       }),
     { name: "RangeError", message: /initialState\.trust/ },
   );
+  assert.throws(
+    () =>
+      createRelationshipEdge({
+        id: "edge-foreign-world",
+        source: user,
+        target: ai,
+        storyWorld: dynamicWorld,
+        relationshipType: "friend",
+        initialState: state,
+        isPublic: true,
+        isBidirectional: true,
+      }),
+    { name: "TypeError", message: /belong to storyWorld/ },
+  );
 });
 
 test("creates an edge with cloned initial state", () => {
@@ -190,5 +206,84 @@ test("only USER characters can create and switch actor sessions", () => {
         startedAt: "2026-08-05T08:00:00.000Z",
       }),
     { name: "TypeError", message: /role USER/ },
+  );
+
+  const ended = createActorSession({
+    id: "session-ended",
+    storyWorld: staticWorld,
+    userCharacter: firstUser,
+    startedAt: "2026-08-05T08:00:00.000Z",
+    endedAt: "2026-08-05T09:00:00.000Z",
+  });
+  assert.equal(ended.endedAt, "2026-08-05T09:00:00.000Z");
+  assert.throws(
+    () => switchActorCharacter(ended, secondUser),
+    { name: "TypeError", message: /cannot switch after/ },
+  );
+  assert.throws(
+    () => createActorSession({
+      id: "session-invalid-time",
+      storyWorld: staticWorld,
+      userCharacter: firstUser,
+      startedAt: "2026-08-05T09:00:00.000Z",
+      endedAt: "2026-08-05T08:00:00.000Z",
+    }),
+    { name: "TypeError", message: /must not precede/ },
+  );
+});
+
+test("rejects invalid character, world, and prompt references", () => {
+  assert.throws(
+    () => createCharacter({
+      id: "invalid-role",
+      displayName: "Invalid",
+      role: "OTHER" as CharacterRole,
+      storyWorldId: staticWorld.id,
+      timezone: staticWorld.timezone,
+    }),
+    /character\.role/,
+  );
+  assert.throws(
+    () => createCharacter({
+      id: "invalid-prompt",
+      displayName: "Invalid",
+      role: CharacterRole.AI,
+      storyWorldId: staticWorld.id,
+      timezone: staticWorld.timezone,
+      personaPromptRef: " ",
+    }),
+    /personaPromptRef/,
+  );
+  assert.throws(
+    () => createStoryWorld({
+      ...staticWorld,
+      storyMode: "OTHER" as StoryMode,
+    }),
+    /storyMode/,
+  );
+});
+
+test("validates relationship metric ranges and unsupported modes", () => {
+  assert.throws(
+    () => assertRelationshipState({ affinity: -101, trust: 0, conflict: 0, dependency: 0 }),
+    { name: "RangeError", message: /affinity/ },
+  );
+  assert.throws(
+    () => assertRelationshipState({ affinity: Number.NaN, trust: 0, conflict: 0, dependency: 0 }),
+    { name: "TypeError", message: /finite number/ },
+  );
+  assert.throws(
+    () => applyRelationshipDelta("OTHER" as StoryMode, {
+      affinity: 0,
+      trust: 0,
+      conflict: 0,
+      dependency: 0,
+    }, {
+      affinity: 0,
+      trust: 0,
+      conflict: 0,
+      dependency: 0,
+    }),
+    { name: "TypeError", message: /Unsupported story mode/ },
   );
 });

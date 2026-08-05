@@ -118,3 +118,65 @@ test("rejects missing and malformed configuration with field-specific errors", (
   );
   assert.ok(ConfigError.prototype instanceof Error);
 });
+
+test("rejects every malformed URL, origin, number, and boolean spelling", () => {
+  assert.throws(
+    () => loadAppConfig({ ...minimalEnvironment, DATABASE_URL: "not-a-database-url" }),
+    { name: "ConfigError", message: /DATABASE_URL/ },
+  );
+  assert.throws(
+    () => loadAppConfig({ ...minimalEnvironment, REDIS_URL: "http://cache" }),
+    { name: "ConfigError", message: /REDIS_URL.*redis/ },
+  );
+  assert.throws(
+    () => loadAppConfig({ ...minimalEnvironment, LLM_BASE_URL: "file:///tmp/model" }),
+    { name: "ConfigError", message: /LLM_BASE_URL.*http/ },
+  );
+  assert.throws(
+    () => loadAppConfig({ ...minimalEnvironment, API_PORT: "not-a-number" }),
+    { name: "ConfigError", message: /API_PORT/ },
+  );
+  assert.throws(
+    () => loadAppConfig({ ...minimalEnvironment, API_PORT: "999999999999999999999" }),
+    { name: "ConfigError", message: /API_PORT/ },
+  );
+  assert.throws(
+    () => loadAppConfig({ ...minimalEnvironment, COMFYUI_TIMEOUT_MS: "not-a-number" }),
+    { name: "ConfigError", message: /COMFYUI_TIMEOUT_MS/ },
+  );
+  assert.throws(
+    () => loadAppConfig({ ...minimalEnvironment, API_CORS_ORIGINS: "" }),
+    { name: "ConfigError", message: /API_CORS_ORIGINS/ },
+  );
+  assert.throws(
+    () => loadAppConfig({ ...minimalEnvironment, API_CORS_ORIGINS: "not-a-url" }),
+    { name: "ConfigError", message: /invalid origin/ },
+  );
+  assert.throws(
+    () => loadAppConfig({ ...minimalEnvironment, API_CORS_ORIGINS: "https://example.test/path" }),
+    { name: "ConfigError", message: /must be an HTTP origin/ },
+  );
+  assert.throws(
+    () => loadAppConfig({ ...minimalEnvironment, API_CORS_ORIGINS: "https://example.test/?query=1" }),
+    { name: "ConfigError", message: /must be an HTTP origin/ },
+  );
+  assert.throws(
+    () => loadAppConfig({ ...minimalEnvironment, AUTONOMOUS_EVENTS_ENABLED: "maybe" }),
+    { name: "ConfigError", message: /AUTONOMOUS_EVENTS_ENABLED/ },
+  );
+  const config = loadAppConfig({
+    ...minimalEnvironment,
+    API_CORS_ORIGINS: "https://example.test,https://example.test",
+    AUTONOMOUS_EVENTS_ENABLED: "no",
+    PROACTIVE_MESSAGES_ENABLED: "0",
+    MOMENT_GENERATION_ENABLED: "false",
+    IMAGE_GENERATION_ENABLED: "off",
+    MEMORY_WRITE_ENABLED: " ",
+    MEMORY_RETRIEVAL_ENABLED: "",
+  });
+  assert.deepEqual(config.api.corsOrigins, ["https://example.test"]);
+  assert.equal(config.flags.autonomousEventsEnabled, false);
+  assert.equal(config.flags.proactiveMessagesEnabled, false);
+  assert.equal(config.flags.momentGenerationEnabled, false);
+  assert.equal(config.flags.imageGenerationEnabled, false);
+});

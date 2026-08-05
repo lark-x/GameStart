@@ -1,5 +1,4 @@
 import {
-  CharacterRole,
   createMomentInteraction as createMomentInteractionDomain,
   createConversation as createConversationDomain,
   createMessage as createMessageDomain,
@@ -14,7 +13,6 @@ import {
   type ScheduledOccurrence,
   type WorldEventDefinition,
   isMomentVisibleTo,
-  MessageKind,
   cloneJsonObject,
   createSticker as createStickerDomain,
   createStickerPack as createStickerPackDomain,
@@ -26,7 +24,6 @@ import {
 import {
   ProviderError,
   type ChatDelta,
-  type ChatMessage,
   type ChatProvider,
 } from "../../../packages/ai/src/index.ts";
 import type {
@@ -541,9 +538,7 @@ function createSseResponse(source: AsyncIterable<ChatDelta>): Response {
           controller.enqueue(sseDone());
           controller.close();
         }
-      })().catch(() => {
-        controller.close();
-      });
+      })().catch(() => undefined);
     },
   });
   return new Response(stream, {
@@ -553,16 +548,6 @@ function createSseResponse(source: AsyncIterable<ChatDelta>): Response {
       connection: "keep-alive",
     },
   });
-}
-
-function messageToChatMessage(
-  message: Message,
-  authorRole: CharacterRole | undefined,
-): ChatMessage {
-  const content = message.text ??
-    (message.mediaRef === undefined ? `[sticker:${message.stickerId ?? "unknown"}]` : `[image:${message.mediaRef}]`);
-  if (message.kind === MessageKind.SYSTEM) return { role: "system", content };
-  return { role: authorRole === CharacterRole.USER ? "user" : "assistant", content };
 }
 
 export class ApiApplication {

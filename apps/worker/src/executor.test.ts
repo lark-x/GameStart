@@ -10,6 +10,9 @@ import {
   TriggerSource,
   createCharacter,
   createCharacterPlan,
+  cancelEventExecution,
+  completeEventExecution,
+  createEventExecution,
   createProactiveMessageBudget,
   createScheduledOccurrence,
   createStoryWorld,
@@ -176,4 +179,103 @@ test("requires every execution repository before constructing the coordinator", 
     name: "TypeError",
     message: /repositories are not configured/,
   });
+});
+
+test("rejects unknown definitions, invalid inputs, and already finished occurrences", async () => {
+  const fixture = createFixture("edge", PlanInterruptibility.LIMITED);
+  const repositories = createInMemoryRepositories({
+    worlds: [world],
+    characters: [character],
+    worldEventDefinitions: [fixture.definition],
+    scheduledOccurrences: [fixture.occurrence],
+    characterPlans: [fixture.plan],
+    proactiveMessageBudgets: [fixture.budget],
+  });
+  const coordinator = createEventExecutionCoordinator(repositories, () => createdAt);
+  await assert.rejects(coordinator.start("missing", { ruleVersion: "rules-v1" }), /Unknown scheduled occurrence/);
+  const noDefinition = createInMemoryRepositories({
+    worlds: [world],
+    characters: [character],
+    worldEventDefinitions: [fixture.definition],
+    scheduledOccurrences: [fixture.occurrence],
+    characterPlans: [fixture.plan],
+    proactiveMessageBudgets: [fixture.budget],
+  });
+  assert.ok(noDefinition.worldEventDefinitions);
+  noDefinition.worldEventDefinitions.getById = async () => undefined;
+  await assert.rejects(createEventExecutionCoordinator(noDefinition, () => createdAt).start(fixture.occurrence.id, { ruleVersion: "rules-v1" }), /Unknown event definition/);
+  await assert.rejects(coordinator.start(fixture.occurrence.id, { ruleVersion: "rules-v1", proactiveMessageUnits: -1 }), /proactiveMessageUnits/);
+  await assert.rejects(coordinator.start(fixture.occurrence.id, { ruleVersion: " " }), /ruleVersion/);
+
+  const completed = completeEventExecution(
+    createEventExecutionForFixture(fixture),
+    { done: true },
+    createdAt.toISOString(),
+  );
+  const completedRepositories = createInMemoryRepositories({
+    worlds: [world],
+    characters: [character],
+    worldEventDefinitions: [fixture.definition],
+    scheduledOccurrences: [fixture.occurrence],
+    eventExecutions: [completed],
+    characterPlans: [fixture.plan],
+    proactiveMessageBudgets: [fixture.budget],
+  });
+  const already = await createEventExecutionCoordinator(completedRepositories, () => createdAt).start(fixture.occurrence.id, { ruleVersion: "rules-v1" });
+  assert.equal(already.kind, ExecutionStartResultKind.ALREADY_FINISHED);
+
+  const cancelled = cancelEventExecution(
+    createEventExecutionForFixture({ ...fixture, occurrence: fixture.occurrence }),
+    "cancelled",
+    createdAt.toISOString(),
+  );
+  const cancelledRepositories = createInMemoryRepositories({
+    worlds: [world],
+    characters: [character],
+    worldEventDefinitions: [fixture.definition],
+    scheduledOccurrences: [fixture.occurrence],
+    eventExecutions: [cancelled],
+    characterPlans: [fixture.plan],
+    proactiveMessageBudgets: [fixture.budget],
+  });
+  const cancelledResult = await createEventExecutionCoordinator(cancelledRepositories, () => createdAt).start(fixture.occurrence.id, { ruleVersion: "rules-v1" });
+  assert.equal(cancelledResult.kind, ExecutionStartResultKind.ALREADY_FINISHED);
+
+  const notRunnable = createInMemoryRepositories({
+    worlds: [world],
+    characters: [character],
+    worldEventDefinitions: [fixture.definition],
+    scheduledOccurrences: [{ ...fixture.occurrence, status: "CANCELLED" }],
+    characterPlans: [fixture.plan],
+    proactiveMessageBudgets: [fixture.budget],
+  });
+  await assert.rejects(createEventExecutionCoordinator(notRunnable, () => createdAt).start(fixture.occurrence.id, { ruleVersion: "rules-v1" }), /not runnable/);
+});
+
+function createEventExecutionForFixture(value: ReturnType<typeof createFixture>) {
+  return (createEventExecution as unknown as (input: any) => any)({
+    id: `execution-${value.occurrence.id}`,
+    occurrence: value.occurrence,
+    definition: value.definition,
+    ruleVersion: "rules-v1",
+    inputSnapshot: {},
+    startedAt: createdAt.toISOString(),
+  });
+}
+
+test("returns FAILED when budget persistence fails", async () => {
+  const fixture = createFixture("persistence-failure", PlanInterruptibility.LIMITED);
+  const repositories = createInMemoryRepositories({
+    worlds: [world],
+    characters: [character],
+    worldEventDefinitions: [fixture.definition],
+    scheduledOccurrences: [fixture.occurrence],
+    characterPlans: [fixture.plan],
+    proactiveMessageBudgets: [fixture.budget],
+  });
+  assert.ok(repositories.proactiveMessageBudgets);
+  repositories.proactiveMessageBudgets.save = async () => { throw new Error("budget persistence failed"); };
+  const result = await createEventExecutionCoordinator(repositories, () => createdAt).start(fixture.occurrence.id, { ruleVersion: "rules-v1" });
+  assert.equal(result.kind, ExecutionStartResultKind.FAILED);
+  assert.match(result.execution.failureReason ?? "", /budget persistence failed/);
 });
