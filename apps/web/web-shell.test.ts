@@ -1,0 +1,45 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+
+const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
+const client = readFileSync(new URL("./src/api.js", import.meta.url), "utf8");
+const main = readFileSync(new URL("./src/main.js", import.meta.url), "utf8");
+const styles = readFileSync(new URL("./src/styles.css", import.meta.url), "utf8");
+
+test("web shell exposes role, feed and asset surfaces", () => {
+  assert.match(html, /id="character-select"/);
+  assert.match(html, /id="feed-grid"/);
+  assert.match(html, /id="assets-list"/);
+  assert.match(html, /id="relationship-canvas"/);
+  assert.match(html, /id="calendar-occurrences"/);
+  assert.match(html, /id="workflow-json"/);
+  assert.match(html, /id="visual-profile"/);
+  assert.match(html, /id="message-kind"/);
+  assert.match(html, /src\/main\.js/);
+  assert.match(main, /getMoments/);
+  assert.match(main, /switchCharacter/);
+  assert.match(main, /getStickerPacks/);
+  assert.match(main, /loadConversations/);
+  assert.match(main, /sendMessage/);
+  assert.match(main, /createMomentInteraction/);
+  assert.match(main, /hydrateMomentInteractions/);
+  assert.match(main, /streamConversation/);
+  assert.match(main, /renderRelationships/);
+  assert.match(main, /renderCalendar/);
+  assert.match(main, /renderVisualProfile/);
+  assert.match(main, /validateWorkflowEditor/);
+  assert.match(main, /sendSticker/);
+  assert.match(main, /kind === "IMAGE"/);
+  assert.match(client, /\/v1\/actor-sessions\/switch/);
+  assert.match(client, /\/v1\/moments/);
+  assert.match(client, /\/v1\/sticker-packs/);
+  assert.match(client, /\/v1\/conversations/);
+  assert.match(client, /\/interactions/);
+  assert.match(client, /text\/event-stream/);
+  assert.match(client, /\/v1\/relationships/);
+  assert.match(client, /\/calendar/);
+  assert.match(client, /visual-identity/);
+  assert.match(client, /validateWorkflow/);
+  assert.match(styles, /column-count: 3/);
+});

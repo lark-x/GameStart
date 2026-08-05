@@ -1,0 +1,19 @@
+{
+  "name": "living-network",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.1.2",
+  "scripts": {
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test",
+    "test:integration": "node --test integration/*.test.ts infra/compose/*.test.ts",
+    "test:all": "pnpm test && pnpm test:integration",
+    "build": "pnpm -r --if-present build"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "@types/pg": "8.10.9",
+    "typescript": "^7.0.2"
+  }
+}

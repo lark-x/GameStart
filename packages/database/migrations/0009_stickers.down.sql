@@ -1,0 +1,6 @@
+BEGIN;
+
+DROP TABLE IF EXISTS stickers;
+DROP TABLE IF EXISTS sticker_packs;
+
+COMMIT;
