@@ -6,7 +6,7 @@ import {
   type EnvironmentInput,
 } from "../../../packages/config/src/index.ts";
 import type { DomainRepositories } from "../../../packages/database/src/index.ts";
-import type { ChatProvider } from "../../../packages/ai/src/index.ts";
+import { createProviderFromConfig, type ChatProvider } from "../../../packages/ai/src/index.ts";
 import { ApiApplication } from "./app.ts";
 import { createApiServer } from "./server.ts";
 import type { ConversationOrchestratorOptions } from "./conversation-orchestrator.ts";
@@ -56,7 +56,9 @@ export function createApiRuntimeFromEnvironment(
   securityOptions?: { requireTrustedActor?: boolean },
   operationalOptions?: { readiness?: () => Promise<void> },
 ): ApiRuntime {
-  return createApiRuntime(loadAppConfig(env), repositories, provider, conversationOptions, securityOptions, operationalOptions);
+  const config = loadAppConfig(env);
+  const resolvedProvider = provider ?? createProviderFromConfig({ ...config.llm });
+  return createApiRuntime(config, repositories, resolvedProvider, conversationOptions, securityOptions, operationalOptions);
 }
 
 export function listenApiRuntime(runtime: ApiRuntime): Promise<Server> {

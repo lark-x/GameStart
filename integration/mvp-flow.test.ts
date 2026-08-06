@@ -21,8 +21,8 @@ import { ApiApplication } from "../apps/api/src/index.ts";
 import {
   FakeComfyUiClient,
   createBehaviorMediaCoordinator,
-  createMomentPublicationCoordinator,
-} from "../apps/worker/src/index.ts";
+} from "../apps/worker/src/media.ts";
+import { createMomentPublicationCoordinator } from "../apps/worker/src/publication.ts";
 
 const world = createStoryWorld({
   id: "mvp-world",

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
+import type { ComfyUiProgressEvent } from "./media.ts";
 
 export interface StoredMedia {
   readonly mediaRef: string;
@@ -74,20 +75,23 @@ export interface MediaFetch {
   (input: string, init?: RequestInit): Promise<Response>;
 }
 
+type StoringComfyUiInner = {
+  submit: (...args: any[]) => Promise<any>;
+  getResult: (...args: any[]) => Promise<{ externalJobId: string; mediaRef: string }>;
+  watchProgress?: (
+    externalJobId: string,
+    options?: { timeoutMs?: number },
+  ) => AsyncGenerator<ComfyUiProgressEvent>;
+};
+
 /** Downloads a ComfyUI result once and replaces the external URL with local storage. */
 export class StoringComfyUiClient {
-  private readonly inner: {
-    submit: (...args: any[]) => Promise<any>;
-    getResult: (...args: any[]) => Promise<{ externalJobId: string; mediaRef: string }>;
-  };
+  private readonly inner: StoringComfyUiInner;
   private readonly store: MediaStore;
   private readonly fetchImpl: MediaFetch;
 
   public constructor(
-    inner: {
-      submit: (...args: any[]) => Promise<any>;
-      getResult: (...args: any[]) => Promise<{ externalJobId: string; mediaRef: string }>;
-    },
+    inner: StoringComfyUiInner,
     store: MediaStore,
     fetchImpl: MediaFetch = globalThis.fetch,
   ) {
@@ -98,6 +102,17 @@ export class StoringComfyUiClient {
 
   public submit(...args: any[]): Promise<any> {
     return this.inner.submit(...args);
+  }
+
+  public async *watchProgress(
+    externalJobId: string,
+    options: { timeoutMs?: number } = {},
+  ): AsyncGenerator<ComfyUiProgressEvent> {
+    const watcher = this.inner.watchProgress;
+    if (typeof watcher !== "function") {
+      throw new TypeError("ComfyUI client does not support progress watching");
+    }
+    for await (const event of watcher.call(this.inner, externalJobId, options)) yield event;
   }
 
   public async getResult(externalJobId: string): Promise<{ externalJobId: string; mediaRef: string }> {

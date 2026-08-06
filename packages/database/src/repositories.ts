@@ -28,11 +28,13 @@ import type { OutboxEventRepository } from "./outbox.ts";
 export interface StoryWorldRepository {
   list(): Promise<readonly StoryWorld[]>;
   getById(id: string): Promise<StoryWorld | undefined>;
+  save(world: StoryWorld): Promise<void>;
 }
 
 export interface CharacterRepository {
   listByStoryWorld(storyWorldId?: string): Promise<readonly Character[]>;
   getById(id: string): Promise<Character | undefined>;
+  save(character: Character): Promise<void>;
 }
 
 export interface RelationshipEdgeRepository {

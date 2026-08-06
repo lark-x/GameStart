@@ -42,6 +42,18 @@ const elements = {
   workflowJson: document.querySelector("#workflow-json"),
   validateWorkflow: document.querySelector("#validate-workflow"),
   workflowValidation: document.querySelector("#workflow-validation"),
+  adminStatus: document.querySelector("#admin-status"),
+  adminWorldsList: document.querySelector("#admin-worlds-list"),
+  adminCharactersList: document.querySelector("#admin-characters-list"),
+  adminRelationshipsList: document.querySelector("#admin-relationships-list"),
+  worldForm: document.querySelector("#world-form"),
+  characterForm: document.querySelector("#character-form"),
+  relationshipForm: document.querySelector("#relationship-form"),
+  relationshipSource: document.querySelector("#relationship-source"),
+  relationshipTarget: document.querySelector("#relationship-target"),
+  adminEventsList: document.querySelector("#admin-events-list"),
+  eventForm: document.querySelector("#event-form"),
+  eventTarget: document.querySelector("#event-target"),
 };
 
 elements.calendarMonth.value = new Date().toISOString().slice(0, 7);
@@ -580,6 +592,343 @@ async function validateWorkflowEditor() {
   }
 }
 
+async function loadAdmin() {
+  try {
+    const worlds = (await api.getWorlds()).data ?? [];
+    const world = worlds.find((item) => item.id === state.worldId) ?? worlds[0];
+    clear(elements.adminWorldsList);
+    for (const world of worlds) {
+      const card = document.createElement("form");
+      card.className = "admin-card admin-edit-form";
+      card.dataset.worldId = world.id;
+      card.innerHTML = `
+        <input name="name" value="${escapeAttribute(world.name)}" required aria-label="世界名称" />
+        <select name="storyMode" aria-label="故事模式">
+          <option value="DYNAMIC" ${world.storyMode === "DYNAMIC" ? "selected" : ""}>动态生活</option>
+          <option value="STATIC" ${world.storyMode === "STATIC" ? "selected" : ""}>静态剧情</option>
+        </select>
+        <input name="timezone" value="${escapeAttribute(world.timezone)}" required aria-label="世界时区" />
+        <button type="submit">保存</button>`;
+      card.addEventListener("submit", (event) => void updateWorld(event, world.id));
+      elements.adminWorldsList.append(card);
+    }
+    if (world) {
+      state.worldId = world.id;
+      state.worldTimezone = world.timezone;
+      const characters = (await api.getCharacters(world.id)).data ?? [];
+      const relationships = (await api.getRelationships(world.id)).data ?? [];
+      const events = (await api.getWorldEvents(world.id)).data ?? [];
+      clear(elements.adminCharactersList);
+      renderRelationshipCharacterOptions(characters);
+      renderEventTargetOptions(characters);
+      for (const char of characters) {
+        const card = document.createElement("form");
+        card.className = "admin-card admin-edit-form";
+        card.dataset.characterId = char.id;
+        card.innerHTML = `
+          <input name="displayName" value="${escapeAttribute(char.displayName)}" required aria-label="角色名称" />
+          <span class="muted">${escapeText(char.role)}</span>
+          <input name="timezone" value="${escapeAttribute(char.timezone)}" required aria-label="角色时区" />
+          <button type="submit">保存</button>`;
+        card.addEventListener("submit", (event) => void updateCharacter(event, char.id));
+        elements.adminCharactersList.append(card);
+      }
+      renderAdminRelationships(relationships, characters);
+      renderAdminEvents(events, characters);
+      setStatus(elements.adminStatus, worlds.length + " 个世界，" + characters.length + " 个角色，" + relationships.length + " 条关系，" + events.length + " 个事件");
+    } else {
+      clear(elements.adminCharactersList);
+      clear(elements.adminRelationshipsList);
+      clear(elements.adminEventsList);
+      renderRelationshipCharacterOptions([]);
+      renderEventTargetOptions([]);
+      setStatus(elements.adminStatus, "暂无数据");
+    }
+  } catch (error) {
+    setStatus(elements.adminStatus, error.message, true);
+  }
+}
+
+function renderRelationshipCharacterOptions(characters) {
+  for (const select of [elements.relationshipSource, elements.relationshipTarget]) {
+    const selected = select.value;
+    clear(select);
+    for (const character of characters) {
+      const option = document.createElement("option");
+      option.value = character.id;
+      option.textContent = `${character.displayName} · ${character.role}`;
+      select.append(option);
+    }
+    if (characters.some((character) => character.id === selected)) select.value = selected;
+  }
+  elements.relationshipSource.disabled = characters.length < 2;
+  elements.relationshipTarget.disabled = characters.length < 2;
+}
+
+function renderEventTargetOptions(characters) {
+  const selected = elements.eventTarget.value;
+  clear(elements.eventTarget);
+  for (const character of characters) {
+    const option = document.createElement("option");
+    option.value = character.id;
+    option.textContent = `${character.displayName} · ${character.role}`;
+    elements.eventTarget.append(option);
+  }
+  if (characters.some((character) => character.id === selected)) elements.eventTarget.value = selected;
+  elements.eventTarget.disabled = characters.length === 0;
+}
+
+function renderAdminRelationships(relationships, characters) {
+  clear(elements.adminRelationshipsList);
+  const nameById = new Map(characters.map((character) => [character.id, character.displayName]));
+  for (const relationship of relationships) {
+    const form = document.createElement("form");
+    form.className = "admin-card admin-edit-form relationship-edit-form";
+    form.innerHTML = `
+      <span>${escapeText(nameById.get(relationship.sourceCharacterId) ?? relationship.sourceCharacterId)} ${relationship.isBidirectional ? "↔" : "→"} ${escapeText(nameById.get(relationship.targetCharacterId) ?? relationship.targetCharacterId)}</span>
+      <input name="relationshipType" value="${escapeAttribute(relationship.relationshipType)}" required aria-label="关系类型" />
+      <label><input name="isPublic" type="checkbox" ${relationship.isPublic ? "checked" : ""} /> 公开</label>
+      <button type="submit">保存</button>`;
+    form.addEventListener("submit", (event) => void updateRelationship(event, relationship.id));
+    elements.adminRelationshipsList.append(form);
+  }
+}
+
+function renderAdminEvents(events, characters) {
+  clear(elements.adminEventsList);
+  const nameById = new Map(characters.map((character) => [character.id, character.displayName]));
+  for (const event of events) {
+    const form = document.createElement("form");
+    form.className = "admin-card admin-edit-form event-edit-form";
+    const targetNames = event.targetCharacterIds.map((id) => nameById.get(id) ?? id).join("、");
+    form.innerHTML = `
+      <span>${escapeText(event.name)} · ${escapeText(targetNames)}</span>
+      <input name="name" value="${escapeAttribute(event.name)}" required aria-label="事件名称" />
+      <label><input name="enabled" type="checkbox" ${event.enabled ? "checked" : ""} /> 启用</label>
+      <button type="submit">保存</button>`;
+    form.addEventListener("submit", (submitEvent) => void updateWorldEvent(submitEvent, event.id));
+    elements.adminEventsList.append(form);
+  }
+}
+
+function escapeText(value) {
+  return String(value).replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;",
+  }[character]));
+}
+
+function escapeAttribute(value) {
+  return escapeText(value);
+}
+
+function readFormValues(form) {
+  return Object.fromEntries(new FormData(form).entries());
+}
+
+async function createWorld(event) {
+  event.preventDefault();
+  const input = readFormValues(elements.worldForm);
+  const mode = input.storyMode === "STATIC" ? "STATIC" : "DYNAMIC";
+  const id = createId("world");
+  elements.worldForm.querySelector("button").disabled = true;
+  try {
+    await api.createStoryWorld({
+      id,
+      name: String(input.name),
+      timezone: String(input.timezone),
+      storyMode: mode,
+      relationshipDynamicsEnabled: mode === "DYNAMIC",
+    });
+    elements.worldForm.reset();
+    elements.worldForm.querySelector("#world-timezone").value = "Asia/Shanghai";
+    setStatus(elements.adminStatus, "故事世界已创建。");
+    await loadAdmin();
+  } catch (error) {
+    setStatus(elements.adminStatus, error.message, true);
+  } finally {
+    elements.worldForm.querySelector("button").disabled = false;
+  }
+}
+
+async function updateWorld(event, id) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const input = readFormValues(form);
+  const button = form.querySelector("button");
+  button.disabled = true;
+  try {
+    await api.updateStoryWorld(id, {
+      name: String(input.name),
+      timezone: String(input.timezone),
+      storyMode: input.storyMode === "STATIC" ? "STATIC" : "DYNAMIC",
+      relationshipDynamicsEnabled: input.storyMode !== "STATIC",
+    });
+    setStatus(elements.adminStatus, "故事世界已更新。");
+    await loadAdmin();
+  } catch (error) {
+    setStatus(elements.adminStatus, error.message, true);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function createCharacter(event) {
+  event.preventDefault();
+  const world = state.worldId;
+  if (!world) {
+    setStatus(elements.adminStatus, "请先加载故事世界。", true);
+    return;
+  }
+  const input = readFormValues(elements.characterForm);
+  const button = elements.characterForm.querySelector("button");
+  button.disabled = true;
+  try {
+    await api.createCharacter({
+      id: createId("character"),
+      storyWorldId: world,
+      displayName: String(input.displayName),
+      role: input.role === "USER" ? "USER" : "AI",
+      timezone: String(input.timezone),
+    });
+    elements.characterForm.reset();
+    elements.characterForm.querySelector("#character-timezone").value = "Asia/Shanghai";
+    setStatus(elements.adminStatus, "角色已创建。");
+    await loadAdmin();
+  } catch (error) {
+    setStatus(elements.adminStatus, error.message, true);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function updateCharacter(event, id) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const input = readFormValues(form);
+  const button = form.querySelector("button");
+  button.disabled = true;
+  try {
+    await api.updateCharacter(id, {
+      displayName: String(input.displayName),
+      timezone: String(input.timezone),
+    });
+    setStatus(elements.adminStatus, "角色已更新。");
+    await loadAdmin();
+  } catch (error) {
+    setStatus(elements.adminStatus, error.message, true);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function createRelationship(event) {
+  event.preventDefault();
+  if (!state.worldId) {
+    setStatus(elements.adminStatus, "请先加载故事世界。", true);
+    return;
+  }
+  const input = readFormValues(elements.relationshipForm);
+  const values = Object.fromEntries(new FormData(elements.relationshipForm).entries());
+  const button = elements.relationshipForm.querySelector("button");
+  button.disabled = true;
+  try {
+    await api.createRelationship({
+      id: createId("relationship"),
+      storyWorldId: state.worldId,
+      sourceCharacterId: String(input.sourceCharacterId),
+      targetCharacterId: String(input.targetCharacterId),
+      relationshipType: String(input.relationshipType),
+      initialState: {
+        affinity: Number(values.affinity),
+        trust: Number(values.trust),
+        conflict: Number(values.conflict),
+        dependency: Number(values.dependency),
+      },
+      isPublic: elements.relationshipForm.querySelector("[name=isPublic]").checked,
+      isBidirectional: elements.relationshipForm.querySelector("[name=isBidirectional]").checked,
+    });
+    setStatus(elements.adminStatus, "关系已创建。");
+    await loadAdmin();
+  } catch (error) {
+    setStatus(elements.adminStatus, error.message, true);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function updateRelationship(event, id) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const input = readFormValues(form);
+  const button = form.querySelector("button");
+  button.disabled = true;
+  try {
+    await api.updateRelationship(id, {
+      relationshipType: String(input.relationshipType),
+      isPublic: form.querySelector("[name=isPublic]").checked,
+    });
+    setStatus(elements.adminStatus, "关系已更新。");
+    await loadAdmin();
+  } catch (error) {
+    setStatus(elements.adminStatus, error.message, true);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function createWorldEvent(event) {
+  event.preventDefault();
+  if (!state.worldId) {
+    setStatus(elements.adminStatus, "请先加载故事世界。", true);
+    return;
+  }
+  const input = readFormValues(elements.eventForm);
+  const button = elements.eventForm.querySelector("button");
+  button.disabled = true;
+  try {
+    const runAt = new Date(String(input.runAt));
+    if (Number.isNaN(runAt.getTime())) throw new Error("请选择有效执行时间。");
+    await api.createWorldEvent({
+      id: createId("event"),
+      storyWorldId: state.worldId,
+      eventKey: String(input.eventKey),
+      name: String(input.name),
+      triggerSource: String(input.triggerSource),
+      recurrence: { kind: "ONCE", runAt: runAt.toISOString() },
+      targetCharacterIds: [String(input.targetCharacterId)],
+      enabled: elements.eventForm.querySelector("[name=enabled]").checked,
+      createdAt: new Date().toISOString(),
+    });
+    setStatus(elements.adminStatus, "事件已创建。");
+    await loadAdmin();
+  } catch (error) {
+    setStatus(elements.adminStatus, error.message, true);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function updateWorldEvent(event, id) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const input = readFormValues(form);
+  const button = form.querySelector("button");
+  button.disabled = true;
+  try {
+    await api.updateWorldEvent(id, {
+      name: String(input.name),
+      enabled: form.querySelector("[name=enabled]").checked,
+    });
+    setStatus(elements.adminStatus, "事件已更新。");
+    await loadAdmin();
+  } catch (error) {
+    setStatus(elements.adminStatus, error.message, true);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+
 async function loadMessages() {
   if (!state.conversationId || !state.readerCharacterId) {
     renderMessages([]);
@@ -707,11 +1056,13 @@ for (const tab of document.querySelectorAll(".tab")) {
     document.querySelector("#calendar-view").classList.toggle("is-hidden", tab.dataset.view !== "calendar");
     document.querySelector("#settings-view").classList.toggle("is-hidden", tab.dataset.view !== "settings");
     document.querySelector("#assets-view").classList.toggle("is-hidden", tab.dataset.view !== "assets");
+    document.querySelector("#admin-view").classList.toggle("is-hidden", tab.dataset.view !== "admin");
     if (tab.dataset.view === "assets") void loadAssets();
     if (tab.dataset.view === "chat") void loadConversations();
     if (tab.dataset.view === "relationships") void loadRelationships();
     if (tab.dataset.view === "calendar") void loadCalendar();
     if (tab.dataset.view === "settings") void loadSettings();
+    if (tab.dataset.view === "admin") void loadAdmin();
   });
 }
 elements.switchCharacter.addEventListener("click", () => void switchCharacter());
@@ -728,6 +1079,11 @@ document.querySelector("#refresh-relationships").addEventListener("click", () =>
 document.querySelector("#refresh-calendar").addEventListener("click", () => void loadCalendar());
 elements.calendarMonth.addEventListener("change", () => void loadCalendar());
 document.querySelector("#refresh-settings").addEventListener("click", () => void loadSettings());
+document.querySelector("#refresh-admin").addEventListener("click", () => void loadAdmin());
+elements.worldForm.addEventListener("submit", (event) => void createWorld(event));
+elements.characterForm.addEventListener("submit", (event) => void createCharacter(event));
+elements.relationshipForm.addEventListener("submit", (event) => void createRelationship(event));
+elements.eventForm.addEventListener("submit", (event) => void createWorldEvent(event));
 elements.validateWorkflow.addEventListener("click", () => void validateWorkflowEditor());
 elements.workflowSelect.addEventListener("change", () => {
   const workflow = state.workflows.find(

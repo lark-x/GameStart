@@ -22,7 +22,7 @@ import { createInMemoryRepositories } from "../../../packages/database/src/index
 import {
   ExecutionStartResultKind,
   createEventExecutionCoordinator,
-} from "./index.ts";
+} from "./executor.ts";
 
 const world = createStoryWorld({
   id: "world-executor",

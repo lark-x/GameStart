@@ -68,8 +68,8 @@ export function createApiServer(
       if (allowedOrigin !== undefined) {
         reply.setHeader("access-control-allow-origin", allowedOrigin);
         reply.setHeader("vary", "Origin");
-        reply.setHeader("access-control-allow-methods", "GET,POST,OPTIONS");
-        reply.setHeader("access-control-allow-headers", "accept,content-type");
+        reply.setHeader("access-control-allow-methods", "GET,POST,PUT,DELETE,OPTIONS");
+        reply.setHeader("access-control-allow-headers", "accept,content-type,x-actor-character-id");
       }
       if (request.method === "OPTIONS") {
         reply.statusCode = allowedOrigin === undefined ? 403 : 204;

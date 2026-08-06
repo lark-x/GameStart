@@ -21,7 +21,7 @@ import {
   transitionMomentDraft,
 } from "../../../packages/domain/src/index.ts";
 import { createInMemoryRepositories } from "../../../packages/database/src/index.ts";
-import { MomentPublicationCoordinator } from "./index.ts";
+import { MomentPublicationCoordinator } from "./publication.ts";
 
 const world = createStoryWorld({
   id: "publication-world",

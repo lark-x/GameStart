@@ -1,0 +1,37 @@
+/* @import is handled by the Tailwind Vite plugin. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root { font-family: ui-rounded, "PingFang SC", "Microsoft YaHei", sans-serif; color: #403934; background: #f4eee7; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-width: 960px; background: #f4eee7; color: #403934; }
+  button, input, select, textarea { font: inherit; }
+}
+
+.app-shell { display: flex; width: 100vw; height: 100vh; overflow: hidden; background: #f7f2ec; }
+.app-nav { position: relative; z-index: 3; width: 76px; flex: 0 0 76px; display: flex; flex-direction: column; align-items: center; padding: 17px 8px 22px; border-right: 1px solid rgba(118, 89, 69, .08); background: rgba(255, 252, 248, .78); }
+.brand-mark { display: flex; align-items: center; justify-content: center; width: 42px; height: 42px; margin-bottom: 18px; border-radius: 15px; background: #c97961; color: white; font-size: 12px; font-weight: 800; text-decoration: none; letter-spacing: -.08em; box-shadow: 0 7px 18px rgba(177, 95, 71, .18); }
+.nav-list { display: grid; gap: 8px; width: 100%; }
+.nav-item { display: flex; flex-direction: column; align-items: center; gap: 3px; width: 100%; padding: 8px 1px; border-radius: 13px; color: #998c83; font-size: 10px; font-weight: 600; text-decoration: none; transition: .2s ease; }
+.nav-item:hover { color: #9f5945; background: #f8eae3; }
+.nav-item.router-link-active { color: #a8543e; background: #f9e7df; }
+.nav-icon { display: grid; place-items: center; width: 22px; height: 22px; font-size: 21px; line-height: 1; font-weight: 400; }
+.nav-bottom { margin-top: auto; }
+.app-main { position: relative; flex: 1; min-width: 0; overflow: hidden; background: linear-gradient(125deg, #f7f3ee 0%, #f6ece5 48%, #f1e6de 100%); }
+.ambient { position: absolute; pointer-events: none; filter: blur(65px); opacity: .48; border-radius: 999px; }
+.ambient-one { width: 430px; height: 330px; top: -150px; right: 12%; background: #ffd7b9; }
+.ambient-two { width: 360px; height: 250px; bottom: -130px; left: 22%; background: #f8d2c4; }
+
+/* Shared warm theme for the secondary pages. */
+.app-main section { color: #4d443e; }
+.app-main section .text-white { color: #403934 !important; }
+.app-main section .text-white\/90 { color: #514740 !important; }
+.app-main section .text-white\/70, .app-main section .text-white\/60 { color: #796d65 !important; }
+.app-main section .text-white\/50, .app-main section .text-white\/40 { color: #9c9088 !important; }
+.app-main section .text-pink-400, .app-main section .text-pink-300 { color: #ae624d !important; }
+.app-main section .border-white\/10, .app-main section .border-white\/5 { border-color: #eaded5 !important; }
+.app-main section .bg-black\/40, .app-main section .bg-black\/30, .app-main section .bg-white\/5, .app-main section .bg-white\/10 { background: rgba(255,255,255,.72) !important; }
+.app-main section article, .app-main section .rounded-3xl { box-shadow: 0 12px 30px rgba(126, 91, 67, .06); }
+.app-main section button { background: #b6624b !important; box-shadow: none !important; }

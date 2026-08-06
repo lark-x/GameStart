@@ -35,7 +35,7 @@ test("HTTP adapter translates requests, handles preflight, and writes API respon
       headers: { origin: "http://allowed.test" },
     });
     assert.equal(allowedOptions.status, 204);
-    assert.equal(allowedOptions.headers.get("access-control-allow-methods"), "GET,POST,OPTIONS");
+    assert.equal(allowedOptions.headers.get("access-control-allow-methods"), "GET,POST,PUT,DELETE,OPTIONS");
 
     const deniedOptions = await fetch(`${baseUrl}/health`, {
       method: "OPTIONS",

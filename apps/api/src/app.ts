@@ -17,6 +17,12 @@ import {
   createSticker as createStickerDomain,
   createStickerPack as createStickerPackDomain,
   createImageWorkflowTemplate,
+  createRelationshipEdge as createRelationshipEdgeDomain,
+  createWorldEventDefinition as createWorldEventDefinitionDomain,
+  EventRecurrenceKind,
+  TriggerSource,
+  createStoryWorld as createStoryWorldDomain,
+  createCharacter as createCharacterDomain,
   assertImageWorkflowTemplateBindings,
   type JsonObject,
   type StoryWorld,
@@ -54,6 +60,15 @@ import type {
   WorldEventDefinitionDto,
   ValidateImageWorkflowRequest,
   ValidateImageWorkflowResultDto,
+  CreateStoryWorldRequest,
+  UpdateStoryWorldRequest,
+  CreateCharacterRequest,
+  UpdateCharacterRequest,
+  CreateRelationshipEdgeRequest,
+  UpdateRelationshipEdgeRequest,
+  CreateWorldEventDefinitionRequest,
+  UpdateWorldEventDefinitionRequest,
+  EventRecurrenceDto,
 } from "../../../packages/contracts/src/index.ts";
 import {
   createInMemoryRepositories,
@@ -487,6 +502,220 @@ function parseCreateMomentInteractionRequest(value: unknown): CreateMomentIntera
   return result;
 }
 
+
+function parseCreateStoryWorldRequest(value: unknown): CreateStoryWorldRequest {
+  if (!isRecord(value)) throw new ApiError(400, 'BAD_REQUEST', 'Request body must be an object');
+  assertAllowedBodyKeys(value, ['id', 'name', 'timezone', 'storyMode', 'relationshipDynamicsEnabled']);
+  if (value.storyMode !== 'STATIC' && value.storyMode !== 'DYNAMIC') {
+    throw new ApiError(400, 'BAD_REQUEST', 'storyMode must be STATIC or DYNAMIC');
+  }
+  if (typeof value.relationshipDynamicsEnabled !== 'boolean') {
+    throw new ApiError(400, 'BAD_REQUEST', 'relationshipDynamicsEnabled must be a boolean');
+  }
+  return {
+    id: bodyString(value.id, 'id'),
+    name: bodyString(value.name, 'name'),
+    timezone: bodyString(value.timezone, 'timezone'),
+    storyMode: value.storyMode,
+    relationshipDynamicsEnabled: value.relationshipDynamicsEnabled,
+  };
+}
+
+function parseUpdateStoryWorldRequest(value: unknown): UpdateStoryWorldRequest {
+  if (!isRecord(value)) throw new ApiError(400, 'BAD_REQUEST', 'Request body must be an object');
+  assertAllowedBodyKeys(value, ['name', 'timezone', 'storyMode', 'relationshipDynamicsEnabled']);
+  const result: UpdateStoryWorldRequest = {};
+  if (value.name !== undefined) result.name = bodyString(value.name, 'name');
+  if (value.timezone !== undefined) result.timezone = bodyString(value.timezone, 'timezone');
+  if (value.storyMode !== undefined) {
+    if (value.storyMode !== 'STATIC' && value.storyMode !== 'DYNAMIC') {
+      throw new ApiError(400, 'BAD_REQUEST', 'storyMode must be STATIC or DYNAMIC');
+    }
+    result.storyMode = value.storyMode;
+  }
+  if (value.relationshipDynamicsEnabled !== undefined) {
+    if (typeof value.relationshipDynamicsEnabled !== 'boolean') {
+      throw new ApiError(400, 'BAD_REQUEST', 'relationshipDynamicsEnabled must be a boolean');
+    }
+    result.relationshipDynamicsEnabled = value.relationshipDynamicsEnabled;
+  }
+  return result;
+}
+
+function parseCreateCharacterRequest(value: unknown): CreateCharacterRequest {
+  if (!isRecord(value)) throw new ApiError(400, 'BAD_REQUEST', 'Request body must be an object');
+  assertAllowedBodyKeys(value, ['id', 'displayName', 'role', 'storyWorldId', 'timezone', 'birthDate', 'personaPromptRef', 'visualPromptRef']);
+  if (value.role !== 'AI' && value.role !== 'USER') {
+    throw new ApiError(400, 'BAD_REQUEST', 'role must be AI or USER');
+  }
+  const result: CreateCharacterRequest = {
+    id: bodyString(value.id, 'id'),
+    displayName: bodyString(value.displayName, 'displayName'),
+    role: value.role,
+    storyWorldId: bodyString(value.storyWorldId, 'storyWorldId'),
+    timezone: bodyString(value.timezone, 'timezone'),
+  };
+  if (value.birthDate !== undefined) result.birthDate = bodyString(value.birthDate, 'birthDate');
+  if (value.personaPromptRef !== undefined) result.personaPromptRef = bodyString(value.personaPromptRef, 'personaPromptRef');
+  if (value.visualPromptRef !== undefined) result.visualPromptRef = bodyString(value.visualPromptRef, 'visualPromptRef');
+  return result;
+}
+
+function parseUpdateCharacterRequest(value: unknown): UpdateCharacterRequest {
+  if (!isRecord(value)) throw new ApiError(400, 'BAD_REQUEST', 'Request body must be an object');
+  assertAllowedBodyKeys(value, ['displayName', 'timezone', 'birthDate', 'personaPromptRef', 'visualPromptRef']);
+  const result: UpdateCharacterRequest = {};
+  if (value.displayName !== undefined) result.displayName = bodyString(value.displayName, 'displayName');
+  if (value.timezone !== undefined) result.timezone = bodyString(value.timezone, 'timezone');
+  if (value.birthDate !== undefined) result.birthDate = bodyString(value.birthDate, 'birthDate');
+  if (value.personaPromptRef !== undefined) result.personaPromptRef = bodyString(value.personaPromptRef, 'personaPromptRef');
+  if (value.visualPromptRef !== undefined) result.visualPromptRef = bodyString(value.visualPromptRef, 'visualPromptRef');
+  return result;
+}
+
+function parseRelationshipState(value: unknown): CreateRelationshipEdgeRequest["initialState"] {
+  if (!isRecord(value)) throw new ApiError(400, "BAD_REQUEST", "initialState must be an object");
+  assertAllowedBodyKeys(value, ["affinity", "trust", "conflict", "dependency"]);
+  const result = {
+    affinity: value.affinity,
+    trust: value.trust,
+    conflict: value.conflict,
+    dependency: value.dependency,
+  };
+  for (const [key, numberValue] of Object.entries(result)) {
+    if (typeof numberValue !== "number" || !Number.isFinite(numberValue)) {
+      throw new ApiError(400, "BAD_REQUEST", `initialState.${key} must be a finite number`);
+    }
+  }
+  return result as CreateRelationshipEdgeRequest["initialState"];
+}
+
+function parseCreateRelationshipEdgeRequest(value: unknown): CreateRelationshipEdgeRequest {
+  if (!isRecord(value)) throw new ApiError(400, "BAD_REQUEST", "Request body must be an object");
+  assertAllowedBodyKeys(value, [
+    "id", "sourceCharacterId", "targetCharacterId", "storyWorldId", "relationshipType",
+    "initialState", "isPublic", "isBidirectional",
+  ]);
+  if (typeof value.isPublic !== "boolean" || typeof value.isBidirectional !== "boolean") {
+    throw new ApiError(400, "BAD_REQUEST", "isPublic and isBidirectional must be booleans");
+  }
+  return {
+    id: bodyString(value.id, "id"),
+    sourceCharacterId: bodyString(value.sourceCharacterId, "sourceCharacterId"),
+    targetCharacterId: bodyString(value.targetCharacterId, "targetCharacterId"),
+    storyWorldId: bodyString(value.storyWorldId, "storyWorldId"),
+    relationshipType: bodyString(value.relationshipType, "relationshipType"),
+    initialState: parseRelationshipState(value.initialState),
+    isPublic: value.isPublic,
+    isBidirectional: value.isBidirectional,
+  };
+}
+
+function parseUpdateRelationshipEdgeRequest(value: unknown): UpdateRelationshipEdgeRequest {
+  if (!isRecord(value)) throw new ApiError(400, "BAD_REQUEST", "Request body must be an object");
+  assertAllowedBodyKeys(value, ["relationshipType", "initialState", "isPublic", "isBidirectional"]);
+  const result: UpdateRelationshipEdgeRequest = {};
+  if (value.relationshipType !== undefined) result.relationshipType = bodyString(value.relationshipType, "relationshipType");
+  if (value.initialState !== undefined) result.initialState = parseRelationshipState(value.initialState);
+  if (value.isPublic !== undefined) {
+    if (typeof value.isPublic !== "boolean") throw new ApiError(400, "BAD_REQUEST", "isPublic must be a boolean");
+    result.isPublic = value.isPublic;
+  }
+  if (value.isBidirectional !== undefined) {
+    if (typeof value.isBidirectional !== "boolean") throw new ApiError(400, "BAD_REQUEST", "isBidirectional must be a boolean");
+    result.isBidirectional = value.isBidirectional;
+  }
+  return result;
+}
+
+function parseEventRecurrence(value: unknown): EventRecurrenceDto {
+  if (!isRecord(value)) throw new ApiError(400, "BAD_REQUEST", "recurrence must be an object");
+  if (value.kind === EventRecurrenceKind.ONCE) {
+    assertAllowedBodyKeys(value, ["kind", "runAt"]);
+    return { kind: EventRecurrenceKind.ONCE, runAt: bodyString(value.runAt, "recurrence.runAt") };
+  }
+  if (value.kind === EventRecurrenceKind.ANNUAL) {
+    assertAllowedBodyKeys(value, ["kind", "month", "day", "localTime"]);
+    if (typeof value.month !== "number" || typeof value.day !== "number") {
+      throw new ApiError(400, "BAD_REQUEST", "annual recurrence month and day must be numbers");
+    }
+    return {
+      kind: EventRecurrenceKind.ANNUAL,
+      month: value.month,
+      day: value.day,
+      localTime: bodyString(value.localTime, "recurrence.localTime"),
+    };
+  }
+  throw new ApiError(400, "BAD_REQUEST", "recurrence.kind must be ONCE or ANNUAL");
+}
+
+function parseTargetCharacterIds(value: unknown): string[] {
+  if (!Array.isArray(value)) throw new ApiError(400, "BAD_REQUEST", "targetCharacterIds must be an array");
+  return value.map((item, index) => bodyString(item, `targetCharacterIds[${index}]`));
+}
+
+function parseTriggerSource(value: unknown): CreateWorldEventDefinitionRequest["triggerSource"] {
+  if (typeof value !== "string" || !Object.values(TriggerSource).includes(value as TriggerSource)) {
+    throw new ApiError(400, "BAD_REQUEST", "triggerSource is invalid");
+  }
+  return value as CreateWorldEventDefinitionRequest["triggerSource"];
+}
+
+function parseOptionalNonNegativeInteger(value: unknown, field: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    throw new ApiError(400, "BAD_REQUEST", `${field} must be a non-negative integer`);
+  }
+  return value;
+}
+
+function parseCreateWorldEventDefinitionRequest(value: unknown): CreateWorldEventDefinitionRequest {
+  if (!isRecord(value)) throw new ApiError(400, "BAD_REQUEST", "Request body must be an object");
+  assertAllowedBodyKeys(value, [
+    "id", "storyWorldId", "eventKey", "name", "triggerSource", "timezone", "recurrence",
+    "targetCharacterIds", "priority", "cooldownSeconds", "enabled", "createdAt",
+  ]);
+  const result: CreateWorldEventDefinitionRequest = {
+    id: bodyString(value.id, "id"),
+    storyWorldId: bodyString(value.storyWorldId, "storyWorldId"),
+    eventKey: bodyString(value.eventKey, "eventKey"),
+    name: bodyString(value.name, "name"),
+    triggerSource: parseTriggerSource(value.triggerSource),
+    recurrence: parseEventRecurrence(value.recurrence),
+    targetCharacterIds: parseTargetCharacterIds(value.targetCharacterIds),
+    createdAt: bodyString(value.createdAt, "createdAt"),
+  };
+  if (value.timezone !== undefined) result.timezone = bodyString(value.timezone, "timezone");
+  if (value.priority !== undefined) result.priority = parseOptionalNonNegativeInteger(value.priority, "priority");
+  if (value.cooldownSeconds !== undefined) result.cooldownSeconds = parseOptionalNonNegativeInteger(value.cooldownSeconds, "cooldownSeconds");
+  if (value.enabled !== undefined) {
+    if (typeof value.enabled !== "boolean") throw new ApiError(400, "BAD_REQUEST", "enabled must be a boolean");
+    result.enabled = value.enabled;
+  }
+  return result;
+}
+
+function parseUpdateWorldEventDefinitionRequest(value: unknown): UpdateWorldEventDefinitionRequest {
+  if (!isRecord(value)) throw new ApiError(400, "BAD_REQUEST", "Request body must be an object");
+  assertAllowedBodyKeys(value, [
+    "eventKey", "name", "triggerSource", "timezone", "recurrence", "targetCharacterIds",
+    "priority", "cooldownSeconds", "enabled",
+  ]);
+  const result: UpdateWorldEventDefinitionRequest = {};
+  if (value.eventKey !== undefined) result.eventKey = bodyString(value.eventKey, "eventKey");
+  if (value.name !== undefined) result.name = bodyString(value.name, "name");
+  if (value.triggerSource !== undefined) result.triggerSource = parseTriggerSource(value.triggerSource);
+  if (value.timezone !== undefined) result.timezone = bodyString(value.timezone, "timezone");
+  if (value.recurrence !== undefined) result.recurrence = parseEventRecurrence(value.recurrence);
+  if (value.targetCharacterIds !== undefined) result.targetCharacterIds = parseTargetCharacterIds(value.targetCharacterIds);
+  if (value.priority !== undefined) result.priority = parseOptionalNonNegativeInteger(value.priority, "priority");
+  if (value.cooldownSeconds !== undefined) result.cooldownSeconds = parseOptionalNonNegativeInteger(value.cooldownSeconds, "cooldownSeconds");
+  if (value.enabled !== undefined) {
+    if (typeof value.enabled !== "boolean") throw new ApiError(400, "BAD_REQUEST", "enabled must be a boolean");
+    result.enabled = value.enabled;
+  }
+  return result;
+}
+
 function jsonResponse(body: unknown, statusCode = 200): Response {
   return new Response(JSON.stringify(body), {
     status: statusCode,
@@ -591,12 +820,224 @@ export class ApiApplication {
     return characters.map(toCharacterDto);
   }
 
+
+  public async createStoryWorld(input: CreateStoryWorldRequest): Promise<StoryWorldDto> {
+    if (await this.store.storyWorlds.getById(input.id)) {
+      throw new ApiError(409, "CONFLICT", "Story world already exists");
+    }
+    try {
+      const world = createStoryWorldDomain(input);
+      await this.store.storyWorlds.save(world);
+      return toWorldDto(world);
+    } catch (error) {
+      if (error instanceof TypeError) throw new ApiError(400, 'BAD_REQUEST', error.message);
+      if (error instanceof RangeError) throw new ApiError(400, 'BAD_REQUEST', error.message);
+      throw error;
+    }
+  }
+
+  public async updateStoryWorld(id: string, input: UpdateStoryWorldRequest): Promise<StoryWorldDto> {
+    const existing = await this.store.storyWorlds.getById(id);
+    if (!existing) throw new ApiError(404, 'NOT_FOUND', 'Story world not found');
+    try {
+      const storyMode = input.storyMode ?? existing.storyMode;
+      const updated = createStoryWorldDomain({
+        id: existing.id,
+        name: input.name ?? existing.name,
+        timezone: input.timezone ?? existing.timezone,
+        storyMode,
+        relationshipDynamicsEnabled: input.relationshipDynamicsEnabled
+          ?? (input.storyMode === undefined
+            ? existing.relationshipDynamicsEnabled
+            : storyMode === "DYNAMIC"),
+      });
+      await this.store.storyWorlds.save(updated);
+      return toWorldDto(updated);
+    } catch (error) {
+      if (error instanceof TypeError) throw new ApiError(400, 'BAD_REQUEST', error.message);
+      if (error instanceof RangeError) throw new ApiError(400, 'BAD_REQUEST', error.message);
+      throw error;
+    }
+  }
+
+  public async createCharacter(input: CreateCharacterRequest): Promise<CharacterDto> {
+    if (await this.store.characters.getById(input.id)) {
+      throw new ApiError(409, "CONFLICT", "Character already exists");
+    }
+    if (!(await this.store.storyWorlds.getById(input.storyWorldId))) {
+      throw new ApiError(404, "NOT_FOUND", "Story world not found");
+    }
+    try {
+      const character = createCharacterDomain(input);
+      await this.store.characters.save(character);
+      return toCharacterDto(character);
+    } catch (error) {
+      if (error instanceof TypeError) throw new ApiError(400, 'BAD_REQUEST', error.message);
+      if (error instanceof RangeError) throw new ApiError(400, 'BAD_REQUEST', error.message);
+      throw error;
+    }
+  }
+
+  public async updateCharacter(id: string, input: UpdateCharacterRequest): Promise<CharacterDto> {
+    const existing = await this.store.characters.getById(id);
+    if (!existing) throw new ApiError(404, 'NOT_FOUND', 'Character not found');
+    try {
+      const updated = createCharacterDomain({
+        id: existing.id,
+        displayName: input.displayName ?? existing.displayName,
+        role: existing.role,
+        storyWorldId: existing.storyWorldId,
+        timezone: input.timezone ?? existing.timezone,
+        ...(input.birthDate !== undefined ? { birthDate: input.birthDate } : existing.birthDate !== undefined ? { birthDate: existing.birthDate } : {}),
+        ...(input.personaPromptRef !== undefined ? { personaPromptRef: input.personaPromptRef } : existing.personaPromptRef !== undefined ? { personaPromptRef: existing.personaPromptRef } : {}),
+        ...(input.visualPromptRef !== undefined ? { visualPromptRef: input.visualPromptRef } : existing.visualPromptRef !== undefined ? { visualPromptRef: existing.visualPromptRef } : {}),
+      });
+      await this.store.characters.save(updated);
+      return toCharacterDto(updated);
+    } catch (error) {
+      if (error instanceof TypeError) throw new ApiError(400, 'BAD_REQUEST', error.message);
+      if (error instanceof RangeError) throw new ApiError(400, 'BAD_REQUEST', error.message);
+      throw error;
+    }
+  }
+
   public async listRelationships(storyWorldId: string): Promise<RelationshipEdgeDto[]> {
     if (!(await this.store.storyWorlds.getById(storyWorldId))) {
       throw new ApiError(404, "NOT_FOUND", "Story world not found");
     }
     return (await this.store.relationshipEdges.listByStoryWorld(storyWorldId))
       .map(toRelationshipEdgeDto);
+  }
+
+  public async createRelationship(input: CreateRelationshipEdgeRequest): Promise<RelationshipEdgeDto> {
+    if (await this.store.relationshipEdges.getById(input.id)) {
+      throw new ApiError(409, "CONFLICT", "Relationship already exists");
+    }
+    const world = await this.store.storyWorlds.getById(input.storyWorldId);
+    if (!world) throw new ApiError(404, "NOT_FOUND", "Story world not found");
+    const source = await this.store.characters.getById(input.sourceCharacterId);
+    const target = await this.store.characters.getById(input.targetCharacterId);
+    if (!source || !target) throw new ApiError(404, "NOT_FOUND", "Relationship character not found");
+    try {
+      const edge = createRelationshipEdgeDomain({
+        id: input.id,
+        source,
+        target,
+        storyWorld: world,
+        relationshipType: input.relationshipType,
+        initialState: input.initialState,
+        isPublic: input.isPublic,
+        isBidirectional: input.isBidirectional,
+      });
+      await this.store.relationshipEdges.save(edge);
+      return toRelationshipEdgeDto(edge);
+    } catch (error) {
+      if (error instanceof TypeError || error instanceof RangeError) throw new ApiError(400, "BAD_REQUEST", error.message);
+      throw error;
+    }
+  }
+
+  public async updateRelationship(id: string, input: UpdateRelationshipEdgeRequest): Promise<RelationshipEdgeDto> {
+    const existing = await this.store.relationshipEdges.getById(id);
+    if (!existing) throw new ApiError(404, "NOT_FOUND", "Relationship not found");
+    try {
+      const updated = {
+        ...existing,
+        relationshipType: input.relationshipType ?? existing.relationshipType,
+        initialState: { ...(input.initialState ?? existing.initialState) },
+        isPublic: input.isPublic ?? existing.isPublic,
+        isBidirectional: input.isBidirectional ?? existing.isBidirectional,
+      };
+      const world = await this.store.storyWorlds.getById(existing.storyWorldId);
+      const source = await this.store.characters.getById(existing.sourceCharacterId);
+      const target = await this.store.characters.getById(existing.targetCharacterId);
+      if (!world || !source || !target) throw new ApiError(409, "CONFLICT", "Relationship references are invalid");
+      const validated = createRelationshipEdgeDomain({
+        id: updated.id,
+        source,
+        target,
+        storyWorld: world,
+        relationshipType: updated.relationshipType,
+        initialState: updated.initialState,
+        isPublic: updated.isPublic,
+        isBidirectional: updated.isBidirectional,
+      });
+      await this.store.relationshipEdges.save(validated);
+      return toRelationshipEdgeDto(validated);
+    } catch (error) {
+      if (error instanceof TypeError || error instanceof RangeError) throw new ApiError(400, "BAD_REQUEST", error.message);
+      throw error;
+    }
+  }
+
+  public async createWorldEvent(input: CreateWorldEventDefinitionRequest): Promise<WorldEventDefinitionDto> {
+    const store = requireEventCalendarStore(this.store);
+    if (await store.worldEventDefinitions.getById(input.id)) {
+      throw new ApiError(409, "CONFLICT", "World event already exists");
+    }
+    const world = await store.storyWorlds.getById(input.storyWorldId);
+    if (!world) throw new ApiError(404, "NOT_FOUND", "Story world not found");
+    const characters = await Promise.all(input.targetCharacterIds.map((id) => store.characters.getById(id)));
+    if (characters.some((character) => character === undefined)) {
+      throw new ApiError(404, "NOT_FOUND", "Event target character not found");
+    }
+    try {
+      const definition = createWorldEventDefinitionDomain({
+        id: input.id,
+        storyWorld: world,
+        eventKey: input.eventKey,
+        name: input.name,
+        triggerSource: input.triggerSource,
+        ...(input.timezone === undefined ? {} : { timezone: input.timezone }),
+        recurrence: input.recurrence,
+        targetCharacters: characters.filter((character): character is Character => character !== undefined),
+        ...(input.priority === undefined ? {} : { priority: input.priority }),
+        ...(input.cooldownSeconds === undefined ? {} : { cooldownSeconds: input.cooldownSeconds }),
+        ...(input.enabled === undefined ? {} : { enabled: input.enabled }),
+        createdAt: input.createdAt,
+      });
+      await store.worldEventDefinitions.save(definition);
+      return toWorldEventDefinitionDto(definition);
+    } catch (error) {
+      if (error instanceof TypeError || error instanceof RangeError) throw new ApiError(400, "BAD_REQUEST", error.message);
+      throw error;
+    }
+  }
+
+  public async updateWorldEvent(id: string, input: UpdateWorldEventDefinitionRequest): Promise<WorldEventDefinitionDto> {
+    const store = requireEventCalendarStore(this.store);
+    const existing = await store.worldEventDefinitions.getById(id);
+    if (!existing) throw new ApiError(404, "NOT_FOUND", "World event not found");
+    const targetIds = input.targetCharacterIds ?? existing.targetCharacterIds;
+    const characters = await Promise.all(targetIds.map((characterId) => store.characters.getById(characterId)));
+    if (characters.some((character) => character === undefined)) {
+      throw new ApiError(404, "NOT_FOUND", "Event target character not found");
+    }
+    const world = await store.storyWorlds.getById(existing.storyWorldId);
+    if (!world) throw new ApiError(409, "CONFLICT", "World event references an unknown story world");
+    try {
+      const definition = createWorldEventDefinitionDomain({
+        id: existing.id,
+        storyWorld: world,
+        eventKey: input.eventKey ?? existing.eventKey,
+        name: input.name ?? existing.name,
+        triggerSource: input.triggerSource ?? existing.triggerSource,
+        timezone: input.timezone ?? existing.timezone,
+        recurrence: input.recurrence ?? existing.recurrence,
+        targetCharacters: characters.filter((character): character is Character => character !== undefined),
+        priority: input.priority ?? existing.priority,
+        ...(input.cooldownSeconds === undefined
+          ? existing.cooldownSeconds === undefined ? {} : { cooldownSeconds: existing.cooldownSeconds }
+          : { cooldownSeconds: input.cooldownSeconds }),
+        enabled: input.enabled ?? existing.enabled,
+        createdAt: existing.createdAt,
+      });
+      await store.worldEventDefinitions.save(definition);
+      return toWorldEventDefinitionDto(definition);
+    } catch (error) {
+      if (error instanceof TypeError || error instanceof RangeError) throw new ApiError(400, "BAD_REQUEST", error.message);
+      throw error;
+    }
   }
 
   public async getWorldCalendar(
@@ -977,8 +1418,54 @@ export class ApiApplication {
         return jsonResponse({ status: "ready" });
       }
 
-      if (request.method === "GET" && url.pathname === "/v1/worlds") {
-        return jsonResponse({ data: await this.listWorlds() });
+      if (url.pathname === "/v1/worlds") {
+        if (request.method === "GET") return jsonResponse({ data: await this.listWorlds() });
+        if (request.method === "POST") {
+          this.trustedActor(request);
+          let body: unknown;
+          try { body = await request.json(); } catch { throw new ApiError(400, "BAD_REQUEST", "Request body must be valid JSON"); }
+          return jsonResponse({ data: await this.createStoryWorld(parseCreateStoryWorldRequest(body)) }, 201);
+        }
+        throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
+      }
+
+      const worldIdPath = /^\/v1\/worlds\/([^/]+)$/.exec(url.pathname);
+      if (worldIdPath && !url.pathname.endsWith('/calendar')) {
+        const worldId = decodeURIComponent(worldIdPath[1] ?? '');
+        if (request.method !== "PUT") throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
+        this.trustedActor(request);
+        let body: unknown;
+        try { body = await request.json(); } catch { throw new ApiError(400, 'BAD_REQUEST', 'Request body must be valid JSON'); }
+        return jsonResponse({ data: await this.updateStoryWorld(worldId, parseUpdateStoryWorldRequest(body)) });
+      }
+
+      if (url.pathname === "/v1/world-events") {
+        if (request.method === "GET") {
+          const storyWorldId = url.searchParams.get("storyWorldId");
+          if (!storyWorldId) throw new ApiError(400, "BAD_REQUEST", "storyWorldId is required");
+          const store = requireEventCalendarStore(this.store);
+          if (!(await store.storyWorlds.getById(storyWorldId))) throw new ApiError(404, "NOT_FOUND", "Story world not found");
+          return jsonResponse({ data: (await store.worldEventDefinitions.listByStoryWorld(storyWorldId)).map(toWorldEventDefinitionDto) });
+        }
+        if (request.method === "POST") {
+          this.trustedActor(request);
+          let body: unknown;
+          try { body = await request.json(); } catch { throw new ApiError(400, "BAD_REQUEST", "Request body must be valid JSON"); }
+          return jsonResponse({ data: await this.createWorldEvent(parseCreateWorldEventDefinitionRequest(body)) }, 201);
+        }
+        throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
+      }
+
+      const worldEventPath = /^\/v1\/world-events\/([^/]+)$/.exec(url.pathname);
+      if (worldEventPath) {
+        if (request.method !== "PUT") throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
+        this.trustedActor(request);
+        let body: unknown;
+        try { body = await request.json(); } catch { throw new ApiError(400, "BAD_REQUEST", "Request body must be valid JSON"); }
+        return jsonResponse({ data: await this.updateWorldEvent(
+          decodeURIComponent(worldEventPath[1] ?? ""),
+          parseUpdateWorldEventDefinitionRequest(body),
+        ) });
       }
 
       const calendarPath = /^\/v1\/worlds\/([^/]+)\/calendar$/.exec(url.pathname);
@@ -1003,19 +1490,55 @@ export class ApiApplication {
         });
       }
 
-      if (request.method === "GET" && url.pathname === "/v1/characters") {
-        return jsonResponse({
-          data: await this.listCharacters(url.searchParams.get("storyWorldId") ?? undefined),
-        });
+      if (url.pathname === "/v1/characters") {
+        if (request.method === "GET") {
+          return jsonResponse({
+            data: await this.listCharacters(url.searchParams.get("storyWorldId") ?? undefined),
+          });
+        }
+        if (request.method === "POST") {
+          this.trustedActor(request);
+          let body: unknown;
+          try { body = await request.json(); } catch { throw new ApiError(400, "BAD_REQUEST", "Request body must be valid JSON"); }
+          return jsonResponse({ data: await this.createCharacter(parseCreateCharacterRequest(body)) }, 201);
+        }
+        throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
+      }
+
+      if (/^\/v1\/characters\/([^/]+)$/.test(url.pathname)) {
+        const charId = decodeURIComponent(/^\/v1\/characters\/([^/]+)$/.exec(url.pathname)![1] ?? "");
+        if (request.method !== "PUT") throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
+        this.trustedActor(request);
+        let body: unknown;
+        try { body = await request.json(); } catch { throw new ApiError(400, "BAD_REQUEST", "Request body must be valid JSON"); }
+        return jsonResponse({ data: await this.updateCharacter(charId, parseUpdateCharacterRequest(body)) });
       }
 
       if (url.pathname === "/v1/relationships") {
+        if (request.method === "POST") {
+          this.trustedActor(request);
+          let body: unknown;
+          try { body = await request.json(); } catch { throw new ApiError(400, "BAD_REQUEST", "Request body must be valid JSON"); }
+          return jsonResponse({ data: await this.createRelationship(parseCreateRelationshipEdgeRequest(body)) }, 201);
+        }
         if (request.method !== "GET") {
           throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
         }
         const storyWorldId = url.searchParams.get("storyWorldId");
         if (!storyWorldId) throw new ApiError(400, "BAD_REQUEST", "storyWorldId is required");
         return jsonResponse({ data: await this.listRelationships(storyWorldId) });
+      }
+
+      const relationshipPath = /^\/v1\/relationships\/([^/]+)$/.exec(url.pathname);
+      if (relationshipPath) {
+        if (request.method !== "PUT") throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
+        this.trustedActor(request);
+        let body: unknown;
+        try { body = await request.json(); } catch { throw new ApiError(400, "BAD_REQUEST", "Request body must be valid JSON"); }
+        return jsonResponse({ data: await this.updateRelationship(
+          decodeURIComponent(relationshipPath[1] ?? ""),
+          parseUpdateRelationshipEdgeRequest(body),
+        ) });
       }
 
       const visualIdentityPath = /^\/v1\/characters\/([^/]+)\/visual-identity$/.exec(url.pathname);

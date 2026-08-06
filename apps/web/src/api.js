@@ -38,6 +38,38 @@ export class ApiClient {
     return this.request(`/v1/relationships?storyWorldId=${encodeURIComponent(storyWorldId)}`);
   }
 
+  createRelationship(input) {
+    return this.request("/v1/relationships", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  }
+
+  updateRelationship(id, input) {
+    return this.request(`/v1/relationships/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    });
+  }
+
+  createWorldEvent(input) {
+    return this.request("/v1/world-events", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  }
+
+  getWorldEvents(storyWorldId) {
+    return this.request(`/v1/world-events?storyWorldId=${encodeURIComponent(storyWorldId)}`);
+  }
+
+  updateWorldEvent(id, input) {
+    return this.request(`/v1/world-events/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    });
+  }
+
   getWorldCalendar(storyWorldId, startsAt, endsAt, limit = 200) {
     const query = new URLSearchParams({ startsAt, endsAt, limit: String(limit) });
     return this.request(`/v1/worlds/${encodeURIComponent(storyWorldId)}/calendar?${query}`);
@@ -132,6 +164,34 @@ export class ApiClient {
       }
       if (done) break;
     }
+  }
+
+  createStoryWorld(input) {
+    return this.request("/v1/worlds", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  }
+
+  updateStoryWorld(id, input) {
+    return this.request("/v1/worlds/" + encodeURIComponent(id), {
+      method: "PUT",
+      body: JSON.stringify(input),
+    });
+  }
+
+  createCharacter(input) {
+    return this.request("/v1/characters", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  }
+
+  updateCharacter(id, input) {
+    return this.request("/v1/characters/" + encodeURIComponent(id), {
+      method: "PUT",
+      body: JSON.stringify(input),
+    });
   }
 
   getStickers(packId) {

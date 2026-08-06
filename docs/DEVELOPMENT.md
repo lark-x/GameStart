@@ -250,10 +250,18 @@ docs/
 
 ```text
 GET    /health
+GET    /v1/worlds
+POST   /v1/worlds
+PUT    /v1/worlds/:id
 GET    /v1/characters
 POST   /v1/characters
+PUT    /v1/characters/:id
 GET    /v1/relationships
+POST   /v1/relationships
 PUT    /v1/relationships/:id
+GET    /v1/world-events?storyWorldId=...
+POST   /v1/world-events
+PUT    /v1/world-events/:id
 POST   /v1/actor-sessions/switch
 GET    /v1/conversations
 POST   /v1/conversations/:id/messages

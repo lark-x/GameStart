@@ -4,6 +4,24 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "python3 -m http.server 4173 --directory ."
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "vue-tsc -p tsconfig.json --noEmit",
+    "test": "node --test web-shell.test.ts src/api.test.ts vite.test.ts",
+    "dev:shell": "python3 -m http.server 4173 --directory ."
+  },
+  "dependencies": {
+    "pinia": "^3.0.4",
+    "vue": "^3.5.40",
+    "vue-router": "^4.6.4"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@vitejs/plugin-vue": "^5.2.4",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.9.3",
+    "vite": "^6.4.3",
+    "vue-tsc": "^3.3.9"
   }
 }

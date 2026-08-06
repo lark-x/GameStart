@@ -23,7 +23,7 @@ import {
   RepositoryImageWorkflowResolver,
   type ComfyUiClient,
   type ComfyUiSubmitRequest,
-} from "./index.ts";
+} from "./media.ts";
 
 const world = createStoryWorld({
   id: "workflow-worker-world",

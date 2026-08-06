@@ -156,6 +156,200 @@ test("switches the actor session through the domain rule and persists it", async
   );
 });
 
+test("creates and updates story worlds and characters through CRUD routes", async () => {
+  const application = createApplication();
+
+  const newWorld = await application.handle(
+    new Request("http://localhost/v1/worlds", {
+      method: "POST",
+      body: JSON.stringify({
+        id: "world-crud",
+        name: "CRUD World",
+        timezone: "Asia/Tokyo",
+        storyMode: "DYNAMIC",
+        relationshipDynamicsEnabled: true,
+      }),
+      headers: { "content-type": "application/json" },
+    }),
+  );
+  assert.equal(newWorld.status, 201);
+  const createdWorld = (await json(newWorld)) as { data: { id: string; name: string } };
+  assert.equal(createdWorld.data.id, "world-crud");
+  assert.equal(createdWorld.data.name, "CRUD World");
+
+  const updatedWorld = await application.handle(
+    new Request("http://localhost/v1/worlds/world-crud", {
+      method: "PUT",
+      body: JSON.stringify({ name: "Updated World" }),
+      headers: { "content-type": "application/json" },
+    }),
+  );
+  assert.equal(updatedWorld.status, 200);
+  const worldResult = (await json(updatedWorld)) as { data: { name: string } };
+  assert.equal(worldResult.data.name, "Updated World");
+
+  const modeOnlyUpdate = await application.handle(
+    new Request("http://localhost/v1/worlds/world-crud", {
+      method: "PUT",
+      body: JSON.stringify({ storyMode: "STATIC" }),
+      headers: { "content-type": "application/json" },
+    }),
+  );
+  assert.equal(modeOnlyUpdate.status, 200);
+  assert.deepEqual((await json(modeOnlyUpdate) as { data: unknown }).data, {
+    id: "world-crud",
+    name: "Updated World",
+    timezone: "Asia/Tokyo",
+    storyMode: "STATIC",
+    relationshipDynamicsEnabled: false,
+  });
+
+  const newChar = await application.handle(
+    new Request("http://localhost/v1/characters", {
+      method: "POST",
+      body: JSON.stringify({
+        id: "char-crud",
+        displayName: "CRUD Char",
+        role: "AI",
+        storyWorldId: "world-api",
+        timezone: "Asia/Shanghai",
+      }),
+      headers: { "content-type": "application/json" },
+    }),
+  );
+  assert.equal(newChar.status, 201);
+  const createdChar = (await json(newChar)) as { data: { id: string; displayName: string } };
+  assert.equal(createdChar.data.id, "char-crud");
+  assert.equal(createdChar.data.displayName, "CRUD Char");
+
+  const duplicateWorld = await application.handle(
+    new Request("http://localhost/v1/worlds", {
+      method: "POST",
+      body: JSON.stringify({
+        id: "world-crud",
+        name: "Duplicate",
+        timezone: "Asia/Tokyo",
+        storyMode: "STATIC",
+        relationshipDynamicsEnabled: false,
+      }),
+      headers: { "content-type": "application/json" },
+    }),
+  );
+  assert.equal(duplicateWorld.status, 409);
+
+  const orphanCharacter = await application.handle(
+    new Request("http://localhost/v1/characters", {
+      method: "POST",
+      body: JSON.stringify({
+        id: "char-orphan",
+        displayName: "Orphan",
+        role: "AI",
+        storyWorldId: "missing-world",
+        timezone: "Asia/Shanghai",
+      }),
+      headers: { "content-type": "application/json" },
+    }),
+  );
+  assert.equal(orphanCharacter.status, 404);
+
+  const relationship = await application.handle(
+    new Request("http://localhost/v1/relationships", {
+      method: "POST",
+      body: JSON.stringify({
+        id: "relationship-crud",
+        sourceCharacterId: "user-first",
+        targetCharacterId: "char-crud",
+        storyWorldId: "world-api",
+        relationshipType: "collaborator",
+        initialState: { affinity: 20, trust: 30, conflict: 0, dependency: 0 },
+        isPublic: true,
+        isBidirectional: true,
+      }),
+      headers: { "content-type": "application/json" },
+    }),
+  );
+  assert.equal(relationship.status, 201);
+
+  const updatedRelationship = await application.handle(
+    new Request("http://localhost/v1/relationships/relationship-crud", {
+      method: "PUT",
+      body: JSON.stringify({ relationshipType: "trusted collaborator", isPublic: false }),
+      headers: { "content-type": "application/json" },
+    }),
+  );
+  assert.equal(updatedRelationship.status, 200);
+  const updatedRelationshipData = (await json(updatedRelationship) as {
+    data: { relationshipType: string; isPublic: boolean };
+  }).data;
+  assert.equal(updatedRelationshipData.relationshipType, "trusted collaborator");
+  assert.equal(updatedRelationshipData.isPublic, false);
+
+  const event = await application.handle(
+    new Request("http://localhost/v1/world-events", {
+      method: "POST",
+      body: JSON.stringify({
+        id: "event-crud",
+        storyWorldId: "world-api",
+        eventKey: "crud:welcome",
+        name: "Welcome event",
+        triggerSource: "MANUAL",
+        recurrence: { kind: "ONCE", runAt: "2026-08-10T12:00:00.000Z" },
+        targetCharacterIds: ["char-crud"],
+        createdAt: "2026-08-06T00:00:00.000Z",
+      }),
+      headers: { "content-type": "application/json" },
+    }),
+  );
+  assert.equal(event.status, 201);
+
+  const updatedEvent = await application.handle(
+    new Request("http://localhost/v1/world-events/event-crud", {
+      method: "PUT",
+      body: JSON.stringify({ name: "Updated welcome event", enabled: false }),
+      headers: { "content-type": "application/json" },
+    }),
+  );
+  assert.equal(updatedEvent.status, 200);
+  const updatedEventData = (await json(updatedEvent) as { data: { name: string; enabled: boolean } }).data;
+  assert.equal(updatedEventData.name, "Updated welcome event");
+  assert.equal(updatedEventData.enabled, false);
+
+  const events = await application.handle(
+    new Request("http://localhost/v1/world-events?storyWorldId=world-api"),
+  );
+  assert.equal(events.status, 200);
+  assert.equal((await json(events) as { data: Array<{ id: string }> }).data[0]?.id, "event-crud");
+
+  const updatedChar = await application.handle(
+    new Request("http://localhost/v1/characters/char-crud", {
+      method: "PUT",
+      body: JSON.stringify({ displayName: "Updated Char" }),
+      headers: { "content-type": "application/json" },
+    }),
+  );
+  assert.equal(updatedChar.status, 200);
+  const charResult = (await json(updatedChar)) as { data: { displayName: string } };
+  assert.equal(charResult.data.displayName, "Updated Char");
+
+  const notFoundWorld = await application.handle(
+    new Request("http://localhost/v1/worlds/nope", {
+      method: "PUT",
+      body: JSON.stringify({ name: "X" }),
+      headers: { "content-type": "application/json" },
+    }),
+  );
+  assert.equal(notFoundWorld.status, 404);
+
+  const notFoundChar = await application.handle(
+    new Request("http://localhost/v1/characters/nope", {
+      method: "PUT",
+      body: JSON.stringify({ displayName: "X" }),
+      headers: { "content-type": "application/json" },
+    }),
+  );
+  assert.equal(notFoundChar.status, 404);
+});
+
 test("returns bounded errors for malformed input, forbidden role, and unknown routes", async () => {
   const application = createApplication();
 
@@ -200,7 +394,61 @@ test("rejects a seed session that points at an AI character", () => {
 
 test("does not accept unsupported methods on known routes", async () => {
   const response = await createApplication().handle(
-    new Request("http://localhost/v1/worlds", { method: "POST", body: "{}" }),
+    new Request("http://localhost/v1/worlds/world-api/calendar", { method: "POST", body: "{}" }),
   );
   assert.equal(response.status, 405);
+});
+
+test("bounds content editor conflicts, references, and query requirements", async () => {
+  const application = createApplication();
+  const relationshipBody = {
+    id: "relationship-edge-cases",
+    sourceCharacterId: firstUser.id,
+    targetCharacterId: aiCharacter.id,
+    storyWorldId: world.id,
+    relationshipType: "ally",
+    initialState: { affinity: 10, trust: 10, conflict: 0, dependency: 0 },
+    isPublic: true,
+    isBidirectional: false,
+  };
+  const createdRelationship = await application.handle(new Request("http://localhost/v1/relationships", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(relationshipBody),
+  }));
+  assert.equal(createdRelationship.status, 201);
+  const duplicateRelationship = await application.handle(new Request("http://localhost/v1/relationships", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(relationshipBody),
+  }));
+  assert.equal(duplicateRelationship.status, 409);
+
+  const invalidRelationship = await application.handle(new Request("http://localhost/v1/relationships", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ...relationshipBody, id: "relationship-invalid", initialState: { ...relationshipBody.initialState, trust: 101 } }),
+  }));
+  assert.equal(invalidRelationship.status, 400);
+
+  const missingTargetEvent = await application.handle(new Request("http://localhost/v1/world-events", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      id: "event-missing-target",
+      storyWorldId: world.id,
+      eventKey: "edge:missing-target",
+      name: "Missing target",
+      triggerSource: "MANUAL",
+      recurrence: { kind: "ONCE", runAt: "2026-08-10T12:00:00.000Z" },
+      targetCharacterIds: ["missing-character"],
+      createdAt: "2026-08-06T00:00:00.000Z",
+    }),
+  }));
+  assert.equal(missingTargetEvent.status, 404);
+
+  const missingWorldQuery = await application.handle(new Request("http://localhost/v1/world-events"));
+  assert.equal(missingWorldQuery.status, 400);
+  const unknownWorldQuery = await application.handle(new Request("http://localhost/v1/world-events?storyWorldId=missing-world"));
+  assert.equal(unknownWorldQuery.status, 404);
 });

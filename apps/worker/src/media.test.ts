@@ -22,10 +22,13 @@ import {
   ComfyUiError,
   ComfyUiHttpClient,
   FakeComfyUiClient,
+  parseComfyUiProgressEvent,
   createRepositoryImageWorkflowResolver,
   type ComfyUiFetchImplementation,
+  type ComfyUiProgressEvent,
+  type ComfyUiWebSocket,
   createBehaviorMediaCoordinator,
-} from "./index.ts";
+} from "./media.ts";
 
 const world = createStoryWorld({
   id: "world-media-worker",
@@ -85,6 +88,203 @@ function makeRepositories() {
     }),
   };
 }
+
+class FakeProgressSocket implements ComfyUiWebSocket {
+  public onmessage: ((event: { data: unknown }) => void) | null = null;
+  public onerror: ((event: unknown) => void) | null = null;
+  public onclose: (() => void) | null = null;
+  public closed = false;
+
+  public emit(value: unknown): void {
+    this.onmessage?.({ data: typeof value === "string" ? value : JSON.stringify(value) });
+  }
+
+  public fail(error: unknown = new Error("socket failure")): void {
+    this.onerror?.(error);
+  }
+
+  public close(): void {
+    this.closed = true;
+  }
+}
+
+test("parses ComfyUI progress events and filters unrelated prompts", () => {
+  assert.deepEqual(
+    parseComfyUiProgressEvent(
+      { type: "progress", data: { prompt_id: "prompt-1", node: "9", value: 2, max: 4 } },
+      "prompt-1",
+    ),
+    { externalJobId: "prompt-1", kind: "progress", nodeId: "9", value: 2, max: 4 },
+  );
+  assert.equal(
+    parseComfyUiProgressEvent({ type: "progress", data: { prompt_id: "other", value: 1, max: 2 } }, "prompt-1"),
+    undefined,
+  );
+  assert.deepEqual(
+    parseComfyUiProgressEvent({ type: "executing", data: { prompt_id: "prompt-1", node: "9" } }, "prompt-1"),
+    { externalJobId: "prompt-1", kind: "executing", nodeId: "9" },
+  );
+  assert.deepEqual(
+    parseComfyUiProgressEvent({ type: "executing", data: { prompt_id: "prompt-1", node: null } }, "prompt-1"),
+    { externalJobId: "prompt-1", kind: "completed" },
+  );
+  assert.deepEqual(
+    parseComfyUiProgressEvent(
+      { type: "execution_error", data: { prompt_id: "prompt-1", exception_message: "x".repeat(3000) } },
+      "prompt-1",
+    ),
+    { externalJobId: "prompt-1", kind: "error", message: "x".repeat(2048) },
+  );
+  assert.equal(parseComfyUiProgressEvent({ type: "unknown", data: {} }, "prompt-1"), undefined);
+});
+
+test("watches ComfyUI WebSocket progress until completion and closes the socket", async () => {
+  let socket: FakeProgressSocket | undefined;
+  let socketUrl = "";
+  const client = new ComfyUiHttpClient({
+    baseUrl: "https://comfy.example/",
+    clientId: "progress-test",
+    timeoutMs: 100,
+    webSocketFactory: (url) => {
+      socketUrl = url;
+      socket = new FakeProgressSocket();
+      queueMicrotask(() => {
+        socket?.emit({ type: "progress", data: { prompt_id: "prompt-1", node: "9", value: 1, max: 2 } });
+        socket?.emit({ type: "executing", data: { prompt_id: "prompt-1", node: "9" } });
+        socket?.emit({ type: "execution_success", data: { prompt_id: "prompt-1" } });
+      });
+      return socket;
+    },
+  });
+  const events: ComfyUiProgressEvent[] = [];
+  for await (const event of client.watchProgress("prompt-1")) events.push(event);
+  assert.deepEqual(events.map((event) => event.kind), ["progress", "executing", "completed"]);
+  assert.equal(events[0]?.value, 1);
+  assert.equal(new URL(socketUrl).protocol, "wss:");
+  assert.equal(new URL(socketUrl).pathname, "/ws");
+  assert.equal(new URL(socketUrl).searchParams.get("clientId"), "progress-test");
+  assert.equal(socket?.closed, true);
+});
+
+test("turns malformed or failed ComfyUI progress streams into bounded errors", async () => {
+  const malformedSocket = new FakeProgressSocket();
+  const malformedClient = new ComfyUiHttpClient({
+    baseUrl: "http://comfy.example",
+    webSocketFactory: () => {
+      queueMicrotask(() => malformedSocket.emit("not-json"));
+      return malformedSocket;
+    },
+  });
+  await assert.rejects(
+    (async () => {
+      for await (const _event of malformedClient.watchProgress("prompt-1")) {
+        // Consume until the stream reports its parsing failure.
+      }
+    })(),
+    (error: unknown) => {
+      assert.ok(error instanceof ComfyUiError);
+      assert.equal(error.code, "INVALID_RESPONSE");
+      return true;
+    },
+  );
+  assert.equal(malformedSocket.closed, true);
+
+  const failedSocket = new FakeProgressSocket();
+  const failedClient = new ComfyUiHttpClient({
+    baseUrl: "http://comfy.example",
+    webSocketFactory: () => {
+      queueMicrotask(() => failedSocket.fail());
+      return failedSocket;
+    },
+  });
+  await assert.rejects(
+    (async () => {
+      for await (const _event of failedClient.watchProgress("prompt-1")) {
+        // Consume until the stream reports its network failure.
+      }
+    })(),
+    (error: unknown) => {
+      assert.ok(error instanceof ComfyUiError);
+      assert.equal(error.code, "NETWORK_ERROR");
+      assert.equal(error.retryable, true);
+      return true;
+    },
+  );
+  assert.equal(failedSocket.closed, true);
+});
+
+test("times out a silent ComfyUI progress stream", async () => {
+  const socket = new FakeProgressSocket();
+  const client = new ComfyUiHttpClient({
+    baseUrl: "http://comfy.example",
+    webSocketFactory: () => socket,
+  });
+  await assert.rejects(
+    (async () => {
+      for await (const _event of client.watchProgress("prompt-1", { timeoutMs: 5 })) {
+        // The silent stream should never yield an event.
+      }
+    })(),
+    (error: unknown) => {
+      assert.ok(error instanceof ComfyUiError);
+      assert.equal(error.code, "TIMEOUT");
+      assert.equal(error.retryable, true);
+      return true;
+    },
+  );
+  assert.equal(socket.closed, true);
+});
+
+test("synchronizes image job state from Fake ComfyUI terminal progress", async () => {
+  const { data, repositories } = makeRepositories();
+  const comfy = new FakeComfyUiClient();
+  const coordinator = createBehaviorMediaCoordinator(repositories, comfy, () => createdAt);
+  const action = await coordinator.planAction({
+    id: "progress-action",
+    executionId: data.execution.id,
+    actorCharacterId: character.id,
+    kind: ActionKind.REQUEST_IMAGE,
+    payload: { prompt: "progress image", workflowVersion: "progress@v1" },
+  });
+  const queued = await repositories.imageJobs!.getByActionId(action.id);
+  assert.ok(queued);
+  await coordinator.submitImageJob(queued.id);
+  const events: ComfyUiProgressEvent[] = [];
+  for await (const event of coordinator.watchImageJobProgress(queued.id)) events.push(event);
+  assert.deepEqual(events.map((event) => event.kind), ["executing", "completed"]);
+  assert.equal((await repositories.imageJobs!.getById(queued.id))?.status, ImageJobStatus.SUCCEEDED);
+});
+
+test("marks an image job failed when ComfyUI emits an execution error", async () => {
+  const { data, repositories } = makeRepositories();
+  const failingClient = {
+    async submit() { return { externalJobId: "failing-progress" }; },
+    async getResult() { throw new Error("result should not be fetched after execution_error"); },
+    async *watchProgress() {
+      yield { externalJobId: "failing-progress", kind: "error" as const, message: "node failed" };
+    },
+  };
+  const coordinator = createBehaviorMediaCoordinator(repositories, failingClient, () => createdAt);
+  const action = await coordinator.planAction({
+    id: "progress-error-action",
+    executionId: data.execution.id,
+    actorCharacterId: character.id,
+    kind: ActionKind.CREATE_MOMENT,
+    payload: {
+      body: "Progress error",
+      imagePrompt: "failure",
+      workflowVersion: "progress@v1",
+    },
+  });
+  const queued = await repositories.imageJobs!.getByActionId(action.id);
+  assert.ok(queued);
+  await coordinator.submitImageJob(queued.id);
+  const events: ComfyUiProgressEvent[] = [];
+  for await (const event of coordinator.watchImageJobProgress(queued.id)) events.push(event);
+  assert.deepEqual(events.map((event) => event.kind), ["error"]);
+  assert.equal((await repositories.imageJobs!.getById(queued.id))?.status, ImageJobStatus.FAILED);
+  assert.equal((await repositories.momentDrafts!.getByActionId(action.id))?.status, MomentDraftStatus.REJECTED);
+});
 
 test("plans a moment action, creates a draft/image job, and replays idempotently", async () => {
   const { data, repositories } = makeRepositories();

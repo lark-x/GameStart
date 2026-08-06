@@ -90,7 +90,7 @@ function parseEnvironment(env: EnvironmentInput): AppEnvironment {
 }
 
 function parsePort(env: EnvironmentInput): number {
-  const raw = env.API_PORT ?? "3000";
+  const raw = env.API_PORT ?? "3001";
   if (!/^\d+$/.test(raw)) {
     throw new ConfigError("API_PORT", "must be an integer between 1 and 65535");
   }

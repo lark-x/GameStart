@@ -18,7 +18,7 @@ test("loads safe development defaults and freezes nested configuration", () => {
   assert.equal(config.environment, "test");
   assert.deepEqual(config.api, {
     host: "127.0.0.1",
-    port: 3000,
+    port: 3001,
     corsOrigins: ["http://127.0.0.1:4173", "http://localhost:4173"],
   });
   assert.equal(config.database.url, minimalEnvironment.DATABASE_URL);

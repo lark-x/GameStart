@@ -42,6 +42,11 @@ test("ApiClient builds every JSON endpoint request with the actor context", asyn
     await client.getWorlds();
     await client.getCharacters("world one");
     await client.getRelationships("world one");
+    await client.createRelationship({ id: "relationship" });
+    await client.updateRelationship("relationship", { isPublic: false });
+    await client.createWorldEvent({ id: "event" });
+    await client.updateWorldEvent("event", { enabled: false });
+    await client.getWorldEvents("world one");
     await client.getWorldCalendar("world one", "2026-01-01", "2026-02-01", 12);
     await client.getCharacterVisualIdentity("char one");
     await client.getWorkflows();
@@ -55,22 +60,30 @@ test("ApiClient builds every JSON endpoint request with the actor context", asyn
     await client.getMessages("conversation", "reader");
     await client.sendMessage("conversation", { text: "hello" });
     await client.getStickers("pack");
+    await client.createStoryWorld({ id: "world" });
+    await client.updateStoryWorld("world", { name: "updated" });
+    await client.createCharacter({ id: "character" });
+    await client.updateCharacter("character", { displayName: "updated" });
     await client.request("/custom", {
       method: "PATCH",
       body: JSON.stringify({ value: 1 }),
       headers: { "x-custom": "yes" },
     });
 
-    assert.equal(calls.length, 17);
+    assert.equal(calls.length, 26);
     assert.equal(calls[0].url, "https://api.example.test/v1/worlds");
     assert.equal(calls[1].url, "https://api.example.test/v1/characters?storyWorldId=world%20one");
     assert.equal(calls[2].url, "https://api.example.test/v1/relationships?storyWorldId=world%20one");
+    assert.equal(calls[3].url, "https://api.example.test/v1/relationships");
+    assert.equal(calls[4].url, "https://api.example.test/v1/relationships/relationship");
+    assert.equal(calls[5].url, "https://api.example.test/v1/world-events");
+    assert.equal(calls[6].url, "https://api.example.test/v1/world-events/event");
     assert.equal(
-      calls[3].url,
+      calls[8].url,
       "https://api.example.test/v1/worlds/world%20one/calendar?startsAt=2026-01-01&endsAt=2026-02-01&limit=12",
     );
-    assert.equal(calls[4].url, "https://api.example.test/v1/characters/char%20one/visual-identity");
-    assert.deepEqual(calls[6].init, {
+    assert.equal(calls[9].url, "https://api.example.test/v1/characters/char%20one/visual-identity");
+    assert.deepEqual(calls[11].init, {
       method: "POST",
       body: JSON.stringify({ id: "workflow" }),
       headers: {
@@ -79,7 +92,19 @@ test("ApiClient builds every JSON endpoint request with the actor context", asyn
         "x-actor-character-id": "actor-2",
       },
     });
-    assert.deepEqual(calls[16].init, {
+    assert.deepEqual(calls[21].init, {
+      method: "POST",
+      body: JSON.stringify({ id: "world" }),
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+        "x-actor-character-id": "actor-2",
+      },
+    });
+    assert.equal(calls[22].url, "https://api.example.test/v1/worlds/world");
+    assert.equal(calls[23].url, "https://api.example.test/v1/characters");
+    assert.equal(calls[24].url, "https://api.example.test/v1/characters/character");
+    assert.deepEqual(calls[25].init, {
       method: "PATCH",
       body: JSON.stringify({ value: 1 }),
       headers: {

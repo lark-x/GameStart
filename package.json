@@ -7,12 +7,15 @@
   "scripts": {
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "pnpm -r --if-present test",
+    "test:local": "node scripts/local-regression.mjs",
     "test:coverage": "node --experimental-test-coverage --test --test-coverage-lines=100 --test-coverage-exclude=**/*.test.ts --test-coverage-exclude=apps/api/src/main.ts --test-coverage-exclude=apps/api/src/persistent-main.ts --test-coverage-exclude=apps/worker/src/persistent-main.ts packages/*/src/*.test.ts apps/api/src/*.test.ts apps/worker/src/*.test.ts apps/web/*.test.ts apps/web/src/*.test.ts integration/mvp-flow.test.ts infra/compose/*.test.ts .github/workflows/*.test.ts",
     "test:integration": "node --test integration/*.test.ts infra/compose/*.test.ts",
+    "test:e2e": "playwright test",
     "test:all": "pnpm test && pnpm test:integration",
     "build": "pnpm -r --if-present build"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@types/node": "^26.1.2",
     "@types/pg": "8.10.9",
     "typescript": "^7.0.2"

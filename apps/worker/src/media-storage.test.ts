@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { LocalMediaStore, StoringComfyUiClient } from "./media-storage.ts";
+import type { ComfyUiProgressEvent } from "./media.ts";
 
 test("LocalMediaStore hashes content and rejects unsafe references", async () => {
   const root = await mkdtemp(join(tmpdir(), "living-network-media-"));
@@ -60,6 +61,39 @@ test("StoringComfyUiClient validates and stores image results", async () => {
       async () => new Response("text", { status: 200, headers: { "content-type": "text/plain" } }),
     );
     await assert.rejects(nonImage.getResult("job"), /not an image/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("StoringComfyUiClient forwards optional ComfyUI progress events", async () => {
+  const root = await mkdtemp(join(tmpdir(), "living-network-media-progress-"));
+  try {
+    const store = new LocalMediaStore(root);
+    const client = new StoringComfyUiClient({
+      async submit() { return { externalJobId: "external-progress" }; },
+      async getResult() { return { externalJobId: "external-progress", mediaRef: "https://comfy.example/result.png" }; },
+      async *watchProgress(externalJobId: string) {
+        yield { externalJobId, kind: "progress" as const, value: 1, max: 1 };
+        yield { externalJobId, kind: "completed" as const };
+      },
+    }, store);
+    const events: ComfyUiProgressEvent[] = [];
+    for await (const event of client.watchProgress("external-progress")) events.push(event);
+    assert.deepEqual(events.map((event) => event.kind), ["progress", "completed"]);
+
+    const unsupported = new StoringComfyUiClient(
+      { async submit() { return {}; }, async getResult() { return { externalJobId: "job", mediaRef: "https://example.test" }; } },
+      store,
+    );
+    await assert.rejects(
+      (async () => {
+        for await (const _event of unsupported.watchProgress("job")) {
+          // The wrapper should reject before yielding an event.
+        }
+      })(),
+      /does not support progress/,
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

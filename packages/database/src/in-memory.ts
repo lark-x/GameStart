@@ -740,6 +740,9 @@ export class InMemoryRepositories implements DomainRepositories {
         const world = this.worldMap.get(id);
         return world ? copyWorld(world) : undefined;
       },
+      save: async (world) => {
+        this.worldMap.set(world.id, copyWorld(world));
+      },
     };
 
     this.characters = {
@@ -753,6 +756,9 @@ export class InMemoryRepositories implements DomainRepositories {
       getById: async (id) => {
         const character = this.characterMap.get(id);
         return character ? copyCharacter(character) : undefined;
+      },
+      save: async (character) => {
+        this.characterMap.set(character.id, copyCharacter(character));
       },
     };
 

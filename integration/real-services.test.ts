@@ -6,17 +6,13 @@ import {
   createPostgresSqlClient,
   createSqlRepositories,
 } from "../packages/database/src/index.ts";
-import {
-  BullMqTaskQueue,
-  BullMqTaskWorker,
-  OutboxPublisher,
-} from "../apps/worker/src/index.ts";
 
 const enabled = process.env.RUN_REAL_INTEGRATION === "1";
 const databaseUrl = process.env.DATABASE_URL ?? "postgresql://living_network:living_network_dev_only@127.0.0.1:5432/living_network";
 const redisUrl = process.env.REDIS_URL ?? "redis://127.0.0.1:6379";
 
 test("real PostgreSQL migration, transaction, outbox and Redis queue", { skip: !enabled }, async () => {
+  const { BullMqTaskQueue, BullMqTaskWorker, OutboxPublisher } = await import("../apps/worker/src/index.ts");
   const database = await createPostgresSqlClient({ connectionString: databaseUrl });
   const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const queueName = `real-integration-${suffix}`;

@@ -44,12 +44,24 @@ REDIS_URL=redis://127.0.0.1:6379 \
   node --test integration/real-services.test.ts
 ```
 
+真实 AI 服务验收（不会在默认测试中自动调用外部供应商）：
+
+```sh
+RUN_LLM_ACCEPTANCE=1 LLM_BASE_URL=... LLM_API_KEY=... LLM_MODEL=... \
+  node --test integration/llm-acceptance.test.ts
+RUN_COMFYUI_ACCEPTANCE=1 COMFYUI_WORKFLOW_FILE=... \
+  node --test integration/comfyui-acceptance.test.ts
+RUN_COMFYUI_ACCEPTANCE=1 COMFYUI_PROGRESS_ACCEPTANCE=1 COMFYUI_WORKFLOW_FILE=... \
+  node --test integration/comfyui-acceptance.test.ts
+```
+
 ## 浏览器冒烟清单
 
 - Web 页面显示故事世界和当前角色。
 - 聊天页显示 Seed 会话和历史消息。
 - 动态、关系网、日历和 Workflow 设置可以加载。
 - 角色切换后 Feed、会话和 ActorSession 上下文同步。
+- 管理页可创建/修改世界、角色、关系和基础事件，刷新后数据仍显示。
 - API 跨来源请求不被 CORS 拦截。
 - 浏览器控制台没有 error/warning。
 

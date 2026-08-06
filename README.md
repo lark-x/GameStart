@@ -29,7 +29,7 @@ pnpm install
 
 该模式不需要 Docker、PostgreSQL、Redis、LLM 或 ComfyUI，适合第一次运行和前端联调。
 
-终端一：启动 API（默认 `http://127.0.0.1:3000`）：
+终端一：启动 API（默认 `http://127.0.0.1:3001`）：
 
 ```sh
 pnpm --filter @living-network/api dev
@@ -46,7 +46,7 @@ pnpm --filter @living-network/web dev
 API 健康检查：
 
 ```sh
-curl http://127.0.0.1:3000/health
+curl http://127.0.0.1:3001/health
 ```
 
 ## 持久化开发模式：PostgreSQL + Redis
@@ -91,7 +91,7 @@ pnpm --filter @living-network/worker start:postgres
 pnpm --filter @living-network/web dev
 ```
 
-默认服务地址：API `http://127.0.0.1:3000`、Web `http://127.0.0.1:4173`、PostgreSQL `127.0.0.1:5432`、Redis `127.0.0.1:6379`、MinIO API `127.0.0.1:9000`。部署或共享环境前请修改 `.env` 中的开发凭据，并设置明确的 `API_CORS_ORIGINS`。
+默认服务地址：API `http://127.0.0.1:3001`、Web `http://127.0.0.1:4173`、PostgreSQL `127.0.0.1:5432`、Redis `127.0.0.1:6379`、MinIO API `127.0.0.1:9000`。部署或共享环境前请修改 `.env` 中的开发凭据，并设置明确的 `API_CORS_ORIGINS`。
 
 停止本地基础设施：
 
@@ -106,6 +106,7 @@ docker compose --env-file .env -f infra/compose/docker-compose.yml down
 ```sh
 pnpm typecheck
 pnpm test
+pnpm test:local  # 受限环境下的本地回归，不包含外部服务/端口阻断测试
 pnpm test:coverage
 pnpm test:integration
 ```
@@ -123,6 +124,37 @@ pnpm build
 
 ```sh
 RUN_REAL_INTEGRATION=1 pnpm exec node --test integration/real-services.test.ts
+```
+
+真实 LLM 验收需要配置 OpenAI-compatible endpoint、模型和 Key：
+
+```sh
+RUN_LLM_ACCEPTANCE=1 \
+LLM_BASE_URL=https://your-provider.example/v1 \
+LLM_API_KEY=*** \
+LLM_MODEL=your-model \
+  node --test integration/llm-acceptance.test.ts
+```
+
+真实 ComfyUI 的完整图片链路需要提供 ComfyUI API 格式的有效 Workflow JSON：
+
+```sh
+RUN_COMFYUI_ACCEPTANCE=1 \
+COMFYUI_BASE_URL=http://127.0.0.1:8188 \
+COMFYUI_WORKFLOW_FILE=./path/to/workflow-api.json \
+  node --test integration/comfyui-acceptance.test.ts
+
+# 可选：同时验收 ComfyUI WebSocket 进度和终态事件（Node 22+）
+RUN_COMFYUI_ACCEPTANCE=1 COMFYUI_PROGRESS_ACCEPTANCE=1 \
+COMFYUI_WORKFLOW_FILE=./path/to/workflow-api.json \
+  node --test integration/comfyui-acceptance.test.ts
+```
+
+Playwright 基线（API + 静态 Web）使用：
+
+```sh
+pnpm exec playwright install chromium
+pnpm test:e2e
 ```
 
 ## 仓库结构
@@ -153,7 +185,7 @@ docs/             开发计划、进度、发布验收和任务契约
 
 ## 当前限制
 
-- Web 当前是原生浏览器模块静态页面，不需要 Vite 构建；后续可以迁移到 Vue/Vite。
+- Web 默认仍是无需构建的原生浏览器模块，便于离线 MVP 开发；`apps/web/index-vue.html` 和 `src/views/` 已提供 Vue/Vite 迁移入口，依赖已写入 workspace，可用 `pnpm --filter @living-network/web typecheck`、`pnpm --filter @living-network/web build` 和 `pnpm --filter @living-network/web dev:vite` 验证。默认入口暂未切换，以保持原生 Web E2E 稳定。
 - 开发 API 使用内存 Seed；生产或持久化运行必须显式配置 PostgreSQL 仓储。
 - 没有配置 LLM 或 ComfyUI 时，相关能力使用接口边界和测试替身，不代表已经连接真实供应商。
 - 项目默认是本地开发配置，不包含生产级认证、域名、TLS、密钥管理和监控部署方案。

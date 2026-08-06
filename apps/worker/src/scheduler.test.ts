@@ -11,7 +11,7 @@ import {
   createWorldEventDefinition,
 } from "../../../packages/domain/src/index.ts";
 import { createInMemoryRepositories } from "../../../packages/database/src/index.ts";
-import { createEventScheduler, localDateTimeToUtc } from "./index.ts";
+import { createEventScheduler, localDateTimeToUtc } from "./scheduler.ts";
 
 const world = createStoryWorld({
   id: "world-worker",

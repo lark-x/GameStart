@@ -8,8 +8,11 @@ includes a deterministic Fake ComfyUI client and an injected-fetch HTTP client
 for ComfyUI `/prompt` submission plus `/history/:promptId` result lookup.
 When configured, `RepositoryImageWorkflowResolver` loads a character visual
 identity and a versioned template, compiles the scene prompt, and supplies the
-workflow JSON to that HTTP client. Progress streaming, object storage, and
-final message or moment publication remain later adapters.
+workflow JSON to that HTTP client. `ComfyUiHttpClient.watchProgress()` consumes
+the ComfyUI WebSocket protocol; `BehaviorMediaCoordinator.watchImageJobProgress()`
+maps terminal progress events to `ImageJob` success/failure and promotes or
+rejects the linked moment draft. `StoringComfyUiClient` forwards progress while
+keeping the existing local media download adapter.
 
 The development worker shell is available with:
 

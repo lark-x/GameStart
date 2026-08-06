@@ -47,9 +47,36 @@ export interface ComfyUiResult {
   mediaRef: string;
 }
 
+export type ComfyUiProgressKind = "progress" | "executing" | "completed" | "error";
+
+export interface ComfyUiProgressEvent {
+  externalJobId: string;
+  kind: ComfyUiProgressKind;
+  nodeId?: string;
+  value?: number;
+  max?: number;
+  message?: string;
+}
+
+export interface ComfyUiWebSocket {
+  onmessage: ((event: { data: unknown }) => void) | null;
+  onerror: ((event: unknown) => void) | null;
+  onclose: (() => void) | null;
+  close(): void;
+}
+
+export type ComfyUiWebSocketFactory = (url: string) => ComfyUiWebSocket;
+
 export interface ComfyUiClient {
   submit(request: ComfyUiSubmitRequest): Promise<ComfyUiSubmitResult>;
   getResult(externalJobId: string): Promise<ComfyUiResult>;
+}
+
+export interface ComfyUiProgressClient extends ComfyUiClient {
+  watchProgress(
+    externalJobId: string,
+    options?: { timeoutMs?: number },
+  ): AsyncGenerator<ComfyUiProgressEvent>;
 }
 
 export interface ImageWorkflowResolver {
@@ -156,6 +183,7 @@ export interface ComfyUiHttpConfig {
   baseUrl: string;
   timeoutMs?: number;
   clientId?: string;
+  webSocketFactory?: ComfyUiWebSocketFactory;
 }
 
 function parseComfyUiBaseUrl(value: string): string {
@@ -175,6 +203,51 @@ function parseComfyUiBaseUrl(value: string): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function parseComfyUiProgressEvent(
+  value: unknown,
+  externalJobId: string,
+): ComfyUiProgressEvent | undefined {
+  if (!isRecord(value) || typeof value.type !== "string") return undefined;
+  const data = isRecord(value.data) ? value.data : {};
+  const promptId = data.prompt_id;
+  if (promptId !== undefined && promptId !== externalJobId) return undefined;
+  if (value.type === "progress") {
+    if (typeof data.value !== "number" || typeof data.max !== "number") return undefined;
+    return {
+      externalJobId,
+      kind: "progress",
+      ...(typeof data.node === "string" ? { nodeId: data.node } : {}),
+      value: data.value,
+      max: data.max,
+    };
+  }
+  if (value.type === "executing") {
+    if (data.node === null) return { externalJobId, kind: "completed" };
+    return {
+      externalJobId,
+      kind: "executing",
+      ...(typeof data.node === "string" ? { nodeId: data.node } : {}),
+    };
+  }
+  if (value.type === "execution_success") return { externalJobId, kind: "completed" };
+  if (value.type === "execution_error") {
+    return {
+      externalJobId,
+      kind: "error",
+      message: typeof data.exception_message === "string" ? data.exception_message.slice(0, 2048) : "ComfyUI execution failed",
+    };
+  }
+  return undefined;
+}
+
+function defaultWebSocketFactory(url: string): ComfyUiWebSocket {
+  const constructor = (globalThis as unknown as { WebSocket?: new (url: string) => ComfyUiWebSocket }).WebSocket;
+  if (constructor === undefined) {
+    throw new ComfyUiError("CONFIGURATION", "WebSocket is not available in this runtime");
+  }
+  return new constructor(url);
 }
 
 function firstHistoryImage(value: unknown, externalJobId: string): {
@@ -206,6 +279,7 @@ export class ComfyUiHttpClient implements ComfyUiClient {
   private readonly timeoutMs: number;
   private readonly clientId: string;
   private readonly fetchImpl: ComfyUiFetchImplementation;
+  private readonly webSocketFactory: ComfyUiWebSocketFactory;
 
   public constructor(
     config: ComfyUiHttpConfig,
@@ -218,6 +292,7 @@ export class ComfyUiHttpClient implements ComfyUiClient {
     }
     this.clientId = config.clientId?.trim() || "living-network-worker";
     this.fetchImpl = fetchImpl;
+    this.webSocketFactory = config.webSocketFactory ?? defaultWebSocketFactory;
   }
 
   public async submit(request: ComfyUiSubmitRequest): Promise<ComfyUiSubmitResult> {
@@ -278,6 +353,86 @@ export class ComfyUiHttpClient implements ComfyUiClient {
     };
   }
 
+  public async *watchProgress(
+    externalJobId: string,
+    options: { timeoutMs?: number } = {},
+  ): AsyncGenerator<ComfyUiProgressEvent> {
+    if (externalJobId.trim().length === 0) {
+      throw new ComfyUiError("CONFIGURATION", "ComfyUI externalJobId is required");
+    }
+    const timeoutMs = options.timeoutMs ?? this.timeoutMs;
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) {
+      throw new ComfyUiError("CONFIGURATION", "ComfyUI progress timeoutMs must be a positive integer");
+    }
+    const base = new URL(this.baseUrl);
+    base.protocol = base.protocol === "https:" ? "wss:" : "ws:";
+    base.pathname = "/ws";
+    base.search = "";
+    base.searchParams.set("clientId", this.clientId);
+    let socket: ComfyUiWebSocket;
+    try {
+      socket = this.webSocketFactory(base.toString());
+    } catch (error) {
+      if (error instanceof ComfyUiError) throw error;
+      throw new ComfyUiError("NETWORK_ERROR", "ComfyUI WebSocket connection failed", { retryable: true });
+    }
+
+    const events: ComfyUiProgressEvent[] = [];
+    let closed = false;
+    let failure: ComfyUiError | undefined;
+    let wake: (() => void) | undefined;
+    const notify = (): void => {
+      const resolve = wake;
+      wake = undefined;
+      resolve?.();
+    };
+    const timer = setTimeout(() => {
+      failure = new ComfyUiError("TIMEOUT", "ComfyUI progress stream timed out", { retryable: true });
+      closed = true;
+      notify();
+    }, timeoutMs);
+    socket.onmessage = (event) => {
+      try {
+        const payload = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+        const progress = parseComfyUiProgressEvent(payload, externalJobId);
+        if (progress === undefined) return;
+        events.push(progress);
+        if (progress.kind === "completed" || progress.kind === "error") closed = true;
+        notify();
+      } catch {
+        failure = new ComfyUiError("INVALID_RESPONSE", "ComfyUI progress event is not valid JSON");
+        closed = true;
+        notify();
+      }
+    };
+    socket.onerror = () => {
+      failure = new ComfyUiError("NETWORK_ERROR", "ComfyUI WebSocket stream failed", { retryable: true });
+      closed = true;
+      notify();
+    };
+    socket.onclose = () => {
+      closed = true;
+      notify();
+    };
+
+    try {
+      while (!closed || events.length > 0) {
+        if (failure) throw failure;
+        const progress = events.shift();
+        if (progress !== undefined) {
+          yield progress;
+          continue;
+        }
+        if (closed) break;
+        await new Promise<void>((resolve) => { wake = resolve; });
+      }
+      if (failure) throw failure;
+    } finally {
+      clearTimeout(timer);
+      socket.close();
+    }
+  }
+
   private async request(path: string, init: RequestInit): Promise<Response> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
@@ -334,6 +489,17 @@ export class FakeComfyUiClient implements ComfyUiClient {
       externalJobId,
       mediaRef: `media://fake-comfy/${jobId}.png`,
     };
+  }
+
+  public async *watchProgress(externalJobId: string): AsyncGenerator<ComfyUiProgressEvent> {
+    const prefix = "fake-comfy:";
+    if (!externalJobId.startsWith(prefix)) {
+      throw new Error("Fake ComfyUI does not recognize externalJobId");
+    }
+    const jobId = externalJobId.slice(prefix.length);
+    if (!this.submissions.has(jobId)) throw new Error(`Fake ComfyUI job not found: ${jobId}`);
+    yield { externalJobId, kind: "executing", nodeId: "fake" };
+    yield { externalJobId, kind: "completed" };
   }
 }
 
@@ -490,6 +656,52 @@ export class BehaviorMediaCoordinator {
       }
     }
     return completed;
+  }
+
+  /** Streams ComfyUI progress and synchronizes terminal events with the image job state. */
+  public async *watchImageJobProgress(
+    jobId: string,
+    options: {
+      timeoutMs?: number;
+      maxCompletionAttempts?: number;
+      completionDelayMs?: number;
+    } = {},
+  ): AsyncGenerator<ComfyUiProgressEvent> {
+    const job = await this.repositories.imageJobs.getById(jobId);
+    if (!job) throw new TypeError(`Unknown image job: ${jobId}`);
+    if (job.status !== ImageJobStatus.SUBMITTED || job.externalJobId === undefined) {
+      throw new Error(`image job ${job.id} is not submitted`);
+    }
+    const progressClient = this.comfyUi as Partial<ComfyUiProgressClient>;
+    const watchProgress = progressClient.watchProgress;
+    if (typeof watchProgress !== "function") {
+      throw new TypeError("ComfyUI client does not support progress watching");
+    }
+    const externalJobId = job.externalJobId;
+    const progressOptions: { timeoutMs?: number } = {};
+    if (options.timeoutMs !== undefined) progressOptions.timeoutMs = options.timeoutMs;
+    const completionOptions: { maxAttempts?: number; delayMs?: number } = {};
+    if (options.maxCompletionAttempts !== undefined) {
+      completionOptions.maxAttempts = options.maxCompletionAttempts;
+    }
+    if (options.completionDelayMs !== undefined) completionOptions.delayMs = options.completionDelayMs;
+
+    for await (const event of watchProgress.call(
+      this.comfyUi,
+      externalJobId,
+      progressOptions,
+    )) {
+      if (event.kind === "error") {
+        const current = await this.repositories.imageJobs.getById(jobId);
+        if (current?.status === ImageJobStatus.SUBMITTED) {
+          await this.failImageJob(jobId, event.message ?? "ComfyUI execution failed");
+        }
+      } else if (event.kind === "completed") {
+        await this.completeImageJobWithRetry(jobId, completionOptions);
+      }
+      yield event;
+      if (event.kind === "error" || event.kind === "completed") break;
+    }
   }
 
   /** Polls a ComfyUI result with bounded retry for NOT_READY/retryable failures. */

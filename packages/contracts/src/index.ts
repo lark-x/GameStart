@@ -149,6 +149,40 @@ export interface StoryWorldDto {
   relationshipDynamicsEnabled: boolean;
 }
 
+export interface CreateStoryWorldRequest {
+  id: StoryWorldId;
+  name: string;
+  timezone: string;
+  storyMode: StoryMode;
+  relationshipDynamicsEnabled: boolean;
+}
+
+export interface UpdateStoryWorldRequest {
+  name?: string;
+  timezone?: string;
+  storyMode?: StoryMode;
+  relationshipDynamicsEnabled?: boolean;
+}
+
+export interface CreateCharacterRequest {
+  id: CharacterId;
+  displayName: string;
+  role: CharacterRole;
+  storyWorldId: StoryWorldId;
+  timezone: string;
+  birthDate?: string;
+  personaPromptRef?: string;
+  visualPromptRef?: string;
+}
+
+export interface UpdateCharacterRequest {
+  displayName?: string;
+  timezone?: string;
+  birthDate?: string;
+  personaPromptRef?: string;
+  visualPromptRef?: string;
+}
+
 export interface RelationshipEdgeDto {
   id: RelationshipId;
   sourceCharacterId: CharacterId;
@@ -158,6 +192,24 @@ export interface RelationshipEdgeDto {
   initialState: RelationshipStateDto;
   isPublic: boolean;
   isBidirectional: boolean;
+}
+
+export interface CreateRelationshipEdgeRequest {
+  id: RelationshipId;
+  sourceCharacterId: CharacterId;
+  targetCharacterId: CharacterId;
+  storyWorldId: StoryWorldId;
+  relationshipType: string;
+  initialState: RelationshipStateDto;
+  isPublic: boolean;
+  isBidirectional: boolean;
+}
+
+export interface UpdateRelationshipEdgeRequest {
+  relationshipType?: string;
+  initialState?: RelationshipStateDto;
+  isPublic?: boolean;
+  isBidirectional?: boolean;
 }
 
 export interface ActorSessionDto {
@@ -338,6 +390,33 @@ export interface WorldEventDefinitionDto {
   cooldownSeconds?: number;
   enabled: boolean;
   createdAt: string;
+}
+
+export interface CreateWorldEventDefinitionRequest {
+  id: EventDefinitionId;
+  storyWorldId: StoryWorldId;
+  eventKey: string;
+  name: string;
+  triggerSource: TriggerSource;
+  timezone?: string;
+  recurrence: EventRecurrenceDto;
+  targetCharacterIds: readonly CharacterId[];
+  priority?: number;
+  cooldownSeconds?: number;
+  enabled?: boolean;
+  createdAt: string;
+}
+
+export interface UpdateWorldEventDefinitionRequest {
+  eventKey?: string;
+  name?: string;
+  triggerSource?: TriggerSource;
+  timezone?: string;
+  recurrence?: EventRecurrenceDto;
+  targetCharacterIds?: readonly CharacterId[];
+  priority?: number;
+  cooldownSeconds?: number;
+  enabled?: boolean;
 }
 
 export const ScheduledOccurrenceStatus = {
@@ -849,6 +928,48 @@ export const relationshipEdgeSchema = {
   ],
 } as const satisfies JsonSchema;
 
+export const createRelationshipEdgeRequestSchema = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $id: "urn:living-network:create-relationship-edge-request",
+  title: "CreateRelationshipEdgeRequest",
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    id: idSchema,
+    sourceCharacterId: idSchema,
+    targetCharacterId: idSchema,
+    storyWorldId: idSchema,
+    relationshipType: nonEmptyStringSchema,
+    initialState: relationshipStateSchema,
+    isPublic: { type: "boolean" },
+    isBidirectional: { type: "boolean" },
+  },
+  required: [
+    "id",
+    "sourceCharacterId",
+    "targetCharacterId",
+    "storyWorldId",
+    "relationshipType",
+    "initialState",
+    "isPublic",
+    "isBidirectional",
+  ],
+} as const satisfies JsonSchema;
+
+export const updateRelationshipEdgeRequestSchema = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $id: "urn:living-network:update-relationship-edge-request",
+  title: "UpdateRelationshipEdgeRequest",
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    relationshipType: nonEmptyStringSchema,
+    initialState: relationshipStateSchema,
+    isPublic: { type: "boolean" },
+    isBidirectional: { type: "boolean" },
+  },
+} as const satisfies JsonSchema;
+
 export const actorSessionSchema = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   $id: "urn:living-network:actor-session",
@@ -1113,6 +1234,51 @@ export const worldEventDefinitionSchema = {
     "enabled",
     "createdAt",
   ],
+} as const satisfies JsonSchema;
+
+export const createWorldEventDefinitionRequestSchema = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $id: "urn:living-network:create-world-event-definition-request",
+  title: "CreateWorldEventDefinitionRequest",
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    id: idSchema,
+    storyWorldId: idSchema,
+    eventKey: nonEmptyStringSchema,
+    name: nonEmptyStringSchema,
+    triggerSource: { type: "string", enum: Object.values(TriggerSource) },
+    timezone: nonEmptyStringSchema,
+    recurrence: eventRecurrenceSchema,
+    targetCharacterIds: { type: "array", items: idSchema },
+    priority: { type: "number", minimum: 0 },
+    cooldownSeconds: { type: "number", minimum: 0 },
+    enabled: { type: "boolean" },
+    createdAt: timestampSchema,
+  },
+  required: [
+    "id", "storyWorldId", "eventKey", "name", "triggerSource", "recurrence",
+    "targetCharacterIds", "createdAt",
+  ],
+} as const satisfies JsonSchema;
+
+export const updateWorldEventDefinitionRequestSchema = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $id: "urn:living-network:update-world-event-definition-request",
+  title: "UpdateWorldEventDefinitionRequest",
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    eventKey: nonEmptyStringSchema,
+    name: nonEmptyStringSchema,
+    triggerSource: { type: "string", enum: Object.values(TriggerSource) },
+    timezone: nonEmptyStringSchema,
+    recurrence: eventRecurrenceSchema,
+    targetCharacterIds: { type: "array", items: idSchema },
+    priority: { type: "number", minimum: 0 },
+    cooldownSeconds: { type: "number", minimum: 0 },
+    enabled: { type: "boolean" },
+  },
 } as const satisfies JsonSchema;
 
 export const scheduledOccurrenceSchema = {
@@ -1459,6 +1625,8 @@ export const contractSchemas = {
   storyWorld: storyWorldSchema,
   relationshipState: relationshipStateSchema,
   relationshipEdge: relationshipEdgeSchema,
+  createRelationshipEdgeRequest: createRelationshipEdgeRequestSchema,
+  updateRelationshipEdgeRequest: updateRelationshipEdgeRequestSchema,
   actorSession: actorSessionSchema,
   actorSessionSwitchRequest: actorSessionSwitchRequestSchema,
   conversation: conversationSchema,
@@ -1469,6 +1637,8 @@ export const contractSchemas = {
   memoryItem: memoryItemSchema,
   eventRecurrence: eventRecurrenceSchema,
   worldEventDefinition: worldEventDefinitionSchema,
+  createWorldEventDefinitionRequest: createWorldEventDefinitionRequestSchema,
+  updateWorldEventDefinitionRequest: updateWorldEventDefinitionRequestSchema,
   scheduledOccurrence: scheduledOccurrenceSchema,
   worldCalendar: worldCalendarSchema,
   characterPlan: characterPlanSchema,

@@ -32,6 +32,8 @@ import {
   worldCalendarSchema,
   TriggerSource,
   worldEventDefinitionSchema,
+  createWorldEventDefinitionRequestSchema,
+  updateWorldEventDefinitionRequestSchema,
   characterPlanSchema,
   eventExecutionSchema,
   proactiveMessageBudgetSchema,
@@ -51,6 +53,8 @@ import {
   createMomentInteractionRequestSchema,
   MomentInteractionKind,
   relationshipEdgeSchema,
+  createRelationshipEdgeRequestSchema,
+  updateRelationshipEdgeRequestSchema,
   relationshipStateSchema,
   sendMessageRequestSchema,
   storyWorldSchema,
@@ -156,6 +160,38 @@ test("relationship schemas expose all metrics and their domain range", () => {
   ]);
 });
 
+test("relationship CRUD schemas keep identity and partial update boundaries explicit", () => {
+  assert.equal(createRelationshipEdgeRequestSchema.additionalProperties, false);
+  assert.deepEqual(createRelationshipEdgeRequestSchema.required, [
+    "id",
+    "sourceCharacterId",
+    "targetCharacterId",
+    "storyWorldId",
+    "relationshipType",
+    "initialState",
+    "isPublic",
+    "isBidirectional",
+  ]);
+  assert.equal(updateRelationshipEdgeRequestSchema.additionalProperties, false);
+  assert.equal("required" in updateRelationshipEdgeRequestSchema, false);
+});
+
+test("event CRUD schemas keep required creation fields and partial updates explicit", () => {
+  assert.equal(createWorldEventDefinitionRequestSchema.additionalProperties, false);
+  assert.deepEqual(createWorldEventDefinitionRequestSchema.required, [
+    "id",
+    "storyWorldId",
+    "eventKey",
+    "name",
+    "triggerSource",
+    "recurrence",
+    "targetCharacterIds",
+    "createdAt",
+  ]);
+  assert.equal(updateWorldEventDefinitionRequestSchema.additionalProperties, false);
+  assert.equal("required" in updateWorldEventDefinitionRequestSchema, false);
+});
+
 test("actor session schemas keep switching ID-based and timestamps explicit", () => {
   assert.equal(actorSessionSchema.properties?.startedAt.format, "date-time");
   assert.equal(actorSessionSchema.properties?.endedAt.format, "date-time");
@@ -230,8 +266,10 @@ test("registry exposes every schema by its stable contract name", () => {
     "conversationMember",
     "createConversationRequest",
     "createMomentInteractionRequest",
+    "createRelationshipEdgeRequest",
     "createStickerInput",
     "createStickerPackRequest",
+    "createWorldEventDefinitionRequest",
     "eventExecution",
     "eventRecurrence",
     "imageJob",
@@ -249,6 +287,8 @@ test("registry exposes every schema by its stable contract name", () => {
     "sticker",
     "stickerPack",
     "storyWorld",
+    "updateRelationshipEdgeRequest",
+    "updateWorldEventDefinitionRequest",
     "validateImageWorkflowResult",
     "worldCalendar",
     "worldEventDefinition",

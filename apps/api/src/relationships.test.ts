@@ -68,7 +68,7 @@ test("bounds missing relationship world and unsupported methods", async () => {
   );
   assert.equal(missingWorld.status, 404);
   const method = await application().handle(
-    new Request(`http://localhost/v1/relationships?storyWorldId=${world.id}`, { method: "POST" }),
+    new Request(`http://localhost/v1/relationships?storyWorldId=${world.id}`, { method: "PATCH" }),
   );
   assert.equal(method.status, 405);
 });

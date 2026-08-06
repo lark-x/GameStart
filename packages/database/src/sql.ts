@@ -960,6 +960,18 @@ export class SqlRepositories implements DomainRepositories {
         const row = result.rows[0];
         return row ? mapStoryWorldRow(row) : undefined;
       },
+      save: async (world) => {
+        await this.client.query(
+          `INSERT INTO story_worlds (id, name, timezone, story_mode, relationship_dynamics_enabled)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (id) DO UPDATE SET
+             name = EXCLUDED.name,
+             timezone = EXCLUDED.timezone,
+             story_mode = EXCLUDED.story_mode,
+             relationship_dynamics_enabled = EXCLUDED.relationship_dynamics_enabled`,
+          [world.id, world.name, world.timezone, world.storyMode, world.relationshipDynamicsEnabled],
+        );
+      },
     };
 
     this.characters = {
@@ -976,6 +988,30 @@ export class SqlRepositories implements DomainRepositories {
         const result = await this.client.query(`${CHARACTER_SELECT} WHERE id = $1`, [id]);
         const row = result.rows[0];
         return row ? mapCharacterRow(row) : undefined;
+      },
+      save: async (character) => {
+        await this.client.query(
+          `INSERT INTO characters (id, display_name, role, story_world_id, timezone, birth_date, persona_prompt_ref, visual_prompt_ref)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           ON CONFLICT (id) DO UPDATE SET
+             display_name = EXCLUDED.display_name,
+             role = EXCLUDED.role,
+             story_world_id = EXCLUDED.story_world_id,
+             timezone = EXCLUDED.timezone,
+             birth_date = EXCLUDED.birth_date,
+             persona_prompt_ref = EXCLUDED.persona_prompt_ref,
+             visual_prompt_ref = EXCLUDED.visual_prompt_ref`,
+          [
+            character.id,
+            character.displayName,
+            character.role,
+            character.storyWorldId,
+            character.timezone,
+            character.birthDate ?? null,
+            character.personaPromptRef ?? null,
+            character.visualPromptRef ?? null,
+          ],
+        );
       },
     };
 
