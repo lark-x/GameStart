@@ -1,8 +1,14 @@
 import { pathToFileURL } from "node:url";
 
-import { applyMigrations, createPostgresSqlClient, createSqlRepositories } from "../../../packages/database/src/index.ts";
+import {
+  applyMigrations,
+  createSqlInteractionLogRepository,
+  createPostgresSqlClient,
+  createSqlRepositories,
+} from "../../../packages/database/src/index.ts";
 import { loadAppConfig, type EnvironmentInput } from "../../../packages/config/src/index.ts";
 import { BullMqTaskQueue, BullMqTaskWorker } from "./queue.ts";
+import { createDispatchPump } from "./dispatch-pump.ts";
 import { OutboxPublisher, type OutboxQueueTask } from "./outbox-publisher.ts";
 import { createImageJobPump } from "./image-job-pump.ts";
 import {
@@ -11,6 +17,7 @@ import {
   processWorkerOccurrence,
   type WorkerOccurrenceTask,
 } from "./runtime.ts";
+import { bestEffortLog, type WorkerLogger } from "./interaction-log.ts";
 
 export interface PersistentWorkerProcess {
   readonly stop: () => Promise<void>;
@@ -18,39 +25,64 @@ export interface PersistentWorkerProcess {
 
 export async function startPersistentWorker(
   environment: EnvironmentInput = process.env,
+  options: { readonly interactionLogs?: WorkerLogger | undefined } = {},
 ): Promise<PersistentWorkerProcess> {
+  const workerId = environment.WORKER_ID ?? "living-network-worker";
+  let logger = options.interactionLogs;
+  await bestEffortLog(logger, { event: "worker.lifecycle", phase: "start", outcome: "BEGIN", correlationId: "worker:" + workerId, workerId });
   const config = loadAppConfig(environment);
-  if (config.database.url.length === 0) throw new Error("DATABASE_URL is required for persistent worker");
-  const database = await createPostgresSqlClient({ connectionString: config.database.url });
-  const occurrenceQueue = new BullMqTaskQueue<WorkerOccurrenceTask>("living-network-occurrences", {
-    url: config.redis.url,
-    prefix: "living-network",
+  if (config.database.url.length === 0) {
+    throw new Error("DATABASE_URL is required for persistent worker");
+  }
+
+  const database = await createPostgresSqlClient({
+    connectionString: config.database.url,
   });
+  const occurrenceQueue = new BullMqTaskQueue<WorkerOccurrenceTask>(
+    "living-network-occurrences",
+    {
+      url: config.redis.url,
+      prefix: "living-network",
+    },
+  );
   const outboxQueue = new BullMqTaskQueue<OutboxQueueTask>("living-network-outbox", {
     url: config.redis.url,
     prefix: "living-network",
   });
+
   try {
     await applyMigrations(database);
     const repositories = createSqlRepositories(database);
-    const runtime = createWorkerRuntime(repositories);
+    logger ??= createSqlInteractionLogRepository(database);
+    const runtime = createWorkerRuntime(repositories, { logger });
+
+    const dispatchPump = createDispatchPump(
+      repositories.dispatchRequests,
+      occurrenceQueue,
+      { workerId, logger },
+    );
     const imageJobPump = config.flags.imageGenerationEnabled
       ? createImageJobPump(repositories, {
-        fallbackSettings: config.comfyui,
-        mediaRoot: config.media.root,
-      })
+          fallbackSettings: config.comfyui,
+          mediaRoot: config.media.root,
+          logger,
+        })
       : undefined;
     const occurrenceWorker = new BullMqTaskWorker<WorkerOccurrenceTask, string>(
       "living-network-occurrences",
       { url: config.redis.url, prefix: "living-network" },
-      (task) => processWorkerOccurrence(runtime, task),
-      { concurrency: 2 },
+      async (task) => processWorkerOccurrence(runtime, task),
+      { concurrency: 2, logger },
     );
-    const outboxPublisher = repositories.outboxEvents === undefined
-      ? undefined
-      : new OutboxPublisher(repositories.outboxEvents, outboxQueue);
+    const outboxPublisher = new OutboxPublisher(
+      repositories.outboxEvents,
+      outboxQueue,
+    );
     const tickMs = Number(environment.WORKER_TICK_MS ?? "30000");
-    if (!Number.isSafeInteger(tickMs) || tickMs < 1000) throw new RangeError("WORKER_TICK_MS must be at least 1000");
+    if (!Number.isSafeInteger(tickMs) || tickMs < 1000) {
+      throw new RangeError("WORKER_TICK_MS must be at least 1000");
+    }
+
     const tick = async (): Promise<void> => {
       const now = new Date();
       const from = new Date(now.getTime() - tickMs).toISOString();
@@ -59,25 +91,39 @@ export async function startPersistentWorker(
         await materializeAndEnqueue(runtime, occurrenceQueue, {
           storyWorldId: world.id,
           window: { from, to },
-          execution: { ruleVersion: environment.WORKER_RULE_VERSION ?? "rules-v1" },
+          execution: {
+            ruleVersion: environment.WORKER_RULE_VERSION ?? "rules-v1",
+          },
         });
       }
-      if (outboxPublisher) await outboxPublisher.publishBatch(100);
+      await dispatchPump.runOnce();
+      await outboxPublisher.publishBatch(100);
       if (imageJobPump) await imageJobPump.runOnce();
     };
-    const timer = setInterval(() => void tick().catch((error: unknown) => console.error("worker tick failed", error)), tickMs);
+
+    const timer = setInterval(
+      () =>
+        void tick().catch((error: unknown) => {
+          console.error("worker tick failed", error);
+        }),
+      tickMs,
+    );
     timer.unref();
     await tick();
+
     return {
       async stop(): Promise<void> {
         clearInterval(timer);
+        await bestEffortLog(logger, { event: "worker.lifecycle", phase: "stop", outcome: "BEGIN", correlationId: "worker:" + workerId, workerId });
         await occurrenceWorker.close();
+        await dispatchPump.heartbeat("STOPPED");
         await occurrenceQueue.close();
         await outboxQueue.close();
         await database.close();
       },
     };
   } catch (error) {
+    await bestEffortLog(logger, { event: "worker.lifecycle", phase: "exception", outcome: "FAILED", correlationId: "worker:" + workerId, workerId, previewMessage: error instanceof Error ? error.message : String(error) });
     await occurrenceQueue.close();
     await outboxQueue.close();
     await database.close();
@@ -85,7 +131,10 @@ export async function startPersistentWorker(
   }
 }
 
-if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (
+  process.argv[1] !== undefined &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
   const processHandle = await startPersistentWorker().catch((error: unknown) => {
     console.error(error);
     process.exitCode = 1;

@@ -29,6 +29,8 @@ const migrationNames = [
   "0013_character_persona",
   "0014_world_lore",
   "0015_event_output_policy",
+  "0016_execution_dispatch_requests",
+  "0017_interaction_logs",
 ] as const;
 
 export function listMigrationFiles(): readonly MigrationFile[] {

@@ -474,10 +474,11 @@ test("persists encrypted LLM credentials and supplies default ComfyUI settings",
     }),
   }));
   assert.equal(saved.status, 200);
-  const payload = (await json(saved)) as { data: { hasApiKey: boolean; apiKeyMask?: string; encryptedApiKey?: string } };
+  const payload = (await json(saved)) as { data: { hasApiKey: boolean; apiKeyMask?: string; encryptedApiKey?: string; isActive: boolean } };
   assert.equal(payload.data.hasApiKey, true);
   assert.equal(payload.data.apiKeyMask, "********");
   assert.equal(payload.data.encryptedApiKey, undefined);
+  assert.equal(payload.data.isActive, true);
 
   const stored = await application.store.llmProviderProfiles?.getById("anthropic");
   assert.ok(stored?.encryptedApiKey && stored.encryptionIv);
@@ -491,6 +492,17 @@ test("persists encrypted LLM credentials and supplies default ComfyUI settings",
   assert.equal(((await json(updatedComfy)) as { data: { timeoutMs: number } }).data.timeoutMs, 45_000);
 });
 
+test("automatically activates the only LLM provider profile", async () => {
+  const application = new ApiApplication(createApiStore());
+  const saved = await application.handle(new Request("http://localhost/v1/llm-provider-profiles", {
+    method: "PUT",
+    body: JSON.stringify({ id: "only", name: "Only", protocol: "OPENAI_COMPATIBLE", baseUrl: "https://example.com/v1", model: "model", isActive: false }),
+  }));
+  assert.equal(saved.status, 200);
+  assert.equal(((await json(saved)) as { data: { isActive: boolean } }).data.isActive, true);
+  assert.equal((await application.store.llmProviderProfiles?.getActive())?.id, "only");
+  application.stop();
+});
 test("rejects invalid appearance settings payloads", async () => {
   const application = createApplication();
   const put = (payload: unknown) =>

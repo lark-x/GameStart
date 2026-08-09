@@ -35,6 +35,7 @@ import {
   createEventExecution,
   createBehaviorAction,
   createImageJob,
+  canConsumeProactiveMessages,
   ActionKind,
   EventRecurrenceKind,
   ScheduledOccurrenceStatus,
@@ -44,6 +45,8 @@ import {
   assertImageWorkflowTemplateBindings,
   type JsonObject,
   type StoryWorld,
+  CharacterRole,
+  MessageKind,
 } from "../../../packages/domain/src/index.ts";
 import {
   ProviderError,
@@ -99,19 +102,49 @@ import type {
   CreateWorldEventDefinitionRequest,
   UpdateWorldEventDefinitionRequest,
   EventRecurrenceDto,
+  CreatorEventCandidateDto,
+  EventDispatchPreviewDto,
+  EventDispatchBatchDto,
+  EventDispatchBatchItemDto,
+  EventDispatchBatchStatus,
+  EventDispatchItemStatus,
+  EventDispatchSelectionDto,
+  CreateEventDispatchBatchRequest,
+  InteractionLogDto,
+  InteractionLogQuery,
+  ProviderConnectionTestResultDto,
+  ChatTraceContext,
 } from "../../../packages/contracts/src/index.ts";
 import {
   createInMemoryRepositories,
   type DomainRepositories,
   type InMemoryRepositorySeed,
+  type ExecutionDispatchRequest,
 } from "../../../packages/database/src/index.ts";
+import { InMemoryInteractionLogRepository, previewMessage, type InteractionLogRepository } from "../../../packages/database/src/interaction-log.ts";
+import { createProviderFromProfile } from "../../../packages/ai/src/profile-provider.ts";
+import { InteractionLogging } from "./interaction-logging.ts";
+import { encodeInteractionLogCursor } from "../../../packages/database/src/interaction-log.ts";
 import { ConversationOrchestrator } from "./conversation-orchestrator.ts";
-import type { ConversationOrchestratorOptions, ConversationReplyContext } from "./conversation-orchestrator.ts";
+import type { ConversationOrchestratorOptions, ConversationReply, ConversationReplyContext } from "./conversation-orchestrator.ts";
+import { assistantReplyId, automaticReplyFlightKey, findEligibleAi, isEligibleSource, type AutomaticReplyState, type AutomaticReplyTrace, type RetryAutomaticReplyState } from "./auto-reply.ts";
 import { promptForExplicitChatImageIntent } from "./auto-image-intent.ts";
+import {
+  previewCreatorEventDispatch,
+  scanCreatorEventCandidates,
+} from "./creator-events.ts";
 
 export type ApiSeed = InMemoryRepositorySeed;
 
 export type ApiStore = DomainRepositories;
+export interface SendMessageWithAutoReplyResult extends SendMessageResultDto {
+  readonly autoReply: AutomaticReplyState;
+}
+
+interface ScheduledAutomaticReply {
+  readonly state: AutomaticReplyState;
+  readonly completion?: Promise<ConversationReply>;
+}
 
 export type ApiErrorCode =
   | "UNAUTHORIZED"
@@ -1045,6 +1078,8 @@ function parseUpdateWorldEventDefinitionRequest(value: unknown): UpdateWorldEven
   return result;
 }
 
+function withHeaders(response: Response, headers: Record<string, string>): Response { for (const [key, value] of Object.entries(headers)) if (value) response.headers.set(key, value); return response; }
+
 function jsonResponse(body: unknown, statusCode = 200): Response {
   return new Response(JSON.stringify(body), {
     status: statusCode,
@@ -1108,6 +1143,99 @@ function createSseResponse(source: AsyncIterable<ChatDelta>): Response {
   });
 }
 
+
+type CreatorScanStore = ApiStore & {
+  worldEventDefinitions: NonNullable<ApiStore["worldEventDefinitions"]>;
+  scheduledOccurrences: NonNullable<ApiStore["scheduledOccurrences"]>;
+  eventExecutions: NonNullable<ApiStore["eventExecutions"]>;
+};
+
+type CreatorDispatchStore = CreatorScanStore & {
+  dispatchRequests: NonNullable<ApiStore["dispatchRequests"]>;
+  transaction<T>(operation: (store: CreatorDispatchStore) => Promise<T>): Promise<T>;
+};
+
+interface CreatorDispatchPayload extends Record<string, unknown> {
+  occurrenceId: string;
+  execution: {
+    ruleVersion: string;
+    inputSnapshot: Record<string, unknown>;
+  };
+  previousAttempt: number;
+}
+
+function requireCreatorScanStore(store: ApiStore): CreatorScanStore {
+  if (!store.worldEventDefinitions || !store.scheduledOccurrences || !store.eventExecutions) {
+    throw new ApiError(501, "NOT_IMPLEMENTED", "Creator event repositories are not configured");
+  }
+  return store as CreatorScanStore;
+}
+
+function parseDispatchAction(value: unknown): EventDispatchSelectionDto["action"] {
+  if (value !== "EXECUTE_EXISTING" && value !== "RETRY_FAILED" && value !== "RUN_TRIAL") {
+    throw new ApiError(400, "BAD_REQUEST", "action is invalid");
+  }
+  return value;
+}
+
+function parseDispatchSelections(value: unknown): EventDispatchSelectionDto[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new ApiError(400, "BAD_REQUEST", "selections must be a non-empty array");
+  }
+  const selections = value.map((selection, index) => {
+    if (!isRecord(selection)) {
+      throw new ApiError(400, "BAD_REQUEST", `selections[${index}] must be an object`);
+    }
+    assertAllowedBodyKeys(selection, ["candidateId", "action"]);
+    return {
+      candidateId: bodyString(selection.candidateId, `selections[${index}].candidateId`),
+      action: parseDispatchAction(selection.action),
+    };
+  });
+  const candidateIds = new Set(selections.map((selection) => selection.candidateId));
+  if (candidateIds.size !== selections.length) {
+    throw new ApiError(400, "BAD_REQUEST", "selections must not repeat a candidate");
+  }
+  return selections;
+}
+
+function parseDispatchPreviewRequest(value: unknown): {
+  selections: EventDispatchSelectionDto[];
+} {
+  if (!isRecord(value)) throw new ApiError(400, "BAD_REQUEST", "Request body must be an object");
+  assertAllowedBodyKeys(value, ["selections"]);
+  return { selections: parseDispatchSelections(value.selections) };
+}
+
+function parseCreateDispatchRequest(value: unknown): CreateEventDispatchBatchRequest {
+  if (!isRecord(value)) throw new ApiError(400, "BAD_REQUEST", "Request body must be an object");
+  assertAllowedBodyKeys(value, ["idempotencyKey", "selections"]);
+  return {
+    idempotencyKey: bodyString(value.idempotencyKey, "idempotencyKey"),
+    selections: parseDispatchSelections(value.selections),
+  };
+}
+
+function creatorBatchId(idempotencyKey: string): string {
+  return `creator-batch:${encodeURIComponent(idempotencyKey)}`;
+}
+
+function creatorDispatchId(batchId: string, candidateId: string): string {
+  return `creator-dispatch:${encodeURIComponent(batchId)}:${encodeURIComponent(candidateId)}`;
+}
+
+export type CreatorWorkerStatus =
+  | "NOT_STARTED"
+  | "STOPPED"
+  | "STALE"
+  | "RUNNING";
+
+export interface CreatorEventCandidatesResponse {
+  candidates: readonly CreatorEventCandidateDto[];
+  dispatchAvailable: boolean;
+  workerStatus: CreatorWorkerStatus;
+}
+
 export class ApiApplication {
   public readonly store: ApiStore;
   public readonly provider: ChatProvider | undefined;
@@ -1115,13 +1243,27 @@ export class ApiApplication {
   private readonly requireTrustedActor: boolean;
   private readonly readiness: (() => Promise<void>) | undefined;
   private readonly secretCipher: SecretCipher | undefined;
+  private readonly creatorDispatchEnabled: boolean;
+  private readonly creatorClock: () => Date;
+  private readonly interactionLogs: InteractionLogRepository;
+  private readonly logging: InteractionLogging;
+  private readonly replyFlights = new Map<string, Promise<ConversationReply>>();
 
   public constructor(
     store: ApiStore,
     provider?: ChatProvider,
     conversationOptions: ConversationOrchestratorOptions = {},
     securityOptions: { requireTrustedActor?: boolean } = {},
-    operationalOptions: { readiness?: () => Promise<void>; secretCipher?: SecretCipher } = {},
+    operationalOptions: {
+      readiness?: () => Promise<void>;
+      secretCipher?: SecretCipher;
+      creatorDispatchEnabled?: boolean;
+      creatorClock?: () => Date;
+      interactionLogs?: InteractionLogRepository;
+      interactionLogging?: InteractionLogging;
+      loggingCleanupEnabled?: boolean;
+      loggingCleanupIntervalMs?: number;
+    } = {},
   ) {
     this.store = store;
     this.provider = provider;
@@ -1129,6 +1271,10 @@ export class ApiApplication {
     this.requireTrustedActor = securityOptions.requireTrustedActor ?? false;
     this.readiness = operationalOptions.readiness;
     this.secretCipher = operationalOptions.secretCipher;
+    this.creatorDispatchEnabled = operationalOptions.creatorDispatchEnabled ?? false;
+    this.creatorClock = operationalOptions.creatorClock ?? (() => new Date());
+    this.interactionLogs = operationalOptions.interactionLogs ?? new InMemoryInteractionLogRepository();
+    this.logging = operationalOptions.interactionLogging ?? new InteractionLogging({ repository: this.interactionLogs, ...(operationalOptions.loggingCleanupEnabled === undefined ? {} : { cleanupEnabled: operationalOptions.loggingCleanupEnabled }), ...(operationalOptions.loggingCleanupIntervalMs === undefined ? {} : { cleanupIntervalMs: operationalOptions.loggingCleanupIntervalMs }) });
   }
 
   private trustedActor(request: Request, requestedCharacterId?: string): string | undefined {
@@ -1139,6 +1285,425 @@ export class ApiApplication {
       throw new ApiError(403, "FORBIDDEN", "Trusted actor does not match requested character");
     }
     return actor;
+  }
+
+
+  private requireCreatorDispatchStore(): CreatorDispatchStore {
+    const store = this.store as ApiStore & {
+      transaction?: CreatorDispatchStore["transaction"];
+    };
+    if (
+      !this.creatorDispatchEnabled ||
+      !store.dispatchRequests ||
+      typeof store.transaction !== "function"
+    ) {
+      throw new ApiError(
+        503,
+        "SERVICE_UNAVAILABLE",
+        "Creator dispatch requires PostgreSQL, Redis, and Worker",
+      );
+    }
+    requireCreatorScanStore(store);
+    return store as CreatorDispatchStore;
+  }
+
+
+  private async enrichCreatorCandidateRisks(
+    candidates: readonly CreatorEventCandidateDto[],
+    store: ApiStore,
+  ): Promise<CreatorEventCandidateDto[]> {
+    const conversationCache = new Map<string, Promise<readonly ConversationAggregate[]>>();
+    const imageRisk = async (): Promise<string | undefined> => {
+      const settings = await store.comfyUiSettings?.get();
+      const version = settings?.defaultWorkflowVersion;
+      if (!version) return "未配置默认图片工作流";
+      const templates = await store.imageWorkflowTemplates?.list();
+      if (!templates?.some((template) => template.version === version)) {
+        return "默认图片工作流版本不存在";
+      }
+      return undefined;
+    };
+    const resolvedImageRisk = candidates.some(
+      (candidate) => candidate.definition.outputs.generateImage,
+    ) ? await imageRisk() : undefined;
+
+    return Promise.all(candidates.map(async (candidate) => {
+      const candidateRisks = candidate.risks.filter(
+        (risk) => risk !== "需要已配置的图片工作流",
+      );
+      if (
+        candidate.definition.outputs.sendMessage &&
+        candidate.recipientCharacterIds.length > 0
+      ) {
+        if (!store.conversations) {
+          candidateRisks.push("会话仓储不可用");
+        } else {
+          for (const recipientId of candidate.recipientCharacterIds) {
+            let pending = conversationCache.get(recipientId);
+            if (!pending) {
+              pending = store.conversations.listByCharacter(recipientId);
+              conversationCache.set(recipientId, pending);
+            }
+            const conversations = await pending;
+            const hasActiveConversation = conversations.some((conversation) => {
+              if (conversation.conversation.storyWorldId !== candidate.worldId) return false;
+              const activeMemberIds = new Set(conversation.members
+                .filter((member) => member.leftAt === undefined)
+                .map((member) => member.characterId));
+              return activeMemberIds.has(recipientId) &&
+                candidate.targetCharacterIds.some((actorId) => activeMemberIds.has(actorId));
+            });
+            if (!hasActiveConversation) {
+              candidateRisks.push(`接收者 ${recipientId} 没有可用会话`);
+            }
+          }
+        }
+        if (store.proactiveMessageBudgets) {
+          await Promise.all(candidate.targetCharacterIds.map(async (actorId) => {
+            const budget = await store.proactiveMessageBudgets!.getActive(
+              candidate.worldId,
+              actorId,
+              candidate.scheduledFor,
+            );
+            if (budget && !canConsumeProactiveMessages(budget, 1)) {
+              candidateRisks.push(`角色 ${actorId} 主动消息预算不足`);
+            }
+          }));
+        }
+      }
+      if (candidate.definition.outputs.generateImage && resolvedImageRisk !== undefined) {
+        candidateRisks.push(resolvedImageRisk);
+      }
+      return { ...candidate, risks: [...new Set(candidateRisks)] };
+    }));
+  }
+
+  private async scanCreatorCandidates(
+    worldId: string,
+    horizonDays = 7,
+    repositories: ApiStore = this.store,
+    clock = this.creatorClock(),
+  ): Promise<CreatorEventCandidateDto[]> {
+    if (!Number.isInteger(horizonDays) || horizonDays < 1 || horizonDays > 31) {
+      throw new ApiError(400, "BAD_REQUEST", "horizonDays must be an integer from 1 to 31");
+    }
+    const store = requireCreatorScanStore(repositories);
+    const world = await store.storyWorlds.getById(worldId);
+    if (!world) throw new ApiError(404, "NOT_FOUND", "Story world not found");
+    const now = clock.toISOString();
+    const horizonEnd = new Date(clock.getTime() + horizonDays * 86_400_000).toISOString();
+    const [definitions, occurrences] = await Promise.all([
+      store.worldEventDefinitions.listByStoryWorld(worldId),
+      store.scheduledOccurrences.listForCreatorScan(worldId, horizonEnd, 2_000),
+    ]);
+    const executions = (
+      await Promise.all(
+        occurrences.map((occurrence) =>
+          store.eventExecutions.getLatestByOccurrence(occurrence.id),
+        ),
+      )
+    ).filter((execution) => execution !== undefined);
+
+    const candidates = scanCreatorEventCandidates({
+      worldId,
+      worldTimezone: world.timezone,
+      definitions: definitions.map(toWorldEventDefinitionDto),
+      occurrences: occurrences.map(toScheduledOccurrenceDto),
+      executions: executions.map((execution) => ({
+        ...execution,
+        targetCharacterIds: [...execution.targetCharacterIds],
+        inputSnapshot: { ...execution.inputSnapshot },
+        ...(execution.outputSnapshot === undefined
+          ? {}
+          : { outputSnapshot: { ...execution.outputSnapshot } }),
+      })),
+      now,
+      horizonDays,
+    });
+
+    const result: CreatorEventCandidateDto[] = [];
+    for (const candidate of candidates) {
+      if (
+        candidate.projected &&
+        candidate.occurrence &&
+        await store.scheduledOccurrences.getByOccurrenceKey(
+          worldId,
+          candidate.occurrence.occurrenceKey,
+        )
+      ) {
+        continue;
+      }
+      result.push(candidate);
+    }
+    return this.enrichCreatorCandidateRisks(result, repositories);
+  }
+
+  private creatorDispatchAvailable(): boolean {
+    const store = this.store as ApiStore & { transaction?: unknown };
+    return this.creatorDispatchEnabled &&
+      store.dispatchRequests !== undefined &&
+      typeof store.transaction === "function";
+  }
+
+  private async creatorWorkerStatus(): Promise<CreatorWorkerStatus> {
+    const heartbeat = await this.store.dispatchRequests?.getHeartbeat(
+      "living-network-worker",
+    );
+    if (!heartbeat) return "NOT_STARTED";
+    if (heartbeat.status === "STOPPED") return "STOPPED";
+    if (
+      this.creatorClock().getTime() - Date.parse(heartbeat.heartbeatAt) >
+      60_000
+    ) {
+      return "STALE";
+    }
+    return "RUNNING";
+  }
+
+  public async listCreatorEventCandidates(
+    worldId: string,
+    horizonDays = 7,
+  ): Promise<CreatorEventCandidatesResponse> {
+    const [candidates, workerStatus] = await Promise.all([
+      this.scanCreatorCandidates(worldId, horizonDays),
+      this.creatorWorkerStatus(),
+    ]);
+    return {
+      candidates,
+      dispatchAvailable: this.creatorDispatchAvailable(),
+      workerStatus,
+    };
+  }
+
+  public async previewCreatorEventDispatch(
+    worldId: string,
+    selections: readonly EventDispatchSelectionDto[],
+  ): Promise<EventDispatchPreviewDto> {
+    const candidates = await this.scanCreatorCandidates(worldId);
+    return previewCreatorEventDispatch({ worldId, candidates, selections });
+  }
+
+  private async aggregateCreatorDispatchBatch(
+    store: CreatorScanStore & {
+      dispatchRequests: NonNullable<ApiStore["dispatchRequests"]>;
+    },
+    batchId: string,
+  ): Promise<EventDispatchBatchDto> {
+    const requests = await store.dispatchRequests.listByBatch(batchId);
+    if (requests.length === 0) {
+      throw new ApiError(404, "NOT_FOUND", "Creator dispatch batch not found");
+    }
+
+    const items: EventDispatchBatchItemDto[] = [];
+    for (const request of requests) {
+      const payload = request.payload as Partial<CreatorDispatchPayload>;
+      const previousAttempt =
+        typeof payload.previousAttempt === "number" ? payload.previousAttempt : 0;
+      const [occurrence, latest] = await Promise.all([
+        store.scheduledOccurrences.getById(request.occurrenceId),
+        store.eventExecutions.getLatestByOccurrence(request.occurrenceId),
+      ]);
+      const freshExecution =
+        latest !== undefined && latest.attempt > previousAttempt ? latest : undefined;
+      let status: EventDispatchItemStatus =
+        request.status === "PENDING" ? "PENDING_DISPATCH" : "DISPATCHED";
+      if (freshExecution?.status === "RUNNING") status = "RUNNING";
+      if (freshExecution?.status === "COMPLETED") status = "COMPLETED";
+      if (freshExecution?.status === "FAILED") status = "FAILED";
+      if (freshExecution?.status === "CANCELLED") status = "CANCELLED";
+      if (!freshExecution && occurrence?.status === "CANCELLED") status = "CANCELLED";
+
+      const action = parseDispatchAction(request.action);
+      items.push({
+        id: request.id,
+        candidateId: request.candidateId,
+        action,
+        status,
+        occurrenceId: request.occurrenceId,
+        ...(freshExecution === undefined ? {} : { executionId: freshExecution.id }),
+        ...(freshExecution?.outputSnapshot === undefined
+          ? {}
+          : { outputSnapshot: { ...freshExecution.outputSnapshot } }),
+        ...(freshExecution?.failureReason === undefined
+          ? {}
+          : { failureReason: freshExecution.failureReason }),
+        ...(freshExecution === undefined && request.lastError !== undefined
+          ? { failureReason: request.lastError }
+          : {}),
+      });
+    }
+
+    const statuses = items.map((item) => item.status);
+    let status: EventDispatchBatchStatus;
+    if (statuses.includes("FAILED")) status = "FAILED";
+    else if (statuses.includes("RUNNING")) status = "RUNNING";
+    else if (statuses.includes("PENDING_DISPATCH")) status = "PENDING_DISPATCH";
+    else if (statuses.includes("DISPATCHED")) status = "DISPATCHED";
+    else if (statuses.every((item) => item === "COMPLETED")) status = "COMPLETED";
+    else status = "CANCELLED";
+
+    return {
+      id: batchId,
+      worldId: requests[0]!.storyWorldId,
+      status,
+      idempotencyKey: decodeURIComponent(batchId.slice("creator-batch:".length)),
+      items,
+      createdAt: requests.map((request) => request.requestedAt).sort()[0]!,
+      updatedAt: requests
+        .map((request) => request.enqueuedAt ?? request.requestedAt)
+        .sort()
+        .at(-1)!,
+    };
+  }
+
+  public async createCreatorEventDispatch(
+    worldId: string,
+    input: CreateEventDispatchBatchRequest,
+  ): Promise<EventDispatchBatchDto> {
+    const store = this.requireCreatorDispatchStore();
+    const batchId = creatorBatchId(input.idempotencyKey);
+    const now = this.creatorClock();
+
+    try {
+      return await store.transaction(async (transaction) => {
+        const existing = await transaction.dispatchRequests.listByBatch(batchId);
+        if (existing.length > 0) {
+          const storedSelections = new Set(
+            existing.map((request) => `${request.candidateId}\u0000${request.action}`),
+          );
+          const requestedSelections = new Set(
+            input.selections.map((selection) => `${selection.candidateId}\u0000${selection.action}`),
+          );
+          if (
+            storedSelections.size !== requestedSelections.size ||
+            [...storedSelections].some((selection) => !requestedSelections.has(selection))
+          ) {
+            throw new ApiError(
+              409,
+              "CONFLICT",
+              "Dispatch idempotency key was already used with different selections",
+            );
+          }
+          return this.aggregateCreatorDispatchBatch(transaction, batchId);
+        }
+
+        const candidates = await this.scanCreatorCandidates(
+          worldId,
+          7,
+          transaction,
+          now,
+        );
+        const preview = previewCreatorEventDispatch({
+          worldId,
+          candidates,
+          selections: input.selections,
+        });
+        if (!preview.canDispatch) {
+          throw new ApiError(
+            409,
+            "CONFLICT",
+            "One or more creator event candidates changed before dispatch",
+          );
+        }
+        const candidateById = new Map(
+          candidates.map((candidate) => [candidate.id, candidate]),
+        );
+
+        for (const selection of input.selections) {
+          const candidate = candidateById.get(selection.candidateId)!;
+          const definition = await transaction.worldEventDefinitions.getById(
+            candidate.definition.id,
+          );
+          if (!definition) {
+            throw new ApiError(409, "CONFLICT", "Event definition changed before dispatch");
+          }
+
+          let occurrence: ScheduledOccurrence;
+          if (selection.action === "RUN_TRIAL") {
+            const occurrenceId = `creator-trial:${encodeURIComponent(batchId)}:${encodeURIComponent(candidate.id)}`;
+            const stored = await transaction.scheduledOccurrences.save(
+              createScheduledOccurrence({
+                id: occurrenceId,
+                definition,
+                scheduledFor: now.toISOString(),
+                occurrenceKey: occurrenceId,
+                status: ScheduledOccurrenceStatus.PENDING,
+                createdAt: now.toISOString(),
+              }),
+            );
+            occurrence = stored.occurrence;
+          } else if (candidate.projected && candidate.occurrence) {
+            const stored = await transaction.scheduledOccurrences.save(
+              createScheduledOccurrence({
+                id: candidate.occurrence.id,
+                definition,
+                scheduledFor: candidate.occurrence.scheduledFor,
+                occurrenceKey: candidate.occurrence.occurrenceKey,
+                status: ScheduledOccurrenceStatus.PENDING,
+                createdAt: now.toISOString(),
+              }),
+            );
+            occurrence = stored.occurrence;
+          } else {
+            const occurrenceId = candidate.occurrence?.id;
+            if (occurrenceId === undefined) {
+              throw new ApiError(409, "CONFLICT", "Occurrence changed before dispatch");
+            }
+            const storedOccurrence =
+              await transaction.scheduledOccurrences.getById(occurrenceId);
+            if (!storedOccurrence) {
+              throw new ApiError(409, "CONFLICT", "Occurrence changed before dispatch");
+            }
+            occurrence = storedOccurrence;
+          }
+
+          const latest = await transaction.eventExecutions.getLatestByOccurrence(
+            occurrence.id,
+          );
+          const dispatchId = creatorDispatchId(batchId, candidate.id);
+          const payload: CreatorDispatchPayload = {
+            occurrenceId: occurrence.id,
+            execution: {
+              ruleVersion: "creator-dispatch-v1",
+              inputSnapshot: {
+                batchId,
+                candidateId: candidate.id,
+                action: selection.action,
+              },
+            },
+            previousAttempt: latest?.attempt ?? 0,
+          };
+          const request: ExecutionDispatchRequest<CreatorDispatchPayload> = {
+            id: dispatchId,
+            batchId,
+            candidateId: candidate.id,
+            action: selection.action,
+            idempotencyKey: `${batchId}:${candidate.id}:${selection.action}`,
+            storyWorldId: worldId,
+            occurrenceId: occurrence.id,
+            payload,
+            status: "PENDING",
+            attempts: 0,
+            requestedAt: now.toISOString(),
+          };
+          await transaction.dispatchRequests.save(request);
+        }
+        return this.aggregateCreatorDispatchBatch(transaction, batchId);
+      });
+    } catch (error) {
+      if (error instanceof ApiError) throw error;
+      if (error instanceof Error && error.message.includes("idempotency")) {
+        throw new ApiError(409, "CONFLICT", error.message);
+      }
+      throw error;
+    }
+  }
+
+  public async getCreatorEventDispatchBatch(
+    batchId: string,
+  ): Promise<EventDispatchBatchDto> {
+    const store = this.requireCreatorDispatchStore();
+    return this.aggregateCreatorDispatchBatch(store, batchId);
   }
 
   public async listWorlds(): Promise<StoryWorldDto[]> {
@@ -1809,6 +2374,8 @@ throw error;
   public async saveLlmProviderProfile(input: SaveLlmProviderProfileRequest): Promise<LlmProviderProfileDto> {
     const store = requireLlmProviderProfileStore(this.store);
     const existing = await store.llmProviderProfiles.getById(input.id);
+    const profiles = await store.llmProviderProfiles.list();
+    const isOnlyProfile = profiles.every((profile) => profile.id === input.id);
     let encryptedApiKey = existing?.encryptedApiKey;
     let encryptionIv = existing?.encryptionIv;
     if (input.apiKey !== undefined) {
@@ -1825,7 +2392,7 @@ throw error;
         ...(input.temperature === undefined ? {} : { temperature: input.temperature }),
         ...(encryptedApiKey === undefined ? {} : { encryptedApiKey }),
         ...(encryptionIv === undefined ? {} : { encryptionIv }),
-        isActive: input.isActive ?? existing?.isActive ?? false,
+        isActive: isOnlyProfile ? true : (input.isActive ?? existing?.isActive ?? false),
         createdAt: existing?.createdAt ?? new Date().toISOString(), updatedAt: new Date().toISOString(),
       });
       await store.llmProviderProfiles.save(profile);
@@ -1968,11 +2535,128 @@ throw error;
     return messages.map(toMessageDto);
   }
 
+  private automaticReplyState(
+    status: AutomaticReplyState["status"],
+    trace: AutomaticReplyTrace,
+    sourceMessageId: string,
+  ): AutomaticReplyState {
+    return { status, correlationId: trace.correlationId, sourceMessageId };
+  }
+
+  private async scheduleAutomaticReply(
+    conversationId: string,
+    readerCharacterId: string,
+    sourceMessageId: string,
+    trace: AutomaticReplyTrace,
+    requireLatest: boolean,
+  ): Promise<ScheduledAutomaticReply> {
+    const store = requireChatStore(this.store);
+    const conversation = await store.conversations.getById(conversationId);
+    if (!conversation) throw new ApiError(404, "NOT_FOUND", "Conversation not found");
+
+    const characters = await Promise.all(
+      conversation.members
+        .filter((member) => member.leftAt === undefined)
+        .map((member) => store.characters.getById(member.characterId)),
+    );
+    const ai = findEligibleAi(conversation, characters, readerCharacterId);
+    const messages = await store.messages.listByConversation(conversationId);
+    const source = messages.find((message) => message.id === sourceMessageId);
+    if (!ai || !isEligibleSource(source, readerCharacterId) || !this.provider) {
+      return { state: this.automaticReplyState("NOT_APPLICABLE", trace, sourceMessageId) };
+    }
+
+    const userIds = new Set(
+      characters
+        .filter((character) => character?.role === CharacterRole.USER)
+        .map((character) => character!.id),
+    );
+    const latestUserMessage = [...messages]
+      .reverse()
+      .find((message) => message.authorCharacterId !== undefined && userIds.has(message.authorCharacterId));
+    if (requireLatest && latestUserMessage?.id !== sourceMessageId) {
+      throw new ApiError(409, "CONFLICT", "sourceMessageId is not the latest USER message");
+    }
+
+    const deterministicId = assistantReplyId(conversationId, sourceMessageId);
+    if (messages.some((message) => message.id === deterministicId)) {
+      return { state: this.automaticReplyState("ALREADY_EXISTS", trace, sourceMessageId) };
+    }
+
+    const flightKey = automaticReplyFlightKey(conversationId, sourceMessageId);
+    const active = this.replyFlights.get(flightKey);
+    if (active) {
+      return {
+        state: this.automaticReplyState("QUEUED", trace, sourceMessageId),
+        completion: active,
+      };
+    }
+
+    const logBase = {
+      source: "API" as const,
+      category: "CHAT" as const,
+      correlationId: trace.correlationId,
+      ...(trace.requestId === undefined ? {} : { requestId: trace.requestId }),
+      conversationId,
+      actorId: readerCharacterId,
+      entityType: "message",
+      entityId: sourceMessageId,
+    };
+    void this.appendLog({ ...logBase, level: "INFO", action: "auto_reply.queued", outcome: "QUEUED" });
+
+    let completion!: Promise<ConversationReply>;
+    completion = (async (): Promise<ConversationReply> => {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      await this.appendLog({ ...logBase, level: "INFO", action: "auto_reply.started", outcome: "STARTED" });
+      try {
+        const currentMessages = await store.messages.listByConversation(conversationId);
+        const currentLatestUser = [...currentMessages]
+          .reverse()
+          .find((message) => message.authorCharacterId !== undefined && userIds.has(message.authorCharacterId));
+        if (currentLatestUser?.id !== sourceMessageId) {
+          throw new ApiError(409, "CONFLICT", "A newer USER message superseded this automatic reply");
+        }        const reply = await new ConversationOrchestrator(
+          this.store,
+          this.provider!,
+          this.conversationOptions,
+        ).completeReply(conversationId, readerCharacterId, trace);
+        await this.appendLog({
+          ...logBase,
+          level: "INFO",
+          action: "auto_reply.completed",
+          outcome: reply.inserted ? "SUCCESS" : "REPLAY",
+          ...(previewMessage(reply.message.text) === undefined ? {} : { message: previewMessage(reply.message.text)! }),
+          details: { replyMessageId: reply.message.id },
+        });
+        return reply;
+      } catch (error) {
+        await this.appendLog({
+          ...logBase,
+          level: "ERROR",
+          action: "auto_reply.failed",
+          outcome: "FAILURE",
+          ...(previewMessage(error instanceof Error ? error.message : "Automatic reply failed") === undefined ? {} : { message: previewMessage(error instanceof Error ? error.message : "Automatic reply failed")! }),
+          details: { retryable: true },
+        });
+        throw error;
+      } finally {
+        if (this.replyFlights.get(flightKey) === completion) this.replyFlights.delete(flightKey);
+      }
+    })();
+    this.replyFlights.set(flightKey, completion);
+    void completion.catch(() => undefined);
+    return {
+      state: this.automaticReplyState("QUEUED", trace, sourceMessageId),
+      completion,
+    };
+  }
+
   public async sendMessage(
     conversationId: string,
     authorCharacterId: string | undefined,
     input: SendMessageRequest,
-  ): Promise<SendMessageResultDto> {
+    trace: AutomaticReplyTrace = { correlationId: crypto.randomUUID(), conversationId },
+  ): Promise<SendMessageWithAutoReplyResult> {
     const store = requireChatStore(this.store);
     const conversation = await store.conversations.getById(conversationId);
     if (!conversation) throw new ApiError(404, "NOT_FOUND", "Conversation not found");
@@ -1995,18 +2679,76 @@ throw error;
         ...(input.stickerId === undefined ? {} : { stickerId: input.stickerId }),
       });
       const result = await store.messages.save(message);
-      return { message: toMessageDto(result.message), inserted: result.inserted };
+      await this.appendLog({
+        level: "INFO",
+        source: "API",
+        category: "CHAT",
+        action: "message.save",
+        outcome: result.inserted ? "SUCCESS" : "REPLAY",
+        correlationId: trace.correlationId,
+        ...(trace.requestId === undefined ? {} : { requestId: trace.requestId }),
+        conversationId,
+        ...(authorCharacterId === undefined ? {} : { actorId: authorCharacterId }),
+        entityType: "message",
+        entityId: result.message.id,
+        ...(previewMessage(result.message.text) === undefined ? {} : { message: previewMessage(result.message.text)! }),
+      });
+      const scheduled = await this.scheduleAutomaticReply(
+        conversationId,
+        authorCharacterId ?? "",
+        result.message.id,
+        trace,
+        false,
+      );
+      return {
+        message: toMessageDto(result.message),
+        inserted: result.inserted,
+        autoReply: scheduled.state,
+      };
     } catch (error) {
       if (error instanceof TypeError && error.message.includes("idempotency")) {
         throw new ApiError(409, "CONFLICT", error.message);
       }
-      if (error instanceof TypeError) {
-        throw new ApiError(400, "BAD_REQUEST", error.message);
-      }
+      if (error instanceof TypeError) throw new ApiError(400, "BAD_REQUEST", error.message);
       throw error;
     }
   }
 
+  public async retryAutomaticReply(
+    conversationId: string,
+    readerCharacterId: string,
+    sourceMessageId: string | undefined,
+    trace: AutomaticReplyTrace,
+  ): Promise<RetryAutomaticReplyState> {
+    const store = requireChatStore(this.store);
+    const messages = await store.messages.listByConversation(conversationId);
+    const selected = sourceMessageId ?? [...messages].reverse().find((message) => message.authorCharacterId === readerCharacterId)?.id;
+    if (!selected) throw new ApiError(409, "CONFLICT", "Conversation has no USER message to retry");
+    const scheduled = await this.scheduleAutomaticReply(
+      conversationId,
+      readerCharacterId,
+      selected,
+      trace,
+      true,
+    );
+    if (scheduled.state.status !== "QUEUED" || !scheduled.completion) return scheduled.state;
+    try {
+      const reply = await scheduled.completion;
+      return {
+        status: "COMPLETED",
+        correlationId: trace.correlationId,
+        sourceMessageId: selected,
+        messageId: reply.message.id,
+      };
+    } catch {
+      return {
+        status: "FAILED",
+        correlationId: trace.correlationId,
+        sourceMessageId: selected,
+        retryable: true,
+      };
+    }
+  }
   public async streamConversation(
     conversationId: string,
     characterId: string,
@@ -2103,10 +2845,56 @@ throw error;
     }
   }
 
+  public stop(): void { this.logging.stop(); }  public recordHttpCompletion(input: { method: string; pathname: string; status: number; durationMs: number; requestId?: string; correlationId: string }): void {
+    if (input.pathname === "/health" || input.pathname === "/ready" || input.pathname.startsWith("/v1/interaction-logs")) return;
+    void this.appendLog({ level: input.status >= 400 ? "ERROR" : "INFO", source: "API", category: "HTTP", action: `${input.method} ${input.pathname}`, outcome: input.status >= 400 ? "FAILURE" : "SUCCESS", durationMs: input.durationMs, correlationId: input.correlationId, ...(input.requestId === undefined ? {} : { requestId: input.requestId }), details: { method: input.method, pathname: input.pathname, status: input.status } });
+  }
+
+  private async appendLog(input: Omit<InteractionLogDto, "id" | "createdAt">): Promise<void> {
+    try { await this.logging.append(input); } catch { /* logging is best effort */ }
+  }
+
+  private async listInteractionLogs(url: URL): Promise<unknown> {
+    const rawLimit = url.searchParams.get("limit");
+    const limit = rawLimit === null ? 100 : Number(rawLimit);
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 200) throw new ApiError(400, "BAD_REQUEST", "limit must be between 1 and 200");
+    const enums: Record<string, readonly string[]> = { level: ["DEBUG", "INFO", "WARN", "ERROR"], source: ["API", "AI", "WORKER", "SYSTEM", "DATABASE", "PROVIDER"], category: ["HTTP", "CHAT", "LLM", "DISPATCH", "QUEUE", "EVENT_OUTPUT", "IMAGE", "WORKER_LIFECYCLE", "SYSTEM", "DATABASE", "AUTH", "PROVIDER"] };
+    for (const key of ["level", "source", "category"] as const) { const value = url.searchParams.get(key); if (value !== null && !enums[key]!.includes(value)) throw new ApiError(400, "BAD_REQUEST", `${key} is invalid`); }
+    const q: InteractionLogQuery = { limit };
+    for (const key of ["cursor", "level", "source", "category", "action", "outcome", "requestId", "correlationId", "worldId", "actorId", "conversationId", "entityType", "entityId", "query", "createdAfter", "createdBefore"] as const) {
+      const value = url.searchParams.get(key); if (value !== null && value.length > 0) (q as Record<string, unknown>)[key] = value;
+    }
+    try { return await this.logging.query(q); } catch (error) { throw new ApiError(400, "BAD_REQUEST", error instanceof Error ? error.message : "Invalid log query"); }
+  }
+
+  private async testLlmProfile(id: string, correlationId: string): Promise<ProviderConnectionTestResultDto> {
+    const store = requireLlmProviderProfileStore(this.store); const profile = await store.llmProviderProfiles.getById(id);
+    if (!profile) throw new ApiError(404, "NOT_FOUND", "LLM provider profile not found");
+    const started = Date.now();
+    try {
+      const key = profile.encryptedApiKey && profile.encryptionIv && this.secretCipher ? this.secretCipher.decrypt({ ciphertext: profile.encryptedApiKey, iv: profile.encryptionIv }) : undefined;
+      const provider = createProviderFromProfile(profile, key);
+      const result = await provider.complete({ messages: [{ role: "user", content: "Reply with exactly OK." }], model: profile.model, temperature: 0, maxTokens: 8 });
+      return { success: true, ok: result.content.trim() === "OK", profileId: id, protocol: profile.protocol, model: result.model, latencyMs: Date.now() - started, preview: result.content.slice(0, 500), correlationId };
+    } catch (error) {
+      const e = error as ProviderError; return { success: false, ok: false, profileId: id, protocol: profile.protocol, model: profile.model, latencyMs: Date.now() - started, error: { code: e.code, message: e instanceof Error ? e.message.slice(0, 200) : "Provider test failed", ...(e.retryable === undefined ? {} : { retryable: e.retryable }), ...(e.status === undefined ? {} : { status: e.status }) }, correlationId };
+    }
+  }
   public async handle(request: Request): Promise<Response> {
+    const requestId = request.headers.get("x-request-id")?.trim() || crypto.randomUUID();
+    const supplied = request.headers.get("x-correlation-id")?.trim();
+    const correlationId = supplied && supplied.length <= 128 && /^[A-Za-z0-9._:-]+$/.test(supplied) ? supplied : crypto.randomUUID();
+    const headers = { "x-request-id": requestId, "x-correlation-id": correlationId };
+    const requestHeaders = new Headers(request.headers);
+    for (const [key, value] of Object.entries(headers)) requestHeaders.set(key, value);
+    const response = await this.handleInternal(new Request(request, { headers: requestHeaders }));
+    return withHeaders(response, headers);
+  }
+
+  private async handleInternal(request: Request): Promise<Response> {
     try {
       const url = new URL(request.url);
-
+      const correlationId = (() => { const value = request.headers.get("x-correlation-id")?.trim(); return value && value.length <= 128 && /^[A-Za-z0-9._:-]+$/.test(value) ? value : crypto.randomUUID(); })();
       if (request.method === "GET" && url.pathname === "/health") {
         return jsonResponse({ status: "ok" });
       }
@@ -2118,6 +2906,80 @@ throw error;
           throw new ApiError(503, "SERVICE_UNAVAILABLE", "Service is not ready");
         }
         return jsonResponse({ status: "ready" });
+      }
+
+      const creatorCandidatesPath =
+        /^\/v1\/creator\/worlds\/([^/]+)\/event-candidates$/.exec(
+          url.pathname,
+        );
+      if (creatorCandidatesPath) {
+        if (request.method !== "GET") {
+          throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
+        }
+        const rawHorizonDays = url.searchParams.get("horizonDays");
+        const horizonDays = rawHorizonDays === null ? 7 : Number(rawHorizonDays);
+        return jsonResponse({
+          data: await this.listCreatorEventCandidates(
+            decodeURIComponent(creatorCandidatesPath[1] ?? ""),
+            horizonDays,
+          ),
+        });
+      }
+      const creatorPreviewPath =
+        /^\/v1\/creator\/worlds\/([^/]+)\/event-dispatches\/preview$/.exec(
+          url.pathname,
+        );
+      if (creatorPreviewPath) {
+        if (request.method !== "POST") {
+          throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
+        }
+        let body: unknown;
+        try {
+          body = await request.json();
+        } catch {
+          throw new ApiError(400, "BAD_REQUEST", "Request body must be valid JSON");
+        }
+        const input = parseDispatchPreviewRequest(body);
+        return jsonResponse({
+          data: await this.previewCreatorEventDispatch(
+            decodeURIComponent(creatorPreviewPath[1] ?? ""),
+            input.selections,
+          ),
+        });
+      }
+
+      const creatorDispatchPath =
+        /^\/v1\/creator\/worlds\/([^/]+)\/event-dispatches$/.exec(url.pathname);
+      if (creatorDispatchPath) {
+        if (request.method !== "POST") {
+          throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
+        }
+        this.trustedActor(request);
+        let body: unknown;
+        try {
+          body = await request.json();
+        } catch {
+          throw new ApiError(400, "BAD_REQUEST", "Request body must be valid JSON");
+        }
+        return jsonResponse({
+          data: await this.createCreatorEventDispatch(
+            decodeURIComponent(creatorDispatchPath[1] ?? ""),
+            parseCreateDispatchRequest(body),
+          ),
+        }, 201);
+      }
+
+      const creatorBatchPath =
+        /^\/v1\/creator\/event-dispatches\/([^/]+)$/.exec(url.pathname);
+      if (creatorBatchPath) {
+        if (request.method !== "GET") {
+          throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
+        }
+        return jsonResponse({
+          data: await this.getCreatorEventDispatchBatch(
+            decodeURIComponent(creatorBatchPath[1] ?? ""),
+          ),
+        });
       }
 
       if (url.pathname === "/v1/worlds") {
@@ -2421,6 +3283,25 @@ throw error;
         return jsonResponse({ data: await this.listConversations(characterId) });
       }
 
+      const retryReplyPath = /^\/v1\/conversations\/([^/]+)\/auto-reply\/retry$/.exec(url.pathname);
+      if (retryReplyPath) {
+        if (request.method !== "POST") throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
+        let body: unknown;
+        try { body = await request.json(); } catch { throw new ApiError(400, "BAD_REQUEST", "Request body must be valid JSON"); }
+        if (!isRecord(body)) throw new ApiError(400, "BAD_REQUEST", "Request body must be an object");
+        assertAllowedBodyKeys(body, ["readerCharacterId", "sourceMessageId"]);
+        const readerCharacterId = bodyString(body.readerCharacterId, "readerCharacterId");
+        const sourceMessageId = body.sourceMessageId === undefined ? undefined : bodyString(body.sourceMessageId, "sourceMessageId");
+        this.trustedActor(request, readerCharacterId);
+        const conversationId = decodeURIComponent(retryReplyPath[1] ?? "");
+        const trace: AutomaticReplyTrace = {
+          correlationId,
+          conversationId,
+          actorId: readerCharacterId,
+          ...(request.headers.get("x-request-id") === null ? {} : { requestId: request.headers.get("x-request-id")! }),
+        };
+        return jsonResponse({ data: await this.retryAutomaticReply(conversationId, readerCharacterId, sourceMessageId, trace) });
+      }
       const messagePath = /^\/v1\/conversations\/([^/]+)\/messages$/.exec(url.pathname);
       if (messagePath) {
         const conversationId = decodeURIComponent(messagePath[1] ?? "");
@@ -2442,8 +3323,14 @@ throw error;
           if (this.requireTrustedActor && actor !== undefined && input.authorCharacterId === undefined) {
             throw new ApiError(403, "FORBIDDEN", "Public API cannot create system messages");
           }
+          const trace: AutomaticReplyTrace = {
+            correlationId,
+            conversationId,
+            ...(request.headers.get("x-request-id") === null ? {} : { requestId: request.headers.get("x-request-id")! }),
+            ...(input.authorCharacterId === undefined ? {} : { actorId: input.authorCharacterId }),
+          };
           return jsonResponse({
-            data: await this.sendMessage(conversationId, input.authorCharacterId, input),
+            data: await this.sendMessage(conversationId, input.authorCharacterId, input, trace),
           });
         }
         throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
@@ -2528,6 +3415,50 @@ throw error;
         throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
       }
 
+
+      if (request.method === "GET" && url.pathname === "/v1/interaction-logs") {
+        return withHeaders(jsonResponse({ data: await this.listInteractionLogs(url) }), { "x-correlation-id": correlationId, "x-request-id": request.headers.get("x-request-id") ?? "" });
+      }
+      const logStream = request.method === "GET" && url.pathname === "/v1/interaction-logs/stream";
+      if (logStream) {
+        const cursor = url.searchParams.get("cursor") ?? request.headers.get("last-event-id") ?? undefined;
+        const history = await this.logging.query({ limit: 200, ...(cursor === undefined ? {} : { cursor }) });
+        const encoder = new TextEncoder();
+        let cleanupStream: (() => void) | undefined;
+        const stream = new ReadableStream<Uint8Array>({
+          start: (controller) => {
+            let closed = false;
+            const seen = new Set(history.items.map((item) => item.id));
+            const writeLog = (item: InteractionLogDto): void => {
+              if (closed || seen.has(item.id)) return;
+              seen.add(item.id);
+              const eventId = encodeInteractionLogCursor(item.createdAt, item.id);
+              controller.enqueue(encoder.encode(`event: log\nid: ${eventId}\ndata: ${JSON.stringify(item)}\n\n`));
+            };
+            for (const item of history.items) {
+              seen.delete(item.id);
+              writeLog(item);
+            }
+            const unsubscribe = this.logging.subscribe(writeLog);
+            const poll = setInterval(() => {
+              void this.logging.query({ limit: 200 }).then((page) => { for (const item of page.items) writeLog(item); }).catch(() => undefined);
+            }, 1_000);
+            const keepalive = setInterval(() => { if (!closed) controller.enqueue(encoder.encode(": keepalive\n\n")); }, 15_000);
+            const cleanup = (): void => { if (closed) return; closed = true; unsubscribe(); clearInterval(poll); clearInterval(keepalive); request.signal.removeEventListener("abort", cleanup); };
+            cleanupStream = cleanup;
+            request.signal.addEventListener("abort", cleanup, { once: true });
+          },
+          cancel: () => { cleanupStream?.(); },
+        });
+        return withHeaders(new Response(stream, { headers: { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-cache", "connection": "keep-alive" } }), { "x-correlation-id": correlationId });
+      }
+      const testPath = /^\/v1\/llm-provider-profiles\/([^/]+)\/test$/.exec(url.pathname);
+      if (testPath) {
+        if (request.method !== "POST") throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
+        const result = await this.testLlmProfile(decodeURIComponent(testPath[1] ?? ""), correlationId);
+        void this.appendLog({ level: result.success ? "INFO" : "ERROR", source: "API", category: "LLM", action: "provider.test", outcome: result.success ? "SUCCESS" : "FAILURE", correlationId, entityType: "llm-provider-profile", entityId: decodeURIComponent(testPath[1] ?? ""), ...(result.preview === undefined ? {} : { message: result.preview }) });
+        return withHeaders(jsonResponse({ data: result }), { "x-correlation-id": correlationId });
+      }
       if (url.pathname === "/v1/llm-provider-profiles") {
         if (request.method === "GET") return jsonResponse({ data: await this.listLlmProviderProfiles() });
         if (request.method === "PUT") {

@@ -1,10 +1,16 @@
 import type {
   AppearanceSettingsDto,
-  ComfyUiSettingsDto,
   CharacterDto,
+  ComfyUiSettingsDto,
   ConversationDetailDto,
-  ImageWorkflowTemplateDto,
+  CreatorEventCandidateDto as ContractCreatorEventCandidateDto,
+  EventDispatchAction,
+  EventDispatchBatchDto as ContractEventDispatchBatchDto,
+  EventDispatchPreviewDto as ContractEventDispatchPreviewDto,
+  EventDispatchSelectionDto,
   ImageJobDto,
+  ImageWorkflowTemplateDto,
+  LlmProviderProfileDto,
   MomentDto,
   RelationshipEdgeDto,
   StickerDto,
@@ -12,8 +18,8 @@ import type {
   StoryWorldDto,
   WorldCalendarDto,
   WorldEventDefinitionDto,
+  InteractionLogDto, InteractionLogPageDto, ProviderConnectionTestResultDto,
   WorldLoreEntryDto,
-  LlmProviderProfileDto,
 } from "../../../packages/contracts/src/index.ts";
 
 export type ApiWorld = StoryWorldDto;
@@ -29,6 +35,21 @@ export type ApiWorkflow = ImageWorkflowTemplateDto;
 export type ApiImageJob = ImageJobDto;
 export type ApiLlmProviderProfile = LlmProviderProfileDto;
 export type ApiComfyUiSettings = ComfyUiSettingsDto;
+export type ApiInteractionLog = InteractionLogDto;
+export type ApiInteractionLogPage = InteractionLogPageDto;
+export type ApiProviderTest = ProviderConnectionTestResultDto;
+
+export type CreatorDispatchAction = EventDispatchAction;
+export type CreatorEventCandidateDto = ContractCreatorEventCandidateDto;
+export type CreatorDispatchSelectionDto = EventDispatchSelectionDto;
+export type EventDispatchPreviewDto = ContractEventDispatchPreviewDto;
+export type EventDispatchBatchDto = ContractEventDispatchBatchDto;
+
+export interface CreatorEventCandidatesDto {
+  candidates: readonly CreatorEventCandidateDto[];
+  dispatchAvailable?: boolean;
+  workerStatus?: string;
+}
 
 export interface ApiStickerPack extends StickerPackDto {
   _stickers?: StickerDto[];

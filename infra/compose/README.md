@@ -1,40 +1,39 @@
-# Local infrastructure
+# Persistent local stack
 
-`docker-compose.yml` provides the local PostgreSQL, Redis and MinIO services
-used by the planned production adapters. Images are pinned to explicit tags;
-the development credentials are intentionally local-only defaults.
+The Compose file runs the complete persistent development stack:
 
-## Start
+- PostgreSQL, Redis and MinIO with named data volumes;
+- a repeat-safe `migrate`/seed job;
+- API and Worker containers with restart policies and health checks;
+- an Nginx Web container that proxies `/v1`, `/health` and `/ready` to the API.
 
-```sh
-cp .env.example .env
-docker compose -f infra/compose/docker-compose.yml --env-file .env up -d
-docker compose -f infra/compose/docker-compose.yml ps
+## Windows one-command workflow
+
+From the repository root, start Docker Desktop, create `.env`, and run:
+
+```powershell
+Copy-Item .env.example .env
+.\scripts\persistent-up.ps1
 ```
 
-The current repository still uses an explicit SQL client boundary and does not
-run migrations automatically. Apply migrations in numeric order after the
-database health check, beginning with `packages/database/migrations/0001_*` and
-ending at the newest migration.
+The first run builds the application image and applies all pending migrations. Check the stack with:
 
-## Stop
-
-```sh
-docker compose -f infra/compose/docker-compose.yml --env-file .env down
+```powershell
+.\scripts\persistent-status.ps1
 ```
 
-Use `down -v` only when intentionally deleting local PostgreSQL, Redis and
-MinIO data. Production credentials and persistent volumes must be managed
-outside this development file.
+Open the application at <http://127.0.0.1:4173>. The API is also exposed at <http://127.0.0.1:3000>.
 
-For the real PostgreSQL/Redis integration test, start the services and run:
+Stop the stack without deleting data:
 
-```sh
-RUN_REAL_INTEGRATION=1 \
-DATABASE_URL=postgresql://living_network:living_network_dev_only@127.0.0.1:5432/living_network \
-REDIS_URL=redis://127.0.0.1:6379 \
-  node --test integration/*.test.ts
+```powershell
+.\scripts\persistent-down.ps1
 ```
 
-Without `RUN_REAL_INTEGRATION=1`, the test is skipped so unit CI does not
-silently depend on local containers.
+The scripts validate Docker Desktop, Compose and `.env` before doing anything. `down -v` is intentionally not used by the stop script because it deletes local databases, Redis data, MinIO objects and media files.
+
+## Configuration
+
+Keep `INTEGRATION_SECRET_KEY` stable. It encrypts model API keys saved through the settings page. Set `IMAGE_GENERATION_ENABLED=true` only after configuring a default workflow and ComfyUI connection in the Web settings. ComfyUI may run separately on the Windows host at `http://127.0.0.1:8188`; when ComfyUI is containerized, use `http://host.docker.internal:8188` from the application stack.
+
+The `migrate` service exits successfully after migrations and seed data are applied; API, Worker and Web wait for their required dependencies before starting.

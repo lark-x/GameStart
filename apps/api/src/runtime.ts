@@ -11,6 +11,8 @@ import type { SecretCipher } from "../../../packages/ai/src/index.ts";
 import { ApiApplication } from "./app.ts";
 import { createApiServer } from "./server.ts";
 import type { ConversationOrchestratorOptions } from "./conversation-orchestrator.ts";
+import type { InteractionLogRepository } from "../../../packages/database/src/interaction-log.ts";
+import type { InteractionLogging } from "./interaction-logging.ts";
 
 export interface ApiListenOptions {
   host: string;
@@ -33,7 +35,7 @@ export function createApiRuntime(
   provider?: ChatProvider,
   conversationOptions?: ConversationOrchestratorOptions,
   securityOptions?: { requireTrustedActor?: boolean },
-  operationalOptions?: { readiness?: () => Promise<void>; secretCipher?: SecretCipher },
+  operationalOptions?: { readiness?: () => Promise<void>; secretCipher?: SecretCipher; creatorDispatchEnabled?: boolean; creatorClock?: () => Date; interactionLogs?: InteractionLogRepository; interactionLogging?: InteractionLogging; loggingCleanupEnabled?: boolean; loggingCleanupIntervalMs?: number },
 ): ApiRuntime {
   const application = new ApiApplication(
     repositories,
@@ -55,7 +57,7 @@ export function createApiRuntimeFromEnvironment(
   provider?: ChatProvider,
   conversationOptions?: ConversationOrchestratorOptions,
   securityOptions?: { requireTrustedActor?: boolean },
-  operationalOptions?: { readiness?: () => Promise<void>; secretCipher?: SecretCipher },
+  operationalOptions?: { readiness?: () => Promise<void>; secretCipher?: SecretCipher; creatorDispatchEnabled?: boolean; creatorClock?: () => Date; interactionLogs?: InteractionLogRepository; interactionLogging?: InteractionLogging; loggingCleanupEnabled?: boolean; loggingCleanupIntervalMs?: number },
 ): ApiRuntime {
   const config = loadAppConfig(env);
   const resolvedProvider = provider ?? createProviderFromConfig({ ...config.llm });
@@ -84,6 +86,7 @@ export function listenApiRuntime(runtime: ApiRuntime): Promise<Server> {
 }
 
 export function closeApiRuntime(runtime: ApiRuntime): Promise<void> {
+  runtime.application.stop();
   if (!runtime.server.listening) {
     return Promise.resolve();
   }

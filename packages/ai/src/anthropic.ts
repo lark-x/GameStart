@@ -1,3 +1,4 @@
+import { emitObservation } from "./observability.ts";
 import {
   ProviderError,
   type ChatCompletionRequest,
@@ -14,6 +15,8 @@ export interface AnthropicConfig {
   model?: string;
   timeoutMs?: number;
   apiVersion?: string;
+  observationHook?: import("./observability.ts").ChatObservationHook;
+  profileContext?: { profileId?: string; profileName?: string; protocol?: string };
 }
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -113,6 +116,8 @@ export class AnthropicProvider implements ChatProvider {
   private readonly timeoutMs: number;
   private readonly apiVersion: string;
   private readonly fetchImpl: FetchImplementation;
+  private readonly observationHook: AnthropicConfig["observationHook"];
+  private readonly profileContext: AnthropicConfig["profileContext"];
 
   public constructor(config: AnthropicConfig, fetchImpl: FetchImplementation = globalThis.fetch) {
     this.baseUrl = parseUrl(config.baseUrl);
@@ -125,63 +130,71 @@ export class AnthropicProvider implements ChatProvider {
     }
     this.apiVersion = config.apiVersion ?? "2023-06-01";
     this.fetchImpl = fetchImpl;
+    this.observationHook = config.observationHook;
+    this.profileContext = config.profileContext;
   }
 
   public async complete(request: ChatCompletionRequest): Promise<ChatCompletionResult> {
     const model = validateRequest(request, this.defaultModel);
-    const response = await this.request(request, model, false);
-    let payload: unknown;
-    try { payload = await response.json(); } catch { throw new ProviderError("INVALID_RESPONSE", "Anthropic response body is not valid JSON"); }
-    if (!record(payload) || typeof payload.id !== "string" || typeof payload.model !== "string" || !Array.isArray(payload.content)) {
-      throw new ProviderError("INVALID_RESPONSE", "Anthropic response has an invalid shape");
+    const started = Date.now();
+    const context = { ...(request.trace ? { trace: request.trace } : {}), ...this.profileContext, model };
+    await emitObservation(this.observationHook, { name: "request_started", ...context });
+    try {
+      const response = await this.request(request, model, false);
+      let payload: unknown;
+      try { payload = await response.json(); } catch { throw new ProviderError("INVALID_RESPONSE", "Anthropic response body is not valid JSON"); }
+      if (!record(payload) || typeof payload.id !== "string" || typeof payload.model !== "string" || !Array.isArray(payload.content)) throw new ProviderError("INVALID_RESPONSE", "Anthropic response has an invalid shape");
+      const content = payload.content.filter(record).filter((part) => part.type === "text" && typeof part.text === "string").map((part) => part.text as string).join("");
+      if (!content) throw new ProviderError("INVALID_RESPONSE", "Anthropic response has no text content");
+      const result: ChatCompletionResult = { id: payload.id, model: payload.model, content };
+      if (typeof payload.stop_reason === "string") result.finishReason = payload.stop_reason;
+      if (record(payload.usage)) {
+        const promptTokens = numberValue(payload.usage.input_tokens); const completionTokens = numberValue(payload.usage.output_tokens);
+        result.usage = { ...(promptTokens === undefined ? {} : { promptTokens }), ...(completionTokens === undefined ? {} : { completionTokens }), ...(promptTokens === undefined || completionTokens === undefined ? {} : { totalTokens: promptTokens + completionTokens }) };
+      }
+      await emitObservation(this.observationHook, { name: "completed", ...context, model: result.model, durationMs: Date.now() - started, preview: result.content, outcome: "success" });
+      return result;
+    } catch (error) {
+      const normalized = error instanceof ProviderError ? error : new ProviderError("NETWORK_ERROR", "Anthropic request failed", { retryable: true });
+      await emitObservation(this.observationHook, { name: "error", ...context, durationMs: Date.now() - started, error: { code: normalized.code, ...(normalized.status === undefined ? {} : { status: normalized.status }), retryable: normalized.retryable, message: normalized.message } });
+      throw error instanceof ProviderError ? error : normalized;
     }
-    const content = payload.content
-      .filter(record)
-      .filter((part) => part.type === "text" && typeof part.text === "string")
-      .map((part) => part.text as string)
-      .join("");
-    if (!content) throw new ProviderError("INVALID_RESPONSE", "Anthropic response has no text content");
-    const result: ChatCompletionResult = { id: payload.id, model: payload.model, content };
-    if (typeof payload.stop_reason === "string") result.finishReason = payload.stop_reason;
-    if (record(payload.usage)) {
-      const promptTokens = numberValue(payload.usage.input_tokens);
-      const completionTokens = numberValue(payload.usage.output_tokens);
-      result.usage = {
-        ...(promptTokens === undefined ? {} : { promptTokens }),
-        ...(completionTokens === undefined ? {} : { completionTokens }),
-        ...(promptTokens === undefined || completionTokens === undefined ? {} : { totalTokens: promptTokens + completionTokens }),
-      };
-    }
-    return result;
   }
 
   public async *stream(request: ChatCompletionRequest): AsyncGenerator<ChatDelta> {
     const model = validateRequest(request, this.defaultModel);
-    const response = await this.request(request, model, true);
-    if (!response.body) throw new ProviderError("STREAM_ERROR", "Anthropic response has no stream body");
+    const started = Date.now(); let firstToken = false; let terminal = false;
+    const context = { ...(request.trace ? { trace: request.trace } : {}), ...this.profileContext, model };
+    await emitObservation(this.observationHook, { name: "request_started", ...context });
     try {
+      const response = await this.request(request, model, true);
+      if (!response.body) throw new ProviderError("STREAM_ERROR", "Anthropic response has no stream body");
       for await (const event of readEvents(response.body)) {
         if (event.event === "ping") continue;
         let payload: unknown;
         try { payload = JSON.parse(event.data); } catch { throw new ProviderError("STREAM_ERROR", "Anthropic stream event is not valid JSON"); }
-        if (!record(payload)) continue;
+        if (!record(payload)) throw new ProviderError("STREAM_ERROR", "Anthropic stream event has an invalid shape");
         if (event.event === "error" || payload.type === "error") {
           const detail = record(payload.error) && typeof payload.error.message === "string" ? payload.error.message : "Anthropic stream failed";
           throw new ProviderError("HTTP_ERROR", detail, { retryable: true });
         }
         if (payload.type === "content_block_delta" && record(payload.delta) && payload.delta.type === "text_delta" && typeof payload.delta.text === "string") {
+          if (!firstToken) { firstToken = true; await emitObservation(this.observationHook, { name: "first_token", ...context, durationMs: Date.now() - started, preview: payload.delta.text }); }
           yield { content: payload.delta.text };
         }
-        if (payload.type === "message_delta" && record(payload.delta) && typeof payload.delta.stop_reason === "string") {
-          yield { finishReason: payload.delta.stop_reason };
-        }
+        if (payload.type === "message_delta" && record(payload.delta) && typeof payload.delta.stop_reason === "string") yield { finishReason: payload.delta.stop_reason };
       }
+      terminal = true;
+      await emitObservation(this.observationHook, { name: "completed", ...context, durationMs: Date.now() - started, outcome: "success" });
     } catch (error) {
-      if (error instanceof ProviderError) throw error;
-      throw new ProviderError("STREAM_ERROR", "Anthropic stream failed", { retryable: true });
+      const normalized = error instanceof ProviderError ? error : new ProviderError("STREAM_ERROR", "Anthropic stream failed", { retryable: true });
+      terminal = true;
+      await emitObservation(this.observationHook, { name: "error", ...context, durationMs: Date.now() - started, error: { code: normalized.code, ...(normalized.status === undefined ? {} : { status: normalized.status }), retryable: normalized.retryable, message: normalized.message } });
+      throw error instanceof ProviderError ? error : normalized;
+    } finally {
+      if (!terminal) await emitObservation(this.observationHook, { name: "completed", ...context, durationMs: Date.now() - started, outcome: "cancelled" });
     }
   }
-
   private async request(request: ChatCompletionRequest, model: string, stream: boolean): Promise<Response> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);

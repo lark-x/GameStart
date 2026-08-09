@@ -118,7 +118,7 @@ watch(
             >
           </article>
         </div>
-        <EmptyState
+        <EmptyState v-else
           title="还没有事件模板"
           description="创建事件模板后，它们会显示在这里。"
           ><template #icon>·</template></EmptyState
@@ -251,4 +251,10 @@ watch(
   font-size: var(--text-sm);
   line-height: 1.7;
 }
+
+
+.schedule-card, .template-card { display: flex; flex-direction: column; height: 460px; min-height: 0; }
+.timeline, .template-list { min-height: 0; flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; }
+@media (max-width: 640px) { .schedule-card, .template-card { height: 400px; } }
+
 </style>

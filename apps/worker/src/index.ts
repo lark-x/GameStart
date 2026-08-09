@@ -10,3 +10,5 @@ export * from "./image-job-pump.ts";
 export * from "./persistent-main.ts";
 export * from "./proactive.ts";
 export * from "./event-outputs.ts";
+
+export * from "./interaction-log.ts";

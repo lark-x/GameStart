@@ -19,11 +19,13 @@ import {
 import type { ChatProvider } from "../../../packages/ai/src/index.ts";
 import type { TaskQueue } from "./queue.ts";
 import type { DomainRepositories } from "../../../packages/database/src/index.ts";
+import { bestEffortLog, type WorkerLogger } from "./interaction-log.ts";
 
 export interface WorkerCycleInput {
   readonly storyWorldId: string;
   readonly window: ScheduleWindow;
   readonly execution: StartEventExecutionInput;
+  readonly correlationId?: string;
 }
 
 export interface WorkerCycleResult {
@@ -37,6 +39,7 @@ export interface WorkerCycleResult {
 export interface WorkerOccurrenceTask extends Record<string, unknown> {
   readonly occurrenceId: string;
   readonly execution: StartEventExecutionInput;
+  readonly correlationId?: string;
 }
 
 export interface WorkerRuntime {
@@ -44,6 +47,7 @@ export interface WorkerRuntime {
   readonly scheduler: ReturnType<typeof createEventScheduler>;
   readonly executionCoordinator: EventExecutionCoordinator;
   readonly outputExecutor: EventOutputExecutor;
+  readonly logger?: WorkerLogger | undefined;
   runCycle(input: WorkerCycleInput): Promise<WorkerCycleResult>;
 }
 
@@ -66,11 +70,13 @@ export async function processWorkerOccurrence(
   runtime: WorkerRuntime,
   task: WorkerOccurrenceTask,
 ): Promise<ExecutionStartResultKind> {
+  await bestEffortLog(runtime.logger, { event: "occurrence.execution", phase: "received", correlationId: task.correlationId ?? task.occurrenceId, occurrenceId: task.occurrenceId });
   const execution = await withLegacyOutputBudget(runtime.repositories, task);
   const result = await runtime.executionCoordinator.start(task.occurrenceId, execution);
   if (result.kind === "STARTED") {
     await runtime.outputExecutor.execute(result.execution.id);
   }
+  await bestEffortLog(runtime.logger, { event: "occurrence.execution", phase: "complete", outcome: result.kind, correlationId: task.correlationId ?? task.occurrenceId, occurrenceId: task.occurrenceId, entityId: result.execution.id });
   return result.kind;
 }
 
@@ -97,6 +103,7 @@ export function createWorkerRuntime(
     execution?: ExecutionCoordinatorClock;
     output?: EventOutputExecutorClock;
     messageProvider?: ChatProvider;
+    logger?: WorkerLogger;
   } = {},
 ): WorkerRuntime {
   const scheduler = createEventScheduler(repositories, clocks.scheduler);
@@ -106,12 +113,14 @@ export function createWorkerRuntime(
       ? {}
       : { clock: clocks.output ?? clocks.execution! }),
     ...(clocks.messageProvider === undefined ? {} : { messageProvider: clocks.messageProvider }),
+    ...(clocks.logger === undefined ? {} : { logger: clocks.logger }),
   });
   return {
     repositories,
     scheduler,
     executionCoordinator,
     outputExecutor,
+    logger: clocks.logger,
     async runCycle(input): Promise<WorkerCycleResult> {
       const materialization = await scheduler.materialize(input.storyWorldId, input.window);
       const started: Array<{

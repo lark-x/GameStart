@@ -9,21 +9,27 @@ export class ApiClient {
   }
 
   async request(path, options = {}) {
+    const correlationId = options.correlationId || crypto.randomUUID();
     const response = await fetch(`${this.baseUrl}${path}`, {
       ...options,
       headers: {
         accept: "application/json",
         ...(options.body === undefined ? {} : { "content-type": "application/json" }),
         ...(this.actorCharacterId ? { "x-actor-character-id": this.actorCharacterId } : {}),
+
         ...(options.headers ?? {}),
       },
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
       const message = payload?.error?.message ?? `API request failed (${response.status})`;
-      throw new Error(message);
+      const error = new Error(message);
+      error.correlationId = response.headers?.get("x-correlation-id") || correlationId;
+      error.code = payload?.error?.code;
+      error.status = response.status;
+      throw error;
     }
-    return payload;
+    return { ...payload, correlationId: response.headers?.get("x-correlation-id") || correlationId };
   }
 
   getWorlds() {
@@ -170,6 +176,23 @@ export class ApiClient {
     });
   }
 
+  retryAutoReply(conversationId, input) { return this.request(`/v1/conversations/${encodeURIComponent(conversationId)}/auto-reply/retry`, { method: "POST", body: JSON.stringify(input) }); }
+  getInteractionLogs(query = {}) { const params = new URLSearchParams(); for (const [key, value] of Object.entries(query)) if (value !== undefined && value !== "") params.set(key, String(value)); return this.request(`/v1/interaction-logs?${params}`); }
+  subscribeInteractionLogs(handlers = {}, options = {}) {
+    const controller = new AbortController();
+    const cursor = options.lastEventId || options.cursor;
+    const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
+    const run = async () => {
+      const response = await fetch(`${this.baseUrl}/v1/interaction-logs/stream${query}`, { signal: controller.signal, headers: { accept: "text/event-stream", ...(this.actorCharacterId ? { "x-actor-character-id": this.actorCharacterId } : {}) } });
+      if (!response.ok || !response.body) throw new Error(`Log stream failed (${response.status})`);
+      handlers.onOpen?.();
+      const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = "";
+      while (!controller.signal.aborted) { const { value, done } = await reader.read(); buffer += decoder.decode(value || new Uint8Array(), { stream: !done }); const blocks = buffer.split(/\r?\n\r?\n/); buffer = blocks.pop() || ""; for (const block of blocks) { const event = parseSseBlock(block); if (event) handlers.onEvent?.(event); } if (done) break; }
+      if (!controller.signal.aborted) throw new Error("Log stream disconnected");
+    };
+    void run().catch((error) => { if (!controller.signal.aborted) handlers.onError?.(error); }).finally(() => handlers.onClose?.());
+    return () => controller.abort();
+  }
   async streamConversation(conversationId, characterId, handlers = {}) {
     const query = new URLSearchParams({ characterId });
     const response = await fetch(
@@ -177,6 +200,7 @@ export class ApiClient {
       { headers: {
         accept: "text/event-stream",
         ...(this.actorCharacterId ? { "x-actor-character-id": this.actorCharacterId } : {}),
+
       } },
     );
     if (!response.ok) {
@@ -257,6 +281,8 @@ export class ApiClient {
     });
   }
 
+  testLlmProfile(id) { return this.request(`/v1/llm-provider-profiles/${encodeURIComponent(id)}/test`, { method: "POST", body: JSON.stringify({}) }); }
+
   deleteLlmProviderProfile(id) {
     return this.request(`/v1/llm-provider-profiles/${encodeURIComponent(id)}`, {
       method: "DELETE",
@@ -273,21 +299,16 @@ export class ApiClient {
       body: JSON.stringify(input),
     });
   }
+  getCreatorEventCandidates(worldId, horizonDays = 7) { return this.request('/v1/creator/worlds/' + encodeURIComponent(worldId) + '/event-candidates?horizonDays=' + encodeURIComponent(horizonDays)); }
+  previewCreatorDispatch(worldId, input) { return this.request('/v1/creator/worlds/' + encodeURIComponent(worldId) + '/event-dispatches/preview', { method: 'POST', body: JSON.stringify(input) }); }
+  createCreatorDispatch(worldId, input) { return this.request('/v1/creator/worlds/' + encodeURIComponent(worldId) + '/event-dispatches', { method: 'POST', body: JSON.stringify(input) }); }
+  getCreatorDispatch(batchId) { return this.request('/v1/creator/event-dispatches/' + encodeURIComponent(batchId)); }
+
 }
 
 export function parseSseBlock(block) {
-  let event = "message";
-  const data = [];
-  for (const line of block.split(/\r?\n/)) {
-    if (line.startsWith("event:")) event = line.slice(6).trim();
-    if (line.startsWith("data:")) data.push(line.slice(5).trimStart());
-  }
-  if (data.length === 0) return undefined;
-  const payload = data.join("\n");
-  if (payload === "[DONE]") return { event, done: true };
-  try {
-    return { event, done: false, data: JSON.parse(payload) };
-  } catch {
-    return { event: "error", done: false, data: { code: "INVALID_SSE", message: "Invalid SSE payload" } };
-  }
+  let event = "message"; let id; const data = [];
+  for (const line of block.split(/\r?\n/)) { if (line.startsWith("event:")) event = line.slice(6).trim(); else if (line.startsWith("id:")) id = line.slice(3).trim(); else if (line.startsWith("data:")) data.push(line.slice(5).trimStart()); }
+  if (data.length === 0) return undefined; const payload = data.join("\n"); if (payload === "[DONE]") return { event, ...(id ? { id } : {}), done: true };
+  try { return { event, ...(id ? { id } : {}), done: false, data: JSON.parse(payload) }; } catch { return { event: "error", ...(id ? { id } : {}), done: false, data: { code: "INVALID_SSE", message: "Invalid SSE payload" } }; }
 }

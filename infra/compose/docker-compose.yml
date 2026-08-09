@@ -45,7 +45,100 @@ services:
     volumes:
       - minio_data:/data
 
+  migrate:
+    image: living-network-app:local
+    build:
+      context: ../..
+      dockerfile: infra/compose/Dockerfile
+      target: app-runtime
+    restart: "no"
+    env_file:
+      - ../../.env
+    environment: &app-environment
+      NODE_ENV: production
+      API_HOST: 0.0.0.0
+      API_PORT: 3001
+      API_CORS_ORIGINS: ${API_CORS_ORIGINS:-http://localhost:4173,http://127.0.0.1:4173}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-living_network}:${POSTGRES_PASSWORD:-living_network_dev_only}@postgres:5432/${POSTGRES_DB:-living_network}
+      REDIS_URL: redis://redis:6379
+      MEDIA_ROOT: /app/data/media
+    command: ["pnpm", "--filter", "@living-network/api", "seed:postgres"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - media_data:/app/data/media
+
+  api:
+    image: living-network-app:local
+    build:
+      context: ../..
+      dockerfile: infra/compose/Dockerfile
+      target: app-runtime
+    restart: unless-stopped
+    env_file:
+      - ../../.env
+    environment: *app-environment
+    command: ["pnpm", "--filter", "@living-network/api", "start:postgres"]
+    ports:
+      - "${API_PORT:-3001}:3001"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - media_data:/app/data/media
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/ready').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 15s
+
+  worker:
+    image: living-network-app:local
+    build:
+      context: ../..
+      dockerfile: infra/compose/Dockerfile
+      target: app-runtime
+    restart: unless-stopped
+    env_file:
+      - ../../.env
+    environment: *app-environment
+    command: ["pnpm", "--filter", "@living-network/worker", "start:postgres"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    volumes:
+      - media_data:/app/data/media
+    healthcheck:
+      test: ["CMD", "node", "-e", "process.kill(1, 0)"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 15s
+
+  web:
+    build:
+      context: ../..
+      dockerfile: infra/compose/Dockerfile
+      target: web
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-4173}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
 volumes:
   postgres_data:
   redis_data:
   minio_data:
+  media_data:

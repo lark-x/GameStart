@@ -1,0 +1,57 @@
+import { InteractionLogCategory, InteractionLogLevel, InteractionLogSource, type InteractionLogDto, type InteractionLogPageDto, type InteractionLogQuery } from "../../contracts/src/index.ts";
+import type { SqlClient, SqlRow } from "./sql.ts";
+
+export type InteractionLogInput = Omit<InteractionLogDto, "id" | "createdAt"> & { id?: string; createdAt?: string };
+export interface InteractionLogRepository { append(input: InteractionLogInput): Promise<InteractionLogDto>; query(query?: InteractionLogQuery): Promise<InteractionLogPageDto>; deleteOlderThan(cutoff: Date): Promise<number>; }
+
+const SENSITIVE_KEY = /api[-_ ]?key|authorization|cookie|set-cookie|secret|token|password|cipher|encrypted/i;
+const CURSOR_PREFIX = "v1.";
+type CursorValue = { createdAt: string; id: string };
+
+export function encodeInteractionLogCursor(createdAt: string, id: string): string {
+  return CURSOR_PREFIX + Buffer.from(JSON.stringify({ createdAt, id }), "utf8").toString("base64url");
+}
+export function decodeInteractionLogCursor(cursor: string): { createdAt: string; id: string } {
+  if (typeof cursor !== "string" || !cursor.startsWith(CURSOR_PREFIX)) throw new TypeError("Invalid interaction log cursor");
+  try {
+    const value = JSON.parse(Buffer.from(cursor.slice(CURSOR_PREFIX.length), "base64url").toString("utf8")) as unknown;
+    if (!value || typeof value !== "object" || typeof (value as CursorValue).createdAt !== "string" || typeof (value as CursorValue).id !== "string") throw new Error();
+    if (Number.isNaN(Date.parse((value as CursorValue).createdAt)) || (value as CursorValue).id.length === 0) throw new Error();
+    return value as CursorValue;
+  } catch { throw new TypeError("Invalid interaction log cursor"); }
+}
+
+export function redactSensitive(value: unknown, seen = new WeakSet<object>()): unknown {
+  if (value === null || typeof value !== "object") return typeof value === "bigint" ? String(value) : value;
+  if (seen.has(value)) return "[Circular]";
+  seen.add(value);
+  if (Array.isArray(value)) { const result: unknown[] = []; try { for (let i = 0; i < value.length; i += 1) { try { result.push(redactSensitive(value[i], seen)); } catch { result.push("[Unserializable]"); } } } catch { return "[Unserializable]"; } return result; }
+  const result: Record<string, unknown> = {};
+  let keys: string[];
+  try { keys = Object.keys(value); } catch { return "[Unserializable]"; }
+  for (const key of keys) { try { result[key] = SENSITIVE_KEY.test(key) ? "[REDACTED]" : redactSensitive((value as Record<string, unknown>)[key], seen); } catch { result[key] = "[Unserializable]"; } }
+  return result;
+}
+export function previewMessage(value: unknown): string | undefined { if (value === undefined || value === null) return undefined; try { const text = typeof value === "string" ? value : JSON.stringify(redactSensitive(value)) ?? String(value); return text.slice(0, 500); } catch { return "[Unserializable]"; } }
+function clone(item: InteractionLogDto): InteractionLogDto { return { ...item, ...(item.details === undefined ? {} : { details: redactSensitive(item.details) as Record<string, unknown> }) }; }
+function normalize(input: InteractionLogInput): InteractionLogDto { const { id, createdAt: inputCreatedAt, message: inputMessage, details: inputDetails, ...rest } = input; const createdAt = validDate(inputCreatedAt ?? new Date().toISOString(), "createdAt"); const preview = previewMessage(inputMessage); if (input.durationMs !== undefined && (!Number.isFinite(input.durationMs) || input.durationMs < 0)) throw new TypeError("durationMs must be non-negative"); return { id: id ?? crypto.randomUUID(), createdAt, ...rest, ...(preview === undefined ? {} : { message: preview }), details: redactSensitive(inputDetails ?? {}) as Record<string, unknown> } as InteractionLogDto; }
+function validDate(value: string, field: string): string { const date = new Date(value); if (Number.isNaN(date.getTime())) throw new TypeError(`${field} must be a valid date`); return date.toISOString(); }
+function validEnum<T extends string>(value: unknown, values: readonly T[], field: string): T { if (typeof value !== "string" || !values.includes(value as T)) throw new TypeError(`Invalid ${field}`); return value as T; }
+function matches(item: InteractionLogDto, q: InteractionLogQuery): boolean { for (const key of ["level","source","category","action","outcome","requestId","correlationId","worldId","actorId","conversationId","entityType","entityId"] as const) if (q[key] !== undefined && item[key] !== q[key]) return false; if (q.createdAfter && item.createdAt <= validDate(q.createdAfter, "createdAfter")) return false; if (q.createdBefore && item.createdAt >= validDate(q.createdBefore, "createdBefore")) return false; if (q.query) { const needle = q.query.toLowerCase(); if (![item.message, item.action, item.entityId, item.correlationId, item.requestId].some((v) => v?.toLowerCase().includes(needle))) return false; } return true; }
+function page(items: readonly InteractionLogDto[], q: InteractionLogQuery = {}): InteractionLogPageDto { const limit = Math.min(Math.max(q.limit ?? 100, 1), 200); const sorted = items.filter((x) => matches(x, q)).sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id)); let start = 0; if (q.cursor) { const cursor = decodeInteractionLogCursor(q.cursor); start = sorted.findIndex((x) => x.createdAt === cursor.createdAt && x.id === cursor.id) + 1; if (start === 0) throw new TypeError("Cursor does not belong to query"); } const selected = sorted.slice(start, start + limit + 1); const hasMore = selected.length > limit; const visible = selected.slice(0, limit).map(clone); return { items: visible, ...(hasMore ? { nextCursor: encodeInteractionLogCursor(visible[visible.length - 1]!.createdAt, visible[visible.length - 1]!.id) } : {}) }; }
+
+export class InMemoryInteractionLogRepository implements InteractionLogRepository { private items: InteractionLogDto[]; constructor(seed: readonly InteractionLogDto[] = []) { this.items = seed.map(normalize); } async append(input: InteractionLogInput) { const item = normalize(input); this.items.push(item); return clone(item); } async query(query: InteractionLogQuery = {}) { return page(this.items, query); } async deleteOlderThan(cutoff: Date) { validDate(cutoff instanceof Date && !Number.isNaN(cutoff.getTime()) ? cutoff.toISOString() : "", "cutoff"); const before = this.items.length; this.items = this.items.filter((item) => new Date(item.createdAt) >= cutoff); return before - this.items.length; } }
+
+function parseRow(row: SqlRow): InteractionLogDto { const createdAt = new Date(String(row.created_at)); if (Number.isNaN(createdAt.getTime())) throw new TypeError("Invalid interaction log row date"); return { id: String(row.id), createdAt: createdAt.toISOString(), level: validEnum(row.level, Object.values(InteractionLogLevel), "level"), source: validEnum(row.source, Object.values(InteractionLogSource), "source"), category: validEnum(row.category, Object.values(InteractionLogCategory), "category"), action: String(row.action), outcome: String(row.outcome), ...(row.duration_ms == null ? {} : { durationMs: Number(row.duration_ms) }), ...(row.request_id == null ? {} : { requestId: String(row.request_id) }), ...(row.correlation_id == null ? {} : { correlationId: String(row.correlation_id) }), ...(row.world_id == null ? {} : { worldId: String(row.world_id) }), ...(row.actor_id == null ? {} : { actorId: String(row.actor_id) }), ...(row.conversation_id == null ? {} : { conversationId: String(row.conversation_id) }), ...(row.entity_type == null ? {} : { entityType: String(row.entity_type) }), ...(row.entity_id == null ? {} : { entityId: String(row.entity_id) }), ...(row.message == null ? {} : { message: String(row.message) }), details: (row.details ?? {}) as Record<string, unknown> }; }
+
+export class SqlInteractionLogRepository implements InteractionLogRepository { private readonly client: SqlClient; constructor(client: SqlClient) { this.client = client; } async append(input: InteractionLogInput) { const item = normalize(input); await this.client.query("INSERT INTO interaction_logs (id, created_at, level, source, category, action, outcome, duration_ms, request_id, correlation_id, world_id, actor_id, conversation_id, entity_type, entity_id, message, details) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)", [item.id,item.createdAt,item.level,item.source,item.category,item.action,item.outcome,item.durationMs ?? null,item.requestId ?? null,item.correlationId ?? null,item.worldId ?? null,item.actorId ?? null,item.conversationId ?? null,item.entityType ?? null,item.entityId ?? null,item.message ?? null,JSON.stringify(item.details)]); return clone(item); } async query(query: InteractionLogQuery = {}) { const limit = Math.min(Math.max(query.limit ?? 100, 1), 200); const values: unknown[] = []; const conditions: string[] = []; const add = (sql: string, value: unknown) => { values.push(value); conditions.push(sql.replace("?", `$${values.length}`)); }; for (const [key,column] of [["level","level"],["source","source"],["category","category"],["action","action"],["outcome","outcome"],["requestId","request_id"],["correlationId","correlation_id"],["worldId","world_id"],["actorId","actor_id"],["conversationId","conversation_id"],["entityType","entity_type"],["entityId","entity_id"]] as const) if (query[key] !== undefined) add(`${column} = ?`, query[key]); if (query.query) { values.push(`%${query.query}%`); const p = `$${values.length}`; conditions.push(`(message ILIKE ${p} OR action ILIKE ${p} OR entity_id ILIKE ${p} OR correlation_id ILIKE ${p} OR request_id ILIKE ${p})`); } if (query.createdAfter) add("created_at > ?", query.createdAfter); if (query.createdBefore) add("created_at < ?", query.createdBefore); if (query.cursor) { const c = decodeInteractionLogCursor(query.cursor); values.push(c.createdAt, c.id); conditions.push(`(created_at, id) < ($${values.length - 1}, $${values.length})`); } values.push(limit + 1); const rows = (await this.client.query<SqlRow>(`SELECT * FROM interaction_logs ${conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""} ORDER BY created_at DESC, id DESC LIMIT $${values.length}`, values)).rows; const items = rows.map(parseRow); const visible = items.slice(0, limit).map(clone); return { items: visible, ...(items.length > limit ? { nextCursor: encodeInteractionLogCursor(visible[visible.length - 1]!.createdAt, visible[visible.length - 1]!.id) } : {}) }; } async deleteOlderThan(cutoff: Date) { const cutoffValue = validDate(cutoff instanceof Date && !Number.isNaN(cutoff.getTime()) ? cutoff.toISOString() : "", "cutoff"); return (await this.client.query("DELETE FROM interaction_logs WHERE created_at < $1 RETURNING id", [cutoffValue])).rows.length; } }
+export const createSqlInteractionLogRepository = (client: SqlClient): InteractionLogRepository => new SqlInteractionLogRepository(client);
+
+
+
+
+
+
+
+
+

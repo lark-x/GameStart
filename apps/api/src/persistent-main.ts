@@ -13,6 +13,8 @@ import {
   type ApiRuntime,
 } from "./runtime.ts";
 import { pathToFileURL } from "node:url";
+import { createSqlInteractionLogRepository } from "../../../packages/database/src/interaction-log.ts";
+import { createChatObservationLogHook, InteractionLogging } from "./interaction-logging.ts";
 
 export interface PersistentApiRuntime {
   readonly runtime: ApiRuntime;
@@ -34,7 +36,14 @@ export async function startPersistentApi(
       ? undefined
       : new SecretCipher(environment.INTEGRATION_SECRET_KEY);
     const fallback = createProviderFromConfig({ ...config.llm });
-    const provider = new ActiveProfileChatProvider(repositories.llmProviderProfiles, cipher, fallback);
+    const interactionLogRepository = createSqlInteractionLogRepository(database);
+    const interactionLogging = new InteractionLogging({ repository: interactionLogRepository });
+    const provider = new ActiveProfileChatProvider(
+      repositories.llmProviderProfiles,
+      cipher,
+      fallback,
+      createChatObservationLogHook(interactionLogging),
+    );
     const runtime = createApiRuntime(
       config,
       repositories,
@@ -44,7 +53,7 @@ export async function startPersistentApi(
         memoryWriteEnabled: config.flags.memoryWriteEnabled,
       },
       { requireTrustedActor: true },
-      { readiness: async () => { await database.query("SELECT 1"); }, ...(cipher === undefined ? {} : { secretCipher: cipher }) },
+      { readiness: async () => { await database.query("SELECT 1"); }, creatorDispatchEnabled: true, interactionLogs: interactionLogRepository, interactionLogging, ...(cipher === undefined ? {} : { secretCipher: cipher }) },
     );
     await listenApiRuntime(runtime);
     return { runtime, database };

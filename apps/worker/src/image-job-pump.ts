@@ -12,11 +12,13 @@ import {
   type ComfyUiProgressClient,
 } from "./media.ts";
 import { LocalMediaStore, StoringComfyUiClient } from "./media-storage.ts";
+import { bestEffortLog, type WorkerLogger } from "./interaction-log.ts";
 
 export interface ImageJobPumpOptions {
   readonly fallbackSettings: Pick<ComfyUiSettings, "baseUrl" | "timeoutMs">;
   readonly mediaRoot: string;
   readonly batchSize?: number;
+  readonly logger?: WorkerLogger | undefined;
   readonly createClient?: (settings: Pick<ComfyUiSettings, "baseUrl" | "timeoutMs">) => ComfyUiProgressClient;
 }
 
@@ -71,6 +73,7 @@ export class ImageJobPump {
       return { queued: 0, submitted: 0, completed: 0, failed: 0, deferred: 0, skipped: true };
     }
     this.running = true;
+    await bestEffortLog(this.options.logger, { action: "image.scan", outcome: "STARTED", correlationId: "worker:image_pump:scan", entityType: "image_pump" });
     try {
       const persisted = await this.repositories.comfyUiSettings.get();
       const settings = persisted ?? this.options.fallbackSettings;
@@ -94,14 +97,17 @@ export class ImageJobPump {
           const current = await coordinator.submitImageJob(job.id);
           if (current.status === ImageJobStatus.SUBMITTED) {
             submitted += 1;
+            await bestEffortLog(this.options.logger, { action: "image.submit", outcome: "SUCCESS", correlationId: "worker:image_job:" + current.id, entityType: "image_job", entityId: current.id, jobId: current.id });
             submittedIds.add(current.id);
           }
         } catch (error) {
           if (isRetryable(error)) {
             deferred += 1;
+            await bestEffortLog(this.options.logger, { action: "image.submit", outcome: "DEFERRED", correlationId: "worker:image_job:" + job.id, entityType: "image_job", entityId: job.id, jobId: job.id, message: error });
           } else {
             await coordinator.failImageJob(job.id, failureReason(error));
             failed += 1;
+            await bestEffortLog(this.options.logger, { action: "image.submit", outcome: "FAILED", correlationId: "worker:image_job:" + job.id, entityType: "image_job", entityId: job.id, jobId: job.id, message: error });
           }
         }
       }
@@ -116,16 +122,18 @@ export class ImageJobPump {
             // The coordinator performs terminal persistence while streaming.
           }
           const after = await this.repositories.imageJobs.getById(jobId);
-          if (after?.status === ImageJobStatus.SUCCEEDED) completed += 1;
-          if (after?.status === ImageJobStatus.FAILED) failed += 1;
+          if (after?.status === ImageJobStatus.SUCCEEDED) { completed += 1; await bestEffortLog(this.options.logger, { action: "image.progress", outcome: "COMPLETED", correlationId: "worker:image_job:" + jobId, entityType: "image_job", entityId: jobId, jobId }); }
+          if (after?.status === ImageJobStatus.FAILED) { failed += 1; await bestEffortLog(this.options.logger, { action: "image.progress", outcome: "FAILED", correlationId: "worker:image_job:" + jobId, entityType: "image_job", entityId: jobId, jobId }); }
         } catch (error) {
           if (isRetryable(error)) {
             deferred += 1;
+            await bestEffortLog(this.options.logger, { action: "image.progress", outcome: "DEFERRED", correlationId: "worker:image_job:" + jobId, entityType: "image_job", entityId: jobId, jobId, message: error });
           } else {
             const current = await this.repositories.imageJobs.getById(jobId);
             if (current?.status === ImageJobStatus.SUBMITTED) {
               await coordinator.failImageJob(jobId, failureReason(error));
               failed += 1;
+              await bestEffortLog(this.options.logger, { action: "image.progress", outcome: "FAILED", correlationId: "worker:image_job:" + jobId, entityType: "image_job", entityId: jobId, jobId, message: error });
             }
           }
         }

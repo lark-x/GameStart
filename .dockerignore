@@ -1,0 +1,14 @@
+.git
+.agents
+.codex
+node_modules
+.pnpm-store
+dist
+coverage
+test-results
+.env
+.env.*
+!.env.example
+*.log
+frontend-desktop.png
+frontend-mobile.png

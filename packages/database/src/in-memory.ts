@@ -86,6 +86,7 @@ import type {
   ComfyUiSettingsRepository,
   LlmProviderProfileRepository,
 } from "./repositories.ts";
+import { createInMemoryDispatchRequestRepository, type DispatchRequestRepository } from "./dispatch.ts";
 
 function copyWorld(world: StoryWorld): StoryWorld {
   return { ...world };
@@ -575,6 +576,7 @@ export class InMemoryRepositories implements DomainRepositories {
   public readonly worldEventDefinitions: WorldEventDefinitionRepository;
   public readonly worldLoreEntries: WorldLoreEntryRepository;
   public readonly scheduledOccurrences: ScheduledOccurrenceRepository;
+  public readonly dispatchRequests: DispatchRequestRepository;
   public readonly characterPlans: CharacterPlanRepository;
   public readonly eventExecutions: EventExecutionRepository;
   public readonly proactiveMessageBudgets: ProactiveMessageBudgetRepository;
@@ -618,6 +620,7 @@ export class InMemoryRepositories implements DomainRepositories {
   private readonly comfyUiSettingsMap = new Map<string, ComfyUiSettings>();
 
   public constructor(seed: InMemoryRepositorySeed = {}) {
+    this.dispatchRequests = createInMemoryDispatchRequestRepository(seed.dispatchRequests);
     for (const world of seed.worlds ?? []) {
       addUnique(this.worldMap, copyWorld(world), "storyWorld");
     }
@@ -1040,6 +1043,28 @@ this.storyWorlds = {
           .slice(0, limit)
           .map(copyOccurrence);
       },
+      listForCreatorScan: async (storyWorldId, horizonEnd, limit) => {
+        if (!Number.isSafeInteger(limit) || limit < 1) {
+          throw new TypeError("scheduled occurrence limit must be a positive integer");
+        }
+        const horizonEndMs = Date.parse(horizonEnd);
+        if (Number.isNaN(horizonEndMs)) {
+          throw new TypeError("horizonEnd must be a valid ISO timestamp");
+        }
+        return [...this.scheduledOccurrenceMap.values()]
+          .filter((occurrence) =>
+            occurrence.storyWorldId === storyWorldId &&
+            occurrence.status !== "COMPLETED" &&
+            occurrence.status !== "CANCELLED" &&
+            Date.parse(occurrence.scheduledFor) <= horizonEndMs
+          )
+          .sort((left, right) =>
+            left.scheduledFor.localeCompare(right.scheduledFor) ||
+            left.id.localeCompare(right.id)
+          )
+          .slice(0, limit)
+          .map(copyOccurrence);
+      },
       listByWindow: async (storyWorldId, startsAt, endsAt, limit) => {
         if (!Number.isSafeInteger(limit) || limit < 1) {
           throw new TypeError("scheduled occurrence limit must be a positive integer");
@@ -1444,8 +1469,12 @@ return profile ? copyLlmProviderProfile(profile) : undefined;
 },
 save: async (profile) => {
 assertLlmProviderProfile(profile);
-if (profile.isActive && [...this.llmProviderProfileMap.values()].some((candidate) => candidate.id !== profile.id && candidate.isActive)) {
-throw new TypeError("Only one LLM provider profile can be active");
+if (profile.isActive) {
+for (const [id, candidate] of this.llmProviderProfileMap.entries()) {
+if (id !== profile.id && candidate.isActive) {
+this.llmProviderProfileMap.set(id, copyLlmProviderProfile({ ...candidate, isActive: false, updatedAt: profile.updatedAt }));
+}
+}
 }
 this.llmProviderProfileMap.set(profile.id, copyLlmProviderProfile(profile));
 },

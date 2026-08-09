@@ -1,11 +1,19 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, nextTick, onUnmounted, ref, watch } from "vue";
+import { Image, ImagePlus, RefreshCw, RotateCcw, Send, Type } from "@lucide/vue";
 import Button from "../components/ui/Button.vue";
 import EmptyState from "../components/ui/EmptyState.vue";
 import Input from "../components/ui/Input.vue";
 import { useAppStore } from "../stores/app.js";
 import { importChatBackgroundFile, useTheme } from "../lib/theme";
+import {
+  deterministicReplyId,
+  findPendingSource,
+  normalizeAutoReply,
+  type AutoReplyResult,
+} from "../lib/auto-reply";
 import { errorMessage, type ApiConversation, type ApiImageJob, type ApiMessage } from "../types";
+import { splitChatMessage } from "../lib/chat-message";
 import type { MessageKind } from "../../../../packages/contracts/src/index.ts";
 
 const store = useAppStore();
@@ -18,6 +26,9 @@ const messageKind = ref<MessageKind>("TEXT");
 const status = ref("准备加载会话……");
 const messagesContainer = ref<HTMLElement | null>(null);
 const isGenerating = ref(false);
+const autoReply = ref<AutoReplyResult | null>(null);
+const replyError = ref("");
+let replyTimer: number | undefined;
 const backgroundInput = ref<HTMLInputElement | null>(null);
 const backgroundStatus = ref("");
 const showImageRequest = ref(false);
@@ -73,6 +84,21 @@ const characterName = computed(
   () => store.currentCharacter?.displayName || "默认助手",
 );
 const characterInitial = computed(() => characterName.value.slice(0, 1));
+const messageViews = computed(() => messages.value.map((message) => ({ message, display: splitChatMessage(message.text) })));
+const currentConversation = computed(() =>
+  conversations.value.find(
+    (item) => item.conversation.id === currentConversationId.value,
+  ),
+);
+const pendingSource = computed(() =>
+  findPendingSource(
+    currentConversationId.value,
+    currentConversation.value?.conversation,
+    store.currentCharacter,
+    store.currentCharacterId,
+    messages.value,
+  ),
+);
 const imageRecipientId = computed(() => {
   const current = conversations.value.find(
     (item) => item.conversation.id === currentConversationId.value,
@@ -139,7 +165,7 @@ async function sendMessage() {
     return;
   const id = crypto.randomUUID();
   try {
-    await store.api.sendMessage(currentConversationId.value, {
+    const result = await store.api.sendMessage(currentConversationId.value, {
       id,
       authorCharacterId: store.currentCharacterId,
       kind: messageKind.value,
@@ -151,35 +177,106 @@ async function sendMessage() {
     });
     messageInput.value = "";
     await loadMessages();
+    applyAutoReply(normalizeAutoReply(result.data?.autoReply), id);
   } catch (e: unknown) {
     status.value = errorMessage(e);
+    replyError.value = errorMessage(e);
+    const correlationId = (e as { correlationId?: string }).correlationId;
+    autoReply.value = {
+      status: "FAILED",
+      ...(correlationId ? { correlationId } : {}),
+    };
   }
 }
 
-async function triggerGenerateReply() {
-  if (!currentConversationId.value || !store.currentCharacterId) return;
+function stopReplyPolling() {
+  if (replyTimer !== undefined) {
+    window.clearTimeout(replyTimer);
+    replyTimer = undefined;
+  }
+  isGenerating.value = false;
+}
+
+function pollReply(sourceMessageId: string) {
+  stopReplyPolling();
   isGenerating.value = true;
-  status.value = "正在思考回复……";
+  const conversationId = currentConversationId.value;
+  const expectedId = deterministicReplyId(conversationId, sourceMessageId);
+  let attempts = 0;
+  const check = async () => {
+    if (currentConversationId.value !== conversationId) return;
+    attempts += 1;
+    try {
+      await loadMessages();
+      if (messages.value.some((message) => message.id === expectedId)) {
+        stopReplyPolling();
+        replyError.value = "";
+        status.value = "回复已送达";
+        return;
+      }
+      if (attempts >= 30) {
+        stopReplyPolling();
+        replyError.value = "回复等待超时，请重试";
+        status.value = "回复需要重试";
+        return;
+      }
+      replyTimer = window.setTimeout(check, 1_500);
+    } catch (error: unknown) {
+      stopReplyPolling();
+      replyError.value = errorMessage(error);
+    }
+  };
+  replyTimer = window.setTimeout(check, 500);
+}
+
+function applyAutoReply(result: AutoReplyResult | null, fallbackSourceId: string) {
+  autoReply.value = result;
+  replyError.value = "";
+  if (!result || result.status === "NOT_APPLICABLE") {
+    stopReplyPolling();
+    return;
+  }
+  if (result.status === "QUEUED") {
+    status.value = "正在生成回复……";
+    pollReply(result.sourceMessageId ?? fallbackSourceId);
+    return;
+  }
+  if (result.status === "COMPLETED" || result.status === "ALREADY_EXISTS") {
+    stopReplyPolling();
+    status.value = "回复已送达";
+    void loadMessages();
+    return;
+  }
+  stopReplyPolling();
+  replyError.value = "回复生成失败，请重试";
+}
+
+async function triggerGenerateReply() {
+  const source = pendingSource.value;
+  if (
+    !source ||
+    !currentConversationId.value ||
+    !store.currentCharacterId ||
+    isGenerating.value
+  ) return;
+
+  isGenerating.value = true;
+  replyError.value = "";
+  status.value = "正在重试回复……";
   try {
-    await store.api.streamConversation(
-      currentConversationId.value,
-      store.currentCharacterId,
-      {
-        onDelta: () => void loadMessages(),
-        onDone: () => {
-          isGenerating.value = false;
-          status.value = "回复已送达";
-          void loadMessages();
-        },
-        onError: (err) => {
-          isGenerating.value = false;
-          status.value = errorMessage(err);
-        },
-      },
-    );
+    const result = await store.api.retryAutoReply(currentConversationId.value, {
+      readerCharacterId: store.currentCharacterId,
+      sourceMessageId: source.id,
+    });
+    applyAutoReply(normalizeAutoReply(result.data), source.id);
   } catch (e: unknown) {
-    isGenerating.value = false;
-    status.value = errorMessage(e);
+    stopReplyPolling();
+    replyError.value = errorMessage(e);
+    const correlationId = (e as { correlationId?: string }).correlationId;
+    autoReply.value = {
+      status: "FAILED",
+      ...(correlationId ? { correlationId } : {}),
+    };
   }
 }
 
@@ -193,31 +290,31 @@ async function pollImageJob(jobId: string) {
       const result = await store.api.getImageJob(jobId);
       imageJob.value = result.data ?? null;
       if (imageJob.value?.status === "SUCCEEDED") {
-        imageStatus.value = "Image ready";
+        imageStatus.value = "图片已生成";
         return;
       }
       if (imageJob.value?.status === "FAILED" || imageJob.value?.status === "CANCELLED") {
         imageStatus.value = imageJob.value.failureReason || "Image generation stopped";
         return;
       }
-      imageStatus.value = imageJob.value?.status === "SUBMITTED" ? "Generating image…" : "Image request queued";
+      imageStatus.value = imageJob.value?.status === "SUBMITTED" ? "正在生成图片…" : "图片请求已排队";
     } catch (error: unknown) {
       imageStatus.value = errorMessage(error);
       return;
     }
     await wait(2_000);
   }
-  imageStatus.value = "Image is still queued; refresh later to check again.";
+  imageStatus.value = "图片仍在排队，请稍后刷新查看。";
 }
 
 async function requestConversationImage() {
   const prompt = imagePrompt.value.trim();
   if (!prompt || !currentConversationId.value || !store.currentCharacterId || !imageRecipientId.value) {
-    imageStatus.value = "Choose a private conversation and enter an image prompt.";
+    imageStatus.value = "请选择私聊会话，并填写配图描述。";
     return;
   }
   isRequestingImage.value = true;
-  imageStatus.value = "Creating image request…";
+  imageStatus.value = "正在创建图片请求…";
   try {
     const idempotencyKey = crypto.randomUUID();
     const result = await store.api.requestConversationImage(currentConversationId.value, {
@@ -247,9 +344,21 @@ function scrollToBottom() {
 
 watch(
   () => store.currentCharacterId,
-  () => void loadConversations(),
+  () => {
+    stopReplyPolling();
+    autoReply.value = null;
+    replyError.value = "";
+    void loadConversations();
+  },
   { immediate: true },
 );
+watch(currentConversationId, () => {
+  stopReplyPolling();
+  autoReply.value = null;
+  replyError.value = "";
+  void loadMessages();
+});
+onUnmounted(stopReplyPolling);
 </script>
 
 <template>
@@ -263,7 +372,7 @@ watch(
           aria-label="刷新会话"
           title="刷新会话"
           @click="loadConversations"
-          >↻</Button
+          ><RefreshCw :size="17" /></Button
         >
       </div>
       <div class="conversation-list">
@@ -309,11 +418,9 @@ watch(
           >
           <div>
             <h1>{{ characterName }}</h1>
-            <p>❤ 100 <em>+1.0</em></p>
           </div>
         </div>
         <div class="header-actions">
-          <span v-if="backgroundStatus" class="background-status">{{ backgroundStatus }}</span>
           <input
             ref="backgroundInput"
             type="file"
@@ -329,7 +436,7 @@ watch(
             title="导入图片作为聊天背景"
             aria-label="导入图片作为聊天背景"
             @click="pickBackgroundImage"
-            >▦</Button
+            ><ImagePlus :size="17" /></Button
           >
           <Button
             v-if="chatBackground.kind === 'custom'"
@@ -338,87 +445,74 @@ watch(
             title="恢复主题默认背景"
             aria-label="恢复主题默认背景"
             @click="resetBackground"
-            >↺</Button
+            ><RotateCcw :size="17" /></Button
           >
-          <span class="thought-status">{{
-            isGenerating ? "正在整理想法…" : "今天也想和你好好聊聊。"
-          }}</span
-          ><Button
-            variant="ghost"
-            :disabled="!imageRecipientId"
-            @click="showImageRequest = !showImageRequest"
-            >配图</Button
-          ><Button @click="triggerGenerateReply" :disabled="isGenerating">{{
-            isGenerating ? "思考中" : "生成回复"
-          }}</Button>
+          <Button variant="ghost" :disabled="!imageRecipientId" title="打开聊天配图" @click="showImageRequest = !showImageRequest"><ImagePlus :size="15" />配图</Button>
+          <Button v-if="pendingSource || autoReply?.status === 'FAILED' || replyError" @click="triggerGenerateReply" :disabled="isGenerating || !pendingSource"><RefreshCw :size="15" />{{ isGenerating ? "生成中" : "重试回复" }}</Button>
         </div>
       </header>
 
+      <div class="chat-status-strip">
+        <span class="thought-status">{{ isGenerating ? "正在整理想法…" : "今天也想和你好好聊聊。" }}</span>
+        <span v-if="backgroundStatus" class="background-status">{{ backgroundStatus }}</span>
+      </div>
+
+      <div v-if="replyError || autoReply?.status === 'FAILED'" class="reply-error" role="alert">
+        <span>{{ replyError || "回复失败，请重试" }}</span>
+        <code v-if="autoReply?.correlationId">{{ autoReply.correlationId }}</code>
+        <RouterLink
+          v-if="autoReply?.correlationId"
+          :to="{ path: '/creator/logs', query: { correlationId: autoReply.correlationId } }"
+        >查看日志</RouterLink>
+      </div>
+
       <div ref="messagesContainer" class="message-stream">
         <EmptyState
+          v-if="!messages.length"
           class="empty-chat"
           title="开始今天的对话吧"
           description="说点什么，让故事继续发生。"
           ><template #icon>{{ characterInitial }}</template></EmptyState
         >
-        <article
-          v-for="message in messages"
-          :key="message.id"
-          class="message-row"
-          :class="{ mine: isMine(message) }"
-        >
-          <span v-if="!isMine(message)" class="avatar character-avatar">{{
-            authorName(message).slice(0, 1)
-          }}</span>
+        <article v-for="item in messageViews" :key="item.message.id" class="message-row" :class="{ mine: isMine(item.message) }">
+          <span v-if="!isMine(item.message)" class="avatar character-avatar">{{ authorName(item.message).slice(0, 1) }}</span>
           <div class="message-wrap">
-            <span class="message-name">{{ authorName(message) }}</span>
+            <span class="message-name">{{ authorName(item.message) }}</span>
             <div class="message-bubble">
-              <img
-                v-if="message.kind === 'IMAGE' && message.mediaRef"
-                :src="message.mediaRef"
-              />
-              <p v-else>{{ message.text || message.stickerId || "…" }}</p>
+              <img v-if="item.message.kind === 'IMAGE' && item.message.mediaRef" :src="item.message.mediaRef" alt="聊天图片" />
+              <p v-else-if="item.display.body">{{ item.display.body }}</p>
+              <p v-else class="message-empty">消息没有可显示的正文</p>
             </div>
+            <aside v-if="item.display.extras.length" class="message-extra-panel">
+              <strong>附加信息</strong>
+              <p v-for="extra in item.display.extras" :key="extra">{{ extra }}</p>
+            </aside>
           </div>
-          <span v-if="isMine(message)" class="avatar user-avatar">我</span>
+          <span v-if="isMine(item.message)" class="avatar user-avatar">我</span>
         </article>
       </div>
 
-      <footer class="composer">
-        <div v-if="showImageRequest" class="image-request-panel">
-          <Input
-            v-model="imagePrompt"
-            class="image-prompt-input"
-            placeholder="描述想生成的聊天配图"
-            @keyup.enter="requestConversationImage"
-          />
-          <Input
-            v-model="imageWorkflowVersion"
-            class="image-workflow-input"
-            placeholder="workflow@version"
-            @keyup.enter="requestConversationImage"
-          />
-          <Button
-            @click="requestConversationImage"
-            :disabled="isRequestingImage || !imagePrompt.trim() || !imageRecipientId"
-            >{{ isRequestingImage ? "提交中" : "生成" }}</Button
-          >
-          <span v-if="imageStatus" class="image-request-status">{{ imageStatus }}</span>
-          <img
-            v-if="imageJob?.status === 'SUCCEEDED' && imageJob.mediaRef"
-            class="image-request-result"
-            :src="imageJob.mediaRef"
-            alt="Generated chat image"
-          />
+      <section v-if="showImageRequest" class="image-request-panel">
+        <header><strong>聊天配图</strong><span>图片请求与消息正文分开显示。</span></header>
+        <div class="image-request-fields">
+          <Input v-model="imagePrompt" class="image-prompt-input" placeholder="描述想生成的聊天配图" @keyup.enter="requestConversationImage" />
+          <Input v-model="imageWorkflowVersion" class="image-workflow-input" placeholder="workflow@version" @keyup.enter="requestConversationImage" />
+          <Button @click="requestConversationImage" :disabled="isRequestingImage || !imagePrompt.trim() || !imageRecipientId">{{ isRequestingImage ? "提交中" : "生成" }}</Button>
         </div>
-        <Button
+        <p v-if="imageStatus" class="image-request-status">{{ imageStatus }}</p>
+        <img v-if="imageJob?.status === 'SUCCEEDED' && imageJob.mediaRef" class="image-request-result" :src="imageJob.mediaRef" alt="已生成的聊天配图" />
+      </section>
+
+      <footer class="composer">
+                <Button
           variant="ghost"
           size="icon"
           class="composer-tool"
           @click="messageKind = messageKind === 'TEXT' ? 'IMAGE' : 'TEXT'"
           :title="messageKind === 'TEXT' ? '切换为图片消息' : '切换为文本消息'"
+          :aria-label="messageKind === 'TEXT' ? '切换为图片消息' : '切换为文本消息'"
         >
-          {{ messageKind === "TEXT" ? "◌" : "▧" }}
+          <Type v-if="messageKind === 'TEXT'" :size="17" /><Image v-else :size="17" />
         </Button>
         <Input
           v-model="messageInput"
@@ -429,9 +523,11 @@ watch(
         <Button
           size="icon"
           class="send-button"
+          title="发送消息"
+          aria-label="发送消息"
           @click="sendMessage"
           :disabled="!messageInput.trim()"
-          >➤</Button
+          ><Send :size="17" /></Button
         >
       </footer>
     </section>
@@ -614,6 +710,23 @@ watch(
   clip: rect(0 0 0 0);
   clip-path: inset(50%);
 }
+.reply-error {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 9px var(--space-6);
+  color: var(--danger);
+  background: var(--surface-soft);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-xs);
+}
+.reply-error code,
+.reply-error a {
+  overflow-wrap: anywhere;
+}
 .message-stream {
   flex: 1;
   min-height: 0;
@@ -786,11 +899,44 @@ watch(
   .thought-status {
     display: none;
   }
-  .message-stream {
+  .reply-error {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 9px var(--space-6);
+  color: var(--danger);
+  background: var(--surface-soft);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-xs);
+}
+.reply-error code,
+.reply-error a {
+  overflow-wrap: anywhere;
+}
+.message-stream {
     padding: var(--space-4);
   }
   .composer {
     margin: 0 var(--space-3) var(--space-3);
   }
 }
+
+.chat-status-strip { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: 32px; padding: 0 var(--space-6); border-bottom: 1px solid var(--border); color: var(--muted); font-size: var(--text-xs); }
+.chat-status-strip .thought-status { display: block; }
+.message-extra-panel { max-width: 620px; margin-top: 2px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-soft); color: var(--muted); font-size: var(--text-xs); line-height: 1.55; }
+.message-extra-panel strong { display: block; margin-bottom: 3px; color: var(--primary); font-size: var(--text-xs); }
+.message-extra-panel p { margin: 2px 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.message-empty { color: var(--muted); }
+.image-request-panel { flex: 0 0 auto; margin: 0 var(--space-6) var(--space-3); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); box-shadow: var(--shadow-sm); }
+.image-request-panel header { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-2); color: var(--text-strong); }
+.image-request-panel header span { color: var(--muted); font-size: var(--text-xs); }
+.image-request-fields { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.image-request-fields .image-prompt-input { flex: 1 1 260px; min-width: 180px; }
+.image-request-fields .image-workflow-input { flex: 0 1 170px; min-width: 130px; }
+.image-request-panel .image-request-status { margin-top: 7px; color: var(--muted); font-size: var(--text-xs); }
+.image-request-panel .image-request-result { margin-top: 8px; }
+@media (max-width: 767px) { .chat-status-strip { padding: 0 var(--space-4); } .chat-status-strip .thought-status { display: block; } .image-request-panel { margin: 0 var(--space-3) var(--space-3); } .image-request-panel header { align-items: flex-start; flex-direction: column; gap: 2px; } .image-request-fields { align-items: stretch; flex-direction: column; } .image-request-fields .image-prompt-input, .image-request-fields .image-workflow-input { width: 100%; min-width: 0; flex: none; } }
 </style>

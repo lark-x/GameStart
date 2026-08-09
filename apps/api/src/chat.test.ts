@@ -106,19 +106,20 @@ test("sends, reads, and idempotently replays a message", async () => {
     }),
   );
   assert.equal(sent.status, 200);
-  assert.deepEqual((await json(sent)).data, {
-    message: {
-      id: payload.id,
-      conversationId,
-      authorCharacterId: user.id,
-      kind: "TEXT",
-      text: payload.text,
-      createdAt: payload.createdAt,
-      idempotencyKey: payload.idempotencyKey,
-    },
-    inserted: true,
+  const sentData = (await json(sent)).data;
+  assert.deepEqual(sentData.message, {
+    id: payload.id,
+    conversationId,
+    authorCharacterId: user.id,
+    kind: "TEXT",
+    text: payload.text,
+    createdAt: payload.createdAt,
+    idempotencyKey: payload.idempotencyKey,
   });
-
+  assert.equal(sentData.inserted, true);
+  assert.equal(sentData.autoReply.status, "NOT_APPLICABLE");
+  assert.equal(sentData.autoReply.sourceMessageId, payload.id);
+  assert.equal(typeof sentData.autoReply.correlationId, "string");
   const replay = await app.handle(
     new Request(messageUrl, {
       method: "POST",

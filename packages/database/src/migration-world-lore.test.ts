@@ -12,6 +12,6 @@ test("world lore migration stores categorized entries with enabled full-text sea
   assert.match(migration, /tags text\[\] NOT NULL DEFAULT '\{\}'/);
   assert.match(migration, /world_lore_entries_world_enabled_idx/);
   assert.match(migration, /world_lore_entries_search_idx/);
-  assert.match(migration, /USING gin \(to_tsvector\('simple'/);
+  assert.match(migration, /USING gin \(\(?to_tsvector\('simple'/);
   assert.match(rollback, /DROP TABLE world_lore_entries/);
 });

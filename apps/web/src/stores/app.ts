@@ -16,6 +16,7 @@ export const useAppStore = defineStore("app", () => {
   const currentCharacterId = ref("");
   const actorSessionId = ref("");
   const worldTimezone = ref("UTC");
+  const appMode = ref<"world" | "creator">("world");
 
   const currentWorld = computed(() => worlds.value.find((w) => w.id === currentWorldId.value));
   const currentCharacter = computed(() => characters.value.find((c) => c.id === currentCharacterId.value));
@@ -59,6 +60,7 @@ export const useAppStore = defineStore("app", () => {
     currentCharacterId,
     actorSessionId,
     worldTimezone,
+    appMode,
     currentWorld,
     currentCharacter,
     loadWorlds,

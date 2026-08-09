@@ -28,6 +28,7 @@ import type {
   WorldEventDefinition,
 } from "../../domain/src/index.ts";
 import type { OutboxEventRepository } from "./outbox.ts";
+import type { DispatchRequestRepository, ExecutionDispatchRequest } from "./dispatch.ts";
 
 export interface StoryWorldRepository {
   list(): Promise<readonly StoryWorld[]>;
@@ -97,6 +98,11 @@ export interface ScheduledOccurrenceRepository {
   listPending(
     storyWorldId: string,
     scheduledBefore: string,
+    limit: number,
+  ): Promise<readonly ScheduledOccurrence[]>;
+  listForCreatorScan(
+    storyWorldId: string,
+    horizonEnd: string,
     limit: number,
   ): Promise<readonly ScheduledOccurrence[]>;
   listByWindow(
@@ -251,6 +257,7 @@ export interface DomainRepositories {
   readonly llmProviderProfiles?: LlmProviderProfileRepository;
   readonly comfyUiSettings?: ComfyUiSettingsRepository;
   readonly outboxEvents?: OutboxEventRepository;
+  readonly dispatchRequests?: DispatchRequestRepository;
 }
 
 export interface InMemoryRepositorySeed {
@@ -279,4 +286,5 @@ export interface InMemoryRepositorySeed {
   appearanceSettings?: readonly AppearanceSettings[];
   llmProviderProfiles?: readonly LlmProviderProfile[];
   comfyUiSettings?: ComfyUiSettings;
+  dispatchRequests?: readonly ExecutionDispatchRequest[];
 }

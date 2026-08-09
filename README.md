@@ -9,7 +9,7 @@
 - Git
 - Node.js 22 或更高版本（推荐使用当前 LTS）
 - pnpm 11.1.2（仓库通过 `packageManager` 固定版本）
-- Python 3（仅用于启动无构建依赖的静态 Web）
+- Python 3（仅在需要运行保留的原生静态 Web 历史入口时使用）
 - Docker Desktop 或 Docker Engine + Compose（仅持久化模式需要）
 
 ## 克隆与安装
@@ -35,7 +35,7 @@ pnpm install
 pnpm --filter @living-network/api dev
 ```
 
-终端二：启动静态 Web（默认 `http://127.0.0.1:4173`）：
+终端二：启动 Vue/Vite Web（默认 `http://127.0.0.1:4173`）：
 
 ```sh
 pnpm --filter @living-network/web dev
@@ -222,7 +222,34 @@ docs/             开发计划、进度、发布验收和任务契约
 
 ## 当前限制
 
-- Web 默认仍是无需构建的原生浏览器模块，便于离线 MVP 开发；`apps/web/index-vue.html` 和 `src/views/` 已提供 Vue/Vite 迁移入口，依赖已写入 workspace，可用 `pnpm --filter @living-network/web typecheck`、`pnpm --filter @living-network/web build` 和 `pnpm --filter @living-network/web dev:vite` 验证。默认入口暂未切换，以保持原生 Web E2E 稳定。
+- Web 当前默认入口为 Vue/Vite，`pnpm --filter @living-network/web dev` 会启动 Vite；原生静态 Web 仅作为历史实现与验收证据保留，可通过 `pnpm --filter @living-network/web dev:shell` 单独运行。
 - 开发 API 使用内存 Seed；生产或持久化运行必须显式配置 PostgreSQL 仓储。
 - 未配置 LLM 或 ComfyUI 时，开发 Seed 与测试替身仍可运行；这不代表已连接真实供应商。图片任务泵默认关闭，只有 `IMAGE_GENERATION_ENABLED=true` 的持久化 Worker 才会访问 ComfyUI。
 - 项目默认是本地开发配置，不包含生产级认证、域名、TLS、密钥管理和监控部署方案。
+
+## 创作者事件派发说明（M7A）
+
+创作者事件调度台支持“进入世界 / 创作中心”双模式。创作模式包含事件调度台、内容管理、视觉工作台和集成设置。内存开发模式可以扫描事件候选并查看只读影响预览，但不能正式派发事件；正式创作者派发必须使用持久化模式，并同时启动 PostgreSQL、Redis 和 Worker。
+
+```sh
+# 持久化基础设施
+docker compose --env-file .env -f infra/compose/docker-compose.yml up -d postgres redis minio
+
+# 分别导入 .env 后启动 API、Worker 和 Web
+pnpm --filter @living-network/api start:postgres
+pnpm --filter @living-network/worker start:postgres
+pnpm --filter @living-network/web dev
+```
+
+M7A 的候选扫描、影响预览和批次状态接口可以在内存模式验证。2026-08-09 已在真实本地 Compose PostgreSQL + Redis + Worker 环境完成 `MANUAL` 候选 → preview → `PENDING_DISPATCH` → BullMQ → `COMPLETED` → 朋友圈 Moment 的派发链验收，并清理验收数据。该结果明确覆盖 M7A 的真实 PostgreSQL/Redis 派发链，但不代表真实 LLM 或 ComfyUI 已验收；这两类外部服务仍需在可用且配置明确后单独验收。
+## 交互日志与自动回复
+
+体验者在 USER → AI 私聊中发送文本后，API 会自动排队生成回复；失败不会删除用户消息，可以在聊天页重试。创作中心的“交互日志”页面提供历史筛选与实时 SSE，模型档案支持显式“测试连接”。
+
+- Web：http://127.0.0.1:4173
+- API：http://127.0.0.1:3001
+- 日志历史：GET /v1/interaction-logs
+- 日志实时流：GET /v1/interaction-logs/stream
+- 模型测试：POST /v1/llm-provider-profiles/:id/test
+
+持久日志保留 7 天，正文最多保留 500 字符预览，并递归隐藏密钥、认证头、Cookie、token、password 和密文。自动测试只使用 Fake Provider；真实模型调用需要用户在模型档案中主动点击“测试连接”。

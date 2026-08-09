@@ -65,7 +65,7 @@ watch(
         </div>
       </article>
     </div>
-    <EmptyState
+    <EmptyState v-else
       title="相册还是空的"
       description="导入表情包后，收藏会显示在这里。"
       ><template #icon>▱</template></EmptyState
@@ -151,4 +151,11 @@ watch(
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+
+.pack-card { display: flex; flex-direction: column; height: 430px; min-height: 0; }
+.pack-card header { flex: 0 0 auto; }
+.sticker-grid { min-height: 0; flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; align-content: start; }
+@media (max-width: 640px) { .pack-card { height: 390px; } }
+
 </style>

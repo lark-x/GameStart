@@ -15,6 +15,6 @@ CREATE TABLE world_lore_entries (
 CREATE INDEX world_lore_entries_world_enabled_idx
   ON world_lore_entries (story_world_id, is_enabled, id);
 CREATE INDEX world_lore_entries_search_idx ON world_lore_entries
-  USING gin (to_tsvector('simple', title || ' ' || content || ' ' || array_to_string(tags, ' ')));
+  USING gin ((to_tsvector('simple'::regconfig, title || ' ' || content) || array_to_tsvector(tags)));
 
 COMMIT;

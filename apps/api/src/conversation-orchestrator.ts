@@ -15,6 +15,7 @@ import type {
   ChatProvider,
 } from "../../../packages/ai/src/index.ts";
 import type { DomainRepositories } from "../../../packages/database/src/index.ts";
+import type { ChatTraceContext } from "../../../packages/contracts/src/index.ts";
 
 export interface ConversationOrchestratorOptions {
   readonly memoryRetrievalEnabled?: boolean;
@@ -204,14 +205,20 @@ export class ConversationOrchestrator {
       .catch(() => undefined);
   }
 
-  public async completeReply(conversationId: string, readerCharacterId: string): Promise<ConversationReply> {
+  public async completeReply(
+    conversationId: string,
+    readerCharacterId: string,
+    trace?: ChatTraceContext,
+  ): Promise<ConversationReply> {
     const context = await this.context(conversationId, readerCharacterId);
-    const result = await this.provider.complete({ messages: context.chat });
+    const result = await this.provider.complete({
+      messages: context.chat,
+      ...(trace === undefined ? {} : { trace }),
+    });
     const reply = await this.saveReply(context, result.content);
     this.scheduleAfterReply(context, readerCharacterId, reply);
     return reply;
   }
-
   public async *streamReply(
     conversationId: string,
     readerCharacterId: string,

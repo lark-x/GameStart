@@ -11,6 +11,7 @@ export interface ChatCompletionRequest {
   temperature?: number;
   maxTokens?: number;
   responseFormat?: "text" | "json_object";
+  trace?: import("./observability.ts").ChatTraceContext;
 }
 
 export interface ChatUsage {
@@ -44,6 +45,8 @@ export interface OpenAICompatibleConfig {
   apiKey?: string;
   model?: string;
   timeoutMs?: number;
+  observationHook?: import("./observability.ts").ChatObservationHook;
+  profileContext?: { profileId?: string; profileName?: string; protocol?: string };
 }
 
 export type FetchImplementation = (
@@ -216,12 +219,16 @@ async function* readSseData(body: ReadableStream<Uint8Array>): AsyncGenerator<st
   }
 }
 
+import { emitObservation } from "./observability.ts";
+
 export class OpenAICompatibleProvider implements ChatProvider {
   private readonly baseUrl: string;
   private readonly apiKey: string | undefined;
   private readonly defaultModel: string | undefined;
   private readonly timeoutMs: number;
   private readonly fetchImpl: FetchImplementation;
+  private readonly observationHook: OpenAICompatibleConfig["observationHook"];
+  private readonly profileContext: OpenAICompatibleConfig["profileContext"];
 
   public constructor(
     config: OpenAICompatibleConfig,
@@ -235,43 +242,56 @@ export class OpenAICompatibleProvider implements ChatProvider {
       throw new ProviderError("CONFIGURATION", "timeoutMs must be a positive integer");
     }
     this.fetchImpl = fetchImpl;
+    this.observationHook = config.observationHook;
+    this.profileContext = config.profileContext;
   }
 
   public async complete(request: ChatCompletionRequest): Promise<ChatCompletionResult> {
     const model = assertRequest(request, this.defaultModel);
-    const response = await this.request(request, model, false);
-    let payload: unknown;
+    const started = Date.now();
+    const context = { ...(request.trace ? { trace: request.trace } : {}), ...this.profileContext, model };
+    await emitObservation(this.observationHook, { name: "request_started", ...context });
     try {
-      payload = await response.json();
-    } catch {
-      throw new ProviderError("INVALID_RESPONSE", "LLM response body is not valid JSON");
+      const response = await this.request(request, model, false);
+      let payload: unknown;
+      try { payload = await response.json(); } catch { throw new ProviderError("INVALID_RESPONSE", "LLM response body is not valid JSON"); }
+      const result = parseCompletionResponse(payload);
+      await emitObservation(this.observationHook, { name: "completed", ...context, model: result.model, durationMs: Date.now() - started, preview: result.content, outcome: "success" });
+      return result;
+    } catch (error) {
+      const normalized = error instanceof ProviderError ? error : new ProviderError("NETWORK_ERROR", "LLM request failed", { retryable: true });
+      await emitObservation(this.observationHook, { name: "error", ...context, durationMs: Date.now() - started, error: { code: normalized.code, ...(normalized.status === undefined ? {} : { status: normalized.status }), retryable: normalized.retryable, message: normalized.message } });
+      throw error instanceof ProviderError ? error : normalized;
     }
-    return parseCompletionResponse(payload);
   }
 
   public async *stream(request: ChatCompletionRequest): AsyncGenerator<ChatDelta> {
     const model = assertRequest(request, this.defaultModel);
-    const response = await this.request(request, model, true);
-    if (response.body === null) {
-      throw new ProviderError("STREAM_ERROR", "LLM response has no stream body");
-    }
+    const started = Date.now(); let firstToken = false; let terminal = false;
+    const context = { ...(request.trace ? { trace: request.trace } : {}), ...this.profileContext, model };
+    await emitObservation(this.observationHook, { name: "request_started", ...context });
     try {
+      const response = await this.request(request, model, true);
+      if (response.body === null) throw new ProviderError("STREAM_ERROR", "LLM response has no stream body");
       for await (const data of readSseData(response.body)) {
-        if (data === "[DONE]") return;
+        if (data === "[DONE]") { terminal = true; await emitObservation(this.observationHook, { name: "completed", ...context, durationMs: Date.now() - started, outcome: "success" }); return; }
         let payload: unknown;
-        try {
-          payload = JSON.parse(data);
-        } catch {
-          throw new ProviderError("STREAM_ERROR", "LLM stream event is not valid JSON");
-        }
-        yield parseStreamPayload(payload);
+        try { payload = JSON.parse(data); } catch { throw new ProviderError("STREAM_ERROR", "LLM stream event is not valid JSON"); }
+        const delta = parseStreamPayload(payload);
+        if (delta.content && !firstToken) { firstToken = true; await emitObservation(this.observationHook, { name: "first_token", ...context, durationMs: Date.now() - started, preview: delta.content }); }
+        yield delta;
       }
+      terminal = true;
+      await emitObservation(this.observationHook, { name: "completed", ...context, durationMs: Date.now() - started, outcome: "success" });
     } catch (error) {
-      if (error instanceof ProviderError) throw error;
-      throw new ProviderError("STREAM_ERROR", "LLM stream failed", { retryable: true });
+      const normalized = error instanceof ProviderError ? error : new ProviderError("STREAM_ERROR", "LLM stream failed", { retryable: true });
+      terminal = true;
+      await emitObservation(this.observationHook, { name: "error", ...context, durationMs: Date.now() - started, error: { code: normalized.code, ...(normalized.status === undefined ? {} : { status: normalized.status }), retryable: normalized.retryable, message: normalized.message } });
+      throw error instanceof ProviderError ? error : normalized;
+    } finally {
+      if (!terminal) await emitObservation(this.observationHook, { name: "completed", ...context, durationMs: Date.now() - started, outcome: "cancelled" });
     }
   }
-
   private async request(
     request: ChatCompletionRequest,
     model: string,

@@ -1,4 +1,5 @@
 import { Queue, Worker, type JobsOptions, type WorkerOptions } from "bullmq";
+import { bestEffortLog, type WorkerLogger } from "./interaction-log.ts";
 
 export interface RedisQueueConfig {
   readonly url: string;
@@ -44,12 +45,12 @@ function defaultJobOptions(options: QueueTaskOptions = {}): JobsOptions {
 }
 
 export class BullMqTaskQueue<Data extends Record<string, unknown>> implements TaskQueue<Data> {
-  private readonly queue: Queue<any, any, any>;
+  private readonly queue: Queue<Data, unknown, string, Data, unknown, string>;
 
   public constructor(name: string, config: RedisQueueConfig) {
     if (name.trim().length === 0) throw new TypeError("queue name must not be empty");
     const connection = parseRedisConnection(config.url);
-    this.queue = new Queue<any, any, any>(name, {
+    this.queue = new Queue<Data, unknown, string, Data, unknown, string>(name, {
       connection,
       ...(config.prefix === undefined ? {} : { prefix: config.prefix }),
       defaultJobOptions: defaultJobOptions(),
@@ -70,13 +71,14 @@ export class BullMqTaskQueue<Data extends Record<string, unknown>> implements Ta
 export interface BullMqTaskWorkerOptions {
   readonly concurrency?: number;
   readonly prefix?: string;
+  readonly logger?: WorkerLogger | undefined;
 }
 
 export class BullMqTaskWorker<
   Data extends Record<string, unknown>,
   Result = void,
 > {
-  private readonly worker: Worker<Data, Result, any>;
+  private readonly worker: Worker<Data, Result, string>;
 
   public constructor(
     name: string,
@@ -95,9 +97,24 @@ export class BullMqTaskWorker<
       ...(config.prefix === undefined ? {} : { prefix: config.prefix }),
       ...(options.prefix === undefined ? {} : { prefix: options.prefix }),
     };
-    this.worker = new Worker<Data, Result, any>(
+    this.worker = new Worker<Data, Result, string>(
       name,
-      async (job) => processor(job.data),
+      async (job) => {
+        const jobId = job.id;
+        const entityId = jobId ?? job.name;
+        const taskCorrelationId = typeof job.data.correlationId === "string" ? job.data.correlationId : undefined;
+        const correlationId = taskCorrelationId ?? `worker:job:${entityId}`;
+        const identity = { entityType: "job", entityId, ...(jobId === undefined ? {} : { jobId }) };
+        await bestEffortLog(options.logger, { action: "queue.job", outcome: "RECEIVED", correlationId, ...identity });
+        try {
+          const result = await processor(job.data);
+          await bestEffortLog(options.logger, { action: "queue.job", outcome: "COMPLETED", correlationId, ...identity });
+          return result;
+        } catch (error) {
+          await bestEffortLog(options.logger, { action: "queue.job", outcome: "FAILED", correlationId, ...identity, message: error });
+          throw error;
+        }
+      },
       workerOptions,
     );
   }

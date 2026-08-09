@@ -97,7 +97,7 @@ onMounted(() => void loadFeed());
         </div>
       </article>
     </div>
-    <EmptyState
+    <EmptyState v-else
       title="还没有新的生活记录"
       description="当角色开始生活，这里会慢慢热闹起来。"
       ><template #icon>✦</template></EmptyState

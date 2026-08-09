@@ -3,6 +3,11 @@ import type {
   ApiEvent,
   ApiRelationship,
   ApiWorld,
+  CreatorDispatchSelectionDto,
+  CreatorEventCandidateDto,
+  CreatorEventCandidatesDto,
+  EventDispatchBatchDto,
+  EventDispatchPreviewDto,
 } from "./types";
 import type {
   AppearanceSettingsDto,
@@ -37,6 +42,8 @@ import type {
   SaveLlmProviderProfileRequest,
 } from "../../../packages/contracts/src/index.ts";
 
+export interface AutoReplyState { status: "QUEUED" | "NOT_APPLICABLE" | "ALREADY_EXISTS" | "COMPLETED" | "FAILED"; correlationId?: string; sourceMessageId?: string; messageId?: string; }
+export interface SseEvent<T = unknown> { event: string; id?: string; done: boolean; data?: T; }
 export interface ApiResponse<T> {
   data: T;
 }
@@ -75,7 +82,10 @@ export class ApiClient {
   public getMessages(conversationId: string, characterId: string): Promise<ApiResponse<MessageDto[]>>;
   public requestConversationImage(conversationId: string, input: RequestConversationImageRequest): Promise<ApiResponse<ImageJobDto>>;
   public getImageJob(jobId: string): Promise<ApiResponse<ImageJobDto>>;
-  public sendMessage(conversationId: string, input: SendMessageRequest): Promise<ApiResponse<unknown>>;
+  public sendMessage(conversationId: string, input: SendMessageRequest): Promise<ApiResponse<{ autoReply?: AutoReplyState }>>;
+  public retryAutoReply(conversationId: string, input: { readerCharacterId: string; sourceMessageId?: string }): Promise<ApiResponse<unknown>>;
+  public getInteractionLogs(query?: Record<string, string | number>): Promise<ApiResponse<unknown>>;
+  public subscribeInteractionLogs(handlers?: { onOpen?: () => void; onEvent?: (event: SseEvent) => void; onError?: (error: unknown) => void; onClose?: () => void }, options?: { cursor?: string; lastEventId?: string }): () => void;
   public streamConversation(conversationId: string, characterId: string, handlers?: SseHandlers): Promise<void>;
   public createStoryWorld(input: CreateStoryWorldRequest): Promise<ApiResponse<ApiWorld>>;
   public updateStoryWorld(id: string, input: UpdateStoryWorldRequest): Promise<ApiResponse<ApiWorld>>;
@@ -86,8 +96,22 @@ export class ApiClient {
   public getLlmProviderProfiles(): Promise<ApiResponse<LlmProviderProfileDto[]>>;
   public saveLlmProviderProfile(input: SaveLlmProviderProfileRequest): Promise<ApiResponse<LlmProviderProfileDto>>;
   public deleteLlmProviderProfile(id: string): Promise<ApiResponse<unknown>>;
+  public testLlmProfile(id: string): Promise<ApiResponse<unknown>>;
   public getComfyUiSettings(): Promise<ApiResponse<ComfyUiSettingsDto>>;
   public updateComfyUiSettings(input: UpdateComfyUiSettingsRequest): Promise<ApiResponse<ComfyUiSettingsDto>>;
+  public getCreatorEventCandidates(
+    worldId: string,
+    horizonDays?: number,
+  ): Promise<ApiResponse<CreatorEventCandidatesDto | CreatorEventCandidateDto[]>>;
+  public previewCreatorDispatch(
+    worldId: string,
+    input: { selections: CreatorDispatchSelectionDto[] },
+  ): Promise<ApiResponse<EventDispatchPreviewDto>>;
+  public createCreatorDispatch(
+    worldId: string,
+    input: { selections: CreatorDispatchSelectionDto[]; idempotencyKey?: string },
+  ): Promise<ApiResponse<EventDispatchBatchDto>>;
+  public getCreatorDispatch(batchId: string): Promise<ApiResponse<EventDispatchBatchDto>>;
 }
 
 export interface SaveWorldLoreEntryRequest {
@@ -106,6 +130,7 @@ export interface UpdateWorldLoreEntryRequest {
   content?: string;
   tags?: string[];
   isEnabled?: boolean;
+
 }
 
 export function parseSseBlock(block: string): unknown;

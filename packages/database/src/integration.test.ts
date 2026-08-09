@@ -71,10 +71,12 @@ test("in-memory LLM profiles enforce one active record and support list, lookup,
   assert.deepEqual((await profiles.list()).map((item) => item.id), ["active", "inactive"]);
   assert.deepEqual(await profiles.getActive(), active);
   assert.deepEqual(await profiles.getById(inactive.id), inactive);
-  await assert.rejects(profiles.save(profile("second-active", true)), /Only one LLM provider profile can be active/);
+  await profiles.save(profile("second-active", true));
+  assert.equal((await profiles.getActive())?.id, "second-active");
+  assert.equal((await profiles.getById(active.id))?.isActive, false);
 
-  await profiles.delete(active.id);
-  assert.equal(await profiles.getById(active.id), undefined);
+  await profiles.delete("second-active");
+  assert.equal(await profiles.getById("second-active"), undefined);
   assert.equal(await profiles.getActive(), undefined);
 });
 

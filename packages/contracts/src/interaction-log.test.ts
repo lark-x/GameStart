@@ -1,0 +1,6 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { InteractionLogCategory, InteractionLogLevel, InteractionLogSource, type ChatTraceContext, type InteractionLogDto, type InteractionLogQuery, type ProviderConnectionTestResultDto } from "./interaction-log.ts";
+
+test("interaction log contracts expose usable enums and DTO shapes", () => { assert.equal(InteractionLogLevel.ERROR, "ERROR"); assert.equal(InteractionLogSource.AI, "AI"); assert.equal(InteractionLogSource.WORKER, "WORKER"); assert.equal(InteractionLogCategory.EVENT_OUTPUT, "EVENT_OUTPUT"); const dto: InteractionLogDto = { id: "id", createdAt: new Date().toISOString(), level: InteractionLogLevel.INFO, source: InteractionLogSource.API, category: InteractionLogCategory.HTTP, action: "request", outcome: "ok" }; const query: InteractionLogQuery = { requestId: "request", correlationId: "correlation", query: "needle", limit: 100 }; const result: ProviderConnectionTestResultDto = { success: true, ok: true, profileId: "profile", protocol: "openai", model: "model", correlationId: "correlation" }; const trace: ChatTraceContext = { correlationId: "correlation" }; assert.equal(dto.action, "request"); assert.equal(result.success, true); assert.equal(trace.correlationId, query.correlationId); });
+

@@ -90,6 +90,7 @@ import type {
   WorldLoreEntryRepository,
 } from "./repositories.ts";
 import { SqlOutboxEventRepository } from "./outbox.ts";
+import { createSqlDispatchRequestRepository, type DispatchRequestRepository } from "./dispatch.ts";
 import type { MigrationDatabase } from "./migrations.ts";
 
 export type SqlRow = Record<string, unknown>;
@@ -1065,6 +1066,7 @@ export class SqlRepositories implements DomainRepositories {
   public readonly worldEventDefinitions: WorldEventDefinitionRepository;
   public readonly worldLoreEntries: WorldLoreEntryRepository;
   public readonly scheduledOccurrences: ScheduledOccurrenceRepository;
+  public readonly dispatchRequests: DispatchRequestRepository;
   public readonly characterPlans: CharacterPlanRepository;
   public readonly eventExecutions: EventExecutionRepository;
   public readonly proactiveMessageBudgets: ProactiveMessageBudgetRepository;
@@ -1087,6 +1089,7 @@ private readonly client: SqlClient;
   public constructor(client: SqlClient) {
     this.client = client;
     this.outboxEvents = new SqlOutboxEventRepository(client);
+    this.dispatchRequests = createSqlDispatchRequestRepository(client);
 
     this.storyWorlds = {
       list: async () => {
@@ -1548,7 +1551,7 @@ private readonly client: SqlClient;
         if (queryText.trim().length === 0) {
           throw new TypeError("world lore search queryText must be non-empty");
         }
-        const document = "to_tsvector('simple', title || ' ' || content || ' ' || array_to_string(tags, ' '))";
+        const document = "to_tsvector('simple'::regconfig, title || ' ' || content) || array_to_tsvector(tags)";
         const result = await this.client.query(
           `${WORLD_LORE_ENTRY_SELECT}
            WHERE story_world_id = $1
@@ -1625,6 +1628,23 @@ private readonly client: SqlClient;
            ORDER BY scheduled_for, id
            LIMIT $3`,
           [storyWorldId, scheduledBefore, limit],
+        );
+        return result.rows.map(mapScheduledOccurrenceRow);
+      },
+      listForCreatorScan: async (storyWorldId, horizonEnd, limit) => {
+        if (!Number.isSafeInteger(limit) || limit < 1) {
+          throw new TypeError("scheduled occurrence limit must be a positive integer");
+        }
+        if (Number.isNaN(Date.parse(horizonEnd))) {
+          throw new TypeError("horizonEnd must be a valid ISO timestamp");
+        }
+        const result = await this.client.query(
+          `${OCCURRENCE_SELECT}` +
+          " WHERE story_world_id = $1" +
+          " AND status NOT IN ('COMPLETED', 'CANCELLED')" +
+          " AND scheduled_for <= $2" +
+          " ORDER BY scheduled_for, id LIMIT $3",
+          [storyWorldId, horizonEnd, limit],
         );
         return result.rows.map(mapScheduledOccurrenceRow);
       },

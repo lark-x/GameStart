@@ -12,6 +12,7 @@ const props = withDefaults(
     type?: "button" | "submit" | "reset";
     loading?: boolean;
     disabled?: boolean;
+    form?: string;
   }>(),
   {
     variant: "primary",
@@ -30,7 +31,7 @@ const classes = computed(() =>
 </script>
 
 <template>
-  <button :class="classes" :disabled="disabled || loading" :type="type">
+  <button :class="classes" :disabled="disabled || loading" :type="type" :form="form">
     <span v-if="loading" class="ui-spinner" aria-hidden="true" />
     <slot />
   </button>

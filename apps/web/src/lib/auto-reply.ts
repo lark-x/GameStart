@@ -1,0 +1,8 @@
+﻿export type AutoReplyStatus = "QUEUED" | "NOT_APPLICABLE" | "ALREADY_EXISTS" | "COMPLETED" | "FAILED";
+export interface AutoReplyResult { status: AutoReplyStatus; sourceMessageId?: string; messageId?: string; correlationId?: string; }
+export interface ReplyMessage { id: string; authorCharacterId?: string; kind: string; }
+export function deterministicReplyId(conversationId: string, sourceMessageId: string): string { return "assistant:" + conversationId + ":" + sourceMessageId; }
+export function normalizeAutoReply(value: unknown): AutoReplyResult | null { if (!value || typeof value !== "object") return null; const item = value as Record<string, unknown>; const status = item.status; if (!["QUEUED", "NOT_APPLICABLE", "ALREADY_EXISTS", "COMPLETED", "FAILED"].includes(String(status))) return null; return { status: status as AutoReplyStatus, ...(typeof item.sourceMessageId === "string" ? { sourceMessageId: item.sourceMessageId } : {}), ...(typeof item.messageId === "string" ? { messageId: item.messageId } : {}), ...(typeof item.correlationId === "string" ? { correlationId: item.correlationId } : {}) }; }
+export function findPendingSource(conversationId: string, conversation: { type?: string } | undefined, currentCharacter: { role?: string } | undefined, currentCharacterId: string, messages: readonly ReplyMessage[]): ReplyMessage | undefined { if (conversation?.type !== "PRIVATE" || currentCharacter?.role !== "USER") return undefined; return [...messages].reverse().find((message) => message.authorCharacterId === currentCharacterId && message.kind === "TEXT" && !messages.some((reply) => reply.id === deterministicReplyId(conversationId, message.id))); }
+
+

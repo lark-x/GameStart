@@ -111,7 +111,7 @@ watch(
         </footer>
       </article>
     </div>
-    <EmptyState
+    <EmptyState v-else
       title="暂时还没有建立羁绊"
       description="创建角色之间的关系后，会在这里展示。"
       ><template #icon>♡</template></EmptyState

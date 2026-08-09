@@ -4,3 +4,5 @@ export * from "./sql.ts";
 export * from "./postgres.ts";
 export * from "./migrations.ts";
 export * from "./outbox.ts";
+export * from "./dispatch.ts";
+export * from "./interaction-log.ts";

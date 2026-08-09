@@ -21,6 +21,7 @@ import type { DomainRepositories } from "../../../packages/database/src/index.ts
 import { BehaviorMediaCoordinator, type ComfyUiClient } from "./media.ts";
 import { MomentPublicationCoordinator } from "./publication.ts";
 import { ProactiveMessageCoordinator } from "./proactive.ts";
+import { bestEffortLog, type WorkerLogger } from "./interaction-log.ts";
 
 export type EventOutputExecutorClock = () => Date;
 
@@ -32,6 +33,7 @@ export interface EventOutputExecutorOptions {
    */
   readonly messageProvider?: ChatProvider;
   readonly clock?: EventOutputExecutorClock;
+  readonly logger?: WorkerLogger | undefined;
 }
 
 export interface EventOutputExecutionResult {
@@ -102,6 +104,7 @@ export class EventOutputExecutor {
   private readonly repositories: DomainRepositories;
   private readonly provider: ChatProvider | undefined;
   private readonly clock: EventOutputExecutorClock;
+  private readonly logger: WorkerLogger | undefined;
 
   public constructor(repositories: DomainRepositories, options: EventOutputExecutorOptions = {}) {
     if (!repositories.eventExecutions || !repositories.scheduledOccurrences || !repositories.worldEventDefinitions) {
@@ -110,9 +113,11 @@ export class EventOutputExecutor {
     this.repositories = repositories;
     this.provider = options.messageProvider;
     this.clock = options.clock ?? (() => new Date());
+    this.logger = options.logger;
   }
 
   public async execute(executionId: string): Promise<EventOutputExecutionResult> {
+    await bestEffortLog(this.logger, { action: "event_output.execute", outcome: "STARTED", correlationId: "worker:event_execution:" + executionId, entityType: "event_execution", entityId: executionId });
     const execution = await this.repositories.eventExecutions!.getById(executionId);
     if (!execution) throw new TypeError(`Unknown event execution: ${executionId}`);
     const occurrence = await this.repositories.scheduledOccurrences!.getById(execution.occurrenceId);
@@ -136,6 +141,7 @@ export class EventOutputExecutor {
     if (completedOccurrence !== occurrence) {
       await this.repositories.scheduledOccurrences!.update(completedOccurrence);
     }
+    await bestEffortLog(this.logger, { action: "event_output.execute", outcome: "COMPLETED", correlationId: "worker:event_execution:" + executionId, entityType: "event_execution", entityId: executionId, worldId: definition.storyWorldId, details: snapshot });
     return { execution: completed, occurrence: completedOccurrence, alreadyCompleted: false };
   }
 
@@ -148,7 +154,7 @@ export class EventOutputExecutor {
     const diagnostics: string[] = [];
 
     if (definition.outputs.sendMessage) {
-      const result = await this.safely("sendMessage", () => this.sendMessages(execution, definition, actor));
+      const result = await this.safely("sendMessage", execution, definition, () => this.sendMessages(execution, definition, actor));
       outputEntries.sendMessage = toJsonDetail(result.detail);
       diagnostics.push(...result.diagnostics);
     } else {
@@ -156,7 +162,7 @@ export class EventOutputExecutor {
     }
 
     if (definition.outputs.publishMoment) {
-      const result = await this.safely("publishMoment", () => this.publishMoment(execution, definition, actor));
+      const result = await this.safely("publishMoment", execution, definition, () => this.publishMoment(execution, definition, actor));
       outputEntries.publishMoment = toJsonDetail(result.detail);
       diagnostics.push(...result.diagnostics);
     } else {
@@ -164,7 +170,7 @@ export class EventOutputExecutor {
     }
 
     if (definition.outputs.generateImage) {
-      const result = await this.safely("generateImage", () => this.queueImage(execution, definition, actor));
+      const result = await this.safely("generateImage", execution, definition, () => this.queueImage(execution, definition, actor));
       outputEntries.generateImage = toJsonDetail(result.detail);
       diagnostics.push(...result.diagnostics);
     } else {
@@ -180,12 +186,16 @@ export class EventOutputExecutor {
 
   private async safely(
     name: string,
+    execution: EventExecution,
+    definition: WorldEventDefinition,
     operation: () => Promise<OutputDetail>,
   ): Promise<{ detail: OutputDetail; diagnostics: readonly string[] }> {
     try {
       const detail = await operation();
+      await bestEffortLog(this.logger, { action: "event_output." + name, outcome: detail.status, correlationId: "worker:event_execution:" + execution.id, entityType: "event_execution", entityId: execution.id, worldId: definition.storyWorldId, details: detail });
       return { detail, diagnostics: detail.diagnostics ?? [] };
     } catch (error) {
+      await bestEffortLog(this.logger, { action: "event_output." + name, outcome: "FAILED", correlationId: "worker:event_execution:" + execution.id, entityType: "event_execution", entityId: execution.id, worldId: definition.storyWorldId, message: error });
       const diagnostic = `${name}: ${conciseError(error)}`;
       return {
         detail: outputDetail("FAILED", [], [diagnostic]),

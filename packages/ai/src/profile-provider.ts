@@ -7,6 +7,7 @@ export function createProviderFromProfile(
   profile: LlmProviderProfile,
   apiKey: string | undefined,
   fetchImpl?: FetchImplementation,
+  options: { observationHook?: import("./observability.ts").ChatObservationHook } = {},
 ): ChatProvider {
   if (profile.protocol === LlmProviderProtocol.OPENAI_COMPATIBLE) {
     return new OpenAICompatibleProvider({
@@ -14,6 +15,8 @@ export function createProviderFromProfile(
       ...(apiKey === undefined ? {} : { apiKey }),
       model: profile.model,
       timeoutMs: profile.timeoutMs,
+      ...(options.observationHook === undefined ? {} : { observationHook: options.observationHook }),
+      profileContext: { profileId: profile.id, profileName: profile.name, protocol: profile.protocol },
     }, fetchImpl);
   }
   if (apiKey === undefined || apiKey.trim().length === 0) {
@@ -24,5 +27,7 @@ export function createProviderFromProfile(
     apiKey,
     model: profile.model,
     timeoutMs: profile.timeoutMs,
+      ...(options.observationHook === undefined ? {} : { observationHook: options.observationHook }),
+      profileContext: { profileId: profile.id, profileName: profile.name, protocol: profile.protocol },
   }, fetchImpl);
 }
