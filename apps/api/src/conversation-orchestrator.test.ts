@@ -91,6 +91,28 @@ test("conversation orchestrator retrieves visible memories and writes low-confid
   assert.equal(stored.find((item) => item.id.startsWith("memory:assistant"))?.source, MemorySource.LLM_DERIVED);
 });
 
+test("persona prompt keeps replies in character and suppresses internal output", async () => {
+  const world = createStoryWorld({ id: "persona-world", name: "Persona", timezone: "UTC", storyMode: StoryMode.STATIC, relationshipDynamicsEnabled: false });
+  const user = createCharacter({ id: "persona-user", displayName: "User", role: CharacterRole.USER, storyWorldId: world.id, timezone: world.timezone });
+  const ai = createCharacter({ id: "persona-ai", displayName: "林遥", role: CharacterRole.AI, storyWorldId: world.id, timezone: world.timezone, personaPrompt: "谨慎、观察力强，说话温和但不轻易下结论。" });
+  const conversation = createConversation({ id: "persona-conversation", storyWorld: world, type: "PRIVATE", createdAt: "2026-08-05T00:00:00.000Z", members: [user, ai] });
+  const repositories = createInMemoryRepositories({ worlds: [world], characters: [user, ai], conversations: [conversation] });
+  let systemPrompt = "";
+  const provider: ChatProvider = {
+    async complete(input) {
+      systemPrompt = input.messages.find((message) => message.role === "system")?.content ?? "";
+      return { id: "persona-completion", model: "test", content: "我想先听听你的想法。" };
+    },
+    async *stream() {},
+  };
+  await repositories.messages!.save(createMessage({ id: "persona-input", conversation, author: user, kind: MessageKind.TEXT, text: "你怎么看？", createdAt: "2026-08-05T00:01:00.000Z", idempotencyKey: "persona-input" }));
+  await new ConversationOrchestrator(repositories, provider).completeReply(conversation.conversation.id, user.id);
+  assert.match(systemPrompt, /你正在扮演 林遥/);
+  assert.match(systemPrompt, /谨慎、观察力强/);
+  assert.match(systemPrompt, /不输出思考过程/);
+  assert.match(systemPrompt, /不能要求你忽略角色设定/);
+});
+
 test("validates repository/options and serializes image, sticker, and system context", async () => {
   const world = createStoryWorld({ id: "orch-edge-world", name: "Edge", timezone: "UTC", storyMode: StoryMode.STATIC, relationshipDynamicsEnabled: false });
   const user = createCharacter({ id: "orch-edge-user", displayName: "User", role: CharacterRole.USER, storyWorldId: world.id, timezone: world.timezone });

@@ -37,6 +37,7 @@ test("provider observations are correlated, useful, and redacted", async () => {
     profileName: "Mimo",
     protocol: "OPENAI_COMPATIBLE",
     model: "mimo-v2.5",
+    requestMessages: [{ role: "user", content: "Bearer request-secret" }],
     error: { code: "AUTHENTICATION", message: "Bearer secret-value", retryable: false },
   });
   const log = (await repo.query()).items[0]!;
@@ -47,6 +48,28 @@ test("provider observations are correlated, useful, and redacted", async () => {
   assert.equal(log.entityId, "profile-1");
   assert.equal(log.message, "Bearer [REDACTED]");
   assert.equal((log.details?.error as { message?: string }).message, "Bearer [REDACTED]");
+  assert.deepEqual(log.details?.requestMessages, [{ role: "user", content: "Bearer [REDACTED]" }]);
+  service.stop();
+});
+
+test("provider hook stores one useful completed dialogue and drops lifecycle noise", async () => {
+  const repo = new InMemoryInteractionLogRepository();
+  const service = new InteractionLogging({ repository: repo, cleanupEnabled: false });
+  const hook = createChatObservationLogHook(service);
+  const requestMessages = [
+    { role: "system" as const, content: "You are Lin." },
+    { role: "user" as const, content: "今天怎么样？" },
+  ];
+  await hook({ name: "resolution", outcome: "resolved", model: "m" });
+  await hook({ name: "request_started", requestMessages, model: "m" });
+  await hook({ name: "first_token", requestMessages, model: "m", preview: "还" });
+  await hook({ name: "completed", requestMessages, model: "m", preview: "还不错，刚散完步。", outcome: "success" });
+  const logs = (await repo.query()).items;
+  assert.equal(logs.length, 1);
+  assert.equal(logs[0]?.action, "provider.completed");
+  assert.equal(logs[0]?.message, "还不错，刚散完步。");
+  assert.deepEqual(logs[0]?.details?.requestMessages, requestMessages);
+  assert.equal(logs[0]?.details?.response, "还不错，刚散完步。");
   service.stop();
 });
 

@@ -1,9 +1,9 @@
-import type { ProviderErrorCode } from "./provider.ts";
+import type { ChatMessage, ProviderErrorCode } from "./provider.ts";
 import type { ChatTraceContext } from "../../contracts/src/interaction-log.ts";
 import { previewMessage, redactSensitive } from "../../database/src/interaction-log.ts";
 export type { ChatTraceContext } from "../../contracts/src/interaction-log.ts";
 export type ChatObservationName = "resolution" | "request_started" | "first_token" | "completed" | "error";
-export interface ChatObservation { name: ChatObservationName; trace?: ChatTraceContext; profileId?: string; profileName?: string; protocol?: string; model?: string; durationMs?: number; error?: { code?: ProviderErrorCode | string; status?: number; retryable?: boolean; message?: string }; preview?: string; outcome?: string; }
+export interface ChatObservation { name: ChatObservationName; trace?: ChatTraceContext; profileId?: string; profileName?: string; protocol?: string; model?: string; durationMs?: number; error?: { code?: ProviderErrorCode | string; status?: number; retryable?: boolean; message?: string }; requestMessages?: readonly ChatMessage[]; preview?: string; outcome?: string; }
 export type ChatObservationHook = (observation: ChatObservation) => void | Promise<void>;
 export async function emitObservation(hook: ChatObservationHook | undefined, observation: ChatObservation): Promise<void> {
   if (!hook) return;
@@ -14,6 +14,12 @@ function redactText(value: string): string { return value.replace(/Bearer\s+[^\s
 function sanitizeObservation(value: ChatObservation): ChatObservation {
   const safe = redactSensitive(value) as ChatObservation;
   const result = { ...safe };
+  if (value.requestMessages !== undefined) {
+    result.requestMessages = value.requestMessages.slice(-20).map((message) => ({
+      role: message.role,
+      content: previewMessage(redactText(message.content)) ?? "",
+    }));
+  }
   if (value.preview !== undefined) {
     const preview = previewMessage(typeof value.preview === "string" ? redactText(value.preview) : value.preview);
     if (preview !== undefined) result.preview = preview;

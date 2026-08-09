@@ -15,7 +15,7 @@ export class ActiveProfileChatProvider implements ChatProvider {
   private async resolve(request: ChatCompletionRequest): Promise<ChatProvider> {
     const profile = await this.profiles.getActive();
     if (!profile) {
-      await emitObservation(this.observationHook, { name: "resolution", ...(request.trace ? { trace: request.trace } : {}), outcome: this.fallback ? "fallback" : "missing" });
+      await emitObservation(this.observationHook, { name: "resolution", ...(request.trace ? { trace: request.trace } : {}), requestMessages: request.messages, outcome: this.fallback ? "fallback" : "missing" });
       if (this.fallback) return this.fallback;
       throw new TypeError("No active LLM provider profile is configured");
     }
@@ -28,10 +28,10 @@ export class ActiveProfileChatProvider implements ChatProvider {
       }
       const options = this.observationHook === undefined ? {} : { observationHook: this.observationHook };
       const provider = createProviderFromProfile(profile, apiKey, undefined, options);
-      await emitObservation(this.observationHook, { name: "resolution", ...(request.trace ? { trace: request.trace } : {}), ...context, outcome: "resolved" });
+      await emitObservation(this.observationHook, { name: "resolution", ...(request.trace ? { trace: request.trace } : {}), requestMessages: request.messages, ...context, outcome: "resolved" });
       return provider;
     } catch (error) {
-      await emitObservation(this.observationHook, { name: "resolution", ...(request.trace ? { trace: request.trace } : {}), ...context, outcome: "error", error: errorInfo(error) });
+      await emitObservation(this.observationHook, { name: "resolution", ...(request.trace ? { trace: request.trace } : {}), requestMessages: request.messages, ...context, outcome: "error", error: errorInfo(error) });
       throw error;
     }
   }

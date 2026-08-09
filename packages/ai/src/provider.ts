@@ -249,7 +249,7 @@ export class OpenAICompatibleProvider implements ChatProvider {
   public async complete(request: ChatCompletionRequest): Promise<ChatCompletionResult> {
     const model = assertRequest(request, this.defaultModel);
     const started = Date.now();
-    const context = { ...(request.trace ? { trace: request.trace } : {}), ...this.profileContext, model };
+    const context = { ...(request.trace ? { trace: request.trace } : {}), ...this.profileContext, model, requestMessages: request.messages };
     await emitObservation(this.observationHook, { name: "request_started", ...context });
     try {
       const response = await this.request(request, model, false);
@@ -267,22 +267,23 @@ export class OpenAICompatibleProvider implements ChatProvider {
 
   public async *stream(request: ChatCompletionRequest): AsyncGenerator<ChatDelta> {
     const model = assertRequest(request, this.defaultModel);
-    const started = Date.now(); let firstToken = false; let terminal = false;
-    const context = { ...(request.trace ? { trace: request.trace } : {}), ...this.profileContext, model };
+    const started = Date.now(); let firstToken = false; let terminal = false; let responsePreview = "";
+    const context = { ...(request.trace ? { trace: request.trace } : {}), ...this.profileContext, model, requestMessages: request.messages };
     await emitObservation(this.observationHook, { name: "request_started", ...context });
     try {
       const response = await this.request(request, model, true);
       if (response.body === null) throw new ProviderError("STREAM_ERROR", "LLM response has no stream body");
       for await (const data of readSseData(response.body)) {
-        if (data === "[DONE]") { terminal = true; await emitObservation(this.observationHook, { name: "completed", ...context, durationMs: Date.now() - started, outcome: "success" }); return; }
+        if (data === "[DONE]") { terminal = true; await emitObservation(this.observationHook, { name: "completed", ...context, durationMs: Date.now() - started, preview: responsePreview, outcome: "success" }); return; }
         let payload: unknown;
         try { payload = JSON.parse(data); } catch { throw new ProviderError("STREAM_ERROR", "LLM stream event is not valid JSON"); }
         const delta = parseStreamPayload(payload);
+        if (delta.content) responsePreview = `${responsePreview}${delta.content}`.slice(0, 500);
         if (delta.content && !firstToken) { firstToken = true; await emitObservation(this.observationHook, { name: "first_token", ...context, durationMs: Date.now() - started, preview: delta.content }); }
         yield delta;
       }
       terminal = true;
-      await emitObservation(this.observationHook, { name: "completed", ...context, durationMs: Date.now() - started, outcome: "success" });
+      await emitObservation(this.observationHook, { name: "completed", ...context, durationMs: Date.now() - started, preview: responsePreview, outcome: "success" });
     } catch (error) {
       const normalized = error instanceof ProviderError ? error : new ProviderError("STREAM_ERROR", "LLM stream failed", { retryable: true });
       terminal = true;

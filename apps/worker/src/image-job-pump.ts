@@ -51,6 +51,20 @@ function isRetryable(error: unknown): boolean {
   return error instanceof ComfyUiError && error.retryable;
 }
 
+function imageLogDetails(job: ImageJob | undefined): Record<string, unknown> {
+  if (!job) return { service: "ComfyUI" };
+  return {
+    service: "ComfyUI",
+    prompt: job.prompt,
+    workflowVersion: job.workflowVersion,
+    status: job.status,
+    ...(job.negativePrompt === undefined ? {} : { negativePrompt: job.negativePrompt }),
+    ...(job.seed === undefined ? {} : { seed: job.seed }),
+    ...(job.externalJobId === undefined ? {} : { externalJobId: job.externalJobId }),
+    ...(job.mediaRef === undefined ? {} : { mediaRef: job.mediaRef }),
+  };
+}
+
 /**
  * Drains persisted image jobs. Submitted jobs are included so an orderly worker
  * restart reconnects to ComfyUI instead of stranding work in SUBMITTED state.
@@ -73,7 +87,7 @@ export class ImageJobPump {
       return { queued: 0, submitted: 0, completed: 0, failed: 0, deferred: 0, skipped: true };
     }
     this.running = true;
-    await bestEffortLog(this.options.logger, { action: "image.scan", outcome: "STARTED", correlationId: "worker:image_pump:scan", entityType: "image_pump" });
+    await bestEffortLog(this.options.logger, { level: "DEBUG", category: "IMAGE", action: "image.scan", outcome: "STARTED", correlationId: "worker:image_pump:scan", entityType: "image_pump" });
     try {
       const persisted = await this.repositories.comfyUiSettings.get();
       const settings = persisted ?? this.options.fallbackSettings;
@@ -97,17 +111,17 @@ export class ImageJobPump {
           const current = await coordinator.submitImageJob(job.id);
           if (current.status === ImageJobStatus.SUBMITTED) {
             submitted += 1;
-            await bestEffortLog(this.options.logger, { action: "image.submit", outcome: "SUCCESS", correlationId: "worker:image_job:" + current.id, entityType: "image_job", entityId: current.id, jobId: current.id });
+            await bestEffortLog(this.options.logger, { category: "IMAGE", action: "image.submit", outcome: "SUCCESS", correlationId: "worker:image_job:" + current.id, entityType: "image_job", entityId: current.id, jobId: current.id, message: current.prompt, details: imageLogDetails(current) });
             submittedIds.add(current.id);
           }
         } catch (error) {
           if (isRetryable(error)) {
             deferred += 1;
-            await bestEffortLog(this.options.logger, { action: "image.submit", outcome: "DEFERRED", correlationId: "worker:image_job:" + job.id, entityType: "image_job", entityId: job.id, jobId: job.id, message: error });
+            await bestEffortLog(this.options.logger, { category: "IMAGE", action: "image.submit", outcome: "DEFERRED", correlationId: "worker:image_job:" + job.id, entityType: "image_job", entityId: job.id, jobId: job.id, message: error, details: imageLogDetails(job) });
           } else {
             await coordinator.failImageJob(job.id, failureReason(error));
             failed += 1;
-            await bestEffortLog(this.options.logger, { action: "image.submit", outcome: "FAILED", correlationId: "worker:image_job:" + job.id, entityType: "image_job", entityId: job.id, jobId: job.id, message: error });
+            await bestEffortLog(this.options.logger, { category: "IMAGE", action: "image.submit", outcome: "FAILED", correlationId: "worker:image_job:" + job.id, entityType: "image_job", entityId: job.id, jobId: job.id, message: error, details: imageLogDetails(job) });
           }
         }
       }
@@ -122,18 +136,18 @@ export class ImageJobPump {
             // The coordinator performs terminal persistence while streaming.
           }
           const after = await this.repositories.imageJobs.getById(jobId);
-          if (after?.status === ImageJobStatus.SUCCEEDED) { completed += 1; await bestEffortLog(this.options.logger, { action: "image.progress", outcome: "COMPLETED", correlationId: "worker:image_job:" + jobId, entityType: "image_job", entityId: jobId, jobId }); }
-          if (after?.status === ImageJobStatus.FAILED) { failed += 1; await bestEffortLog(this.options.logger, { action: "image.progress", outcome: "FAILED", correlationId: "worker:image_job:" + jobId, entityType: "image_job", entityId: jobId, jobId }); }
+          if (after?.status === ImageJobStatus.SUCCEEDED) { completed += 1; await bestEffortLog(this.options.logger, { category: "IMAGE", action: "image.progress", outcome: "COMPLETED", correlationId: "worker:image_job:" + jobId, entityType: "image_job", entityId: jobId, jobId, message: after.prompt, details: imageLogDetails(after) }); }
+          if (after?.status === ImageJobStatus.FAILED) { failed += 1; await bestEffortLog(this.options.logger, { category: "IMAGE", action: "image.progress", outcome: "FAILED", correlationId: "worker:image_job:" + jobId, entityType: "image_job", entityId: jobId, jobId, message: after.failureReason, details: imageLogDetails(after) }); }
         } catch (error) {
           if (isRetryable(error)) {
             deferred += 1;
-            await bestEffortLog(this.options.logger, { action: "image.progress", outcome: "DEFERRED", correlationId: "worker:image_job:" + jobId, entityType: "image_job", entityId: jobId, jobId, message: error });
+            await bestEffortLog(this.options.logger, { category: "IMAGE", action: "image.progress", outcome: "DEFERRED", correlationId: "worker:image_job:" + jobId, entityType: "image_job", entityId: jobId, jobId, message: error, details: imageLogDetails(before) });
           } else {
             const current = await this.repositories.imageJobs.getById(jobId);
             if (current?.status === ImageJobStatus.SUBMITTED) {
               await coordinator.failImageJob(jobId, failureReason(error));
               failed += 1;
-              await bestEffortLog(this.options.logger, { action: "image.progress", outcome: "FAILED", correlationId: "worker:image_job:" + jobId, entityType: "image_job", entityId: jobId, jobId, message: error });
+              await bestEffortLog(this.options.logger, { category: "IMAGE", action: "image.progress", outcome: "FAILED", correlationId: "worker:image_job:" + jobId, entityType: "image_job", entityId: jobId, jobId, message: error, details: imageLogDetails(current) });
             }
           }
         }

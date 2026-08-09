@@ -51,25 +51,59 @@ let disposed = false;
 const statusLabel = computed(() =>
   connected.value ? "实时连接正常" : "实时连接已断开",
 );
-const showSystemLogs = ref(false);
-const visibleLogs = computed(() => showSystemLogs.value ? logs.value : logs.value.filter((item) => !isLowValueLog(item)));
-const newCount = computed(() => pendingLogs.value.filter((item) => showSystemLogs.value || !isLowValueLog(item)).length);
+const showAllLogs = ref(false);
+const visibleLogs = computed(() => showAllLogs.value ? logs.value : logs.value.filter(isUsefulLog));
+const newCount = computed(() => pendingLogs.value.filter((item) => showAllLogs.value || isUsefulLog(item)).length);
 
-function isLowValueLog(item: ApiInteractionLog) {
-  return item.action === "worker.heartbeat" || item.action === "execution.dispatch.scan" || item.outcome === "STARTED" || (item.source === "API" && item.category === "HTTP" && item.level === "INFO");
+function isUsefulLog(item: ApiInteractionLog) {
+  if (item.level === "ERROR" || item.level === "WARN") return true;
+  if (item.category === "LLM") return ["provider.completed", "provider.error", "provider.test"].includes(item.action);
+  if (item.category === "CHAT") return ["message.save", "auto_reply.completed", "auto_reply.failed"].includes(item.action);
+  if (item.category === "IMAGE") return ["image.submit", "image.progress"].includes(item.action) && item.outcome !== "STARTED";
+  return false;
 }
 
 function logSummary(item: ApiInteractionLog) {
-  if (item.message?.trim()) return item.message.trim();
+  const content = item.message?.trim();
   const details = item.details ?? {};
   const error = details.error;
   if (error && typeof error === "object" && typeof (error as { message?: unknown }).message === "string") return String((error as { message: string }).message);
-  if (item.action === "provider.request_started") return `开始调用 ${(details.profileName as string | undefined) ?? "模型"} / ${(details.model as string | undefined) ?? "未指定模型"}`;
-  if (item.action === "provider.resolution") return `已解析模型 ${(details.model as string | undefined) ?? "未指定模型"}`;
-  if (item.action === "provider.completed") return `模型调用完成${details.model ? `：${String(details.model)}` : ""}`;
+  if (item.action === "provider.completed") return `LLM 回复${details.model ? ` · ${String(details.model)}` : ""}：${content || "调用完成"}`;
+  if (item.action === "provider.error") return `LLM 调用失败：${content || "未知错误"}`;
+  if (item.action === "provider.test") return `模型连接测试：${content || item.outcome}`;
+  if (item.action === "message.save") return `消息内容：${content || "非文本消息"}`;
+  if (item.action === "auto_reply.completed") return `角色回复：${content || "回复已保存"}`;
+  if (item.action === "auto_reply.failed") return `角色回复失败：${content || "未知错误"}`;
+  if (item.action === "image.submit") return `ComfyUI ${item.outcome === "SUCCESS" ? "已接收" : "提交异常"}：${String(details.prompt ?? content ?? "图片任务")}`;
+  if (item.action === "image.progress") return `ComfyUI ${item.outcome === "COMPLETED" ? "生成完成" : "生成异常"}：${String(details.prompt ?? content ?? "图片任务")}`;
+  if (content) return content;
   if (item.category === "HTTP" && details.status !== undefined) return `${item.action} · HTTP ${String(details.status)}`;
   if (details.status !== undefined) return `${item.action} · 状态 ${String(details.status)}`;
   return `${item.action} · ${item.outcome}`;
+}
+
+function dialogueMessages(item: ApiInteractionLog) {
+  const raw = item.details?.requestMessages;
+  const messages = Array.isArray(raw)
+    ? raw.filter((value): value is { role: string; content: string } => Boolean(value && typeof value === "object" && typeof (value as { role?: unknown }).role === "string" && typeof (value as { content?: unknown }).content === "string"))
+    : [];
+  const response = item.details?.response;
+  return typeof response === "string" && response.trim()
+    ? [...messages, { role: "assistant", content: response }]
+    : messages;
+}
+
+function dialogueRole(role: string) {
+  if (role === "system") return "SYSTEM";
+  if (role === "assistant") return "ASSISTANT";
+  return "USER";
+}
+
+function technicalDetails(item: ApiInteractionLog) {
+  const details = { ...(item.details ?? {}) };
+  delete details.requestMessages;
+  delete details.response;
+  return details;
 }
 
 function hasDetails(value: Record<string, unknown> | undefined) {
@@ -249,7 +283,7 @@ onUnmounted(() => {
     <PageHeader
       eyebrow="CREATOR CENTER"
       title="交互日志"
-      description="查看聊天、模型、队列和 Worker 的可追溯运行记录。"
+      description="聚焦用户消息、角色回复、外部模型和图片生成记录。"
     />
 
     <div class="toolbar">
@@ -322,7 +356,7 @@ onUnmounted(() => {
         <input v-model="autoScroll" type="checkbox" />
         自动滚动
       </label>
-      <Button variant="ghost" size="sm" @click="showSystemLogs = !showSystemLogs">{{ showSystemLogs ? "隐藏系统噪声" : "显示全部日志" }}</Button>
+      <Button variant="ghost" size="sm" @click="showAllLogs = !showAllLogs">{{ showAllLogs ? "只看重点交互" : "显示全部日志" }}</Button>
       <span v-if="newCount" class="new-count">{{ newCount }} 条新日志</span>
     </div>
 
@@ -344,11 +378,17 @@ onUnmounted(() => {
         </button>
         <div v-if="expanded === item.id" class="details">
           <p class="details-summary">{{ logSummary(item) }}</p>
-          <pre v-if="hasDetails(item.details)">{{ JSON.stringify(detailPayload(item), null, 2) }}</pre>
-          <p v-else class="details-empty">没有附加上下文</p>
+          <div v-if="dialogueMessages(item).length" class="dialogue-trace">
+            <article v-for="(message, index) in dialogueMessages(item)" :key="`${message.role}-${index}`" :class="`role-${message.role}`">
+              <strong>{{ dialogueRole(message.role) }}</strong>
+              <p>{{ message.content }}</p>
+            </article>
+          </div>
+          <pre v-if="hasDetails(technicalDetails(item))">{{ JSON.stringify({ ...detailPayload(item), details: technicalDetails(item) }, null, 2) }}</pre>
+          <p v-else-if="!dialogueMessages(item).length" class="details-empty">没有附加上下文</p>
         </div>
       </article>
-      <p v-if="!visibleLogs.length && logs.length && !loading" class="empty">当前仅有系统心跳或请求噪声，已默认隐藏。</p>
+      <p v-if="!visibleLogs.length && logs.length && !loading" class="empty">暂时没有用户对话或外部服务调用；过程日志已默认隐藏。</p>
       <p v-if="!logs.length && !loading" class="empty">暂无匹配日志</p>
       <p v-if="loading" class="empty">正在读取日志……</p>
     </div>
@@ -488,6 +528,40 @@ onUnmounted(() => {
 .details p,
 .details pre {
   overflow-wrap: anywhere;
+}
+.dialogue-trace {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0;
+}
+.dialogue-trace article {
+  max-width: min(86%, 760px);
+  padding: 9px 11px;
+  color: var(--text);
+  background: var(--surface-soft);
+  border-left: 3px solid var(--border-strong);
+}
+.dialogue-trace article.role-user {
+  justify-self: end;
+  border-left: 0;
+  border-right: 3px solid var(--primary);
+}
+.dialogue-trace article.role-assistant {
+  border-left-color: var(--success);
+}
+.dialogue-trace article.role-system {
+  max-width: 100%;
+  color: var(--muted);
+}
+.dialogue-trace strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+.dialogue-trace p {
+  margin: 0;
+  white-space: pre-wrap;
 }
 .details pre {
   margin-top: 8px;

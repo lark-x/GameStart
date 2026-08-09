@@ -60,7 +60,13 @@ export class InteractionLogging {
 /** Maps provider lifecycle observations into the same best-effort log stream used by the API. */
 export function createChatObservationLogHook(logging: Pick<InteractionLogging, "append">): ChatObservationHook {
   return async (observation) => {
+    if (
+      observation.name === "request_started" ||
+      observation.name === "first_token" ||
+      (observation.name === "resolution" && observation.outcome === "resolved")
+    ) return;
     const failed = observation.name === "error" || observation.outcome === "error" || observation.outcome === "missing";
+    const cancelled = observation.outcome === "cancelled";
     const trace = observation.trace;
     const redactBearer = (value: string): string => value.replace(/Bearer\s+[^\s]+/gi, "Bearer [REDACTED]");
     const message = observation.error?.message ?? observation.preview;
@@ -69,7 +75,7 @@ export function createChatObservationLogHook(logging: Pick<InteractionLogging, "
       ? undefined
       : { ...observation.error, ...(observation.error.message === undefined ? {} : { message: redactBearer(observation.error.message) }) };
     await logging.append({
-      level: failed ? "ERROR" : "INFO",
+      level: failed ? "ERROR" : cancelled ? "WARN" : "INFO",
       source: "PROVIDER",
       category: "LLM",
       action: "provider." + observation.name,
@@ -87,6 +93,13 @@ export function createChatObservationLogHook(logging: Pick<InteractionLogging, "
         ...(observation.profileName === undefined ? {} : { profileName: observation.profileName }),
         ...(observation.protocol === undefined ? {} : { protocol: observation.protocol }),
         ...(observation.model === undefined ? {} : { model: observation.model }),
+        ...(observation.requestMessages === undefined ? {} : {
+          requestMessages: observation.requestMessages.slice(-20).map((item) => ({
+            role: item.role,
+            content: previewMessage(redactBearer(item.content)) ?? "",
+          })),
+        }),
+        ...(observation.preview === undefined ? {} : { response: previewMessage(redactBearer(observation.preview)) ?? "" }),
         ...(safeError === undefined ? {} : { error: safeError }),
       },
     });

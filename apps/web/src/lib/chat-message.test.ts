@@ -9,7 +9,10 @@ test("splits internal thought and debug blocks from visible chat text", () => {
 });
 
 test("keeps ordinary markdown code blocks in the chat bubble", () => {
-  const result = splitChatMessage("示例：\n```\nconst value = 1;\n```");
+  const result = splitChatMessage("## 示例\n\n**代码**：\n```ts\nconst value = 1;\n```\n[文档](https://example.com/docs)");
   assert.equal(result.extras.length, 0);
   assert.match(result.body, /const value = 1/);
+  assert.equal(result.body.includes("**"), false);
+  assert.equal(result.body.includes("```"), false);
+  assert.match(result.body, /文档 \(https:\/\/example.com\/docs\)/);
 });

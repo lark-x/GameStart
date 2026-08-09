@@ -29,6 +29,8 @@ test("first_token is emitted exactly once for each stream", async () => {
   const c=collect(); const s=new ReadableStream({start(x){x.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"a"}}]}\n\ndata: {"choices":[{"delta":{"content":"b"}}]}\n\ndata: [DONE]\n\n'));x.close();}});
   const p=new OpenAICompatibleProvider({baseUrl:"https://x.test",model:"m",observationHook:c.hook},async()=>new Response(s)); for await(const _ of p.stream(req)) {}
   assert.equal(c.events.filter(e=>e.name==="first_token").length,1);
+  assert.equal(c.events.find(e=>e.name==="completed")?.preview,"ab");
+  assert.deepEqual(c.events.find(e=>e.name==="completed")?.requestMessages,req.messages);
 });
 
 test("provider errors remain ProviderError when observation fails", async () => {

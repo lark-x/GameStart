@@ -12,7 +12,7 @@ import {
   normalizeAutoReply,
   type AutoReplyResult,
 } from "../lib/auto-reply";
-import { errorMessage, type ApiConversation, type ApiImageJob, type ApiMessage } from "../types";
+import { errorMessage, type ApiCharacter, type ApiConversation, type ApiImageJob, type ApiMessage } from "../types";
 import { splitChatMessage } from "../lib/chat-message";
 import type { MessageKind } from "../../../../packages/contracts/src/index.ts";
 
@@ -80,16 +80,44 @@ function resetBackground() {
   backgroundStatus.value = "已恢复为主题默认背景";
 }
 
-const characterName = computed(
-  () => store.currentCharacter?.displayName || "默认助手",
-);
-const characterInitial = computed(() => characterName.value.slice(0, 1));
-const messageViews = computed(() => messages.value.map((message) => ({ message, display: splitChatMessage(message.text) })));
 const currentConversation = computed(() =>
   conversations.value.find(
     (item) => item.conversation.id === currentConversationId.value,
   ),
 );
+function conversationCharacters(item: ApiConversation | undefined) {
+  if (!item) return [];
+  const memberIds = item.members
+    .filter((member) => !member.leftAt && member.characterId !== store.currentCharacterId)
+    .map((member) => member.characterId);
+  return memberIds
+    .map((id) => store.characters.find((character) => character.id === id))
+    .filter((character): character is ApiCharacter => character !== undefined);
+}
+const peerCharacters = computed(() => conversationCharacters(currentConversation.value));
+const primaryPeer = computed(() => peerCharacters.value[0]);
+const characterName = computed(() =>
+  currentConversation.value?.conversation.title ||
+  peerCharacters.value.map((character) => character.displayName).join("、") ||
+  "未命名会话",
+);
+const characterInitial = computed(() => characterName.value.slice(0, 1));
+const characterSubtitle = computed(() => {
+  if (currentConversation.value?.conversation.type === "GROUP") return `${peerCharacters.value.length + 1} 人群聊`;
+  return `${primaryPeer.value?.role === "AI" ? "AI 角色" : "角色"} · 私聊`;
+});
+const chatStatus = computed(() => currentConversation.value ? "对话已同步" : status.value);
+const messageViews = computed(() => messages.value.map((message, index) => {
+  const previous = messages.value[index - 1];
+  const day = new Date(message.createdAt).toDateString();
+  return {
+    message,
+    display: splitChatMessage(message.text),
+    dayLabel: previous && new Date(previous.createdAt).toDateString() === day
+      ? ""
+      : new Date(message.createdAt).toLocaleDateString(undefined, { month: "long", day: "numeric", weekday: "short" }),
+  };
+}));
 const pendingSource = computed(() =>
   findPendingSource(
     currentConversationId.value,
@@ -111,14 +139,34 @@ const imageRecipientId = computed(() => {
 function conversationLabel(item: ApiConversation) {
   return (
     item.conversation.title ||
-    (item.conversation.type === "PRIVATE" ? "和我聊天" : "小组聊天")
+    conversationCharacters(item).map((character) => character.displayName).join("、") ||
+    (item.conversation.type === "PRIVATE" ? "私聊" : "小组聊天")
   );
+}
+
+function conversationMeta(item: ApiConversation) {
+  const count = item.members.filter((member) => !member.leftAt).length;
+  return item.conversation.type === "PRIVATE" ? "私聊" : `${count} 人群聊`;
+}
+
+function characterImage(character: ApiCharacter | undefined) {
+  const value = character?.visualPromptRef?.trim();
+  return value && /^(?:https?:\/\/|data:image\/|blob:|\/)/i.test(value) ? value : undefined;
+}
+
+function messageCharacter(message: ApiMessage) {
+  return store.characters.find((character) => character.id === message.authorCharacterId);
+}
+
+function messageTime(message: ApiMessage) {
+  return new Date(message.createdAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }
 
 function isMine(message: ApiMessage) {
   return message.authorCharacterId === store.currentCharacterId;
 }
 function authorName(message: ApiMessage) {
+  if (message.kind === "SYSTEM" || !message.authorCharacterId) return "系统";
   return isMine(message)
     ? "我"
     : store.characters.find((c) => c.id === message.authorCharacterId)
@@ -389,17 +437,17 @@ onUnmounted(stopReplyPolling);
         >
           <span class="avatar character-avatar"
             ><img
-              v-if="store.currentCharacter?.visualPromptRef"
-              :src="store.currentCharacter.visualPromptRef"
-            /><span v-else>{{ characterInitial }}</span></span
+              v-if="characterImage(conversationCharacters(item)[0])"
+              :src="characterImage(conversationCharacters(item)[0])"
+              :alt="conversationLabel(item)"
+            /><span v-else>{{ conversationLabel(item).slice(0, 1) }}</span></span
           >
           <span class="conversation-copy"
             ><strong>{{ conversationLabel(item) }}</strong
             ><small>{{
-              messages[messages.length - 1]?.text || "开始一段新的故事吧"
+              conversationMeta(item)
             }}</small></span
           >
-          <time>刚刚</time>
         </Button>
       </div>
       <p v-if="!conversations.length" class="panel-empty">{{ status }}</p>
@@ -412,12 +460,14 @@ onUnmounted(stopReplyPolling);
         <div class="header-profile">
           <span class="avatar character-avatar compact"
             ><img
-              v-if="store.currentCharacter?.visualPromptRef"
-              :src="store.currentCharacter.visualPromptRef"
+              v-if="characterImage(primaryPeer)"
+              :src="characterImage(primaryPeer)"
+              :alt="characterName"
             /><span v-else>{{ characterInitial }}</span></span
           >
           <div>
             <h1>{{ characterName }}</h1>
+            <p>{{ characterSubtitle }}</p>
           </div>
         </div>
         <div class="header-actions">
@@ -447,13 +497,13 @@ onUnmounted(stopReplyPolling);
             @click="resetBackground"
             ><RotateCcw :size="17" /></Button
           >
-          <Button variant="ghost" :disabled="!imageRecipientId" title="打开聊天配图" @click="showImageRequest = !showImageRequest"><ImagePlus :size="15" />配图</Button>
-          <Button v-if="pendingSource || autoReply?.status === 'FAILED' || replyError" @click="triggerGenerateReply" :disabled="isGenerating || !pendingSource"><RefreshCw :size="15" />{{ isGenerating ? "生成中" : "重试回复" }}</Button>
+          <Button class="image-action" variant="ghost" :disabled="!imageRecipientId" title="打开聊天配图" aria-label="打开聊天配图" @click="showImageRequest = !showImageRequest"><ImagePlus :size="15" /><span>配图</span></Button>
+          <Button class="retry-action" v-if="pendingSource || autoReply?.status === 'FAILED' || replyError" title="重试回复" aria-label="重试回复" @click="triggerGenerateReply" :disabled="isGenerating || !pendingSource"><RefreshCw :size="15" /><span>{{ isGenerating ? "生成中" : "重试回复" }}</span></Button>
         </div>
       </header>
 
       <div class="chat-status-strip">
-        <span class="thought-status">{{ isGenerating ? "正在整理想法…" : "今天也想和你好好聊聊。" }}</span>
+        <span class="thought-status">{{ isGenerating ? `${characterName} 正在回复…` : chatStatus }}</span>
         <span v-if="backgroundStatus" class="background-status">{{ backgroundStatus }}</span>
       </div>
 
@@ -474,22 +524,26 @@ onUnmounted(stopReplyPolling);
           description="说点什么，让故事继续发生。"
           ><template #icon>{{ characterInitial }}</template></EmptyState
         >
-        <article v-for="item in messageViews" :key="item.message.id" class="message-row" :class="{ mine: isMine(item.message) }">
-          <span v-if="!isMine(item.message)" class="avatar character-avatar">{{ authorName(item.message).slice(0, 1) }}</span>
+        <template v-for="item in messageViews" :key="item.message.id">
+          <time v-if="item.dayLabel" class="day-separator">{{ item.dayLabel }}</time>
+        <article class="message-row" :class="{ mine: isMine(item.message), system: item.message.kind === 'SYSTEM' }">
+          <span v-if="!isMine(item.message) && item.message.kind !== 'SYSTEM'" class="avatar character-avatar">
+            <img v-if="characterImage(messageCharacter(item.message))" :src="characterImage(messageCharacter(item.message))" :alt="authorName(item.message)" />
+            <span v-else>{{ authorName(item.message).slice(0, 1) }}</span>
+          </span>
           <div class="message-wrap">
-            <span class="message-name">{{ authorName(item.message) }}</span>
+            <span v-if="item.message.kind !== 'SYSTEM'" class="message-name">{{ authorName(item.message) }}</span>
             <div class="message-bubble">
               <img v-if="item.message.kind === 'IMAGE' && item.message.mediaRef" :src="item.message.mediaRef" alt="聊天图片" />
+              <p v-else-if="item.message.kind === 'STICKER'">贴纸 · {{ item.message.stickerId || "未知" }}</p>
               <p v-else-if="item.display.body">{{ item.display.body }}</p>
               <p v-else class="message-empty">消息没有可显示的正文</p>
             </div>
-            <aside v-if="item.display.extras.length" class="message-extra-panel">
-              <strong>附加信息</strong>
-              <p v-for="extra in item.display.extras" :key="extra">{{ extra }}</p>
-            </aside>
+            <time class="message-time">{{ messageTime(item.message) }}</time>
           </div>
-          <span v-if="isMine(item.message)" class="avatar user-avatar">我</span>
+          <span v-if="isMine(item.message) && item.message.kind !== 'SYSTEM'" class="avatar user-avatar">我</span>
         </article>
+        </template>
       </div>
 
       <section v-if="showImageRequest" class="image-request-panel">
@@ -601,11 +655,6 @@ onUnmounted(stopReplyPolling);
   white-space: nowrap;
   color: var(--muted);
   font-size: var(--text-xs);
-}
-.conversation-item time {
-  color: var(--faint);
-  font-size: var(--text-xs);
-  align-self: flex-start;
 }
 .panel-empty {
   padding: var(--space-6) var(--space-2);
@@ -736,11 +785,36 @@ onUnmounted(stopReplyPolling);
   flex-direction: column;
   gap: var(--space-4);
 }
+.day-separator {
+  align-self: center;
+  padding: 3px 9px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+}
 .message-row {
   display: flex;
   gap: 9px;
   align-items: flex-start;
   max-width: min(76%, 720px);
+}
+.message-row.system {
+  align-self: center;
+  max-width: min(86%, 720px);
+}
+.message-row.system .message-wrap {
+  justify-items: center;
+}
+.message-row.system .message-bubble {
+  padding: 7px 11px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: none;
+  font-size: var(--text-sm);
 }
 .message-row.mine {
   align-self: flex-end;
@@ -758,6 +832,14 @@ onUnmounted(stopReplyPolling);
   color: var(--faint);
   font-size: var(--text-xs);
   padding: 0 4px;
+}
+.message-time {
+  padding: 0 4px;
+  color: var(--faint);
+  font-size: var(--text-xs);
+}
+.message-row.mine .message-time {
+  text-align: right;
 }
 .message-bubble {
   max-width: 620px;
@@ -896,28 +978,35 @@ onUnmounted(stopReplyPolling);
   .chat-header {
     padding: 0 var(--space-4);
   }
+  .header-actions {
+    gap: 4px;
+  }
+  .header-actions .image-action,
+  .header-actions .retry-action {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+  }
+  .header-actions .image-action span,
+  .header-actions .retry-action span {
+    display: none;
+  }
+  .header-profile h1 {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .thought-status {
     display: none;
   }
   .reply-error {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 9px var(--space-6);
-  color: var(--danger);
-  background: var(--surface-soft);
-  border-bottom: 1px solid var(--border);
-  font-size: var(--text-xs);
-}
-.reply-error code,
-.reply-error a {
-  overflow-wrap: anywhere;
-}
-.message-stream {
+    padding-inline: var(--space-4);
+  }
+  .message-stream {
     padding: var(--space-4);
+  }
+  .message-row {
+    max-width: 92%;
   }
   .composer {
     margin: 0 var(--space-3) var(--space-3);
@@ -926,9 +1015,6 @@ onUnmounted(stopReplyPolling);
 
 .chat-status-strip { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: 32px; padding: 0 var(--space-6); border-bottom: 1px solid var(--border); color: var(--muted); font-size: var(--text-xs); }
 .chat-status-strip .thought-status { display: block; }
-.message-extra-panel { max-width: 620px; margin-top: 2px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-soft); color: var(--muted); font-size: var(--text-xs); line-height: 1.55; }
-.message-extra-panel strong { display: block; margin-bottom: 3px; color: var(--primary); font-size: var(--text-xs); }
-.message-extra-panel p { margin: 2px 0; overflow-wrap: anywhere; white-space: pre-wrap; }
 .message-empty { color: var(--muted); }
 .image-request-panel { flex: 0 0 auto; margin: 0 var(--space-6) var(--space-3); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); box-shadow: var(--shadow-sm); }
 .image-request-panel header { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-2); color: var(--text-strong); }

@@ -12,6 +12,14 @@ test("worker adapter emits database-compatible structured entries", async () => 
   assert.equal(item.entityId, "request-1");
 });
 
+test("worker adapter keeps useful event details at the top level", async () => {
+  const repository = new InMemoryInteractionLogRepository();
+  await bestEffortLog(repository, { action: "image.submit", category: "IMAGE", outcome: "SUCCESS", correlationId: "worker:image:1", jobId: "image-1", details: { service: "ComfyUI", prompt: "rainy cafe" } });
+  const item = (await repository.query()).items[0]!;
+  assert.equal(item.category, "IMAGE");
+  assert.deepEqual(item.details, { jobId: "image-1", service: "ComfyUI", prompt: "rainy cafe" });
+});
+
 test("worker adapter swallows repository failures and redacts sentinel secrets", async () => {
   const seen: unknown[] = [];
   await bestEffortLog({ append: async (input) => { seen.push(input); throw new Error("log unavailable"); }, query: async () => ({ items: [] }), deleteOlderThan: async () => 0 }, { action: "test", outcome: "SUCCESS", correlationId: "worker:test:1", message: "safe preview", details: { token: "SENTINEL_SECRET", nested: {} } });

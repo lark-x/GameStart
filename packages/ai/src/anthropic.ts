@@ -137,7 +137,7 @@ export class AnthropicProvider implements ChatProvider {
   public async complete(request: ChatCompletionRequest): Promise<ChatCompletionResult> {
     const model = validateRequest(request, this.defaultModel);
     const started = Date.now();
-    const context = { ...(request.trace ? { trace: request.trace } : {}), ...this.profileContext, model };
+    const context = { ...(request.trace ? { trace: request.trace } : {}), ...this.profileContext, model, requestMessages: request.messages };
     await emitObservation(this.observationHook, { name: "request_started", ...context });
     try {
       const response = await this.request(request, model, false);
@@ -163,8 +163,8 @@ export class AnthropicProvider implements ChatProvider {
 
   public async *stream(request: ChatCompletionRequest): AsyncGenerator<ChatDelta> {
     const model = validateRequest(request, this.defaultModel);
-    const started = Date.now(); let firstToken = false; let terminal = false;
-    const context = { ...(request.trace ? { trace: request.trace } : {}), ...this.profileContext, model };
+    const started = Date.now(); let firstToken = false; let terminal = false; let responsePreview = "";
+    const context = { ...(request.trace ? { trace: request.trace } : {}), ...this.profileContext, model, requestMessages: request.messages };
     await emitObservation(this.observationHook, { name: "request_started", ...context });
     try {
       const response = await this.request(request, model, true);
@@ -179,13 +179,14 @@ export class AnthropicProvider implements ChatProvider {
           throw new ProviderError("HTTP_ERROR", detail, { retryable: true });
         }
         if (payload.type === "content_block_delta" && record(payload.delta) && payload.delta.type === "text_delta" && typeof payload.delta.text === "string") {
+          responsePreview = `${responsePreview}${payload.delta.text}`.slice(0, 500);
           if (!firstToken) { firstToken = true; await emitObservation(this.observationHook, { name: "first_token", ...context, durationMs: Date.now() - started, preview: payload.delta.text }); }
           yield { content: payload.delta.text };
         }
         if (payload.type === "message_delta" && record(payload.delta) && typeof payload.delta.stop_reason === "string") yield { finishReason: payload.delta.stop_reason };
       }
       terminal = true;
-      await emitObservation(this.observationHook, { name: "completed", ...context, durationMs: Date.now() - started, outcome: "success" });
+      await emitObservation(this.observationHook, { name: "completed", ...context, durationMs: Date.now() - started, preview: responsePreview, outcome: "success" });
     } catch (error) {
       const normalized = error instanceof ProviderError ? error : new ProviderError("STREAM_ERROR", "Anthropic stream failed", { retryable: true });
       terminal = true;

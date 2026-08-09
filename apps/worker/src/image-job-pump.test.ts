@@ -18,7 +18,7 @@ import {
   createStoryWorld,
   createWorldEventDefinition,
 } from "../../../packages/domain/src/index.ts";
-import { createInMemoryRepositories } from "../../../packages/database/src/index.ts";
+import { createInMemoryRepositories, InMemoryInteractionLogRepository } from "../../../packages/database/src/index.ts";
 import { ComfyUiError, type ComfyUiProgressClient, type ComfyUiSubmitRequest } from "./media.ts";
 import { createImageJobPump } from "./image-job-pump.ts";
 
@@ -58,9 +58,11 @@ test("image job pump uses persisted ComfyUI settings, submits queued work, and c
   const { repositories, job } = fixture();
   const seen: Array<{ baseUrl: string; timeoutMs: number }> = [];
   const client = new CompletingClient();
+  const logger = new InMemoryInteractionLogRepository();
   const pump = createImageJobPump(repositories, {
     fallbackSettings: { baseUrl: "http://fallback.test:8188", timeoutMs: 999 }, mediaRoot: "unused",
     createClient: (settings) => { seen.push({ baseUrl: settings.baseUrl, timeoutMs: settings.timeoutMs }); return client; },
+    logger,
   });
   const result = await pump.runOnce();
   assert.deepEqual(seen, [{ baseUrl: "http://configured-comfy.test:8188", timeoutMs: 1234 }]);
@@ -70,6 +72,15 @@ test("image job pump uses persisted ComfyUI settings, submits queued work, and c
   assert.equal((await repositories.imageJobs?.getById(job.id))?.status, "SUCCEEDED");
   assert.equal(client.request?.workflowVersion, "moment@v1");
   assert.deepEqual(client.request?.workflow, { prompt: { inputs: { text: "astronomer, night observatory" } } });
+  const usefulLogs = (await logger.query()).items.filter((item) => item.action !== "image.scan");
+  assert.deepEqual(usefulLogs.map((item) => [item.category, item.action, item.outcome]), [
+    ["IMAGE", "image.progress", "COMPLETED"],
+    ["IMAGE", "image.submit", "SUCCESS"],
+  ]);
+  assert.equal(usefulLogs[0]?.details?.service, "ComfyUI");
+  assert.equal(usefulLogs[0]?.details?.prompt, "night observatory");
+  assert.equal(usefulLogs[0]?.details?.externalJobId, "comfy-pump-job");
+  assert.match(String(usefulLogs[0]?.details?.mediaRef), /^media:\/\/local\//);
 });
 
 test("image job pump leaves retryable ComfyUI submit failures queued for the next tick", async () => {
