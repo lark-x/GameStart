@@ -7,7 +7,7 @@ const compose = readFileSync(new URL("./docker-compose.yml", import.meta.url), "
 test("local compose pins required infrastructure and health checks stateful services", () => {
   assert.match(compose, /image: postgres:16\.4-alpine/);
   assert.match(compose, /image: redis:7\.2-alpine/);
-  assert.match(compose, /image: minio\/minio:RELEASE\.2024-06-13T19-53-35Z/);
+  assert.match(compose, /image: minio\/minio:RELEASE\.2025-09-07T16-13-09Z-cpuv1/);
   assert.match(compose, /pg_isready/);
   assert.match(compose, /redis-cli/);
   assert.match(compose, /postgres_data:/);
