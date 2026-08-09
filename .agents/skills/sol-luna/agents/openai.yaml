@@ -1,6 +1,0 @@
-interface:
-  display_name: "Sol–Luna Workflow"
-  short_description: "Sol-led planning with bounded Luna execution"
-  default_prompt: "Use $sol-luna to plan, delegate, verify, and accept this change."
-policy:
-  allow_implicit_invocation: true

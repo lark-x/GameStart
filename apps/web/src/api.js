@@ -63,6 +63,32 @@ export class ApiClient {
     return this.request(`/v1/world-events?storyWorldId=${encodeURIComponent(storyWorldId)}`);
   }
 
+  getWorldLore(storyWorldId, query = "") {
+    const params = new URLSearchParams({ storyWorldId });
+    if (query.trim()) params.set("q", query.trim());
+    return this.request(`/v1/world-lore?${params}`);
+  }
+
+  createWorldLore(input) {
+    return this.request("/v1/world-lore", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  }
+
+  updateWorldLore(id, input) {
+    return this.request(`/v1/world-lore/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    });
+  }
+
+  deleteWorldLore(id) {
+    return this.request(`/v1/world-lore/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+  }
+
   updateWorldEvent(id, input) {
     return this.request(`/v1/world-events/${encodeURIComponent(id)}`, {
       method: "PUT",
@@ -124,6 +150,17 @@ export class ApiClient {
 
   getMessages(conversationId, characterId) {
     return this.request(`/v1/conversations/${encodeURIComponent(conversationId)}/messages?characterId=${encodeURIComponent(characterId)}`);
+  }
+
+  requestConversationImage(conversationId, input) {
+    return this.request(`/v1/conversations/${encodeURIComponent(conversationId)}/image-jobs`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  }
+
+  getImageJob(jobId) {
+    return this.request(`/v1/image-jobs/${encodeURIComponent(jobId)}`);
   }
 
   sendMessage(conversationId, input) {
@@ -196,6 +233,45 @@ export class ApiClient {
 
   getStickers(packId) {
     return this.request(`/v1/sticker-packs/${encodeURIComponent(packId)}/stickers`);
+  }
+
+  getAppearanceSettings(ownerKey = "local-user") {
+    return this.request(`/v1/appearance-settings?ownerKey=${encodeURIComponent(ownerKey)}`);
+  }
+
+  updateAppearanceSettings(input, ownerKey = "local-user") {
+    return this.request(`/v1/appearance-settings?ownerKey=${encodeURIComponent(ownerKey)}`, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    });
+  }
+
+  getLlmProviderProfiles() {
+    return this.request("/v1/llm-provider-profiles");
+  }
+
+  saveLlmProviderProfile(input) {
+    return this.request("/v1/llm-provider-profiles", {
+      method: "PUT",
+      body: JSON.stringify(input),
+    });
+  }
+
+  deleteLlmProviderProfile(id) {
+    return this.request(`/v1/llm-provider-profiles/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+  }
+
+  getComfyUiSettings() {
+    return this.request("/v1/comfyui/settings");
+  }
+
+  updateComfyUiSettings(input) {
+    return this.request("/v1/comfyui/settings", {
+      method: "PUT",
+      body: JSON.stringify(input),
+    });
   }
 }
 

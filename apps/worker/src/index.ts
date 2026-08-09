@@ -6,5 +6,7 @@ export * from "./runtime.ts";
 export * from "./queue.ts";
 export * from "./outbox-publisher.ts";
 export * from "./media-storage.ts";
+export * from "./image-job-pump.ts";
 export * from "./persistent-main.ts";
 export * from "./proactive.ts";
+export * from "./event-outputs.ts";

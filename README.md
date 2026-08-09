@@ -93,6 +93,43 @@ pnpm --filter @living-network/web dev
 
 默认服务地址：API `http://127.0.0.1:3001`、Web `http://127.0.0.1:4173`、PostgreSQL `127.0.0.1:5432`、Redis `127.0.0.1:6379`、MinIO API `127.0.0.1:9000`。部署或共享环境前请修改 `.env` 中的开发凭据，并设置明确的 `API_CORS_ORIGINS`。
 
+### 启用本地 LLM、ComfyUI 与图片任务
+
+持久化模式下，打开 Web 的“设置”页即可创建多个 LLM 档案，并手动选择一个为当前档案：
+
+- **OpenAI-compatible**：适用于 OpenAI API 兼容的本地或云端服务，填写基础地址、模型名和 API Key。
+- **Anthropic**：使用 Anthropic 原生 Messages API，填写基础地址、模型名和 API Key。
+
+设置页写入的 API Key 会以 AES-256-GCM 加密存入 PostgreSQL；启动持久化 API 前必须在 `.env` 中设置一次 `INTEGRATION_SECRET_KEY`。它必须是一个 32 字节随机密钥的 Base64 值，例如：
+
+```sh
+node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"
+```
+
+请妥善保存该值，不要提交到仓库，也不要在已有档案后随意更换；更换后原来保存的 Key 无法解密。未创建启用档案时，API 会使用 `LLM_BASE_URL`、`LLM_MODEL` 与 `LLM_API_KEY` 作为 OpenAI-compatible 回退配置。
+
+同一页也可配置本机 ComfyUI 的地址、超时、默认工作流版本，以及聊天自动图片意图开关。浏览器不会直接访问 ComfyUI；持久化 Worker 会读取这份配置。要实际生成图片，还需要：
+
+1. 在“视觉工作流”中保存与 ComfyUI 节点字段匹配的工作流版本，并将其设为默认工作流或在请求中指定。
+2. 确认 ComfyUI 已启动（默认 `http://127.0.0.1:8188`），再将 `.env` 的 `IMAGE_GENERATION_ENABLED=true`。
+3. 重启 Worker。它会在每个调度周期处理已排队和此前已提交的图片任务，将 ComfyUI 输出下载到 `MEDIA_ROOT`。
+
+聊天页可在一对一私聊中明确请求一张图片；系统会创建可查询的图片任务。“聊天自动图片意图”开关会持久化为 ComfyUI 配置，供后续意图驱动策略使用。事件编辑器可分别选择“发送消息”“发布动态”“生成图片”三种输出，并为已启用输出指定接收角色；动态图片在成功后会自动发布。
+
+“管理”页提供世界观条目的分类、启用状态、标签和全文检索。角色的人设文本会作为聊天模型的系统上下文；世界观条目当前用于管理、检索和后续内容编排。
+
+本项目不会自动加载 `.env`。在每个启动 API 或 Worker 的终端中先导入变量；PowerShell 可使用：
+
+```powershell
+Get-Content .env | ForEach-Object {
+  if ($_ -match '^\s*([^#=][^=]*)=(.*)$') {
+    [Environment]::SetEnvironmentVariable($matches[1].Trim(), $matches[2], 'Process')
+  }
+}
+```
+
+然后分别运行 `pnpm --filter @living-network/api start:postgres` 与 `pnpm --filter @living-network/worker start:postgres`。
+
 停止本地基础设施：
 
 ```sh
@@ -187,5 +224,5 @@ docs/             开发计划、进度、发布验收和任务契约
 
 - Web 默认仍是无需构建的原生浏览器模块，便于离线 MVP 开发；`apps/web/index-vue.html` 和 `src/views/` 已提供 Vue/Vite 迁移入口，依赖已写入 workspace，可用 `pnpm --filter @living-network/web typecheck`、`pnpm --filter @living-network/web build` 和 `pnpm --filter @living-network/web dev:vite` 验证。默认入口暂未切换，以保持原生 Web E2E 稳定。
 - 开发 API 使用内存 Seed；生产或持久化运行必须显式配置 PostgreSQL 仓储。
-- 没有配置 LLM 或 ComfyUI 时，相关能力使用接口边界和测试替身，不代表已经连接真实供应商。
+- 未配置 LLM 或 ComfyUI 时，开发 Seed 与测试替身仍可运行；这不代表已连接真实供应商。图片任务泵默认关闭，只有 `IMAGE_GENERATION_ENABLED=true` 的持久化 Worker 才会访问 ComfyUI。
 - 项目默认是本地开发配置，不包含生产级认证、域名、TLS、密钥管理和监控部署方案。

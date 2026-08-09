@@ -1,5 +1,8 @@
 import {
   createActorSession,
+  assertAppearanceSettings,
+  assertComfyUiSettings,
+  assertLlmProviderProfile,
   assertCharacterPlan,
   assertBehaviorAction,
   assertEventExecution,
@@ -17,9 +20,13 @@ import {
   assertScheduledOccurrence,
   assertMemoryItem,
   assertWorldEventDefinition,
+  assertWorldLoreEntry,
   createRelationshipEdge,
   createStoryWorld,
   type ActorSession,
+  type AppearanceSettings,
+  type ComfyUiSettings,
+  type LlmProviderProfile,
   type BehaviorAction,
   type CharacterPlan,
   type Character,
@@ -48,9 +55,12 @@ import {
   type StoryWorld,
   type StoryMode as StoryModeValue,
   type WorldEventDefinition,
+  type WorldLoreEntry,
+  type ChatBackgroundKind,
 } from "../../domain/src/index.ts";
 import type {
   ActorSessionRepository,
+  AppearanceSettingsRepository,
   BehaviorActionRepository,
   CharacterPlanRepository,
   CharacterRepository,
@@ -60,6 +70,8 @@ import type {
   ImageJobRepository,
   CharacterVisualIdentityRepository,
   ImageWorkflowTemplateRepository,
+  LlmProviderProfileRepository,
+  ComfyUiSettingsRepository,
   StickerPackRepository,
   StickerRepository,
   MomentInteractionRepository,
@@ -75,6 +87,7 @@ import type {
   ScheduledOccurrenceWriteResult,
   StoryWorldRepository,
   WorldEventDefinitionRepository,
+  WorldLoreEntryRepository,
 } from "./repositories.ts";
 import { SqlOutboxEventRepository } from "./outbox.ts";
 import type { MigrationDatabase } from "./migrations.ts";
@@ -171,6 +184,10 @@ function mapCharacterRow(row: SqlRow, prefix = ""): Character {
     timezone: requiredString(row[`${prefix}timezone`], `${prefix}characters.timezone`),
   };
   const birthDate = optionalDate(row[`${prefix}birth_date`], `${prefix}characters.birth_date`);
+  const personaPrompt = optionalString(
+    row[`${prefix}persona_prompt`],
+    `${prefix}characters.persona_prompt`,
+  );
   const personaPromptRef = optionalString(
     row[`${prefix}persona_prompt_ref`],
     `${prefix}characters.persona_prompt_ref`,
@@ -180,6 +197,7 @@ function mapCharacterRow(row: SqlRow, prefix = ""): Character {
     `${prefix}characters.visual_prompt_ref`,
   );
   if (birthDate !== undefined) input.birthDate = birthDate;
+  if (personaPrompt !== undefined) input.personaPrompt = personaPrompt;
   if (personaPromptRef !== undefined) input.personaPromptRef = personaPromptRef;
   if (visualPromptRef !== undefined) input.visualPromptRef = visualPromptRef;
   return createCharacter(input);
@@ -409,6 +427,15 @@ function mapWorldEventDefinitionRow(row: SqlRow): WorldEventDefinition {
       row.target_character_ids,
       "world_event_definitions.target_character_ids",
     ),
+    recipientCharacterIds: stringArray(
+      row.recipient_character_ids,
+      "world_event_definitions.recipient_character_ids",
+    ),
+    outputs: {
+      sendMessage: requiredBoolean(row.output_send_message, "world_event_definitions.output_send_message"),
+      publishMoment: requiredBoolean(row.output_publish_moment, "world_event_definitions.output_publish_moment"),
+      generateImage: requiredBoolean(row.output_generate_image, "world_event_definitions.output_generate_image"),
+    },
     priority: requiredNumber(row.priority, "world_event_definitions.priority"),
     enabled: requiredBoolean(row.enabled, "world_event_definitions.enabled"),
     createdAt: requiredTimestamp(row.created_at, "world_event_definitions.created_at"),
@@ -754,7 +781,7 @@ const STORY_WORLD_SELECT = `
 
 const CHARACTER_SELECT = `
   SELECT id, display_name, role, story_world_id, timezone,
-         birth_date, persona_prompt_ref, visual_prompt_ref
+         birth_date, persona_prompt, persona_prompt_ref, visual_prompt_ref
   FROM characters`;
 
 const RELATIONSHIP_EDGE_SELECT = `
@@ -770,6 +797,7 @@ const RELATIONSHIP_EDGE_SELECT = `
     source_character.story_world_id AS source_story_world_id,
     source_character.timezone AS source_timezone,
     source_character.birth_date AS source_birth_date,
+    source_character.persona_prompt AS source_persona_prompt,
     source_character.persona_prompt_ref AS source_persona_prompt_ref,
     source_character.visual_prompt_ref AS source_visual_prompt_ref,
     target_character.id AS target_id,
@@ -778,6 +806,7 @@ const RELATIONSHIP_EDGE_SELECT = `
     target_character.story_world_id AS target_story_world_id,
     target_character.timezone AS target_timezone,
     target_character.birth_date AS target_birth_date,
+    target_character.persona_prompt AS target_persona_prompt,
     target_character.persona_prompt_ref AS target_persona_prompt_ref,
     target_character.visual_prompt_ref AS target_visual_prompt_ref
   FROM relationship_edges e
@@ -801,6 +830,7 @@ const ACTOR_SESSION_SELECT = `
     user_character.story_world_id AS user_story_world_id,
     user_character.timezone AS user_timezone,
     user_character.birth_date AS user_birth_date,
+    user_character.persona_prompt AS user_persona_prompt,
     user_character.persona_prompt_ref AS user_persona_prompt_ref,
     user_character.visual_prompt_ref AS user_visual_prompt_ref
   FROM actor_sessions s
@@ -830,6 +860,7 @@ const CONVERSATION_SELECT = `
     member_character.story_world_id AS member_story_world_id,
     member_character.timezone AS member_timezone,
     member_character.birth_date AS member_birth_date,
+    member_character.persona_prompt AS member_persona_prompt,
     member_character.persona_prompt_ref AS member_persona_prompt_ref,
     member_character.visual_prompt_ref AS member_visual_prompt_ref
   FROM conversations c
@@ -853,8 +884,14 @@ const EVENT_DEFINITION_SELECT = `
   SELECT id, story_world_id, event_key, name, trigger_source, timezone,
          recurrence_kind, run_at, recurrence_month, recurrence_day,
          recurrence_local_time, target_character_ids, priority,
+         recipient_character_ids, output_send_message, output_publish_moment, output_generate_image,
          cooldown_seconds, enabled, created_at
   FROM world_event_definitions`;
+
+const WORLD_LORE_ENTRY_SELECT = `
+  SELECT id, story_world_id, category, title, content, tags, is_enabled,
+         created_at, updated_at
+  FROM world_lore_entries`;
 
 const OCCURRENCE_SELECT = `
   SELECT id, definition_id, story_world_id, event_key, scheduled_for,
@@ -916,9 +953,106 @@ const MOMENT_SELECT = `
   FROM moments`;
 
 const MOMENT_INTERACTION_SELECT = `
-  SELECT id, moment_id, story_world_id, actor_character_id, kind, text,
-         created_at, idempotency_key
-  FROM moment_interactions`;
+SELECT id, moment_id, story_world_id, actor_character_id, kind, text,
+created_at, idempotency_key
+FROM moment_interactions`;
+
+const APPEARANCE_SETTINGS_SELECT = `
+SELECT id, owner_key, theme_id, chat_background_kind, chat_background_image_ref,
+chat_background_opacity, chat_background_blur, updated_at
+FROM appearance_settings`;
+
+const LLM_PROVIDER_PROFILE_SELECT = `
+  SELECT id, name, protocol, base_url, model, timeout_ms, max_tokens, temperature,
+         encrypted_api_key, encryption_iv, is_active, created_at, updated_at
+  FROM llm_provider_profiles`;
+
+const COMFY_UI_SETTINGS_SELECT = `
+  SELECT id, comfyui_base_url, comfyui_timeout_ms, default_workflow_version,
+         auto_image_intent_enabled, updated_at
+  FROM integration_settings`;
+
+function mapLlmProviderProfileRow(row: SqlRow): LlmProviderProfile {
+  const profile: LlmProviderProfile = {
+    id: requiredString(row.id, "llm_provider_profiles.id"),
+    name: requiredString(row.name, "llm_provider_profiles.name"),
+    protocol: requiredString(row.protocol, "llm_provider_profiles.protocol") as LlmProviderProfile["protocol"],
+    baseUrl: requiredString(row.base_url, "llm_provider_profiles.base_url"),
+    model: requiredString(row.model, "llm_provider_profiles.model"),
+    timeoutMs: requiredNumber(row.timeout_ms, "llm_provider_profiles.timeout_ms"),
+    maxTokens: requiredNumber(row.max_tokens, "llm_provider_profiles.max_tokens"),
+    temperature: requiredNumber(row.temperature, "llm_provider_profiles.temperature"),
+    isActive: requiredBoolean(row.is_active, "llm_provider_profiles.is_active"),
+    createdAt: requiredTimestamp(row.created_at, "llm_provider_profiles.created_at"),
+    updatedAt: requiredTimestamp(row.updated_at, "llm_provider_profiles.updated_at"),
+  };
+  const encryptedApiKey = optionalString(row.encrypted_api_key, "llm_provider_profiles.encrypted_api_key");
+  const encryptionIv = optionalString(row.encryption_iv, "llm_provider_profiles.encryption_iv");
+  if (encryptedApiKey !== undefined) profile.encryptedApiKey = encryptedApiKey;
+  if (encryptionIv !== undefined) profile.encryptionIv = encryptionIv;
+  assertLlmProviderProfile(profile);
+  return profile;
+}
+
+function mapComfyUiSettingsRow(row: SqlRow): ComfyUiSettings {
+  const settings: ComfyUiSettings = {
+    id: requiredString(row.id, "integration_settings.id"),
+    baseUrl: requiredString(row.comfyui_base_url, "integration_settings.comfyui_base_url"),
+    timeoutMs: requiredNumber(row.comfyui_timeout_ms, "integration_settings.comfyui_timeout_ms"),
+    autoImageIntentEnabled: requiredBoolean(
+      row.auto_image_intent_enabled,
+      "integration_settings.auto_image_intent_enabled",
+    ),
+    updatedAt: requiredTimestamp(row.updated_at, "integration_settings.updated_at"),
+  };
+  const defaultWorkflowVersion = optionalString(
+    row.default_workflow_version,
+    "integration_settings.default_workflow_version",
+  );
+  if (defaultWorkflowVersion !== undefined) settings.defaultWorkflowVersion = defaultWorkflowVersion;
+  assertComfyUiSettings(settings);
+  return settings;
+}
+
+function mapWorldLoreEntryRow(row: SqlRow): WorldLoreEntry {
+  const entry: WorldLoreEntry = {
+    id: requiredString(row.id, "world_lore_entries.id"),
+    storyWorldId: requiredString(row.story_world_id, "world_lore_entries.story_world_id"),
+    category: requiredString(row.category, "world_lore_entries.category"),
+    title: requiredString(row.title, "world_lore_entries.title"),
+    content: requiredString(row.content, "world_lore_entries.content"),
+    tags: stringArray(row.tags, "world_lore_entries.tags"),
+    isEnabled: requiredBoolean(row.is_enabled, "world_lore_entries.is_enabled"),
+    createdAt: requiredTimestamp(row.created_at, "world_lore_entries.created_at"),
+    updatedAt: requiredTimestamp(row.updated_at, "world_lore_entries.updated_at"),
+  };
+  assertWorldLoreEntry(entry);
+  return entry;
+}
+
+function mapAppearanceSettingsRow(row: SqlRow): AppearanceSettings {
+const settings: AppearanceSettings = {
+id: requiredString(row.id, "appearance_settings.id"),
+ownerKey: requiredString(row.owner_key, "appearance_settings.owner_key"),
+themeId: requiredString(row.theme_id, "appearance_settings.theme_id"),
+chatBackground: {
+kind: requiredString(
+row.chat_background_kind,
+"appearance_settings.chat_background_kind",
+) as ChatBackgroundKind,
+opacity: requiredNumber(row.chat_background_opacity, "appearance_settings.chat_background_opacity"),
+blur: requiredNumber(row.chat_background_blur, "appearance_settings.chat_background_blur"),
+},
+updatedAt: requiredTimestamp(row.updated_at, "appearance_settings.updated_at"),
+};
+const imageRef = optionalString(
+row.chat_background_image_ref,
+"appearance_settings.chat_background_image_ref",
+);
+if (imageRef !== undefined) settings.chatBackground.imageRef = imageRef;
+assertAppearanceSettings(settings);
+return settings;
+}
 
 export class SqlRepositories implements DomainRepositories {
   public readonly storyWorlds: StoryWorldRepository;
@@ -929,6 +1063,7 @@ export class SqlRepositories implements DomainRepositories {
   public readonly messages: MessageRepository;
   public readonly memories: MemoryRepository;
   public readonly worldEventDefinitions: WorldEventDefinitionRepository;
+  public readonly worldLoreEntries: WorldLoreEntryRepository;
   public readonly scheduledOccurrences: ScheduledOccurrenceRepository;
   public readonly characterPlans: CharacterPlanRepository;
   public readonly eventExecutions: EventExecutionRepository;
@@ -942,9 +1077,12 @@ export class SqlRepositories implements DomainRepositories {
   public readonly stickers: StickerRepository;
   public readonly moments: MomentRepository;
   public readonly momentInteractions: MomentInteractionRepository;
-  public readonly outboxEvents: SqlOutboxEventRepository;
+public readonly appearanceSettings: AppearanceSettingsRepository;
+  public readonly llmProviderProfiles: LlmProviderProfileRepository;
+  public readonly comfyUiSettings: ComfyUiSettingsRepository;
+public readonly outboxEvents: SqlOutboxEventRepository;
 
-  private readonly client: SqlClient;
+private readonly client: SqlClient;
 
   public constructor(client: SqlClient) {
     this.client = client;
@@ -991,14 +1129,15 @@ export class SqlRepositories implements DomainRepositories {
       },
       save: async (character) => {
         await this.client.query(
-          `INSERT INTO characters (id, display_name, role, story_world_id, timezone, birth_date, persona_prompt_ref, visual_prompt_ref)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+          `INSERT INTO characters (id, display_name, role, story_world_id, timezone, birth_date, persona_prompt, persona_prompt_ref, visual_prompt_ref)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
            ON CONFLICT (id) DO UPDATE SET
              display_name = EXCLUDED.display_name,
              role = EXCLUDED.role,
              story_world_id = EXCLUDED.story_world_id,
              timezone = EXCLUDED.timezone,
              birth_date = EXCLUDED.birth_date,
+             persona_prompt = EXCLUDED.persona_prompt,
              persona_prompt_ref = EXCLUDED.persona_prompt_ref,
              visual_prompt_ref = EXCLUDED.visual_prompt_ref`,
           [
@@ -1008,6 +1147,7 @@ export class SqlRepositories implements DomainRepositories {
             character.storyWorldId,
             character.timezone,
             character.birthDate ?? null,
+            character.personaPrompt ?? null,
             character.personaPromptRef ?? null,
             character.visualPromptRef ?? null,
           ],
@@ -1336,9 +1476,10 @@ export class SqlRepositories implements DomainRepositories {
           `INSERT INTO world_event_definitions (
              id, story_world_id, event_key, name, trigger_source, timezone,
              recurrence_kind, run_at, recurrence_month, recurrence_day,
-             recurrence_local_time, target_character_ids, priority,
+             recurrence_local_time, target_character_ids, recipient_character_ids,
+             output_send_message, output_publish_moment, output_generate_image, priority,
              cooldown_seconds, enabled, created_at
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
            ON CONFLICT (id) DO UPDATE SET
              story_world_id = EXCLUDED.story_world_id,
              event_key = EXCLUDED.event_key,
@@ -1351,6 +1492,10 @@ export class SqlRepositories implements DomainRepositories {
              recurrence_day = EXCLUDED.recurrence_day,
              recurrence_local_time = EXCLUDED.recurrence_local_time,
              target_character_ids = EXCLUDED.target_character_ids,
+             recipient_character_ids = EXCLUDED.recipient_character_ids,
+             output_send_message = EXCLUDED.output_send_message,
+             output_publish_moment = EXCLUDED.output_publish_moment,
+             output_generate_image = EXCLUDED.output_generate_image,
              priority = EXCLUDED.priority,
              cooldown_seconds = EXCLUDED.cooldown_seconds,
              enabled = EXCLUDED.enabled,
@@ -1368,12 +1513,82 @@ export class SqlRepositories implements DomainRepositories {
             day,
             localTime,
             [...definition.targetCharacterIds],
+            [...definition.recipientCharacterIds],
+            definition.outputs.sendMessage,
+            definition.outputs.publishMoment,
+            definition.outputs.generateImage,
             definition.priority,
             definition.cooldownSeconds ?? null,
             definition.enabled,
             definition.createdAt,
           ],
         );
+      },
+    };
+
+    this.worldLoreEntries = {
+      listByStoryWorld: async (storyWorldId) => {
+        const result = await this.client.query(
+          `${WORLD_LORE_ENTRY_SELECT}
+           WHERE story_world_id = $1
+           ORDER BY updated_at DESC, id`,
+          [storyWorldId],
+        );
+        return result.rows.map(mapWorldLoreEntryRow);
+      },
+      getById: async (id) => {
+        const result = await this.client.query(
+          `${WORLD_LORE_ENTRY_SELECT} WHERE id = $1`,
+          [id],
+        );
+        const row = result.rows[0];
+        return row ? mapWorldLoreEntryRow(row) : undefined;
+      },
+      search: async (storyWorldId, queryText) => {
+        if (queryText.trim().length === 0) {
+          throw new TypeError("world lore search queryText must be non-empty");
+        }
+        const document = "to_tsvector('simple', title || ' ' || content || ' ' || array_to_string(tags, ' '))";
+        const result = await this.client.query(
+          `${WORLD_LORE_ENTRY_SELECT}
+           WHERE story_world_id = $1
+             AND is_enabled = true
+             AND ${document} @@ websearch_to_tsquery('simple', $2)
+           ORDER BY ts_rank_cd(${document}, websearch_to_tsquery('simple', $2)) DESC,
+                    updated_at DESC, id`,
+          [storyWorldId, queryText],
+        );
+        return result.rows.map(mapWorldLoreEntryRow);
+      },
+      save: async (entry) => {
+        assertWorldLoreEntry(entry);
+        await this.client.query(
+          `INSERT INTO world_lore_entries (
+             id, story_world_id, category, title, content, tags, is_enabled, created_at, updated_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+           ON CONFLICT (id) DO UPDATE SET
+             story_world_id = EXCLUDED.story_world_id,
+             category = EXCLUDED.category,
+             title = EXCLUDED.title,
+             content = EXCLUDED.content,
+             tags = EXCLUDED.tags,
+             is_enabled = EXCLUDED.is_enabled,
+             updated_at = EXCLUDED.updated_at`,
+          [
+            entry.id,
+            entry.storyWorldId,
+            entry.category,
+            entry.title,
+            entry.content,
+            [...entry.tags],
+            entry.isEnabled,
+            entry.createdAt,
+            entry.updatedAt,
+          ],
+        );
+      },
+      delete: async (id) => {
+        await this.client.query(`DELETE FROM world_lore_entries WHERE id = $1`, [id]);
       },
     };
 
@@ -1756,6 +1971,22 @@ export class SqlRepositories implements DomainRepositories {
         const row = result.rows[0];
         return row ? mapImageJobRow(row) : undefined;
       },
+      listQueued: async (limit = 100) => {
+        if (!Number.isSafeInteger(limit) || limit < 1) throw new RangeError("image job limit must be positive");
+        const result = await this.client.query(
+          `${IMAGE_JOB_SELECT} WHERE status = 'QUEUED' ORDER BY created_at ASC, id ASC LIMIT $1`,
+          [limit],
+        );
+        return result.rows.map(mapImageJobRow);
+      },
+      listSubmitted: async (limit = 100) => {
+        if (!Number.isSafeInteger(limit) || limit < 1) throw new RangeError("image job limit must be positive");
+        const result = await this.client.query(
+          `${IMAGE_JOB_SELECT} WHERE status = 'SUBMITTED' ORDER BY updated_at ASC, id ASC LIMIT $1`,
+          [limit],
+        );
+        return result.rows.map(mapImageJobRow);
+      },
       save: async (job) => {
         assertImageJob(job);
         await this.client.query(
@@ -1906,16 +2137,150 @@ export class SqlRepositories implements DomainRepositories {
         return row ? mapStickerPackRow(row) : undefined;
       },
       save: async (pack) => {
-        assertStickerPack(pack);
+assertStickerPack(pack);
+await this.client.query(
+`INSERT INTO sticker_packs (id, story_world_id, name, source_ref, created_at)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (id) DO UPDATE SET
+story_world_id = EXCLUDED.story_world_id,
+name = EXCLUDED.name,
+source_ref = EXCLUDED.source_ref,
+created_at = EXCLUDED.created_at`,
+[pack.id, pack.storyWorldId, pack.name, pack.sourceRef ?? null, pack.createdAt],
+);
+},
+};
+
+this.appearanceSettings = {
+getByOwnerKey: async (ownerKey) => {
+const result = await this.client.query(
+`${APPEARANCE_SETTINGS_SELECT} WHERE owner_key = $1`,
+[ownerKey],
+);
+const row = result.rows[0];
+return row ? mapAppearanceSettingsRow(row) : undefined;
+},
+save: async (settings) => {
+assertAppearanceSettings(settings);
+await this.client.query(
+`INSERT INTO appearance_settings (
+id, owner_key, theme_id, chat_background_kind, chat_background_image_ref,
+chat_background_opacity, chat_background_blur, updated_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+ON CONFLICT (owner_key) DO UPDATE SET
+theme_id = EXCLUDED.theme_id,
+chat_background_kind = EXCLUDED.chat_background_kind,
+chat_background_image_ref = EXCLUDED.chat_background_image_ref,
+chat_background_opacity = EXCLUDED.chat_background_opacity,
+chat_background_blur = EXCLUDED.chat_background_blur,
+updated_at = EXCLUDED.updated_at`,
+[
+settings.id,
+settings.ownerKey,
+settings.themeId,
+settings.chatBackground.kind,
+settings.chatBackground.imageRef ?? null,
+settings.chatBackground.opacity,
+settings.chatBackground.blur,
+settings.updatedAt,
+],
+);
+},
+};
+
+    this.llmProviderProfiles = {
+      list: async () => {
+        const result = await this.client.query(`${LLM_PROVIDER_PROFILE_SELECT} ORDER BY id`);
+        return result.rows.map(mapLlmProviderProfileRow);
+      },
+      getById: async (id) => {
+        const result = await this.client.query(`${LLM_PROVIDER_PROFILE_SELECT} WHERE id = $1`, [id]);
+        const row = result.rows[0];
+        return row ? mapLlmProviderProfileRow(row) : undefined;
+      },
+      getActive: async () => {
+        const result = await this.client.query(
+          `${LLM_PROVIDER_PROFILE_SELECT} WHERE is_active = true`,
+        );
+        const row = result.rows[0];
+        return row ? mapLlmProviderProfileRow(row) : undefined;
+      },
+      save: async (profile) => {
+        assertLlmProviderProfile(profile);
         await this.client.query(
-          `INSERT INTO sticker_packs (id, story_world_id, name, source_ref, created_at)
-           VALUES ($1, $2, $3, $4, $5)
+          `WITH deactivate_other_profiles AS (
+             UPDATE llm_provider_profiles
+             SET is_active = false, updated_at = $13
+             WHERE is_active = true AND id <> $1 AND $11 = true
+           )
+           INSERT INTO llm_provider_profiles (
+             id, name, protocol, base_url, model, timeout_ms, max_tokens, temperature,
+             encrypted_api_key, encryption_iv, is_active, created_at, updated_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
            ON CONFLICT (id) DO UPDATE SET
-             story_world_id = EXCLUDED.story_world_id,
              name = EXCLUDED.name,
-             source_ref = EXCLUDED.source_ref,
-             created_at = EXCLUDED.created_at`,
-          [pack.id, pack.storyWorldId, pack.name, pack.sourceRef ?? null, pack.createdAt],
+             protocol = EXCLUDED.protocol,
+             base_url = EXCLUDED.base_url,
+             model = EXCLUDED.model,
+             timeout_ms = EXCLUDED.timeout_ms,
+             max_tokens = EXCLUDED.max_tokens,
+             temperature = EXCLUDED.temperature,
+             encrypted_api_key = EXCLUDED.encrypted_api_key,
+             encryption_iv = EXCLUDED.encryption_iv,
+             is_active = EXCLUDED.is_active,
+             updated_at = EXCLUDED.updated_at`,
+          [
+            profile.id,
+            profile.name,
+            profile.protocol,
+            profile.baseUrl,
+            profile.model,
+            profile.timeoutMs,
+            profile.maxTokens,
+            profile.temperature,
+            profile.encryptedApiKey ?? null,
+            profile.encryptionIv ?? null,
+            profile.isActive,
+            profile.createdAt,
+            profile.updatedAt,
+          ],
+        );
+      },
+      delete: async (id) => {
+        await this.client.query(`DELETE FROM llm_provider_profiles WHERE id = $1`, [id]);
+      },
+    };
+
+    this.comfyUiSettings = {
+      get: async () => {
+        const result = await this.client.query(`${COMFY_UI_SETTINGS_SELECT} WHERE id = 'default'`);
+        const row = result.rows[0];
+        return row ? mapComfyUiSettingsRow(row) : undefined;
+      },
+      save: async (settings) => {
+        assertComfyUiSettings(settings);
+        if (settings.id !== "default") {
+          throw new TypeError("ComfyUI settings id must be default");
+        }
+        await this.client.query(
+          `INSERT INTO integration_settings (
+             id, comfyui_base_url, comfyui_timeout_ms, default_workflow_version,
+             auto_image_intent_enabled, updated_at
+           ) VALUES ($1, $2, $3, $4, $5, $6)
+           ON CONFLICT (id) DO UPDATE SET
+             comfyui_base_url = EXCLUDED.comfyui_base_url,
+             comfyui_timeout_ms = EXCLUDED.comfyui_timeout_ms,
+             default_workflow_version = EXCLUDED.default_workflow_version,
+             auto_image_intent_enabled = EXCLUDED.auto_image_intent_enabled,
+             updated_at = EXCLUDED.updated_at`,
+          [
+            settings.id,
+            settings.baseUrl,
+            settings.timeoutMs,
+            settings.defaultWorkflowVersion ?? null,
+            settings.autoImageIntentEnabled,
+            settings.updatedAt,
+          ],
         );
       },
     };

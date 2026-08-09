@@ -7,6 +7,7 @@ import {
   EventExecutionStatus,
   EventRecurrenceKind,
   ImageJobStatus,
+  LlmProviderProtocol,
   MemoryKind,
   MemorySource,
   MemoryVisibility,
@@ -26,6 +27,8 @@ import {
   createEventExecution,
   createImageJob,
   createImageWorkflowTemplate,
+  createLlmProviderProfile,
+  createComfyUiSettings,
   createMemoryItem,
   createMoment,
   createMomentInteraction,
@@ -35,6 +38,7 @@ import {
   createRelationshipEdge,
   createStoryWorld,
   createWorldEventDefinition,
+  createWorldLoreEntry,
   transitionMomentDraft,
   type Character,
   type CharacterVisualIdentity,
@@ -52,6 +56,8 @@ import {
   type ScheduledOccurrence,
   type WorldEventDefinition,
   type ImageWorkflowTemplate,
+  type LlmProviderProfile,
+  type ComfyUiSettings,
 } from "../../domain/src/index.ts";
 import {
   createSqlRepositories,
@@ -294,6 +300,10 @@ function eventDefinitionRow(value: WorldEventDefinition = eventDefinition): SqlR
       ? `${value.recurrence.localTime}:00`
       : null,
     target_character_ids: [...value.targetCharacterIds],
+    recipient_character_ids: [...value.recipientCharacterIds],
+    output_send_message: value.outputs.sendMessage,
+    output_publish_moment: value.outputs.publishMoment,
+    output_generate_image: value.outputs.generateImage,
     priority: value.priority,
     cooldown_seconds: value.cooldownSeconds ?? null,
     enabled: value.enabled,
@@ -794,6 +804,10 @@ test("maps annual event definitions and writes recurrence values through placeho
     15,
     "18:00",
     [ai.id],
+    [ai.id],
+    false,
+    false,
+    false,
     10,
     3600,
     true,
@@ -1032,13 +1046,19 @@ test("maps and upserts behavior actions and moment drafts", async () => {
 });
 
 test("maps and upserts image jobs with Fake ComfyUI lifecycle fields", async () => {
-  const readClient = new RecordingSqlClient([[imageJobRow()], [imageJobRow()]]);
+  const readClient = new RecordingSqlClient([[imageJobRow()], [imageJobRow()], [imageJobRow()], []]);
   const repositories = createSqlRepositories(readClient);
   assert.ok(repositories.imageJobs);
   assert.deepEqual(await repositories.imageJobs.getById(imageJob.id), imageJob);
   assert.deepEqual(await repositories.imageJobs.getByActionId(action.id), imageJob);
+  assert.deepEqual(await repositories.imageJobs.listQueued(), [imageJob]);
+  assert.deepEqual(await repositories.imageJobs.listSubmitted(), []);
   assert.deepEqual(readClient.calls[0]?.values, [imageJob.id]);
   assert.deepEqual(readClient.calls[1]?.values, [action.id]);
+  assert.deepEqual(readClient.calls[2]?.values, [100]);
+  assert.match(readClient.calls[2]?.text ?? "", /status = 'QUEUED'/);
+  assert.deepEqual(readClient.calls[3]?.values, [100]);
+  assert.match(readClient.calls[3]?.text ?? "", /status = 'SUBMITTED'/);
 
   const writeClient = new RecordingSqlClient();
   const writeRepositories = createSqlRepositories(writeClient);
@@ -1383,6 +1403,54 @@ test("covers SQL row parser failures and less-traveled repository branches", asy
 
   assert.equal(await createSqlRepositories(new RecordingSqlClient([[]])).stickerPacks.getById("missing"), undefined);
 
+  const appearanceRow = {
+    id: "appearance-local-user",
+    owner_key: "local-user",
+    theme_id: "blossom",
+    chat_background_kind: "custom",
+    chat_background_image_ref: "data:image/jpeg;base64,aGVsbG8=",
+    chat_background_opacity: 0.55,
+    chat_background_blur: 6,
+    updated_at: "2026-08-08T10:00:00.000Z",
+  };
+  const appearanceClient = new RecordingSqlClient([[appearanceRow]]);
+  const appearanceRepo = createSqlRepositories(appearanceClient).appearanceSettings;
+  assert.ok(appearanceRepo);
+  assert.deepEqual(await appearanceRepo.getByOwnerKey("local-user"), {
+    id: "appearance-local-user",
+    ownerKey: "local-user",
+    themeId: "blossom",
+    chatBackground: {
+      kind: "custom",
+      imageRef: "data:image/jpeg;base64,aGVsbG8=",
+      opacity: 0.55,
+      blur: 6,
+    },
+    updatedAt: "2026-08-08T10:00:00.000Z",
+  });
+  assert.equal(await createSqlRepositories(new RecordingSqlClient([[]])).appearanceSettings?.getByOwnerKey("missing"), undefined);
+  const appearanceNullImageClient = new RecordingSqlClient([[{ ...appearanceRow, chat_background_kind: "theme", chat_background_image_ref: null }]]);
+  const themeBackground = await createSqlRepositories(appearanceNullImageClient).appearanceSettings?.getByOwnerKey("local-user");
+  assert.equal(themeBackground?.chatBackground.kind, "theme");
+  assert.equal(themeBackground?.chatBackground.imageRef, undefined);
+  const appearanceSaveClient = new RecordingSqlClient();
+  await createSqlRepositories(appearanceSaveClient).appearanceSettings?.save({
+    id: "appearance-local-user",
+    ownerKey: "local-user",
+    themeId: "blossom",
+    chatBackground: { kind: "theme", opacity: 0.4, blur: 0 },
+    updatedAt: "2026-08-08T11:00:00.000Z",
+  });
+  assert.match(appearanceSaveClient.calls[0]?.text ?? "", /INSERT INTO appearance_settings/);
+  assert.match(appearanceSaveClient.calls[0]?.text ?? "", /ON CONFLICT \(owner_key\) DO UPDATE/);
+  assert.deepEqual(appearanceSaveClient.calls[0]?.values.slice(0, 4), [
+    "appearance-local-user",
+    "local-user",
+    "blossom",
+    "theme",
+  ]);
+  assert.equal(appearanceSaveClient.calls[0]?.values[4], null);
+
   const interactionConflict = createSqlRepositories(new RecordingSqlClient([[], [{ ...momentInteractionRow(), kind: MomentInteractionKind.COMMENT, text: "different" }]]));
   await assert.rejects(interactionConflict.momentInteractions.save(momentInteraction), /idempotency key conflict/);
 
@@ -1395,4 +1463,112 @@ test("covers SQL row parser failures and less-traveled repository branches", asy
     },
   };
   assert.equal(await createSqlRepositories(transactionalClient).transaction(async () => "ok"), "ok");
+});
+
+test("maps and persists integration provider profiles and default ComfyUI settings", async () => {
+  const llmProfile = createLlmProviderProfile({
+    id: "profile-sql",
+    name: "SQL provider",
+    protocol: LlmProviderProtocol.OPENAI_COMPATIBLE,
+    baseUrl: "https://llm.example.test/v1",
+    model: "example-model",
+    encryptedApiKey: "encrypted-key",
+    encryptionIv: "encryption-iv",
+    isActive: true,
+    createdAt: "2026-08-09T00:00:00.000Z",
+    updatedAt: "2026-08-09T00:01:00.000Z",
+  });
+  const comfySettings = createComfyUiSettings({
+    id: "default",
+    baseUrl: "https://comfy.example.test",
+    defaultWorkflowVersion: "workflow@v1",
+    autoImageIntentEnabled: true,
+    updatedAt: "2026-08-09T00:01:00.000Z",
+  });
+  const profileRow: SqlRow = {
+    id: llmProfile.id, name: llmProfile.name, protocol: llmProfile.protocol,
+    base_url: llmProfile.baseUrl, model: llmProfile.model, timeout_ms: llmProfile.timeoutMs,
+    max_tokens: llmProfile.maxTokens, temperature: llmProfile.temperature,
+    encrypted_api_key: llmProfile.encryptedApiKey, encryption_iv: llmProfile.encryptionIv,
+    is_active: llmProfile.isActive, created_at: llmProfile.createdAt, updated_at: llmProfile.updatedAt,
+  };
+  const settingsRow: SqlRow = {
+    id: comfySettings.id, comfyui_base_url: comfySettings.baseUrl,
+    comfyui_timeout_ms: comfySettings.timeoutMs, default_workflow_version: comfySettings.defaultWorkflowVersion,
+    auto_image_intent_enabled: comfySettings.autoImageIntentEnabled, updated_at: comfySettings.updatedAt,
+  };
+  const readClient = new RecordingSqlClient([[profileRow], [profileRow], [settingsRow]]);
+  const readRepositories = createSqlRepositories(readClient);
+  assert.deepEqual(await readRepositories.llmProviderProfiles.getById(llmProfile.id), llmProfile);
+  assert.deepEqual(await readRepositories.llmProviderProfiles.getActive(), llmProfile);
+  assert.deepEqual(await readRepositories.comfyUiSettings.get(), comfySettings);
+  assert.deepEqual(readClient.calls[0]?.values, [llmProfile.id]);
+  assert.match(readClient.calls[1]?.text ?? "", /WHERE is_active = true/);
+  assert.match(readClient.calls[2]?.text ?? "", /WHERE id = 'default'/);
+
+  const writeClient = new RecordingSqlClient();
+  const writeRepositories = createSqlRepositories(writeClient);
+  await writeRepositories.llmProviderProfiles.save(llmProfile);
+  await writeRepositories.llmProviderProfiles.delete(llmProfile.id);
+  await writeRepositories.comfyUiSettings.save(comfySettings);
+  assert.match(writeClient.calls[0]?.text ?? "", /WITH deactivate_other_profiles AS/);
+  assert.match(writeClient.calls[0]?.text ?? "", /INSERT INTO llm_provider_profiles/);
+  assert.deepEqual(writeClient.calls[0]?.values, [
+    llmProfile.id, llmProfile.name, llmProfile.protocol, llmProfile.baseUrl, llmProfile.model,
+    llmProfile.timeoutMs, llmProfile.maxTokens, llmProfile.temperature, llmProfile.encryptedApiKey,
+    llmProfile.encryptionIv, true, llmProfile.createdAt, llmProfile.updatedAt,
+  ]);
+  assert.match(writeClient.calls[1]?.text ?? "", /DELETE FROM llm_provider_profiles WHERE id = \$1/);
+  assert.deepEqual(writeClient.calls[1]?.values, [llmProfile.id]);
+  assert.match(writeClient.calls[2]?.text ?? "", /INSERT INTO integration_settings/);
+  assert.deepEqual(writeClient.calls[2]?.values, [
+    comfySettings.id, comfySettings.baseUrl, comfySettings.timeoutMs, comfySettings.defaultWorkflowVersion,
+    comfySettings.autoImageIntentEnabled, comfySettings.updatedAt,
+  ]);
+});
+
+test("maps, searches, and persists categorized world lore entries", async () => {
+  const entry = createWorldLoreEntry({
+    id: "lore-sql",
+    storyWorldId: world.id,
+    category: "location",
+    title: "Moon Harbor",
+    content: "Ships arrive under a silver moon.",
+    tags: ["harbor", "moon"],
+    isEnabled: true,
+    createdAt: "2026-08-09T00:00:00.000Z",
+    updatedAt: "2026-08-09T00:01:00.000Z",
+  });
+  const row: SqlRow = {
+    id: entry.id,
+    story_world_id: entry.storyWorldId,
+    category: entry.category,
+    title: entry.title,
+    content: entry.content,
+    tags: [...entry.tags],
+    is_enabled: entry.isEnabled,
+    created_at: entry.createdAt,
+    updated_at: entry.updatedAt,
+  };
+  const readClient = new RecordingSqlClient([[row], [row], [row]]);
+  const repository = createSqlRepositories(readClient).worldLoreEntries;
+  assert.deepEqual(await repository.listByStoryWorld(world.id), [entry]);
+  assert.deepEqual(await repository.getById(entry.id), entry);
+  assert.deepEqual(await repository.search(world.id, "moon harbor"), [entry]);
+  assert.match(readClient.calls[2]?.text ?? "", /is_enabled = true/);
+  assert.match(readClient.calls[2]?.text ?? "", /websearch_to_tsquery\('simple', \$2\)/);
+  assert.deepEqual(readClient.calls[2]?.values, [world.id, "moon harbor"]);
+
+  const writeClient = new RecordingSqlClient();
+  const writable = createSqlRepositories(writeClient).worldLoreEntries;
+  await writable.save(entry);
+  await writable.delete(entry.id);
+  assert.match(writeClient.calls[0]?.text ?? "", /INSERT INTO world_lore_entries/);
+  assert.match(writeClient.calls[0]?.text ?? "", /ON CONFLICT \(id\) DO UPDATE/);
+  assert.deepEqual(writeClient.calls[0]?.values, [
+    entry.id, entry.storyWorldId, entry.category, entry.title, entry.content,
+    [...entry.tags], entry.isEnabled, entry.createdAt, entry.updatedAt,
+  ]);
+  assert.match(writeClient.calls[1]?.text ?? "", /DELETE FROM world_lore_entries WHERE id = \$1/);
+  await assert.rejects(repository.search(world.id, " "), /queryText/);
 });

@@ -1,4 +1,6 @@
 export * from "./story-mode.ts";
+export * from "./appearance.ts";
+export * from "./integration.ts";
 export * from "./relationship.ts";
 export * from "./character.ts";
 export * from "./story-world.ts";
@@ -12,4 +14,5 @@ export * from "./life-simulation.ts";
 export * from "./behavior-media.ts";
 export * from "./social.ts";
 export * from "./visual-workflow.ts";
+export * from "./world-lore.ts";
 export * from "./sticker.ts";

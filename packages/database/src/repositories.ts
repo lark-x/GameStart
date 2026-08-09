@@ -1,5 +1,8 @@
 import type {
   ActorSession,
+  AppearanceSettings,
+  LlmProviderProfile,
+  ComfyUiSettings,
   CharacterPlan,
   Character,
   ConversationAggregate,
@@ -21,6 +24,7 @@ import type {
   Message,
   RelationshipEdge,
   StoryWorld,
+  WorldLoreEntry,
   WorldEventDefinition,
 } from "../../domain/src/index.ts";
 import type { OutboxEventRepository } from "./outbox.ts";
@@ -140,6 +144,10 @@ export interface MomentDraftRepository {
 export interface ImageJobRepository {
   getById(id: string): Promise<ImageJob | undefined>;
   getByActionId(actionId: string): Promise<ImageJob | undefined>;
+  /** Jobs that have not been submitted to the external image service. */
+  listQueued(limit?: number): Promise<readonly ImageJob[]>;
+  /** Submitted jobs are retained so a restarted worker can resume watching them. */
+  listSubmitted(limit?: number): Promise<readonly ImageJob[]>;
   save(job: ImageJob): Promise<void>;
 }
 
@@ -165,6 +173,35 @@ export interface StickerRepository {
   listByPack(packId: string): Promise<readonly Sticker[]>;
   getById(id: string): Promise<Sticker | undefined>;
   save(sticker: Sticker): Promise<void>;
+}
+
+export interface AppearanceSettingsRepository {
+  getByOwnerKey(ownerKey: string): Promise<AppearanceSettings | undefined>;
+  save(settings: AppearanceSettings): Promise<void>;
+}
+
+export interface WorldLoreEntryRepository {
+  listByStoryWorld(storyWorldId: string): Promise<readonly WorldLoreEntry[]>;
+  getById(id: string): Promise<WorldLoreEntry | undefined>;
+  search(
+    storyWorldId: string,
+    queryText: string,
+  ): Promise<readonly WorldLoreEntry[]>;
+  save(entry: WorldLoreEntry): Promise<void>;
+  delete(id: string): Promise<void>;
+}
+
+export interface LlmProviderProfileRepository {
+  list(): Promise<readonly LlmProviderProfile[]>;
+  getById(id: string): Promise<LlmProviderProfile | undefined>;
+  getActive(): Promise<LlmProviderProfile | undefined>;
+  save(profile: LlmProviderProfile): Promise<void>;
+  delete(id: string): Promise<void>;
+}
+
+export interface ComfyUiSettingsRepository {
+  get(): Promise<ComfyUiSettings | undefined>;
+  save(settings: ComfyUiSettings): Promise<void>;
 }
 
 export interface MomentRepository {
@@ -196,6 +233,7 @@ export interface DomainRepositories {
   readonly messages?: MessageRepository;
   readonly memories?: MemoryRepository;
   readonly worldEventDefinitions?: WorldEventDefinitionRepository;
+  readonly worldLoreEntries?: WorldLoreEntryRepository;
   readonly scheduledOccurrences?: ScheduledOccurrenceRepository;
   readonly characterPlans?: CharacterPlanRepository;
   readonly eventExecutions?: EventExecutionRepository;
@@ -209,6 +247,9 @@ export interface DomainRepositories {
   readonly stickers?: StickerRepository;
   readonly moments?: MomentRepository;
   readonly momentInteractions?: MomentInteractionRepository;
+  readonly appearanceSettings?: AppearanceSettingsRepository;
+  readonly llmProviderProfiles?: LlmProviderProfileRepository;
+  readonly comfyUiSettings?: ComfyUiSettingsRepository;
   readonly outboxEvents?: OutboxEventRepository;
 }
 
@@ -221,6 +262,7 @@ export interface InMemoryRepositorySeed {
   messages?: readonly Message[];
   memories?: readonly MemoryItem[];
   worldEventDefinitions?: readonly WorldEventDefinition[];
+  worldLoreEntries?: readonly WorldLoreEntry[];
   scheduledOccurrences?: readonly ScheduledOccurrence[];
   characterPlans?: readonly CharacterPlan[];
   eventExecutions?: readonly EventExecution[];
@@ -234,4 +276,7 @@ export interface InMemoryRepositorySeed {
   stickers?: readonly Sticker[];
   moments?: readonly Moment[];
   momentInteractions?: readonly MomentInteraction[];
+  appearanceSettings?: readonly AppearanceSettings[];
+  llmProviderProfiles?: readonly LlmProviderProfile[];
+  comfyUiSettings?: ComfyUiSettings;
 }

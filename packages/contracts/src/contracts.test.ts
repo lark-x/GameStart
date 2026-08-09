@@ -3,11 +3,15 @@ import test from "node:test";
 
 import {
   CharacterRole,
+  ChatBackgroundKindDto,
   StoryMode,
   actorSessionSchema,
   actorSessionSwitchRequestSchema,
+  appearanceSettingsSchema,
   characterSchema,
   characterVisualIdentitySchema,
+  chatBackgroundSettingsSchema,
+  updateAppearanceSettingsRequestSchema,
   imageWorkflowTemplateSchema,
   compiledImageWorkflowSchema,
   validateImageWorkflowResultSchema,
@@ -57,6 +61,7 @@ import {
   updateRelationshipEdgeRequestSchema,
   relationshipStateSchema,
   sendMessageRequestSchema,
+  requestConversationImageRequestSchema,
   storyWorldSchema,
 } from "./index.ts";
 
@@ -257,10 +262,12 @@ test("registry exposes every schema by its stable contract name", () => {
   assert.deepEqual(Object.keys(contractSchemas).sort(), [
     "actorSession",
     "actorSessionSwitchRequest",
+    "appearanceSettings",
     "behaviorAction",
     "character",
     "characterPlan",
     "characterVisualIdentity",
+    "chatBackgroundSettings",
     "compiledImageWorkflow",
     "conversation",
     "conversationMember",
@@ -270,6 +277,7 @@ test("registry exposes every schema by its stable contract name", () => {
     "createStickerInput",
     "createStickerPackRequest",
     "createWorldEventDefinitionRequest",
+    "createWorldLoreEntryRequest",
     "eventExecution",
     "eventRecurrence",
     "imageJob",
@@ -282,17 +290,43 @@ test("registry exposes every schema by its stable contract name", () => {
     "proactiveMessageBudget",
     "relationshipEdge",
     "relationshipState",
+    "requestConversationImageRequest",
     "scheduledOccurrence",
     "sendMessageRequest",
     "sticker",
     "stickerPack",
     "storyWorld",
+    "updateAppearanceSettingsRequest",
     "updateRelationshipEdgeRequest",
     "updateWorldEventDefinitionRequest",
+    "updateWorldLoreEntryRequest",
     "validateImageWorkflowResult",
     "worldCalendar",
     "worldEventDefinition",
+    "worldLoreEntry",
   ]);
+});
+
+test("appearance schemas lock theme id format and chat background ranges", () => {
+  assert.deepEqual(appearanceSettingsSchema.required, [
+    "id",
+    "ownerKey",
+    "themeId",
+    "chatBackground",
+    "updatedAt",
+  ]);
+  assert.equal(appearanceSettingsSchema.additionalProperties, false);
+  assert.equal(appearanceSettingsSchema.properties?.themeId.pattern, "^[a-z0-9][a-z0-9-]{0,63}$");
+  assert.deepEqual(chatBackgroundSettingsSchema.required, ["kind", "opacity", "blur"]);
+  assert.deepEqual(
+    chatBackgroundSettingsSchema.properties?.kind.enum,
+    Object.values(ChatBackgroundKindDto),
+  );
+  assert.equal(chatBackgroundSettingsSchema.properties?.opacity.maximum, 1);
+  assert.equal(chatBackgroundSettingsSchema.properties?.blur.maximum, 40);
+  assert.equal(chatBackgroundSettingsSchema.properties?.imageRef.maxLength, 2_000_000);
+  assert.deepEqual(updateAppearanceSettingsRequestSchema.required, ["themeId", "chatBackground"]);
+  assert.equal(updateAppearanceSettingsRequestSchema.additionalProperties, false);
 });
 
 test("memory schema exposes visibility, source, confidence, and audience", () => {
@@ -316,6 +350,8 @@ test("event schemas expose trigger sources, recurrence variants, and occurrence 
     "timezone",
     "recurrence",
     "targetCharacterIds",
+    "recipientCharacterIds",
+    "outputs",
     "priority",
     "enabled",
     "createdAt",
@@ -390,6 +426,15 @@ test("behavior and media schemas expose structured actions, drafts, and image li
   assert.deepEqual(imageJobSchema.properties?.kind.enum, Object.values(ImageJobKind));
   assert.deepEqual(imageJobSchema.properties?.status.enum, Object.values(ImageJobStatus));
   assert.equal(imageJobSchema.properties?.prompt.minLength, 1);
+});
+
+test("conversation image requests require both private-chat participants and an idempotency key", () => {
+  assert.deepEqual(requestConversationImageRequestSchema.required, [
+    "actorCharacterId", "recipientCharacterId", "prompt", "workflowVersion",
+    "createdAt", "idempotencyKey",
+  ]);
+  assert.deepEqual(worldEventDefinitionSchema.properties?.outputs.required, ["sendMessage", "publishMoment", "generateImage"]);
+  assert.equal(requestConversationImageRequestSchema.properties?.seed.minimum, 0);
 });
 
 test("social feed schemas expose moments, interaction kinds, and idempotent requests", () => {

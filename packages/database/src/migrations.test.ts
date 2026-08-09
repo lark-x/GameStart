@@ -5,9 +5,9 @@ import { applyMigrations, listMigrationFiles, type MigrationDatabase } from "./m
 
 test("migration files are ordered and include reversible SQL", async () => {
   const migrations = listMigrationFiles();
-  assert.deepEqual(migrations.map((migration) => migration.version), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  assert.deepEqual(migrations.map((migration) => migration.version), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
   for (const migration of migrations) {
-    assert.match(await (await import("node:fs/promises")).readFile(migration.upPath, "utf8"), /CREATE TABLE/);
+    assert.match(await (await import("node:fs/promises")).readFile(migration.upPath, "utf8"), /(CREATE TABLE|ALTER TABLE)/);
     assert.match(await (await import("node:fs/promises")).readFile(migration.downPath, "utf8"), /DROP/);
   }
 });

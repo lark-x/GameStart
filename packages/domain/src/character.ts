@@ -18,6 +18,7 @@ export interface Character {
   storyWorldId: string;
   timezone: string;
   birthDate?: string;
+  personaPrompt?: string;
   personaPromptRef?: string;
   visualPromptRef?: string;
 }
@@ -29,6 +30,7 @@ export interface CharacterInput {
   storyWorldId: string;
   timezone: string;
   birthDate?: string;
+  personaPrompt?: string;
   personaPromptRef?: string;
   visualPromptRef?: string;
 }
@@ -51,6 +53,7 @@ export function createCharacter(input: CharacterInput): Character {
   if (input.birthDate !== undefined) {
     assertIsoDate(input.birthDate, "character.birthDate");
   }
+  assertPromptReference(input.personaPrompt, "character.personaPrompt");
   assertPromptReference(input.personaPromptRef, "character.personaPromptRef");
   assertPromptReference(input.visualPromptRef, "character.visualPromptRef");
 
@@ -63,6 +66,7 @@ export function createCharacter(input: CharacterInput): Character {
   };
 
   if (input.birthDate !== undefined) character.birthDate = input.birthDate;
+  if (input.personaPrompt !== undefined) character.personaPrompt = input.personaPrompt;
   if (input.personaPromptRef !== undefined) character.personaPromptRef = input.personaPromptRef;
   if (input.visualPromptRef !== undefined) character.visualPromptRef = input.visualPromptRef;
   return character;

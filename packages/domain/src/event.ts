@@ -40,6 +40,20 @@ export interface AnnualEventRecurrence {
 
 export type EventRecurrence = OnceEventRecurrence | AnnualEventRecurrence;
 
+export interface EventOutputPolicy {
+  sendMessage: boolean;
+  publishMoment: boolean;
+  generateImage: boolean;
+}
+
+export const defaultEventOutputPolicy = (): EventOutputPolicy => ({
+  // Existing calendar entries were scheduling-only. Keep that behavior until
+  // an administrator explicitly enables one of the new delivery outputs.
+  sendMessage: false,
+  publishMoment: false,
+  generateImage: false,
+});
+
 export interface WorldEventDefinition {
   id: string;
   storyWorldId: string;
@@ -49,6 +63,8 @@ export interface WorldEventDefinition {
   timezone: string;
   recurrence: EventRecurrence;
   targetCharacterIds: readonly string[];
+  recipientCharacterIds: readonly string[];
+  outputs: EventOutputPolicy;
   priority: number;
   cooldownSeconds?: number;
   enabled: boolean;
@@ -64,6 +80,8 @@ export interface WorldEventDefinitionInput {
   timezone?: string;
   recurrence: EventRecurrence;
   targetCharacters?: readonly Character[];
+  recipientCharacters?: readonly Character[];
+  outputs?: Partial<EventOutputPolicy>;
   priority?: number;
   cooldownSeconds?: number;
   enabled?: boolean;
@@ -172,6 +190,16 @@ function assertTargetCharacters(
   }
 }
 
+function assertOutputPolicy(outputs: EventOutputPolicy, field: string): void {
+  for (const key of ["sendMessage", "publishMoment", "generateImage"] as const) {
+    if (typeof outputs[key] !== "boolean") throw new TypeError(`${field}.${key} must be a boolean`);
+  }
+}
+
+function hasAnyOutput(outputs: EventOutputPolicy): boolean {
+  return outputs.sendMessage || outputs.publishMoment || outputs.generateImage;
+}
+
 export function createWorldEventDefinition(
   input: WorldEventDefinitionInput,
 ): WorldEventDefinition {
@@ -188,6 +216,13 @@ export function createWorldEventDefinition(
 
   const targetCharacters = input.targetCharacters ?? [];
   assertTargetCharacters(targetCharacters, input.storyWorld.id, "event.targetCharacters");
+  const recipientCharacters = input.recipientCharacters ?? targetCharacters;
+  assertTargetCharacters(recipientCharacters, input.storyWorld.id, "event.recipientCharacters");
+  const outputs: EventOutputPolicy = { ...defaultEventOutputPolicy(), ...input.outputs };
+  assertOutputPolicy(outputs, "event.outputs");
+  if (hasAnyOutput(outputs) && recipientCharacters.length === 0) {
+    throw new TypeError("event.recipientCharacters must not be empty when an output is enabled");
+  }
 
   const priority = input.priority ?? 0;
   if (!Number.isInteger(priority) || priority < 0) {
@@ -216,6 +251,8 @@ export function createWorldEventDefinition(
           localTime: input.recurrence.localTime,
         },
     targetCharacterIds: targetCharacters.map((character) => character.id),
+    recipientCharacterIds: recipientCharacters.map((character) => character.id),
+    outputs,
     priority,
     enabled: input.enabled ?? true,
     createdAt: input.createdAt,
@@ -234,6 +271,11 @@ export function assertWorldEventDefinition(definition: WorldEventDefinition): vo
   assertEnum(definition.triggerSource, Object.values(TriggerSource), "event.triggerSource");
   assertRecurrence(definition.recurrence, "event.recurrence");
   assertTargetCharacterIds(definition.targetCharacterIds, definition.storyWorldId, "event.targetCharacterIds");
+  assertTargetCharacterIds(definition.recipientCharacterIds, definition.storyWorldId, "event.recipientCharacterIds");
+  assertOutputPolicy(definition.outputs, "event.outputs");
+  if (hasAnyOutput(definition.outputs) && definition.recipientCharacterIds.length === 0) {
+    throw new TypeError("event.recipientCharacterIds must not be empty when an output is enabled");
+  }
   if (!Number.isInteger(definition.priority) || definition.priority < 0) {
     throw new RangeError("event.priority must be a non-negative integer");
   }

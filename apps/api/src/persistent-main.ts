@@ -5,7 +5,7 @@ import {
   type PostgresSqlClient,
 } from "../../../packages/database/src/index.ts";
 import { loadAppConfig, type EnvironmentInput } from "../../../packages/config/src/index.ts";
-import { createProviderFromConfig } from "../../../packages/ai/src/index.ts";
+import { ActiveProfileChatProvider, createProviderFromConfig, SecretCipher } from "../../../packages/ai/src/index.ts";
 import {
   closeApiRuntime,
   createApiRuntime,
@@ -29,16 +29,22 @@ export async function startPersistentApi(
   const database = await createPostgresSqlClient({ connectionString: config.database.url });
   try {
     await applyMigrations(database);
+    const repositories = createSqlRepositories(database);
+    const cipher = environment.INTEGRATION_SECRET_KEY === undefined
+      ? undefined
+      : new SecretCipher(environment.INTEGRATION_SECRET_KEY);
+    const fallback = createProviderFromConfig({ ...config.llm });
+    const provider = new ActiveProfileChatProvider(repositories.llmProviderProfiles, cipher, fallback);
     const runtime = createApiRuntime(
       config,
-      createSqlRepositories(database),
-      createProviderFromConfig({ ...config.llm }),
+      repositories,
+      provider,
       {
         memoryRetrievalEnabled: config.flags.memoryRetrievalEnabled,
         memoryWriteEnabled: config.flags.memoryWriteEnabled,
       },
       { requireTrustedActor: true },
-      { readiness: async () => { await database.query("SELECT 1"); } },
+      { readiness: async () => { await database.query("SELECT 1"); }, ...(cipher === undefined ? {} : { secretCipher: cipher }) },
     );
     await listenApiRuntime(runtime);
     return { runtime, database };

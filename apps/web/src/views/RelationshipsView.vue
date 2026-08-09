@@ -1,15 +1,220 @@
 <script setup lang="ts">
-import { ref, watch } from "vue"; import { useAppStore } from "../stores/app.js"; import { errorMessage, type ApiRelationship } from "../types";
-const store=useAppStore(); const edges=ref<ApiRelationship[]>([]); const status=ref("准备加载关系网……");
-async function loadRelationships(){if(!store.currentWorldId)return;status.value="正在读取关系网……";try{const result=await store.api.getRelationships(store.currentWorldId);edges.value=result.data??[];status.value=`${edges.value.length} 条关系 · ${store.characters.length} 个角色`;}catch(e:unknown){status.value=errorMessage(e)}}
-function name(id:string){return store.characters.find(c=>c.id===id)?.displayName??id.slice(0,6)} function value(n:number){return `${Math.min(100,Math.max(0,n))}%`}
-watch(()=>store.currentWorldId,()=>void loadRelationships(),{immediate:true});
+import { ref, watch } from "vue";
+import Button from "../components/ui/Button.vue";
+import EmptyState from "../components/ui/EmptyState.vue";
+import PageHeader from "../components/layout/PageHeader.vue";
+import { useAppStore } from "../stores/app.js";
+import { errorMessage, type ApiRelationship } from "../types";
+const store = useAppStore();
+const edges = ref<ApiRelationship[]>([]);
+const status = ref("准备加载关系网……");
+async function loadRelationships() {
+  if (!store.currentWorldId) return;
+  status.value = "正在读取关系网……";
+  try {
+    const result = await store.api.getRelationships(store.currentWorldId);
+    edges.value = result.data ?? [];
+    status.value = `${edges.value.length} 条关系 · ${store.characters.length} 个角色`;
+  } catch (e: unknown) {
+    status.value = errorMessage(e);
+  }
+}
+function name(id: string) {
+  return (
+    store.characters.find((c) => c.id === id)?.displayName ?? id.slice(0, 6)
+  );
+}
+function value(n: number) {
+  return `${Math.min(100, Math.max(0, n))}%`;
+}
+watch(
+  () => store.currentWorldId,
+  () => void loadRelationships(),
+  { immediate: true },
+);
 </script>
 <template>
- <section class="bond-page"><header class="page-header"><div><p>人物档案</p><h1>关系与羁绊</h1><span>每一段关系，都会在故事里留下痕迹。</span></div><div class="header-right"><small id="relationships-status">{{status}}</small><button @click="loadRelationships">刷新</button></div></header>
- <div v-if="edges.length" class="bond-grid"><article v-for="edge in edges" :key="edge.id" class="bond-card"><div class="people"><div><span class="portrait">{{name(edge.sourceCharacterId).slice(0,1)}}</span><strong>{{name(edge.sourceCharacterId)}}</strong></div><span class="link">{{edge.isBidirectional?'↔':'→'}}</span><div><span class="portrait warm">{{name(edge.targetCharacterId).slice(0,1)}}</span><strong>{{name(edge.targetCharacterId)}}</strong></div></div><div class="bond-tag">{{edge.relationshipType}}</div><div class="metrics"><div><label>好感 <b>{{edge.initialState.affinity}}</b></label><i><em class="affinity" :style="{width:value(edge.initialState.affinity)}"></em></i></div><div><label>信任 <b>{{edge.initialState.trust}}</b></label><i><em class="trust" :style="{width:value(edge.initialState.trust)}"></em></i></div><div><label>冲突 <b>{{edge.initialState.conflict}}</b></label><i><em class="conflict" :style="{width:value(edge.initialState.conflict)}"></em></i></div><div><label>依赖 <b>{{edge.initialState.dependency}}</b></label><i><em class="dependency" :style="{width:value(edge.initialState.dependency)}"></em></i></div></div><footer>{{edge.isPublic?'公开关系':'私密关系'}}<span>{{edge.isBidirectional?'双向互动':'单向牵绊'}}</span></footer></article></div>
- <div v-else class="empty-state"><span>♡</span><strong>暂时还没有建立羁绊</strong><p>创建角色之间的关系后，会在这里展示。</p></div></section>
+  <section class="page">
+    <PageHeader
+      eyebrow="人物档案"
+      title="关系与羁绊"
+      description="每一段关系，都会在故事里留下痕迹。"
+      :status="status"
+    >
+      <template #actions>
+        <Button @click="loadRelationships">刷新</Button>
+      </template>
+    </PageHeader>
+    <div v-if="edges.length" class="page-grid">
+      <article v-for="edge in edges" :key="edge.id" class="bond-card">
+        <div class="people">
+          <div>
+            <span class="portrait">{{
+              name(edge.sourceCharacterId).slice(0, 1)
+            }}</span
+            ><strong>{{ name(edge.sourceCharacterId) }}</strong>
+          </div>
+          <span class="link">{{ edge.isBidirectional ? "↔" : "→" }}</span>
+          <div>
+            <span class="portrait warm">{{
+              name(edge.targetCharacterId).slice(0, 1)
+            }}</span
+            ><strong>{{ name(edge.targetCharacterId) }}</strong>
+          </div>
+        </div>
+        <div class="bond-tag">{{ edge.relationshipType }}</div>
+        <div class="metrics">
+          <div>
+            <label
+              >好感 <b>{{ edge.initialState.affinity }}</b></label
+            ><i
+              ><em
+                class="affinity"
+                :style="{ width: value(edge.initialState.affinity) }"
+              ></em
+            ></i>
+          </div>
+          <div>
+            <label
+              >信任 <b>{{ edge.initialState.trust }}</b></label
+            ><i
+              ><em
+                class="trust"
+                :style="{ width: value(edge.initialState.trust) }"
+              ></em
+            ></i>
+          </div>
+          <div>
+            <label
+              >冲突 <b>{{ edge.initialState.conflict }}</b></label
+            ><i
+              ><em
+                class="conflict"
+                :style="{ width: value(edge.initialState.conflict) }"
+              ></em
+            ></i>
+          </div>
+          <div>
+            <label
+              >依赖 <b>{{ edge.initialState.dependency }}</b></label
+            ><i
+              ><em
+                class="dependency"
+                :style="{ width: value(edge.initialState.dependency) }"
+              ></em
+            ></i>
+          </div>
+        </div>
+        <footer>
+          {{ edge.isPublic ? "公开关系" : "私密关系"
+          }}<span>{{ edge.isBidirectional ? "双向互动" : "单向牵绊" }}</span>
+        </footer>
+      </article>
+    </div>
+    <EmptyState
+      title="暂时还没有建立羁绊"
+      description="创建角色之间的关系后，会在这里展示。"
+      ><template #icon>♡</template></EmptyState
+    >
+  </section>
 </template>
 <style scoped>
-.bond-page{position:relative;z-index:1;height:100%;overflow:auto;padding:38px 54px;color:#4d433d}.page-header{max-width:1160px;margin:0 auto 27px;display:flex;justify-content:space-between;align-items:end}.page-header p{margin:0 0 6px;color:#b36d57;font-size:11px;font-weight:700;letter-spacing:.16em}.page-header h1{margin:0;color:#463b34;font-size:26px}.page-header span{display:block;margin-top:9px;color:#a29891;font-size:13px}.header-right{display:flex;align-items:center;gap:13px}.header-right small{color:#a79b94;font-size:11px}.header-right button{border:0;border-radius:999px;padding:10px 17px;background:#b96049;color:#fff;font-size:12px;cursor:pointer}.bond-grid{max-width:1160px;margin:auto;display:grid;grid-template-columns:repeat(3,1fr);gap:18px}.bond-card{padding:20px;background:#fffdfa;border:1px solid #eee2da;border-radius:18px;box-shadow:0 10px 28px rgba(119,82,60,.06)}.people{display:flex;align-items:center;justify-content:space-between}.people>div{display:grid;justify-items:center;gap:7px;min-width:72px}.people strong{font-size:12px}.portrait{display:grid;place-items:center;width:43px;height:43px;border-radius:50%;background:#f1d9cd;color:#9a523f;font-size:16px;font-weight:700}.portrait.warm{background:#f5cbb8}.link{color:#c28a76;font-size:20px}.bond-tag{display:table;margin:18px auto 15px;padding:5px 11px;border-radius:999px;background:#fbefe9;color:#a55e49;font-size:11px;font-weight:700}.metrics{display:grid;gap:10px;padding:14px;border-radius:13px;background:#fbf7f3}.metrics label{display:flex;justify-content:space-between;margin-bottom:5px;color:#8b7d75;font-size:10px}.metrics b{color:#5c4e46}.metrics i{display:block;height:5px;overflow:hidden;border-radius:99px;background:#eee5df}.metrics em{display:block;height:100%;border-radius:99px}.affinity{background:#d97d65}.trust{background:#a990c5}.conflict{background:#d9a26e}.dependency{background:#82b2b1}.bond-card footer{display:flex;justify-content:space-between;margin-top:15px;color:#aa9c94;font-size:10px}.empty-state{max-width:1160px;height:330px;margin:auto;display:flex;flex-direction:column;align-items:center;justify-content:center;border:1px dashed #e5d7cd;border-radius:20px;background:rgba(255,253,250,.56);color:#9b8f87}.empty-state span{font-size:30px;color:#d7967e}.empty-state strong{margin-top:12px;font-size:14px;color:#665951}.empty-state p{margin:6px 0 0;font-size:12px}@media(max-width:1100px){.bond-grid{grid-template-columns:repeat(2,1fr)}.bond-page{padding:30px}}
+.bond-card {
+  min-width: 0;
+  padding: var(--space-5);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+.people {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.people > div {
+  display: grid;
+  justify-items: center;
+  gap: 7px;
+  min-width: 72px;
+}
+.people strong {
+  font-size: var(--text-sm);
+}
+.portrait {
+  display: grid;
+  place-items: center;
+  width: 43px;
+  height: 43px;
+  border-radius: var(--radius-full);
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: var(--text-lg);
+  font-weight: 700;
+}
+.portrait.warm {
+  background: var(--primary-faint);
+}
+.link {
+  color: var(--primary);
+  font-size: 20px;
+}
+.bond-tag {
+  display: table;
+  margin: var(--space-4) auto var(--space-4);
+  padding: 5px 11px;
+  border-radius: var(--radius-full);
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: var(--text-xs);
+  font-weight: 700;
+}
+.metrics {
+  display: grid;
+  gap: 10px;
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+}
+.metrics label {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+.metrics b {
+  color: var(--text);
+}
+.metrics i {
+  display: block;
+  height: 5px;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  background: var(--surface-muted);
+}
+.metrics em {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-full);
+}
+.affinity {
+  background: #d97d65;
+}
+.trust {
+  background: #a990c5;
+}
+.conflict {
+  background: #d9a26e;
+}
+.dependency {
+  background: #82b2b1;
+}
+.bond-card footer {
+  display: flex;
+  justify-content: space-between;
+  margin-top: var(--space-4);
+  color: var(--faint);
+  font-size: var(--text-xs);
+}
 </style>

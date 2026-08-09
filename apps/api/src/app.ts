@@ -2,8 +2,19 @@ import {
   createMomentInteraction as createMomentInteractionDomain,
   createConversation as createConversationDomain,
   createMessage as createMessageDomain,
+  createAppearanceSettings as createAppearanceSettingsDomain,
+  createDefaultAppearanceSettings,
+  createLlmProviderProfile as createLlmProviderProfileDomain,
+  createComfyUiSettings as createComfyUiSettingsDomain,
+  createWorldLoreEntry as createWorldLoreEntryDomain,
+  ChatBackgroundKind,
+  LlmProviderProtocol,
+  DEFAULT_APPEARANCE_OWNER_KEY,
   switchActorCharacter as applyActorCharacterSwitch,
   type ActorSession,
+  type AppearanceSettings,
+  type ComfyUiSettings,
+  type LlmProviderProfile,
   type Character,
   type ConversationAggregate,
   type Message,
@@ -12,6 +23,7 @@ import {
   type RelationshipEdge,
   type ScheduledOccurrence,
   type WorldEventDefinition,
+  type WorldLoreEntry,
   isMomentVisibleTo,
   cloneJsonObject,
   createSticker as createStickerDomain,
@@ -19,7 +31,13 @@ import {
   createImageWorkflowTemplate,
   createRelationshipEdge as createRelationshipEdgeDomain,
   createWorldEventDefinition as createWorldEventDefinitionDomain,
+  createScheduledOccurrence,
+  createEventExecution,
+  createBehaviorAction,
+  createImageJob,
+  ActionKind,
   EventRecurrenceKind,
+  ScheduledOccurrenceStatus,
   TriggerSource,
   createStoryWorld as createStoryWorldDomain,
   createCharacter as createCharacterDomain,
@@ -29,6 +47,7 @@ import {
 } from "../../../packages/domain/src/index.ts";
 import {
   ProviderError,
+  SecretCipher,
   type ChatDelta,
   type ChatProvider,
 } from "../../../packages/ai/src/index.ts";
@@ -42,6 +61,7 @@ import type {
   MessageDto,
   SendMessageRequest,
   SendMessageResultDto,
+  RequestConversationImageRequest,
   StoryWorldDto,
   CreateMomentInteractionRequest,
   MomentDto,
@@ -60,6 +80,16 @@ import type {
   WorldEventDefinitionDto,
   ValidateImageWorkflowRequest,
   ValidateImageWorkflowResultDto,
+  AppearanceSettingsDto,
+  ChatBackgroundSettingsDto,
+  UpdateAppearanceSettingsRequest,
+  LlmProviderProfileDto,
+  SaveLlmProviderProfileRequest,
+  ComfyUiSettingsDto,
+  UpdateComfyUiSettingsRequest,
+  WorldLoreEntryDto,
+  CreateWorldLoreEntryRequest,
+  UpdateWorldLoreEntryRequest,
   CreateStoryWorldRequest,
   UpdateStoryWorldRequest,
   CreateCharacterRequest,
@@ -76,7 +106,8 @@ import {
   type InMemoryRepositorySeed,
 } from "../../../packages/database/src/index.ts";
 import { ConversationOrchestrator } from "./conversation-orchestrator.ts";
-import type { ConversationOrchestratorOptions } from "./conversation-orchestrator.ts";
+import type { ConversationOrchestratorOptions, ConversationReplyContext } from "./conversation-orchestrator.ts";
+import { promptForExplicitChatImageIntent } from "./auto-image-intent.ts";
 
 export type ApiSeed = InMemoryRepositorySeed;
 
@@ -130,6 +161,8 @@ function toWorldEventDefinitionDto(definition: WorldEventDefinition): WorldEvent
     ...definition,
     recurrence: { ...definition.recurrence },
     targetCharacterIds: [...definition.targetCharacterIds],
+    recipientCharacterIds: [...definition.recipientCharacterIds],
+    outputs: { ...definition.outputs },
   };
 }
 
@@ -207,10 +240,56 @@ function toStickerDto(
 }
 
 function toStickerPackImportResult(
-  pack: import("../../../packages/domain/src/index.ts").StickerPack,
-  stickers: readonly import("../../../packages/domain/src/index.ts").Sticker[],
+pack: import("../../../packages/domain/src/index.ts").StickerPack,
+stickers: readonly import("../../../packages/domain/src/index.ts").Sticker[],
 ): StickerPackImportResultDto {
-  return { pack: toStickerPackDto(pack), stickers: stickers.map(toStickerDto) };
+return { pack: toStickerPackDto(pack), stickers: stickers.map(toStickerDto) };
+}
+
+function toAppearanceSettingsDto(settings: AppearanceSettings): AppearanceSettingsDto {
+return { ...settings, chatBackground: { ...settings.chatBackground } };
+}
+
+function toWorldLoreEntryDto(entry: WorldLoreEntry): WorldLoreEntryDto {
+  return { ...entry, tags: [...entry.tags] };
+}
+
+const SECRET_MASK = "********";
+
+function toLlmProviderProfileDto(
+  profile: LlmProviderProfile,
+  source: LlmProviderProfileDto["source"] = "database",
+): LlmProviderProfileDto {
+  const hasApiKey = profile.encryptedApiKey !== undefined && profile.encryptionIv !== undefined;
+  return {
+    id: profile.id,
+    name: profile.name,
+    protocol: profile.protocol,
+    baseUrl: profile.baseUrl,
+    model: profile.model,
+    timeoutMs: profile.timeoutMs,
+    maxTokens: profile.maxTokens,
+    temperature: profile.temperature,
+    isActive: profile.isActive,
+    hasApiKey,
+    ...(hasApiKey ? { apiKeyMask: SECRET_MASK } : {}),
+    source,
+    createdAt: profile.createdAt,
+    updatedAt: profile.updatedAt,
+  };
+}
+
+function toComfyUiSettingsDto(settings: ComfyUiSettings): ComfyUiSettingsDto {
+  return {
+    id: "default",
+    baseUrl: settings.baseUrl,
+    timeoutMs: settings.timeoutMs,
+    ...(settings.defaultWorkflowVersion === undefined
+      ? {}
+      : { defaultWorkflowVersion: settings.defaultWorkflowVersion }),
+    autoImageIntentEnabled: settings.autoImageIntentEnabled,
+    updatedAt: settings.updatedAt,
+  };
 }
 
 type ChatStore = ApiStore & {
@@ -263,10 +342,54 @@ type StickerStore = ApiStore & {
 };
 
 function requireStickerStore(store: ApiStore): StickerStore {
-  if (!store.stickerPacks || !store.stickers) {
-    throw new ApiError(501, "NOT_IMPLEMENTED", "Sticker repositories are not configured");
+if (!store.stickerPacks || !store.stickers) {
+throw new ApiError(501, "NOT_IMPLEMENTED", "Sticker repositories are not configured");
+}
+return store as StickerStore;
+}
+
+type AppearanceStore = ApiStore & {
+appearanceSettings: NonNullable<ApiStore["appearanceSettings"]>;
+};
+
+function requireAppearanceStore(store: ApiStore): AppearanceStore {
+if (!store.appearanceSettings) {
+throw new ApiError(501, "NOT_IMPLEMENTED", "Appearance repository is not configured");
+}
+return store as AppearanceStore;
+}
+
+type WorldLoreStore = ApiStore & {
+  worldLoreEntries: NonNullable<ApiStore["worldLoreEntries"]>;
+};
+
+function requireWorldLoreStore(store: ApiStore): WorldLoreStore {
+  if (!store.worldLoreEntries) {
+    throw new ApiError(501, "NOT_IMPLEMENTED", "World lore repository is not configured");
   }
-  return store as StickerStore;
+  return store as WorldLoreStore;
+}
+
+type LlmProviderProfileStore = ApiStore & {
+  llmProviderProfiles: NonNullable<ApiStore["llmProviderProfiles"]>;
+};
+
+function requireLlmProviderProfileStore(store: ApiStore): LlmProviderProfileStore {
+  if (!store.llmProviderProfiles) {
+    throw new ApiError(501, "NOT_IMPLEMENTED", "LLM provider profile repository is not configured");
+  }
+  return store as LlmProviderProfileStore;
+}
+
+type ComfyUiSettingsStore = ApiStore & {
+  comfyUiSettings: NonNullable<ApiStore["comfyUiSettings"]>;
+};
+
+function requireComfyUiSettingsStore(store: ApiStore): ComfyUiSettingsStore {
+  if (!store.comfyUiSettings) {
+    throw new ApiError(501, "NOT_IMPLEMENTED", "ComfyUI settings repository is not configured");
+  }
+  return store as ComfyUiSettingsStore;
 }
 
 type EventCalendarStore = ApiStore & {
@@ -364,10 +487,130 @@ function parseCreateStickerPackRequest(value: unknown): CreateStickerPackRequest
 }
 
 function assertAllowedBodyKeys(value: Record<string, unknown>, keys: readonly string[]): void {
-  const allowed = new Set(keys);
-  if (Object.keys(value).some((key) => !allowed.has(key))) {
-    throw new ApiError(400, "BAD_REQUEST", "Request body contains unknown fields");
+const allowed = new Set(keys);
+if (Object.keys(value).some((key) => !allowed.has(key))) {
+throw new ApiError(400, "BAD_REQUEST", "Request body contains unknown fields");
+}
+}
+
+function bodyNumber(value: unknown, field: string): number {
+if (typeof value !== "number" || Number.isNaN(value)) {
+throw new ApiError(400, "BAD_REQUEST", `${field} must be a number`);
+}
+return value;
+}
+
+function parseChatBackgroundSettings(value: unknown): ChatBackgroundSettingsDto {
+if (!isRecord(value)) {
+throw new ApiError(400, "BAD_REQUEST", "chatBackground must be an object");
+}
+assertAllowedBodyKeys(value, ["kind", "imageRef", "opacity", "blur"]);
+const kind = bodyString(value.kind, "chatBackground.kind");
+if (kind !== ChatBackgroundKind.THEME && kind !== ChatBackgroundKind.CUSTOM) {
+throw new ApiError(400, "BAD_REQUEST", "chatBackground.kind must be theme or custom");
+}
+const background: ChatBackgroundSettingsDto = {
+kind,
+opacity: bodyNumber(value.opacity, "chatBackground.opacity"),
+blur: bodyNumber(value.blur, "chatBackground.blur"),
+};
+if (value.imageRef !== undefined) {
+background.imageRef = bodyString(value.imageRef, "chatBackground.imageRef");
+}
+return background;
+}
+
+function parseUpdateAppearanceSettingsRequest(value: unknown): UpdateAppearanceSettingsRequest {
+if (!isRecord(value)) throw new ApiError(400, "BAD_REQUEST", "Request body must be an object");
+assertAllowedBodyKeys(value, ["themeId", "chatBackground"]);
+return {
+themeId: bodyString(value.themeId, "themeId"),
+chatBackground: parseChatBackgroundSettings(value.chatBackground),
+};
+}
+
+type ConversationImageStore = ChatStore & EventCalendarStore & ImageJobStore & {
+  eventExecutions: NonNullable<ApiStore["eventExecutions"]>;
+  behaviorActions: NonNullable<ApiStore["behaviorActions"]>;
+};
+
+function requireConversationImageStore(store: ApiStore): ConversationImageStore {
+  if (!store.eventExecutions || !store.behaviorActions) {
+    throw new ApiError(501, "NOT_IMPLEMENTED", "Image request repositories are not configured");
   }
+  requireEventCalendarStore(store);
+  requireImageJobStore(store);
+  requireChatStore(store);
+  return store as ConversationImageStore;
+}
+
+function optionalBodyNumber(value: unknown, field: string): number | undefined {
+  return value === undefined ? undefined : bodyNumber(value, field);
+}
+
+function optionalBodyBoolean(value: unknown, field: string): boolean | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "boolean") {
+    throw new ApiError(400, "BAD_REQUEST", `${field} must be a boolean`);
+  }
+  return value;
+}
+
+function parseSaveLlmProviderProfileRequest(value: unknown): SaveLlmProviderProfileRequest {
+  if (!isRecord(value)) throw new ApiError(400, "BAD_REQUEST", "Request body must be an object");
+  assertAllowedBodyKeys(value, [
+    "id", "name", "protocol", "baseUrl", "model", "timeoutMs", "maxTokens",
+    "temperature", "apiKey", "isActive",
+  ]);
+  if (
+    value.protocol !== LlmProviderProtocol.OPENAI_COMPATIBLE &&
+    value.protocol !== LlmProviderProtocol.ANTHROPIC
+  ) {
+    throw new ApiError(400, "BAD_REQUEST", "protocol must be OPENAI_COMPATIBLE or ANTHROPIC");
+  }
+  const result: SaveLlmProviderProfileRequest = {
+    id: bodyString(value.id, "id"),
+    name: bodyString(value.name, "name"),
+    protocol: value.protocol,
+    baseUrl: bodyString(value.baseUrl, "baseUrl"),
+    model: bodyString(value.model, "model"),
+  };
+  const timeoutMs = optionalBodyNumber(value.timeoutMs, "timeoutMs");
+  const maxTokens = optionalBodyNumber(value.maxTokens, "maxTokens");
+  const temperature = optionalBodyNumber(value.temperature, "temperature");
+  const isActive = optionalBodyBoolean(value.isActive, "isActive");
+  if (timeoutMs !== undefined) result.timeoutMs = timeoutMs;
+  if (maxTokens !== undefined) result.maxTokens = maxTokens;
+  if (temperature !== undefined) result.temperature = temperature;
+  if (isActive !== undefined) result.isActive = isActive;
+  if (value.apiKey !== undefined) result.apiKey = bodyString(value.apiKey, "apiKey");
+  return result;
+}
+
+function parseUpdateComfyUiSettingsRequest(value: unknown): UpdateComfyUiSettingsRequest {
+  if (!isRecord(value)) throw new ApiError(400, "BAD_REQUEST", "Request body must be an object");
+  assertAllowedBodyKeys(value, [
+    "baseUrl", "timeoutMs", "defaultWorkflowVersion", "autoImageIntentEnabled",
+  ]);
+  const result: UpdateComfyUiSettingsRequest = {
+    baseUrl: bodyString(value.baseUrl, "baseUrl"),
+  };
+  const timeoutMs = optionalBodyNumber(value.timeoutMs, "timeoutMs");
+  const autoImageIntentEnabled = optionalBodyBoolean(
+    value.autoImageIntentEnabled,
+    "autoImageIntentEnabled",
+  );
+  if (timeoutMs !== undefined) result.timeoutMs = timeoutMs;
+  if (autoImageIntentEnabled !== undefined) {
+    result.autoImageIntentEnabled = autoImageIntentEnabled;
+  }
+  if (value.defaultWorkflowVersion !== undefined) {
+    result.defaultWorkflowVersion = bodyString(
+      value.defaultWorkflowVersion,
+      "defaultWorkflowVersion",
+    );
+  }
+  return result;
 }
 
 function bodyStringArray(value: unknown, field: string): string[] {
@@ -542,9 +785,76 @@ function parseUpdateStoryWorldRequest(value: unknown): UpdateStoryWorldRequest {
   return result;
 }
 
+function parseRequestConversationImageRequest(value: unknown): RequestConversationImageRequest {
+  if (!isRecord(value)) {
+    throw new ApiError(400, "BAD_REQUEST", "Request body must be an object");
+  }
+  assertAllowedBodyKeys(value, [
+    "actorCharacterId", "recipientCharacterId", "prompt", "workflowVersion",
+    "negativePrompt", "seed", "createdAt", "idempotencyKey",
+  ]);
+  const result: RequestConversationImageRequest = {
+    actorCharacterId: bodyString(value.actorCharacterId, "actorCharacterId"),
+    recipientCharacterId: bodyString(value.recipientCharacterId, "recipientCharacterId"),
+    prompt: bodyString(value.prompt, "prompt"),
+    workflowVersion: bodyString(value.workflowVersion, "workflowVersion"),
+    createdAt: bodyString(value.createdAt, "createdAt"),
+    idempotencyKey: bodyString(value.idempotencyKey, "idempotencyKey"),
+  };
+  if (value.negativePrompt !== undefined) {
+    result.negativePrompt = bodyString(value.negativePrompt, "negativePrompt");
+  }
+  if (value.seed !== undefined) {
+    const seed = bodyNumber(value.seed, "seed");
+    if (!Number.isSafeInteger(seed) || seed < 0) {
+      throw new ApiError(400, "BAD_REQUEST", "seed must be a non-negative integer");
+    }
+    result.seed = seed;
+  }
+  return result;
+}
+
+function parseWorldLoreTags(value: unknown, field = "tags"): string[] {
+  if (!Array.isArray(value)) throw new ApiError(400, "BAD_REQUEST", `${field} must be an array`);
+  return value.map((tag, index) => bodyString(tag, `${field}[${index}]`));
+}
+
+function parseCreateWorldLoreEntryRequest(value: unknown): CreateWorldLoreEntryRequest {
+  if (!isRecord(value)) throw new ApiError(400, "BAD_REQUEST", "Request body must be an object");
+  assertAllowedBodyKeys(value, ["id", "storyWorldId", "category", "title", "content", "tags", "isEnabled"]);
+  const result: CreateWorldLoreEntryRequest = {
+    id: bodyString(value.id, "id"),
+    storyWorldId: bodyString(value.storyWorldId, "storyWorldId"),
+    category: bodyString(value.category, "category"),
+    title: bodyString(value.title, "title"),
+    content: bodyString(value.content, "content"),
+  };
+  if (value.tags !== undefined) result.tags = parseWorldLoreTags(value.tags);
+  if (value.isEnabled !== undefined) {
+    if (typeof value.isEnabled !== "boolean") throw new ApiError(400, "BAD_REQUEST", "isEnabled must be a boolean");
+    result.isEnabled = value.isEnabled;
+  }
+  return result;
+}
+
+function parseUpdateWorldLoreEntryRequest(value: unknown): UpdateWorldLoreEntryRequest {
+  if (!isRecord(value)) throw new ApiError(400, "BAD_REQUEST", "Request body must be an object");
+  assertAllowedBodyKeys(value, ["category", "title", "content", "tags", "isEnabled"]);
+  const result: UpdateWorldLoreEntryRequest = {};
+  if (value.category !== undefined) result.category = bodyString(value.category, "category");
+  if (value.title !== undefined) result.title = bodyString(value.title, "title");
+  if (value.content !== undefined) result.content = bodyString(value.content, "content");
+  if (value.tags !== undefined) result.tags = parseWorldLoreTags(value.tags);
+  if (value.isEnabled !== undefined) {
+    if (typeof value.isEnabled !== "boolean") throw new ApiError(400, "BAD_REQUEST", "isEnabled must be a boolean");
+    result.isEnabled = value.isEnabled;
+  }
+  return result;
+}
+
 function parseCreateCharacterRequest(value: unknown): CreateCharacterRequest {
   if (!isRecord(value)) throw new ApiError(400, 'BAD_REQUEST', 'Request body must be an object');
-  assertAllowedBodyKeys(value, ['id', 'displayName', 'role', 'storyWorldId', 'timezone', 'birthDate', 'personaPromptRef', 'visualPromptRef']);
+  assertAllowedBodyKeys(value, ['id', 'displayName', 'role', 'storyWorldId', 'timezone', 'birthDate', 'personaPrompt', 'personaPromptRef', 'visualPromptRef']);
   if (value.role !== 'AI' && value.role !== 'USER') {
     throw new ApiError(400, 'BAD_REQUEST', 'role must be AI or USER');
   }
@@ -556,6 +866,7 @@ function parseCreateCharacterRequest(value: unknown): CreateCharacterRequest {
     timezone: bodyString(value.timezone, 'timezone'),
   };
   if (value.birthDate !== undefined) result.birthDate = bodyString(value.birthDate, 'birthDate');
+  if (value.personaPrompt !== undefined) result.personaPrompt = bodyString(value.personaPrompt, 'personaPrompt');
   if (value.personaPromptRef !== undefined) result.personaPromptRef = bodyString(value.personaPromptRef, 'personaPromptRef');
   if (value.visualPromptRef !== undefined) result.visualPromptRef = bodyString(value.visualPromptRef, 'visualPromptRef');
   return result;
@@ -563,11 +874,12 @@ function parseCreateCharacterRequest(value: unknown): CreateCharacterRequest {
 
 function parseUpdateCharacterRequest(value: unknown): UpdateCharacterRequest {
   if (!isRecord(value)) throw new ApiError(400, 'BAD_REQUEST', 'Request body must be an object');
-  assertAllowedBodyKeys(value, ['displayName', 'timezone', 'birthDate', 'personaPromptRef', 'visualPromptRef']);
+  assertAllowedBodyKeys(value, ['displayName', 'timezone', 'birthDate', 'personaPrompt', 'personaPromptRef', 'visualPromptRef']);
   const result: UpdateCharacterRequest = {};
   if (value.displayName !== undefined) result.displayName = bodyString(value.displayName, 'displayName');
   if (value.timezone !== undefined) result.timezone = bodyString(value.timezone, 'timezone');
   if (value.birthDate !== undefined) result.birthDate = bodyString(value.birthDate, 'birthDate');
+  if (value.personaPrompt !== undefined) result.personaPrompt = bodyString(value.personaPrompt, 'personaPrompt');
   if (value.personaPromptRef !== undefined) result.personaPromptRef = bodyString(value.personaPromptRef, 'personaPromptRef');
   if (value.visualPromptRef !== undefined) result.visualPromptRef = bodyString(value.visualPromptRef, 'visualPromptRef');
   return result;
@@ -654,6 +966,19 @@ function parseTargetCharacterIds(value: unknown): string[] {
   return value.map((item, index) => bodyString(item, `targetCharacterIds[${index}]`));
 }
 
+function parseEventOutputs(value: unknown): NonNullable<CreateWorldEventDefinitionRequest["outputs"]> {
+  if (!isRecord(value)) throw new ApiError(400, "BAD_REQUEST", "outputs must be an object");
+  assertAllowedBodyKeys(value, ["sendMessage", "publishMoment", "generateImage"]);
+  const result: NonNullable<CreateWorldEventDefinitionRequest["outputs"]> = {};
+  for (const key of ["sendMessage", "publishMoment", "generateImage"] as const) {
+    if (value[key] !== undefined) {
+      if (typeof value[key] !== "boolean") throw new ApiError(400, "BAD_REQUEST", `outputs.${key} must be a boolean`);
+      result[key] = value[key];
+    }
+  }
+  return result;
+}
+
 function parseTriggerSource(value: unknown): CreateWorldEventDefinitionRequest["triggerSource"] {
   if (typeof value !== "string" || !Object.values(TriggerSource).includes(value as TriggerSource)) {
     throw new ApiError(400, "BAD_REQUEST", "triggerSource is invalid");
@@ -672,7 +997,7 @@ function parseCreateWorldEventDefinitionRequest(value: unknown): CreateWorldEven
   if (!isRecord(value)) throw new ApiError(400, "BAD_REQUEST", "Request body must be an object");
   assertAllowedBodyKeys(value, [
     "id", "storyWorldId", "eventKey", "name", "triggerSource", "timezone", "recurrence",
-    "targetCharacterIds", "priority", "cooldownSeconds", "enabled", "createdAt",
+    "targetCharacterIds", "recipientCharacterIds", "outputs", "priority", "cooldownSeconds", "enabled", "createdAt",
   ]);
   const result: CreateWorldEventDefinitionRequest = {
     id: bodyString(value.id, "id"),
@@ -685,6 +1010,8 @@ function parseCreateWorldEventDefinitionRequest(value: unknown): CreateWorldEven
     createdAt: bodyString(value.createdAt, "createdAt"),
   };
   if (value.timezone !== undefined) result.timezone = bodyString(value.timezone, "timezone");
+  if (value.recipientCharacterIds !== undefined) result.recipientCharacterIds = parseTargetCharacterIds(value.recipientCharacterIds);
+  if (value.outputs !== undefined) result.outputs = parseEventOutputs(value.outputs);
   if (value.priority !== undefined) result.priority = parseOptionalNonNegativeInteger(value.priority, "priority");
   if (value.cooldownSeconds !== undefined) result.cooldownSeconds = parseOptionalNonNegativeInteger(value.cooldownSeconds, "cooldownSeconds");
   if (value.enabled !== undefined) {
@@ -697,7 +1024,7 @@ function parseCreateWorldEventDefinitionRequest(value: unknown): CreateWorldEven
 function parseUpdateWorldEventDefinitionRequest(value: unknown): UpdateWorldEventDefinitionRequest {
   if (!isRecord(value)) throw new ApiError(400, "BAD_REQUEST", "Request body must be an object");
   assertAllowedBodyKeys(value, [
-    "eventKey", "name", "triggerSource", "timezone", "recurrence", "targetCharacterIds",
+    "eventKey", "name", "triggerSource", "timezone", "recurrence", "targetCharacterIds", "recipientCharacterIds", "outputs",
     "priority", "cooldownSeconds", "enabled",
   ]);
   const result: UpdateWorldEventDefinitionRequest = {};
@@ -707,6 +1034,8 @@ function parseUpdateWorldEventDefinitionRequest(value: unknown): UpdateWorldEven
   if (value.timezone !== undefined) result.timezone = bodyString(value.timezone, "timezone");
   if (value.recurrence !== undefined) result.recurrence = parseEventRecurrence(value.recurrence);
   if (value.targetCharacterIds !== undefined) result.targetCharacterIds = parseTargetCharacterIds(value.targetCharacterIds);
+  if (value.recipientCharacterIds !== undefined) result.recipientCharacterIds = parseTargetCharacterIds(value.recipientCharacterIds);
+  if (value.outputs !== undefined) result.outputs = parseEventOutputs(value.outputs);
   if (value.priority !== undefined) result.priority = parseOptionalNonNegativeInteger(value.priority, "priority");
   if (value.cooldownSeconds !== undefined) result.cooldownSeconds = parseOptionalNonNegativeInteger(value.cooldownSeconds, "cooldownSeconds");
   if (value.enabled !== undefined) {
@@ -785,19 +1114,21 @@ export class ApiApplication {
   private readonly conversationOptions: ConversationOrchestratorOptions;
   private readonly requireTrustedActor: boolean;
   private readonly readiness: (() => Promise<void>) | undefined;
+  private readonly secretCipher: SecretCipher | undefined;
 
   public constructor(
     store: ApiStore,
     provider?: ChatProvider,
     conversationOptions: ConversationOrchestratorOptions = {},
     securityOptions: { requireTrustedActor?: boolean } = {},
-    operationalOptions: { readiness?: () => Promise<void> } = {},
+    operationalOptions: { readiness?: () => Promise<void>; secretCipher?: SecretCipher } = {},
   ) {
     this.store = store;
     this.provider = provider;
     this.conversationOptions = conversationOptions;
     this.requireTrustedActor = securityOptions.requireTrustedActor ?? false;
     this.readiness = operationalOptions.readiness;
+    this.secretCipher = operationalOptions.secretCipher;
   }
 
   private trustedActor(request: Request, requestedCharacterId?: string): string | undefined {
@@ -818,6 +1149,75 @@ export class ApiApplication {
   public async listCharacters(storyWorldId?: string): Promise<CharacterDto[]> {
     const characters = await this.store.characters.listByStoryWorld(storyWorldId);
     return characters.map(toCharacterDto);
+  }
+
+  public async listWorldLoreEntries(storyWorldId: string, query?: string): Promise<WorldLoreEntryDto[]> {
+    const store = requireWorldLoreStore(this.store);
+    if (!(await store.storyWorlds.getById(storyWorldId))) {
+      throw new ApiError(404, "NOT_FOUND", "Story world not found");
+    }
+    const entries = query === undefined
+      ? await store.worldLoreEntries.listByStoryWorld(storyWorldId)
+      : await store.worldLoreEntries.search(storyWorldId, query);
+    return entries.map(toWorldLoreEntryDto);
+  }
+
+  public async createWorldLoreEntry(input: CreateWorldLoreEntryRequest): Promise<WorldLoreEntryDto> {
+    const store = requireWorldLoreStore(this.store);
+    if (await store.worldLoreEntries.getById(input.id)) {
+      throw new ApiError(409, "CONFLICT", "World lore entry already exists");
+    }
+    if (!(await store.storyWorlds.getById(input.storyWorldId))) {
+      throw new ApiError(404, "NOT_FOUND", "Story world not found");
+    }
+    try {
+      const now = new Date().toISOString();
+      const entry = createWorldLoreEntryDomain({ ...input, createdAt: now, updatedAt: now });
+      await store.worldLoreEntries.save(entry);
+      return toWorldLoreEntryDto(entry);
+    } catch (error) {
+      if (error instanceof TypeError || error instanceof RangeError) {
+        throw new ApiError(400, "BAD_REQUEST", error.message);
+      }
+      throw error;
+    }
+  }
+
+  public async updateWorldLoreEntry(
+    id: string,
+    input: UpdateWorldLoreEntryRequest,
+  ): Promise<WorldLoreEntryDto> {
+    const store = requireWorldLoreStore(this.store);
+    const existing = await store.worldLoreEntries.getById(id);
+    if (!existing) throw new ApiError(404, "NOT_FOUND", "World lore entry not found");
+    try {
+      const entry = createWorldLoreEntryDomain({
+        id: existing.id,
+        storyWorldId: existing.storyWorldId,
+        category: input.category ?? existing.category,
+        title: input.title ?? existing.title,
+        content: input.content ?? existing.content,
+        tags: input.tags ?? existing.tags,
+        isEnabled: input.isEnabled ?? existing.isEnabled,
+        createdAt: existing.createdAt,
+        updatedAt: new Date().toISOString(),
+      });
+      await store.worldLoreEntries.save(entry);
+      return toWorldLoreEntryDto(entry);
+    } catch (error) {
+      if (error instanceof TypeError || error instanceof RangeError) {
+        throw new ApiError(400, "BAD_REQUEST", error.message);
+      }
+      throw error;
+    }
+  }
+
+  public async deleteWorldLoreEntry(id: string): Promise<void> {
+    const store = requireWorldLoreStore(this.store);
+    if (!(await store.worldLoreEntries.getById(id))) {
+      throw new ApiError(404, "NOT_FOUND", "World lore entry not found");
+    }
+    await store.worldLoreEntries.delete(id);
   }
 
 
@@ -889,6 +1289,7 @@ export class ApiApplication {
         storyWorldId: existing.storyWorldId,
         timezone: input.timezone ?? existing.timezone,
         ...(input.birthDate !== undefined ? { birthDate: input.birthDate } : existing.birthDate !== undefined ? { birthDate: existing.birthDate } : {}),
+        ...(input.personaPrompt !== undefined ? { personaPrompt: input.personaPrompt } : existing.personaPrompt !== undefined ? { personaPrompt: existing.personaPrompt } : {}),
         ...(input.personaPromptRef !== undefined ? { personaPromptRef: input.personaPromptRef } : existing.personaPromptRef !== undefined ? { personaPromptRef: existing.personaPromptRef } : {}),
         ...(input.visualPromptRef !== undefined ? { visualPromptRef: input.visualPromptRef } : existing.visualPromptRef !== undefined ? { visualPromptRef: existing.visualPromptRef } : {}),
       });
@@ -977,9 +1378,11 @@ export class ApiApplication {
     }
     const world = await store.storyWorlds.getById(input.storyWorldId);
     if (!world) throw new ApiError(404, "NOT_FOUND", "Story world not found");
-    const characters = await Promise.all(input.targetCharacterIds.map((id) => store.characters.getById(id)));
-    if (characters.some((character) => character === undefined)) {
-      throw new ApiError(404, "NOT_FOUND", "Event target character not found");
+    const targetCharacters = await Promise.all(input.targetCharacterIds.map((id) => store.characters.getById(id)));
+    const recipientIds = input.recipientCharacterIds ?? input.targetCharacterIds;
+    const recipientCharacters = await Promise.all(recipientIds.map((id) => store.characters.getById(id)));
+    if (targetCharacters.some((character) => character === undefined) || recipientCharacters.some((character) => character === undefined)) {
+      throw new ApiError(404, "NOT_FOUND", "Event target or recipient character not found");
     }
     try {
       const definition = createWorldEventDefinitionDomain({
@@ -990,7 +1393,9 @@ export class ApiApplication {
         triggerSource: input.triggerSource,
         ...(input.timezone === undefined ? {} : { timezone: input.timezone }),
         recurrence: input.recurrence,
-        targetCharacters: characters.filter((character): character is Character => character !== undefined),
+        targetCharacters: targetCharacters.filter((character): character is Character => character !== undefined),
+        recipientCharacters: recipientCharacters.filter((character): character is Character => character !== undefined),
+        ...(input.outputs === undefined ? {} : { outputs: input.outputs }),
         ...(input.priority === undefined ? {} : { priority: input.priority }),
         ...(input.cooldownSeconds === undefined ? {} : { cooldownSeconds: input.cooldownSeconds }),
         ...(input.enabled === undefined ? {} : { enabled: input.enabled }),
@@ -1009,9 +1414,11 @@ export class ApiApplication {
     const existing = await store.worldEventDefinitions.getById(id);
     if (!existing) throw new ApiError(404, "NOT_FOUND", "World event not found");
     const targetIds = input.targetCharacterIds ?? existing.targetCharacterIds;
-    const characters = await Promise.all(targetIds.map((characterId) => store.characters.getById(characterId)));
-    if (characters.some((character) => character === undefined)) {
-      throw new ApiError(404, "NOT_FOUND", "Event target character not found");
+    const recipientIds = input.recipientCharacterIds ?? existing.recipientCharacterIds;
+    const targetCharacters = await Promise.all(targetIds.map((characterId) => store.characters.getById(characterId)));
+    const recipientCharacters = await Promise.all(recipientIds.map((characterId) => store.characters.getById(characterId)));
+    if (targetCharacters.some((character) => character === undefined) || recipientCharacters.some((character) => character === undefined)) {
+      throw new ApiError(404, "NOT_FOUND", "Event target or recipient character not found");
     }
     const world = await store.storyWorlds.getById(existing.storyWorldId);
     if (!world) throw new ApiError(409, "CONFLICT", "World event references an unknown story world");
@@ -1024,7 +1431,9 @@ export class ApiApplication {
         triggerSource: input.triggerSource ?? existing.triggerSource,
         timezone: input.timezone ?? existing.timezone,
         recurrence: input.recurrence ?? existing.recurrence,
-        targetCharacters: characters.filter((character): character is Character => character !== undefined),
+        targetCharacters: targetCharacters.filter((character): character is Character => character !== undefined),
+        recipientCharacters: recipientCharacters.filter((character): character is Character => character !== undefined),
+        outputs: { ...existing.outputs, ...input.outputs },
         priority: input.priority ?? existing.priority,
         ...(input.cooldownSeconds === undefined
           ? existing.cooldownSeconds === undefined ? {} : { cooldownSeconds: existing.cooldownSeconds }
@@ -1130,6 +1539,182 @@ export class ApiApplication {
     return toImageJobDto(job);
   }
 
+  /**
+   * Records an explicit private-chat image request as a normal behavior action
+   * and image job.  The small, disabled event record provides the execution
+   * provenance required by the existing behavior/media persistence model; it
+   * is never scheduled as a world event.
+   */
+  public async requestConversationImage(
+    conversationId: string,
+    input: RequestConversationImageRequest,
+  ): Promise<ImageJobDto> {
+    const store = requireConversationImageStore(this.store);
+    const conversation = await store.conversations.getById(conversationId);
+    if (!conversation) throw new ApiError(404, "NOT_FOUND", "Conversation not found");
+    if (conversation.conversation.type !== "PRIVATE") {
+      throw new ApiError(400, "BAD_REQUEST", "Image requests are only supported in private conversations");
+    }
+    if (conversation.conversation.storyWorldId === "") {
+      throw new ApiError(400, "BAD_REQUEST", "Conversation story world is invalid");
+    }
+    const activeMembers = conversation.members.filter((member) => member.leftAt === undefined);
+    const memberIds = new Set(activeMembers.map((member) => member.characterId));
+    if (
+      activeMembers.length !== 2 ||
+      input.actorCharacterId === input.recipientCharacterId ||
+      !memberIds.has(input.actorCharacterId) ||
+      !memberIds.has(input.recipientCharacterId)
+    ) {
+      throw new ApiError(403, "FORBIDDEN", "Actor and recipient must be the two active private-conversation members");
+    }
+
+    const actor = await store.characters.getById(input.actorCharacterId);
+    const recipient = await store.characters.getById(input.recipientCharacterId);
+    const storyWorld = await store.storyWorlds.getById(conversation.conversation.storyWorldId);
+    if (!actor || !recipient || !storyWorld) {
+      throw new ApiError(404, "NOT_FOUND", "Conversation participants or story world not found");
+    }
+    if (actor.storyWorldId !== storyWorld.id || recipient.storyWorldId !== storyWorld.id) {
+      throw new ApiError(403, "FORBIDDEN", "Conversation participants must belong to its story world");
+    }
+
+    const requestKey = encodeURIComponent(input.idempotencyKey);
+    const prefix = `chat-image:${conversationId}:${requestKey}`;
+    const actionId = `${prefix}:action`;
+    const jobId = `${prefix}:job`;
+    const existing = await store.imageJobs.getByActionId(actionId);
+    if (existing) {
+      if (
+        existing.ownerCharacterId !== input.actorCharacterId ||
+        existing.workflowVersion !== input.workflowVersion ||
+        existing.prompt !== input.prompt
+      ) {
+        throw new ApiError(409, "CONFLICT", "Image request idempotency key was already used with different content");
+      }
+      return toImageJobDto(existing);
+    }
+    const conflictingJob = await store.imageJobs.getById(jobId);
+    if (conflictingJob) {
+      throw new ApiError(409, "CONFLICT", "Image request idempotency key conflicts with an existing job");
+    }
+
+    try {
+      const eventKey = `${prefix}:request`;
+      const definitionId = `${prefix}:definition`;
+      const occurrenceId = `${prefix}:occurrence`;
+      const executionId = `${prefix}:execution`;
+      let definition = await store.worldEventDefinitions.getById(definitionId);
+      if (!definition) {
+        definition = createWorldEventDefinitionDomain({
+          id: definitionId,
+          storyWorld,
+          eventKey,
+          name: "Private chat image request",
+          triggerSource: TriggerSource.USER_INTERACTION,
+          recurrence: { kind: EventRecurrenceKind.ONCE, runAt: input.createdAt },
+          targetCharacters: [actor],
+          recipientCharacters: [recipient],
+          outputs: { sendMessage: false, publishMoment: false, generateImage: true },
+          enabled: false,
+          createdAt: input.createdAt,
+        });
+        await store.worldEventDefinitions.save(definition);
+      }
+      let occurrence = await store.scheduledOccurrences.getById(occurrenceId);
+      if (!occurrence) {
+        occurrence = createScheduledOccurrence({
+          id: occurrenceId,
+          definition,
+          scheduledFor: input.createdAt,
+          occurrenceKey: occurrenceId,
+          status: ScheduledOccurrenceStatus.RUNNING,
+          createdAt: input.createdAt,
+        });
+        await store.scheduledOccurrences.save(occurrence);
+      }
+      let execution = await store.eventExecutions.getById(executionId);
+      if (!execution) {
+        execution = createEventExecution({
+          id: executionId,
+          occurrence,
+          definition,
+          ruleVersion: "chat-image-v1",
+          inputSnapshot: {
+            conversationId,
+            actorCharacterId: input.actorCharacterId,
+            recipientCharacterId: input.recipientCharacterId,
+            idempotencyKey: input.idempotencyKey,
+          },
+          startedAt: input.createdAt,
+        });
+        await store.eventExecutions.save(execution);
+      }
+      let action = await store.behaviorActions.getById(actionId);
+      if (!action) {
+        action = createBehaviorAction({
+          id: actionId,
+          execution,
+          actorCharacterId: input.actorCharacterId,
+          kind: ActionKind.REQUEST_IMAGE,
+          payload: {
+            conversationId,
+            recipientCharacterId: input.recipientCharacterId,
+            prompt: input.prompt,
+            workflowVersion: input.workflowVersion,
+            ...(input.negativePrompt === undefined ? {} : { negativePrompt: input.negativePrompt }),
+            ...(input.seed === undefined ? {} : { seed: input.seed }),
+          },
+          createdAt: input.createdAt,
+        });
+        await store.behaviorActions.save(action);
+      } else if (
+        action.actorCharacterId !== input.actorCharacterId ||
+        action.payload.conversationId !== conversationId ||
+        action.payload.recipientCharacterId !== input.recipientCharacterId ||
+        action.payload.prompt !== input.prompt ||
+        action.payload.workflowVersion !== input.workflowVersion
+      ) {
+        throw new ApiError(409, "CONFLICT", "Image request idempotency key was already used with different content");
+      }
+      const job = createImageJob({ id: jobId, action, createdAt: input.createdAt });
+      await store.imageJobs.save(job);
+      return toImageJobDto(job);
+    } catch (error) {
+      if (error instanceof ApiError) throw error;
+      if (error instanceof TypeError || error instanceof RangeError) {
+        throw new ApiError(400, "BAD_REQUEST", error.message);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Settings-gated, best-effort convenience layer over requestConversationImage.
+   * The worker remains solely responsible for talking to ComfyUI; this method
+   * only persists an idempotent request after an AI reply has been saved.
+   */
+  private async requestAutomaticConversationImage(context: ConversationReplyContext): Promise<void> {
+    if (!context.reply.inserted || context.conversation.conversation.type !== "PRIVATE") return;
+    const settings = this.store.comfyUiSettings === undefined
+      ? undefined
+      : await this.store.comfyUiSettings.get();
+    if (!settings?.autoImageIntentEnabled || !settings.defaultWorkflowVersion) return;
+    const userContent = context.latestUserMessage?.text;
+    const prompt = promptForExplicitChatImageIntent(userContent, context.reply.message.text ?? "");
+    if (!prompt) return;
+    const userId = context.latestUserMessage?.authorCharacterId;
+    if (!userId || userId === context.ai.id) return;
+    await this.requestConversationImage(context.conversation.conversation.id, {
+      actorCharacterId: context.ai.id,
+      recipientCharacterId: userId,
+      prompt,
+      workflowVersion: settings.defaultWorkflowVersion,
+      createdAt: context.reply.message.createdAt,
+      idempotencyKey: `auto-image:${context.reply.message.id}`,
+    });
+  }
+
   public async listStickerPacks(storyWorldId: string): Promise<StickerPackDto[]> {
     const store = requireStickerStore(this.store);
     if (!(await store.storyWorlds.getById(storyWorldId))) {
@@ -1166,13 +1751,127 @@ export class ApiApplication {
         ...(sticker.tags === undefined ? {} : { tags: sticker.tags }),
         createdAt: input.createdAt,
       }));
-      await store.stickerPacks.save(pack);
-      for (const sticker of stickers) await store.stickers.save(sticker);
-      return toStickerPackImportResult(pack, stickers);
+await store.stickerPacks.save(pack);
+for (const sticker of stickers) await store.stickers.save(sticker);
+return toStickerPackImportResult(pack, stickers);
+} catch (error) {
+if (error instanceof TypeError || error instanceof RangeError) {
+throw new ApiError(400, "BAD_REQUEST", error.message);
+}
+throw error;
+}
+}
+
+public async getAppearanceSettings(ownerKey: string): Promise<AppearanceSettingsDto> {
+const store = requireAppearanceStore(this.store);
+const existing = await store.appearanceSettings.getByOwnerKey(ownerKey);
+const settings = existing ?? createDefaultAppearanceSettings(ownerKey, new Date().toISOString());
+return toAppearanceSettingsDto(settings);
+}
+
+  public async saveAppearanceSettings(
+ownerKey: string,
+input: UpdateAppearanceSettingsRequest,
+): Promise<AppearanceSettingsDto> {
+const store = requireAppearanceStore(this.store);
+try {
+const existing = await store.appearanceSettings.getByOwnerKey(ownerKey);
+const settings = createAppearanceSettingsDomain({
+id: existing?.id ?? `appearance-${ownerKey}`,
+ownerKey,
+themeId: input.themeId,
+chatBackground: {
+kind: input.chatBackground.kind === ChatBackgroundKind.CUSTOM
+? ChatBackgroundKind.CUSTOM
+: ChatBackgroundKind.THEME,
+opacity: input.chatBackground.opacity,
+blur: input.chatBackground.blur,
+...(input.chatBackground.imageRef === undefined
+? {}
+: { imageRef: input.chatBackground.imageRef }),
+},
+updatedAt: new Date().toISOString(),
+});
+await store.appearanceSettings.save(settings);
+return toAppearanceSettingsDto(settings);
+} catch (error) {
+if (error instanceof TypeError || error instanceof RangeError) {
+throw new ApiError(400, "BAD_REQUEST", error.message);
+}
+throw error;
+}
+  }
+
+  public async listLlmProviderProfiles(): Promise<LlmProviderProfileDto[]> {
+    return (await requireLlmProviderProfileStore(this.store).llmProviderProfiles.list()).map((profile) => toLlmProviderProfileDto(profile));
+  }
+
+  public async saveLlmProviderProfile(input: SaveLlmProviderProfileRequest): Promise<LlmProviderProfileDto> {
+    const store = requireLlmProviderProfileStore(this.store);
+    const existing = await store.llmProviderProfiles.getById(input.id);
+    let encryptedApiKey = existing?.encryptedApiKey;
+    let encryptionIv = existing?.encryptionIv;
+    if (input.apiKey !== undefined) {
+      if (!this.secretCipher) throw new ApiError(503, "SERVICE_UNAVAILABLE", "API key encryption is not configured");
+      const encrypted = this.secretCipher.encrypt(input.apiKey);
+      encryptedApiKey = encrypted.ciphertext;
+      encryptionIv = encrypted.iv;
+    }
+    try {
+      const profile = createLlmProviderProfileDomain({
+        id: input.id, name: input.name, protocol: input.protocol, baseUrl: input.baseUrl, model: input.model,
+        ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }),
+        ...(input.maxTokens === undefined ? {} : { maxTokens: input.maxTokens }),
+        ...(input.temperature === undefined ? {} : { temperature: input.temperature }),
+        ...(encryptedApiKey === undefined ? {} : { encryptedApiKey }),
+        ...(encryptionIv === undefined ? {} : { encryptionIv }),
+        isActive: input.isActive ?? existing?.isActive ?? false,
+        createdAt: existing?.createdAt ?? new Date().toISOString(), updatedAt: new Date().toISOString(),
+      });
+      await store.llmProviderProfiles.save(profile);
+      return toLlmProviderProfileDto(profile);
     } catch (error) {
-      if (error instanceof TypeError || error instanceof RangeError) {
-        throw new ApiError(400, "BAD_REQUEST", error.message);
-      }
+      if (error instanceof TypeError || error instanceof RangeError) throw new ApiError(400, "BAD_REQUEST", error.message);
+      throw error;
+    }
+  }
+
+  public async deleteLlmProviderProfile(id: string): Promise<void> {
+    await requireLlmProviderProfileStore(this.store).llmProviderProfiles.delete(id);
+  }
+
+  public async getComfyUiSettings(): Promise<ComfyUiSettingsDto> {
+    const settings = await requireComfyUiSettingsStore(this.store).comfyUiSettings.get();
+    if (settings) return toComfyUiSettingsDto(settings);
+    return toComfyUiSettingsDto(createComfyUiSettingsDomain({
+      id: "default",
+      baseUrl: "http://127.0.0.1:8188",
+      autoImageIntentEnabled: false,
+      updatedAt: new Date().toISOString(),
+    }));
+  }
+
+  public async saveComfyUiSettings(input: UpdateComfyUiSettingsRequest): Promise<ComfyUiSettingsDto> {
+    const store = requireComfyUiSettingsStore(this.store);
+    try {
+      const existing = await store.comfyUiSettings.get();
+      const defaults = existing ?? createComfyUiSettingsDomain({
+        id: "default",
+        baseUrl: "http://127.0.0.1:8188",
+        autoImageIntentEnabled: false,
+        updatedAt: new Date().toISOString(),
+      });
+      const settings = createComfyUiSettingsDomain({ id: "default", baseUrl: input.baseUrl ?? defaults.baseUrl,
+        timeoutMs: input.timeoutMs ?? defaults.timeoutMs,
+        ...(input.defaultWorkflowVersion ?? defaults.defaultWorkflowVersion
+          ? { defaultWorkflowVersion: input.defaultWorkflowVersion ?? defaults.defaultWorkflowVersion }
+          : {}),
+        autoImageIntentEnabled: input.autoImageIntentEnabled ?? defaults.autoImageIntentEnabled,
+        updatedAt: new Date().toISOString() });
+      await store.comfyUiSettings.save(settings);
+      return toComfyUiSettingsDto(settings);
+    } catch (error) {
+      if (error instanceof TypeError || error instanceof RangeError) throw new ApiError(400, "BAD_REQUEST", error.message);
       throw error;
     }
   }
@@ -1319,7 +2018,10 @@ export class ApiApplication {
       const orchestrator = new ConversationOrchestrator(
         this.store,
         this.provider,
-        this.conversationOptions,
+        {
+          ...this.conversationOptions,
+          afterReplySaved: async (context) => this.requestAutomaticConversationImage(context),
+        },
       );
       return createSseResponse(orchestrator.streamReply(conversationId, characterId));
     } catch (error) {
@@ -1437,6 +2139,40 @@ export class ApiApplication {
         let body: unknown;
         try { body = await request.json(); } catch { throw new ApiError(400, 'BAD_REQUEST', 'Request body must be valid JSON'); }
         return jsonResponse({ data: await this.updateStoryWorld(worldId, parseUpdateStoryWorldRequest(body)) });
+      }
+
+      if (url.pathname === "/v1/world-lore") {
+        if (request.method === "GET") {
+          const storyWorldId = url.searchParams.get("storyWorldId");
+          if (!storyWorldId) throw new ApiError(400, "BAD_REQUEST", "storyWorldId is required");
+          const rawQuery = url.searchParams.get("q");
+          const query = rawQuery === null ? undefined : bodyString(rawQuery, "q");
+          return jsonResponse({ data: await this.listWorldLoreEntries(storyWorldId, query) });
+        }
+        if (request.method === "POST") {
+          this.trustedActor(request);
+          let body: unknown;
+          try { body = await request.json(); } catch { throw new ApiError(400, "BAD_REQUEST", "Request body must be valid JSON"); }
+          return jsonResponse({ data: await this.createWorldLoreEntry(parseCreateWorldLoreEntryRequest(body)) }, 201);
+        }
+        throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
+      }
+
+      const worldLorePath = /^\/v1\/world-lore\/([^/]+)$/.exec(url.pathname);
+      if (worldLorePath) {
+        const id = decodeURIComponent(worldLorePath[1] ?? "");
+        if (request.method === "PUT") {
+          this.trustedActor(request);
+          let body: unknown;
+          try { body = await request.json(); } catch { throw new ApiError(400, "BAD_REQUEST", "Request body must be valid JSON"); }
+          return jsonResponse({ data: await this.updateWorldLoreEntry(id, parseUpdateWorldLoreEntryRequest(body)) });
+        }
+        if (request.method === "DELETE") {
+          this.trustedActor(request);
+          await this.deleteWorldLoreEntry(id);
+          return new Response(null, { status: 204 });
+        }
+        throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
       }
 
       if (url.pathname === "/v1/world-events") {
@@ -1713,6 +2449,27 @@ export class ApiApplication {
         throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
       }
 
+      const conversationImagePath = /^\/v1\/conversations\/([^/]+)\/image-jobs$/.exec(url.pathname);
+      if (conversationImagePath) {
+        if (request.method !== "POST") {
+          throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
+        }
+        let body: unknown;
+        try {
+          body = await request.json();
+        } catch {
+          throw new ApiError(400, "BAD_REQUEST", "Request body must be valid JSON");
+        }
+        const input = parseRequestConversationImageRequest(body);
+        this.trustedActor(request, input.actorCharacterId);
+        return jsonResponse({
+          data: await this.requestConversationImage(
+            decodeURIComponent(conversationImagePath[1] ?? ""),
+            input,
+          ),
+        }, 201);
+      }
+
       const streamPath = /^\/v1\/conversations\/([^/]+)\/stream$/.exec(url.pathname);
       if (streamPath) {
         if (request.method !== "GET") {
@@ -1746,15 +2503,71 @@ export class ApiApplication {
         return jsonResponse({ data: await this.switchActorCharacter(input) });
       }
 
+      if (url.pathname === "/v1/appearance-settings") {
+        const ownerKey = url.searchParams.get("ownerKey") ?? DEFAULT_APPEARANCE_OWNER_KEY;
+        if (ownerKey.trim().length === 0) {
+          throw new ApiError(400, "BAD_REQUEST", "ownerKey must be a non-empty string");
+        }
+        if (request.method === "GET") {
+          return jsonResponse({ data: await this.getAppearanceSettings(ownerKey) });
+        }
+        if (request.method === "PUT") {
+          let body: unknown;
+          try {
+            body = await request.json();
+          } catch {
+            throw new ApiError(400, "BAD_REQUEST", "Request body must be valid JSON");
+          }
+          return jsonResponse({
+            data: await this.saveAppearanceSettings(
+              ownerKey,
+              parseUpdateAppearanceSettingsRequest(body),
+            ),
+          });
+        }
+        throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
+      }
+
+      if (url.pathname === "/v1/llm-provider-profiles") {
+        if (request.method === "GET") return jsonResponse({ data: await this.listLlmProviderProfiles() });
+        if (request.method === "PUT") {
+          let body: unknown;
+          try { body = await request.json(); } catch { throw new ApiError(400, "BAD_REQUEST", "Request body must be valid JSON"); }
+          return jsonResponse({ data: await this.saveLlmProviderProfile(parseSaveLlmProviderProfileRequest(body)) });
+        }
+        throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
+      }
+
+      const llmProfilePath = /^\/v1\/llm-provider-profiles\/([^/]+)$/.exec(url.pathname);
+      if (llmProfilePath) {
+        if (request.method !== "DELETE") throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
+        await this.deleteLlmProviderProfile(decodeURIComponent(llmProfilePath[1] ?? ""));
+        return new Response(null, { status: 204 });
+      }
+
+      if (url.pathname === "/v1/comfyui/settings") {
+        if (request.method === "GET") return jsonResponse({ data: await this.getComfyUiSettings() });
+        if (request.method === "PUT") {
+          let body: unknown;
+          try { body = await request.json(); } catch { throw new ApiError(400, "BAD_REQUEST", "Request body must be valid JSON"); }
+          return jsonResponse({ data: await this.saveComfyUiSettings(parseUpdateComfyUiSettingsRequest(body)) });
+        }
+        throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
+      }
+
       const knownPath =
         url.pathname === "/health" ||
         url.pathname === "/v1/worlds" ||
+        url.pathname === "/v1/world-lore" ||
         url.pathname === "/v1/characters" ||
         url.pathname === "/v1/relationships" ||
         url.pathname === "/v1/comfyui/workflows" ||
         url.pathname === "/v1/sticker-packs" ||
         url.pathname === "/v1/moments" ||
         url.pathname === "/v1/conversations" ||
+        url.pathname === "/v1/appearance-settings" ||
+        url.pathname === "/v1/llm-provider-profiles" ||
+        url.pathname === "/v1/comfyui/settings" ||
         url.pathname === "/v1/actor-sessions/switch";
       if (knownPath) {
         throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");

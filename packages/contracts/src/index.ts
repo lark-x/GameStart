@@ -19,6 +19,8 @@ export type StickerPackId = string;
 export type StickerId = string;
 export type MomentId = string;
 export type MomentInteractionId = string;
+export type AppearanceSettingsId = string;
+export type WorldLoreEntryId = string;
 
 export const CharacterRole = {
   AI: "AI",
@@ -60,6 +62,7 @@ export interface CharacterDto {
   storyWorldId: StoryWorldId;
   timezone: string;
   birthDate?: string;
+  personaPrompt?: string;
   personaPromptRef?: string;
   visualPromptRef?: string;
 }
@@ -141,6 +144,122 @@ export interface StickerPackImportResultDto {
   stickers: readonly StickerDto[];
 }
 
+/** 聊天背景模式：跟随皮肤主题或使用自定义导入图片 */
+export const ChatBackgroundKindDto = {
+  THEME: "theme",
+  CUSTOM: "custom",
+} as const;
+
+export type ChatBackgroundKindDto =
+  (typeof ChatBackgroundKindDto)[keyof typeof ChatBackgroundKindDto];
+
+export interface ChatBackgroundSettingsDto {
+  kind: ChatBackgroundKindDto;
+  /** kind 为 custom 时必填：data:image/、media:// 或 http(s) 图片引用 */
+  imageRef?: string;
+  /** 背景不透明度 0 ~ 1 */
+  opacity: number;
+  /** 背景虚化像素 0 ~ 40 */
+  blur: number;
+}
+
+export interface AppearanceSettingsDto {
+  id: AppearanceSettingsId;
+  ownerKey: string;
+  themeId: string;
+  chatBackground: ChatBackgroundSettingsDto;
+  updatedAt: string;
+}
+
+/** PUT /v1/appearance-settings 请求体：全量替换外观设置 */
+export interface UpdateAppearanceSettingsRequest {
+  themeId: string;
+  chatBackground: ChatBackgroundSettingsDto;
+}
+
+export interface WorldLoreEntryDto {
+  id: WorldLoreEntryId;
+  storyWorldId: StoryWorldId;
+  category: string;
+  title: string;
+  content: string;
+  tags: readonly string[];
+  isEnabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateWorldLoreEntryRequest {
+  id: WorldLoreEntryId;
+  storyWorldId: StoryWorldId;
+  category: string;
+  title: string;
+  content: string;
+  tags?: readonly string[];
+  isEnabled?: boolean;
+}
+
+export interface UpdateWorldLoreEntryRequest {
+  category?: string;
+  title?: string;
+  content?: string;
+  tags?: readonly string[];
+  isEnabled?: boolean;
+}
+
+export const LlmProviderProtocolDto = {
+  OPENAI_COMPATIBLE: "OPENAI_COMPATIBLE",
+  ANTHROPIC: "ANTHROPIC",
+} as const;
+
+export type LlmProviderProtocolDto = (typeof LlmProviderProtocolDto)[keyof typeof LlmProviderProtocolDto];
+
+export interface LlmProviderProfileDto {
+  id: string;
+  name: string;
+  protocol: LlmProviderProtocolDto;
+  baseUrl: string;
+  model: string;
+  timeoutMs: number;
+  maxTokens: number;
+  temperature: number;
+  isActive: boolean;
+  hasApiKey: boolean;
+  apiKeyMask?: string;
+  source: "database" | "environment";
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SaveLlmProviderProfileRequest {
+  id: string;
+  name: string;
+  protocol: LlmProviderProtocolDto;
+  baseUrl: string;
+  model: string;
+  timeoutMs?: number;
+  maxTokens?: number;
+  temperature?: number;
+  apiKey?: string;
+  isActive?: boolean;
+}
+
+export interface ComfyUiSettingsDto {
+  id: "default";
+  baseUrl: string;
+  timeoutMs: number;
+  defaultWorkflowVersion?: string;
+  autoImageIntentEnabled: boolean;
+  updatedAt: string;
+}
+
+export interface UpdateComfyUiSettingsRequest {
+  baseUrl: string;
+  timeoutMs?: number;
+  defaultWorkflowVersion?: string;
+  autoImageIntentEnabled?: boolean;
+}
+
 export interface StoryWorldDto {
   id: StoryWorldId;
   name: string;
@@ -171,6 +290,7 @@ export interface CreateCharacterRequest {
   storyWorldId: StoryWorldId;
   timezone: string;
   birthDate?: string;
+  personaPrompt?: string;
   personaPromptRef?: string;
   visualPromptRef?: string;
 }
@@ -179,6 +299,7 @@ export interface UpdateCharacterRequest {
   displayName?: string;
   timezone?: string;
   birthDate?: string;
+  personaPrompt?: string;
   personaPromptRef?: string;
   visualPromptRef?: string;
 }
@@ -299,6 +420,19 @@ export interface SendMessageResultDto {
   inserted: boolean;
 }
 
+/** A user-initiated image request bound to a private conversation. */
+export interface RequestConversationImageRequest {
+  actorCharacterId: CharacterId;
+  recipientCharacterId: CharacterId;
+  prompt: string;
+  workflowVersion: string;
+  negativePrompt?: string;
+  seed?: number;
+  createdAt: string;
+  /** Stable per-request key. Repeating it returns the same queued job. */
+  idempotencyKey: string;
+}
+
 export const MemoryKind = {
   EVENT_FACT: "EVENT_FACT",
   CONVERSATION_SUMMARY: "CONVERSATION_SUMMARY",
@@ -377,6 +511,12 @@ export interface AnnualEventRecurrenceDto {
 
 export type EventRecurrenceDto = OnceEventRecurrenceDto | AnnualEventRecurrenceDto;
 
+export interface EventOutputPolicyDto {
+  sendMessage: boolean;
+  publishMoment: boolean;
+  generateImage: boolean;
+}
+
 export interface WorldEventDefinitionDto {
   id: EventDefinitionId;
   storyWorldId: StoryWorldId;
@@ -386,6 +526,8 @@ export interface WorldEventDefinitionDto {
   timezone: string;
   recurrence: EventRecurrenceDto;
   targetCharacterIds: readonly CharacterId[];
+  recipientCharacterIds: readonly CharacterId[];
+  outputs: EventOutputPolicyDto;
   priority: number;
   cooldownSeconds?: number;
   enabled: boolean;
@@ -401,6 +543,8 @@ export interface CreateWorldEventDefinitionRequest {
   timezone?: string;
   recurrence: EventRecurrenceDto;
   targetCharacterIds: readonly CharacterId[];
+  recipientCharacterIds?: readonly CharacterId[];
+  outputs?: Partial<EventOutputPolicyDto>;
   priority?: number;
   cooldownSeconds?: number;
   enabled?: boolean;
@@ -414,6 +558,8 @@ export interface UpdateWorldEventDefinitionRequest {
   timezone?: string;
   recurrence?: EventRecurrenceDto;
   targetCharacterIds?: readonly CharacterId[];
+  recipientCharacterIds?: readonly CharacterId[];
+  outputs?: Partial<EventOutputPolicyDto>;
   priority?: number;
   cooldownSeconds?: number;
   enabled?: boolean;
@@ -661,14 +807,15 @@ export interface JsonSchema {
   readonly $schema?: string;
   readonly $id?: string;
   readonly title?: string;
-  readonly type?: "object" | "string" | "number" | "boolean" | "array";
+  readonly type?: "object" | "string" | "number" | "integer" | "boolean" | "array";
   readonly properties?: Readonly<Record<string, JsonSchema>>;
   readonly required?: readonly string[];
   readonly additionalProperties?: boolean;
-  readonly enum?: readonly (string | number | boolean | null)[];
-  readonly format?: string;
-  readonly minLength?: number;
-  readonly pattern?: string;
+readonly enum?: readonly (string | number | boolean | null)[];
+readonly format?: string;
+readonly minLength?: number;
+readonly maxLength?: number;
+readonly pattern?: string;
   readonly minimum?: number;
   readonly maximum?: number;
   readonly items?: JsonSchema;
@@ -858,6 +1005,106 @@ export const createStickerPackRequestSchema = {
     stickers: { type: "array", items: createStickerInputSchema },
   },
   required: ["id", "storyWorldId", "name", "createdAt", "stickers"],
+} as const satisfies JsonSchema;
+
+export const worldLoreEntrySchema = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $id: "urn:living-network:world-lore-entry",
+  title: "WorldLoreEntry",
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    id: idSchema,
+    storyWorldId: idSchema,
+    category: nonEmptyStringSchema,
+    title: nonEmptyStringSchema,
+    content: nonEmptyStringSchema,
+    tags: stringListSchema,
+    isEnabled: { type: "boolean" },
+    createdAt: timestampSchema,
+    updatedAt: timestampSchema,
+  },
+  required: ["id", "storyWorldId", "category", "title", "content", "tags", "isEnabled", "createdAt", "updatedAt"],
+} as const satisfies JsonSchema;
+
+export const createWorldLoreEntryRequestSchema = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $id: "urn:living-network:create-world-lore-entry-request",
+  title: "CreateWorldLoreEntryRequest",
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    id: idSchema,
+    storyWorldId: idSchema,
+    category: nonEmptyStringSchema,
+    title: nonEmptyStringSchema,
+    content: nonEmptyStringSchema,
+    tags: stringListSchema,
+    isEnabled: { type: "boolean" },
+  },
+  required: ["id", "storyWorldId", "category", "title", "content"],
+} as const satisfies JsonSchema;
+
+export const updateWorldLoreEntryRequestSchema = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $id: "urn:living-network:update-world-lore-entry-request",
+  title: "UpdateWorldLoreEntryRequest",
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    category: nonEmptyStringSchema,
+    title: nonEmptyStringSchema,
+    content: nonEmptyStringSchema,
+    tags: stringListSchema,
+    isEnabled: { type: "boolean" },
+  },
+} as const satisfies JsonSchema;
+
+export const chatBackgroundSettingsSchema = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $id: "urn:living-network:chat-background-settings",
+  title: "ChatBackgroundSettings",
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    kind: {
+      type: "string",
+      enum: [ChatBackgroundKindDto.THEME, ChatBackgroundKindDto.CUSTOM],
+    },
+    imageRef: { type: "string", minLength: 1, maxLength: 2_000_000 },
+    opacity: { type: "number", minimum: 0, maximum: 1 },
+    blur: { type: "number", minimum: 0, maximum: 40 },
+  },
+  required: ["kind", "opacity", "blur"],
+} as const satisfies JsonSchema;
+
+export const appearanceSettingsSchema = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $id: "urn:living-network:appearance-settings",
+  title: "AppearanceSettings",
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    id: idSchema,
+    ownerKey: nonEmptyStringSchema,
+    themeId: { type: "string", pattern: "^[a-z0-9][a-z0-9-]{0,63}$" },
+    chatBackground: chatBackgroundSettingsSchema,
+    updatedAt: timestampSchema,
+  },
+  required: ["id", "ownerKey", "themeId", "chatBackground", "updatedAt"],
+} as const satisfies JsonSchema;
+
+export const updateAppearanceSettingsRequestSchema = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $id: "urn:living-network:update-appearance-settings-request",
+  title: "UpdateAppearanceSettingsRequest",
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    themeId: { type: "string", pattern: "^[a-z0-9][a-z0-9-]{0,63}$" },
+    chatBackground: chatBackgroundSettingsSchema,
+  },
+  required: ["themeId", "chatBackground"],
 } as const satisfies JsonSchema;
 
 export const storyWorldSchema = {
@@ -1111,6 +1358,28 @@ export const sendMessageRequestSchema = {
   required: ["id", "kind", "createdAt", "idempotencyKey"],
 } as const satisfies JsonSchema;
 
+export const requestConversationImageRequestSchema = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $id: "urn:living-network:request-conversation-image-request",
+  title: "RequestConversationImageRequest",
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    actorCharacterId: idSchema,
+    recipientCharacterId: idSchema,
+    prompt: nonEmptyStringSchema,
+    workflowVersion: nonEmptyStringSchema,
+    negativePrompt: nonEmptyStringSchema,
+    seed: { type: "number", minimum: 0 },
+    createdAt: timestampSchema,
+    idempotencyKey: idSchema,
+  },
+  required: [
+    "actorCharacterId", "recipientCharacterId", "prompt", "workflowVersion",
+    "createdAt", "idempotencyKey",
+  ],
+} as const satisfies JsonSchema;
+
 export const memoryItemSchema = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   $id: "urn:living-network:memory-item",
@@ -1216,6 +1485,12 @@ export const worldEventDefinitionSchema = {
     timezone: nonEmptyStringSchema,
     recurrence: eventRecurrenceSchema,
     targetCharacterIds: { type: "array", items: idSchema },
+    recipientCharacterIds: { type: "array", items: idSchema },
+    outputs: {
+      type: "object", additionalProperties: false,
+      properties: { sendMessage: { type: "boolean" }, publishMoment: { type: "boolean" }, generateImage: { type: "boolean" } },
+      required: ["sendMessage", "publishMoment", "generateImage"],
+    },
     priority: { type: "number", minimum: 0 },
     cooldownSeconds: { type: "number", minimum: 0 },
     enabled: { type: "boolean" },
@@ -1230,6 +1505,8 @@ export const worldEventDefinitionSchema = {
     "timezone",
     "recurrence",
     "targetCharacterIds",
+    "recipientCharacterIds",
+    "outputs",
     "priority",
     "enabled",
     "createdAt",
@@ -1251,6 +1528,11 @@ export const createWorldEventDefinitionRequestSchema = {
     timezone: nonEmptyStringSchema,
     recurrence: eventRecurrenceSchema,
     targetCharacterIds: { type: "array", items: idSchema },
+    recipientCharacterIds: { type: "array", items: idSchema },
+    outputs: {
+      type: "object", additionalProperties: false,
+      properties: { sendMessage: { type: "boolean" }, publishMoment: { type: "boolean" }, generateImage: { type: "boolean" } },
+    },
     priority: { type: "number", minimum: 0 },
     cooldownSeconds: { type: "number", minimum: 0 },
     enabled: { type: "boolean" },
@@ -1275,6 +1557,11 @@ export const updateWorldEventDefinitionRequestSchema = {
     timezone: nonEmptyStringSchema,
     recurrence: eventRecurrenceSchema,
     targetCharacterIds: { type: "array", items: idSchema },
+    recipientCharacterIds: { type: "array", items: idSchema },
+    outputs: {
+      type: "object", additionalProperties: false,
+      properties: { sendMessage: { type: "boolean" }, publishMoment: { type: "boolean" }, generateImage: { type: "boolean" } },
+    },
     priority: { type: "number", minimum: 0 },
     cooldownSeconds: { type: "number", minimum: 0 },
     enabled: { type: "boolean" },
@@ -1622,18 +1909,25 @@ export const contractSchemas = {
   sticker: stickerSchema,
   createStickerInput: createStickerInputSchema,
   createStickerPackRequest: createStickerPackRequestSchema,
+  worldLoreEntry: worldLoreEntrySchema,
+  createWorldLoreEntryRequest: createWorldLoreEntryRequestSchema,
+  updateWorldLoreEntryRequest: updateWorldLoreEntryRequestSchema,
   storyWorld: storyWorldSchema,
+  updateAppearanceSettingsRequest: updateAppearanceSettingsRequestSchema,
   relationshipState: relationshipStateSchema,
   relationshipEdge: relationshipEdgeSchema,
   createRelationshipEdgeRequest: createRelationshipEdgeRequestSchema,
   updateRelationshipEdgeRequest: updateRelationshipEdgeRequestSchema,
   actorSession: actorSessionSchema,
   actorSessionSwitchRequest: actorSessionSwitchRequestSchema,
+  appearanceSettings: appearanceSettingsSchema,
+  chatBackgroundSettings: chatBackgroundSettingsSchema,
   conversation: conversationSchema,
   conversationMember: conversationMemberSchema,
   message: messageSchema,
   createConversationRequest: createConversationRequestSchema,
   sendMessageRequest: sendMessageRequestSchema,
+  requestConversationImageRequest: requestConversationImageRequestSchema,
   memoryItem: memoryItemSchema,
   eventRecurrence: eventRecurrenceSchema,
   worldEventDefinition: worldEventDefinitionSchema,

@@ -24,6 +24,11 @@ const migrationNames = [
   "0008_visual_workflows",
   "0009_stickers",
   "0010_outbox",
+  "0011_appearance",
+  "0012_integrations",
+  "0013_character_persona",
+  "0014_world_lore",
+  "0015_event_output_policy",
 ] as const;
 
 export function listMigrationFiles(): readonly MigrationFile[] {

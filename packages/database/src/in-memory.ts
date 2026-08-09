@@ -1,5 +1,8 @@
 import {
   CharacterRole,
+  assertAppearanceSettings,
+  assertComfyUiSettings,
+  assertLlmProviderProfile,
   assertBehaviorAction,
   assertCharacterPlan,
   assertEventExecution,
@@ -14,6 +17,7 @@ import {
   assertProactiveMessageBudget,
   assertScheduledOccurrence,
   assertWorldEventDefinition,
+  assertWorldLoreEntry,
   createMessage,
   isBudgetActiveAt,
   isMemoryVisibleTo,
@@ -21,6 +25,9 @@ import {
   isMomentVisibleTo,
   scoreMemory,
   type ActorSession,
+  type AppearanceSettings,
+  type ComfyUiSettings,
+  type LlmProviderProfile,
   type BehaviorAction,
   type CharacterPlan,
   type Character,
@@ -45,6 +52,7 @@ import {
   type ScheduledOccurrence,
   type StoryWorld,
   type WorldEventDefinition,
+  type WorldLoreEntry,
 } from "../../domain/src/index.ts";
 import type {
   ActorSessionRepository,
@@ -67,12 +75,16 @@ import type {
   ScheduledOccurrenceWriteResult,
   StoryWorldRepository,
   WorldEventDefinitionRepository,
+  WorldLoreEntryRepository,
   ProactiveMessageBudgetRepository,
   MomentDraftRepository,
   CharacterVisualIdentityRepository,
   ImageWorkflowTemplateRepository,
   StickerPackRepository,
   StickerRepository,
+  AppearanceSettingsRepository,
+  ComfyUiSettingsRepository,
+  LlmProviderProfileRepository,
 } from "./repositories.ts";
 
 function copyWorld(world: StoryWorld): StoryWorld {
@@ -116,6 +128,8 @@ function copyEventDefinition(definition: WorldEventDefinition): WorldEventDefini
       ? { ...definition.recurrence }
       : { ...definition.recurrence },
     targetCharacterIds: [...definition.targetCharacterIds],
+    recipientCharacterIds: [...definition.recipientCharacterIds],
+    outputs: { ...definition.outputs },
   };
 }
 
@@ -197,7 +211,23 @@ function copyMoment(moment: Moment): Moment {
 }
 
 function copyMomentInteraction(interaction: MomentInteraction): MomentInteraction {
-  return { ...interaction };
+return { ...interaction };
+}
+
+function copyAppearanceSettings(settings: AppearanceSettings): AppearanceSettings {
+return { ...settings, chatBackground: { ...settings.chatBackground } };
+}
+
+function copyLlmProviderProfile(profile: LlmProviderProfile): LlmProviderProfile {
+  return { ...profile };
+}
+
+function copyComfyUiSettings(settings: ComfyUiSettings): ComfyUiSettings {
+  return { ...settings };
+}
+
+function copyWorldLoreEntry(entry: WorldLoreEntry): WorldLoreEntry {
+  return { ...entry, tags: [...entry.tags] };
 }
 
 function addUnique<T extends { id: string }>(
@@ -350,6 +380,14 @@ function assertEventDefinitionReferences(
     if (!character || character.storyWorldId !== definition.storyWorldId) {
       throw new TypeError(
         `Event definition ${definition.id} references an invalid target character`,
+      );
+    }
+  }
+  for (const characterId of definition.recipientCharacterIds) {
+    const character = characters.get(characterId);
+    if (!character || character.storyWorldId !== definition.storyWorldId) {
+      throw new TypeError(
+        `Event definition ${definition.id} references an invalid recipient character`,
       );
     }
   }
@@ -516,6 +554,16 @@ function assertMomentInteractionReferences(
   }
 }
 
+function assertWorldLoreEntryReferences(
+  entry: WorldLoreEntry,
+  worlds: Map<string, StoryWorld>,
+): void {
+  assertWorldLoreEntry(entry);
+  if (!worlds.has(entry.storyWorldId)) {
+    throw new TypeError(`World lore entry ${entry.id} references an unknown story world`);
+  }
+}
+
 export class InMemoryRepositories implements DomainRepositories {
   public readonly storyWorlds: StoryWorldRepository;
   public readonly characters: CharacterRepository;
@@ -525,6 +573,7 @@ export class InMemoryRepositories implements DomainRepositories {
   public readonly messages: MessageRepository;
   public readonly memories: MemoryRepository;
   public readonly worldEventDefinitions: WorldEventDefinitionRepository;
+  public readonly worldLoreEntries: WorldLoreEntryRepository;
   public readonly scheduledOccurrences: ScheduledOccurrenceRepository;
   public readonly characterPlans: CharacterPlanRepository;
   public readonly eventExecutions: EventExecutionRepository;
@@ -538,6 +587,9 @@ export class InMemoryRepositories implements DomainRepositories {
   public readonly stickers: StickerRepository;
   public readonly moments: MomentRepository;
   public readonly momentInteractions: MomentInteractionRepository;
+  public readonly appearanceSettings: AppearanceSettingsRepository;
+  public readonly llmProviderProfiles: LlmProviderProfileRepository;
+  public readonly comfyUiSettings: ComfyUiSettingsRepository;
 
   private readonly worldMap = new Map<string, StoryWorld>();
   private readonly characterMap = new Map<string, Character>();
@@ -547,6 +599,7 @@ export class InMemoryRepositories implements DomainRepositories {
   private readonly messageMap = new Map<string, Message>();
   private readonly memoryMap = new Map<string, MemoryItem>();
   private readonly worldEventDefinitionMap = new Map<string, WorldEventDefinition>();
+  private readonly worldLoreEntryMap = new Map<string, WorldLoreEntry>();
   private readonly scheduledOccurrenceMap = new Map<string, ScheduledOccurrence>();
   private readonly characterPlanMap = new Map<string, CharacterPlan>();
   private readonly eventExecutionMap = new Map<string, EventExecution>();
@@ -560,6 +613,9 @@ export class InMemoryRepositories implements DomainRepositories {
   private readonly stickerMap = new Map<string, Sticker>();
   private readonly momentMap = new Map<string, Moment>();
   private readonly momentInteractionMap = new Map<string, MomentInteraction>();
+  private readonly appearanceSettingsMap = new Map<string, AppearanceSettings>();
+  private readonly llmProviderProfileMap = new Map<string, LlmProviderProfile>();
+  private readonly comfyUiSettingsMap = new Map<string, ComfyUiSettings>();
 
   public constructor(seed: InMemoryRepositorySeed = {}) {
     for (const world of seed.worlds ?? []) {
@@ -647,6 +703,10 @@ export class InMemoryRepositories implements DomainRepositories {
         "worldEventDefinition",
       );
     }
+    for (const entry of seed.worldLoreEntries ?? []) {
+      assertWorldLoreEntryReferences(entry, this.worldMap);
+      addUnique(this.worldLoreEntryMap, copyWorldLoreEntry(entry), "worldLoreEntry");
+    }
     for (const occurrence of seed.scheduledOccurrences ?? []) {
       assertScheduledOccurrence(occurrence);
       const definition = this.worldEventDefinitionMap.get(occurrence.definitionId);
@@ -731,10 +791,30 @@ export class InMemoryRepositories implements DomainRepositories {
       if (duplicateKey) {
         throw new TypeError(`Duplicate moment interaction idempotency key: ${interaction.idempotencyKey}`);
       }
-      addUnique(this.momentInteractionMap, copyMomentInteraction(interaction), "momentInteraction");
-    }
+addUnique(this.momentInteractionMap, copyMomentInteraction(interaction), "momentInteraction");
+}
+for (const settings of seed.appearanceSettings ?? []) {
+assertAppearanceSettings(settings);
+if (this.findOwnerKeyConflict(settings)) {
+throw new TypeError(`Duplicate appearance settings owner key: ${settings.ownerKey}`);
+}
 
-    this.storyWorlds = {
+addUnique(this.appearanceSettingsMap, copyAppearanceSettings(settings), "appearanceSettings");
+}
+for (const profile of seed.llmProviderProfiles ?? []) {
+assertLlmProviderProfile(profile);
+if (profile.isActive && [...this.llmProviderProfileMap.values()].some((candidate) => candidate.isActive)) {
+throw new TypeError("Only one LLM provider profile can be active");
+}
+addUnique(this.llmProviderProfileMap, copyLlmProviderProfile(profile), "llmProviderProfile");
+}
+if (seed.comfyUiSettings !== undefined) {
+assertComfyUiSettings(seed.comfyUiSettings);
+if (seed.comfyUiSettings.id !== "default") throw new TypeError("ComfyUI settings id must be default");
+this.comfyUiSettingsMap.set("default", copyComfyUiSettings(seed.comfyUiSettings));
+}
+
+this.storyWorlds = {
       list: async () => [...this.worldMap.values()].map(copyWorld),
       getById: async (id) => {
         const world = this.worldMap.get(id);
@@ -879,6 +959,49 @@ export class InMemoryRepositories implements DomainRepositories {
           throw new TypeError(`Event definition id cannot change eventKey: ${definition.id}`);
         }
         this.worldEventDefinitionMap.set(definition.id, copyEventDefinition(definition));
+      },
+    };
+
+    this.worldLoreEntries = {
+      listByStoryWorld: async (storyWorldId) =>
+        [...this.worldLoreEntryMap.values()]
+          .filter((entry) => entry.storyWorldId === storyWorldId)
+          .sort((left, right) =>
+            right.updatedAt.localeCompare(left.updatedAt) || left.id.localeCompare(right.id)
+          )
+          .map(copyWorldLoreEntry),
+      getById: async (id) => {
+        const entry = this.worldLoreEntryMap.get(id);
+        return entry ? copyWorldLoreEntry(entry) : undefined;
+      },
+      search: async (storyWorldId, queryText) => {
+        if (queryText.trim().length === 0) {
+          throw new TypeError("world lore search queryText must be non-empty");
+        }
+        const terms = queryText.toLocaleLowerCase().trim().split(/\s+/u);
+        return [...this.worldLoreEntryMap.values()]
+          .filter((entry) => entry.storyWorldId === storyWorldId && entry.isEnabled)
+          .map((entry) => {
+            const searchable = [entry.title, entry.content, ...entry.tags]
+              .join(" ")
+              .toLocaleLowerCase();
+            const matchedTerms = terms.filter((term) => searchable.includes(term)).length;
+            return { entry, matchedTerms };
+          })
+          .filter(({ matchedTerms }) => matchedTerms > 0)
+          .sort((left, right) =>
+            right.matchedTerms - left.matchedTerms ||
+            right.entry.updatedAt.localeCompare(left.entry.updatedAt) ||
+            left.entry.id.localeCompare(right.entry.id)
+          )
+          .map(({ entry }) => copyWorldLoreEntry(entry));
+      },
+      save: async (entry) => {
+        assertWorldLoreEntryReferences(entry, this.worldMap);
+        this.worldLoreEntryMap.set(entry.id, copyWorldLoreEntry(entry));
+      },
+      delete: async (id) => {
+        this.worldLoreEntryMap.delete(id);
       },
     };
 
@@ -1113,6 +1236,22 @@ export class InMemoryRepositories implements DomainRepositories {
         );
         return job ? copyImageJob(job) : undefined;
       },
+      listQueued: async (limit = 100) => {
+        if (!Number.isSafeInteger(limit) || limit < 1) throw new RangeError("image job limit must be positive");
+        return [...this.imageJobMap.values()]
+          .filter((candidate) => candidate.status === "QUEUED")
+          .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id))
+          .slice(0, limit)
+          .map(copyImageJob);
+      },
+      listSubmitted: async (limit = 100) => {
+        if (!Number.isSafeInteger(limit) || limit < 1) throw new RangeError("image job limit must be positive");
+        return [...this.imageJobMap.values()]
+          .filter((candidate) => candidate.status === "SUBMITTED")
+          .sort((left, right) => left.updatedAt.localeCompare(right.updatedAt) || left.id.localeCompare(right.id))
+          .slice(0, limit)
+          .map(copyImageJob);
+      },
       save: async (job) => {
         assertImageReferences(
           job,
@@ -1271,13 +1410,68 @@ export class InMemoryRepositories implements DomainRepositories {
         if (this.momentInteractionMap.has(interaction.id)) {
           throw new TypeError(`Duplicate momentInteraction id: ${interaction.id}`);
         }
-        this.momentInteractionMap.set(interaction.id, copyMomentInteraction(interaction));
-        return { interaction: copyMomentInteraction(interaction), inserted: true };
-      },
-    };
-  }
+this.momentInteractionMap.set(interaction.id, copyMomentInteraction(interaction));
+return { interaction: copyMomentInteraction(interaction), inserted: true };
+},
+};
 
-  private saveMessageSeed(message: Message): void {
+this.appearanceSettings = {
+getByOwnerKey: async (ownerKey) => {
+const settings = [...this.appearanceSettingsMap.values()].find(
+(candidate) => candidate.ownerKey === ownerKey,
+);
+return settings ? copyAppearanceSettings(settings) : undefined;
+},
+save: async (settings) => {
+assertAppearanceSettings(settings);
+const conflict = this.findOwnerKeyConflict(settings);
+if (conflict) {
+throw new TypeError(`Duplicate appearance settings owner key: ${settings.ownerKey}`);
+}
+this.appearanceSettingsMap.set(settings.id, copyAppearanceSettings(settings));
+},
+};
+
+this.llmProviderProfiles = {
+list: async () => [...this.llmProviderProfileMap.values()].sort((left, right) => left.id.localeCompare(right.id)).map(copyLlmProviderProfile),
+getById: async (id) => {
+const profile = this.llmProviderProfileMap.get(id);
+return profile ? copyLlmProviderProfile(profile) : undefined;
+},
+getActive: async () => {
+const profile = [...this.llmProviderProfileMap.values()].find((candidate) => candidate.isActive);
+return profile ? copyLlmProviderProfile(profile) : undefined;
+},
+save: async (profile) => {
+assertLlmProviderProfile(profile);
+if (profile.isActive && [...this.llmProviderProfileMap.values()].some((candidate) => candidate.id !== profile.id && candidate.isActive)) {
+throw new TypeError("Only one LLM provider profile can be active");
+}
+this.llmProviderProfileMap.set(profile.id, copyLlmProviderProfile(profile));
+},
+delete: async (id) => { this.llmProviderProfileMap.delete(id); },
+};
+
+this.comfyUiSettings = {
+get: async () => {
+const settings = this.comfyUiSettingsMap.get("default");
+return settings ? copyComfyUiSettings(settings) : undefined;
+},
+save: async (settings) => {
+assertComfyUiSettings(settings);
+if (settings.id !== "default") throw new TypeError("ComfyUI settings id must be default");
+this.comfyUiSettingsMap.set("default", copyComfyUiSettings(settings));
+},
+};
+}
+
+private findOwnerKeyConflict(settings: AppearanceSettings): boolean {
+return [...this.appearanceSettingsMap.values()].some(
+(candidate) => candidate.ownerKey === settings.ownerKey && candidate.id !== settings.id,
+);
+}
+
+private saveMessageSeed(message: Message): void {
     this.saveMessage(message);
   }
 

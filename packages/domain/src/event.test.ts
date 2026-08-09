@@ -54,6 +54,8 @@ test("creates annual birthday/holiday definitions with a stable annual key", () 
 
   assert.equal(definition.timezone, world.timezone);
   assert.deepEqual(definition.targetCharacterIds, [character.id]);
+  assert.deepEqual(definition.recipientCharacterIds, [character.id]);
+  assert.deepEqual(definition.outputs, { sendMessage: false, publishMoment: false, generateImage: false });
   assert.equal(annualOccurrenceKey(definition, 2028), "event-aster-birthday:2028-02-29");
   assert.equal(definition.enabled, true);
 });
@@ -79,6 +81,31 @@ test("keeps one-shot events disabled without coupling scheduling to story mode",
     name: "TypeError",
     message: /annual event definition/,
   });
+});
+
+test("requires in-world recipients whenever an event output is enabled", () => {
+  assert.throws(() => createWorldEventDefinition({
+    id: "event-no-recipient",
+    storyWorld: world,
+    eventKey: "event:no-recipient",
+    name: "No recipient",
+    triggerSource: TriggerSource.MANUAL,
+    recurrence: { kind: EventRecurrenceKind.ONCE, runAt: "2026-12-31T12:00:00.000Z" },
+    outputs: { publishMoment: true },
+    createdAt,
+  }), /recipientCharacters must not be empty/);
+  const definition = createWorldEventDefinition({
+    id: "event-image-only",
+    storyWorld: world,
+    eventKey: "event:image-only",
+    name: "Image only",
+    triggerSource: TriggerSource.MANUAL,
+    recurrence: { kind: EventRecurrenceKind.ONCE, runAt: "2026-12-31T12:00:00.000Z" },
+    recipientCharacters: [character],
+    outputs: { sendMessage: false, generateImage: true },
+    createdAt,
+  });
+  assert.deepEqual(definition.outputs, { sendMessage: false, publishMoment: false, generateImage: true });
 });
 
 test("rejects invalid calendar data and cross-world targets", () => {

@@ -7,6 +7,7 @@ import {
 } from "../../../packages/config/src/index.ts";
 import type { DomainRepositories } from "../../../packages/database/src/index.ts";
 import { createProviderFromConfig, type ChatProvider } from "../../../packages/ai/src/index.ts";
+import type { SecretCipher } from "../../../packages/ai/src/index.ts";
 import { ApiApplication } from "./app.ts";
 import { createApiServer } from "./server.ts";
 import type { ConversationOrchestratorOptions } from "./conversation-orchestrator.ts";
@@ -32,7 +33,7 @@ export function createApiRuntime(
   provider?: ChatProvider,
   conversationOptions?: ConversationOrchestratorOptions,
   securityOptions?: { requireTrustedActor?: boolean },
-  operationalOptions?: { readiness?: () => Promise<void> },
+  operationalOptions?: { readiness?: () => Promise<void>; secretCipher?: SecretCipher },
 ): ApiRuntime {
   const application = new ApiApplication(
     repositories,
@@ -54,7 +55,7 @@ export function createApiRuntimeFromEnvironment(
   provider?: ChatProvider,
   conversationOptions?: ConversationOrchestratorOptions,
   securityOptions?: { requireTrustedActor?: boolean },
-  operationalOptions?: { readiness?: () => Promise<void> },
+  operationalOptions?: { readiness?: () => Promise<void>; secretCipher?: SecretCipher },
 ): ApiRuntime {
   const config = loadAppConfig(env);
   const resolvedProvider = provider ?? createProviderFromConfig({ ...config.llm });

@@ -98,3 +98,44 @@ test("bounds invalid calendar windows, missing worlds, and unsupported methods",
     new Request(`http://localhost/v1/worlds/${world.id}/calendar?${valid}`, { method: "POST" }),
   )).status, 405);
 });
+
+test("persists explicit recipients and delivery outputs for world events", async () => {
+  const app = application();
+  const create = await app.handle(new Request("http://localhost/v1/world-events", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      id: "calendar-api-output-event",
+      storyWorldId: world.id,
+      eventKey: "manual:output",
+      name: "Output event",
+      triggerSource: "MANUAL",
+      recurrence: { kind: "ONCE", runAt: "2026-08-20T01:00:00.000Z" },
+      targetCharacterIds: [character.id],
+      recipientCharacterIds: [character.id],
+      outputs: { sendMessage: true, publishMoment: true, generateImage: true },
+      createdAt: "2026-08-05T19:00:00.000Z",
+    }),
+  }));
+  assert.equal(create.status, 201);
+  const created = (await create.json() as { data: typeof definition }).data;
+  assert.deepEqual(created.recipientCharacterIds, [character.id]);
+  assert.deepEqual(created.outputs, { sendMessage: true, publishMoment: true, generateImage: true });
+
+  const invalid = await application().handle(new Request("http://localhost/v1/world-events", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      id: "calendar-api-invalid-output-event",
+      storyWorldId: world.id,
+      eventKey: "manual:invalid-output",
+      name: "Invalid output event",
+      triggerSource: "MANUAL",
+      recurrence: { kind: "ONCE", runAt: "2026-08-20T01:00:00.000Z" },
+      targetCharacterIds: [], recipientCharacterIds: [],
+      outputs: { sendMessage: true },
+      createdAt: "2026-08-05T19:00:00.000Z",
+    }),
+  }));
+  assert.equal(invalid.status, 400);
+});

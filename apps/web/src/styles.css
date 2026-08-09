@@ -1,3 +1,0 @@
-/* 废弃原生的 styles.css，由于部分 E2E 测试和老组件可能隐式依赖该文件，
-   因此保留空文件或仅引入 tailwind，以防止 vite build 和 playwright 报错。 */
-@import "./tailwind.css";

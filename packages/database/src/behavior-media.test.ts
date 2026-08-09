@@ -98,6 +98,9 @@ test("stores behavior actions, moment drafts, and image jobs with defensive copi
   assert.deepEqual(await repositories.behaviorActions?.getById(action.id), action);
   assert.deepEqual(await repositories.momentDrafts?.getByActionId(action.id), draft);
   assert.deepEqual(await repositories.imageJobs?.getByActionId(action.id), imageJob);
+  assert.ok(repositories.imageJobs);
+  assert.deepEqual((await repositories.imageJobs.listQueued()).map((job) => job.id), [imageJob.id]);
+  assert.deepEqual(await repositories.imageJobs.listSubmitted(), []);
   const actions = await repositories.behaviorActions?.listByExecution(execution.id);
   assert.ok(actions);
   (actions[0]?.payload as { body: string }).body = "mutated";

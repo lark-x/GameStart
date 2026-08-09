@@ -4,6 +4,7 @@ import { applyMigrations, createPostgresSqlClient, createSqlRepositories } from 
 import { loadAppConfig, type EnvironmentInput } from "../../../packages/config/src/index.ts";
 import { BullMqTaskQueue, BullMqTaskWorker } from "./queue.ts";
 import { OutboxPublisher, type OutboxQueueTask } from "./outbox-publisher.ts";
+import { createImageJobPump } from "./image-job-pump.ts";
 import {
   createWorkerRuntime,
   materializeAndEnqueue,
@@ -33,6 +34,12 @@ export async function startPersistentWorker(
     await applyMigrations(database);
     const repositories = createSqlRepositories(database);
     const runtime = createWorkerRuntime(repositories);
+    const imageJobPump = config.flags.imageGenerationEnabled
+      ? createImageJobPump(repositories, {
+        fallbackSettings: config.comfyui,
+        mediaRoot: config.media.root,
+      })
+      : undefined;
     const occurrenceWorker = new BullMqTaskWorker<WorkerOccurrenceTask, string>(
       "living-network-occurrences",
       { url: config.redis.url, prefix: "living-network" },
@@ -56,6 +63,7 @@ export async function startPersistentWorker(
         });
       }
       if (outboxPublisher) await outboxPublisher.publishBatch(100);
+      if (imageJobPump) await imageJobPump.runOnce();
     };
     const timer = setInterval(() => void tick().catch((error: unknown) => console.error("worker tick failed", error)), tickMs);
     timer.unref();

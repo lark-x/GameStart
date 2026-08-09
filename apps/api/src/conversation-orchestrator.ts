@@ -20,6 +20,12 @@ export interface ConversationOrchestratorOptions {
   readonly memoryRetrievalEnabled?: boolean;
   readonly memoryWriteEnabled?: boolean;
   readonly maxMemories?: number;
+  /**
+   * Best-effort post-reply hook. It is intentionally detached from the reply
+   * path so auxiliary work (such as optional image generation) cannot fail or
+   * delay a chat response.
+   */
+  readonly afterReplySaved?: (context: ConversationReplyContext) => Promise<void>;
 }
 
 export interface ConversationReply {
@@ -47,10 +53,26 @@ function memorySystemPrompt(memories: readonly MemoryItem[]): string | undefined
   return `Only use the following as remembered facts when relevant:\n${lines.join("\n")}`;
 }
 
+export interface ConversationReplyContext {
+  readonly conversation: ConversationAggregate;
+  readonly ai: Character;
+  readonly readerCharacterId: string;
+  readonly latestUserMessage: Message | undefined;
+  readonly reply: ConversationReply;
+}
+
+function personaSystemPrompt(character: Character): string | undefined {
+  const persona = character.personaPrompt?.trim();
+  return persona === undefined || persona.length === 0
+    ? undefined
+    : `You are ${character.displayName}. Stay consistent with this persona:\n${persona}`;
+}
+
 export class ConversationOrchestrator {
   private readonly repositories: DomainRepositories;
   private readonly provider: ChatProvider;
-  private readonly options: Required<ConversationOrchestratorOptions>;
+  private readonly options: Required<Omit<ConversationOrchestratorOptions, "afterReplySaved">>
+    & Pick<ConversationOrchestratorOptions, "afterReplySaved">;
 
   public constructor(
     repositories: DomainRepositories,
@@ -66,6 +88,7 @@ export class ConversationOrchestrator {
       memoryRetrievalEnabled: options.memoryRetrievalEnabled ?? false,
       memoryWriteEnabled: options.memoryWriteEnabled ?? false,
       maxMemories: options.maxMemories ?? 5,
+      ...(options.afterReplySaved === undefined ? {} : { afterReplySaved: options.afterReplySaved }),
     };
     if (!Number.isSafeInteger(this.options.maxMemories) || this.options.maxMemories < 1 || this.options.maxMemories > 20) {
       throw new RangeError("maxMemories must be an integer between 1 and 20");
@@ -75,7 +98,7 @@ export class ConversationOrchestrator {
   private async context(
     conversationId: string,
     readerCharacterId: string,
-  ): Promise<{ conversation: ConversationAggregate; messages: readonly Message[]; ai: Character; chat: readonly ChatMessage[] }> {
+  ): Promise<{ conversation: ConversationAggregate; messages: readonly Message[]; ai: Character; latestUserMessage: Message | undefined; chat: readonly ChatMessage[] }> {
     const conversation = await this.repositories.conversations!.getById(conversationId);
     if (!conversation) throw new TypeError("Conversation not found");
     const member = conversation.members.find(
@@ -106,11 +129,13 @@ export class ConversationOrchestrator {
       })).map((result) => result.memory);
     }
     const systemPrompt = memorySystemPrompt(memories);
+    const personaPrompt = personaSystemPrompt(ai);
     const chat = [
+      ...(personaPrompt === undefined ? [] : [{ role: "system" as const, content: personaPrompt }]),
       ...(systemPrompt === undefined ? [] : [{ role: "system" as const, content: systemPrompt }]),
       ...messages.map((message) => toChatMessage(message, message.authorCharacterId === undefined ? undefined : byId.get(message.authorCharacterId))),
     ];
-    return { conversation, messages, ai, chat };
+    return { conversation, messages, ai, latestUserMessage: latestUser, chat };
   }
 
   private async saveReply(
@@ -166,10 +191,25 @@ export class ConversationOrchestrator {
     return result;
   }
 
+  private scheduleAfterReply(
+    context: { conversation: ConversationAggregate; ai: Character; latestUserMessage: Message | undefined },
+    readerCharacterId: string,
+    reply: ConversationReply,
+  ): void {
+    if (!this.options.afterReplySaved) return;
+    void Promise.resolve()
+      .then(() => this.options.afterReplySaved!({ ...context, readerCharacterId, reply }))
+      // Auxiliary behavior must never surface as an unhandled rejection or
+      // change the outcome of the completed chat reply.
+      .catch(() => undefined);
+  }
+
   public async completeReply(conversationId: string, readerCharacterId: string): Promise<ConversationReply> {
     const context = await this.context(conversationId, readerCharacterId);
     const result = await this.provider.complete({ messages: context.chat });
-    return this.saveReply(context, result.content);
+    const reply = await this.saveReply(context, result.content);
+    this.scheduleAfterReply(context, readerCharacterId, reply);
+    return reply;
   }
 
   public async *streamReply(
@@ -182,6 +222,7 @@ export class ConversationOrchestrator {
       if (delta.content !== undefined) content += delta.content;
       yield delta;
     }
-    await this.saveReply(context, content);
+    const reply = await this.saveReply(context, content);
+    this.scheduleAfterReply(context, readerCharacterId, reply);
   }
 }
