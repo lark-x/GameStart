@@ -23,6 +23,7 @@ import * as imageJobs from "./use-cases/image-jobs.ts";
 import * as workflowUc from "./use-cases/workflows.ts";
 import * as stickerPacks from "./use-cases/sticker-packs.ts";
 import * as settingsUc from "./use-cases/settings.ts";
+import * as creatorUc from "./use-cases/creator-dispatch.ts";
 import { requestConversationImage, requireConversationImageStore } from "./use-cases/request-conversation-image.ts";
 import {
   parseCreateConversationRequest,
@@ -353,42 +354,18 @@ export class ApiApplication {
   }
 
   public async listCreatorEventCandidates(worldId: string, horizonDays = 7) {
-    const url = new URL(`http://localhost/v1/creator/worlds/${encodeURIComponent(worldId)}/event-candidates?horizonDays=${horizonDays}`);
-    const correlationId = crypto.randomUUID();
-    const request = new Request(url, { method: "GET", headers: { "x-correlation-id": correlationId } });
-    const result = await handleCreatorDispatch(this.ctx, request, url, correlationId);
-    if (result === undefined) throw new ApiError(404, "NOT_FOUND", "Route not found");
-    const json = await result.json() as { data: CreatorEventCandidatesResponse };
-    return json.data;
+    return creatorUc.listCreatorEventCandidates(this.ctx, worldId, horizonDays);
   }
 
   public async previewCreatorEventDispatch(worldId: string, selections: unknown) {
-    const url = new URL(`http://localhost/v1/creator/worlds/${encodeURIComponent(worldId)}/event-dispatches/preview`);
-    const correlationId = crypto.randomUUID();
-    const request = new Request(url, { method: "POST", headers: { "content-type": "application/json", "x-correlation-id": correlationId }, body: JSON.stringify({ selections }) });
-    const result = await handleCreatorDispatch(this.ctx, request, url, correlationId);
-    if (result === undefined) throw new ApiError(404, "NOT_FOUND", "Route not found");
-    const json = await result.json() as { data: unknown };
-    return json.data;
+    return creatorUc.previewDispatch(this.ctx, worldId, selections as import("../../../packages/contracts/src/index.ts").EventDispatchSelectionDto[]);
   }
 
   public async createCreatorEventDispatch(worldId: string, input: unknown) {
-    const url = new URL(`http://localhost/v1/creator/worlds/${encodeURIComponent(worldId)}/event-dispatches`);
-    const correlationId = crypto.randomUUID();
-    const request = new Request(url, { method: "POST", headers: { "content-type": "application/json", "x-correlation-id": correlationId }, body: JSON.stringify(input) });
-    const result = await handleCreatorDispatch(this.ctx, request, url, correlationId);
-    if (result === undefined) throw new ApiError(404, "NOT_FOUND", "Route not found");
-    const json = await result.json() as { data: unknown };
-    return json.data;
+    return creatorUc.createCreatorEventDispatch(this.ctx, worldId, input as import("../../../packages/contracts/src/index.ts").CreateEventDispatchBatchRequest);
   }
 
   public async getCreatorEventDispatchBatch(batchId: string) {
-    const url = new URL(`http://localhost/v1/creator/event-dispatches/${encodeURIComponent(batchId)}`);
-    const correlationId = crypto.randomUUID();
-    const request = new Request(url, { method: "GET", headers: { "x-correlation-id": correlationId } });
-    const result = await handleCreatorDispatch(this.ctx, request, url, correlationId);
-    if (result === undefined) throw new ApiError(404, "NOT_FOUND", "Route not found");
-    const json = await result.json() as { data: unknown };
-    return json.data;
+    return creatorUc.getCreatorEventDispatchBatch(this.ctx, batchId);
   }
 }

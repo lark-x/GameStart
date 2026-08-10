@@ -13,6 +13,9 @@ import type {
 } from "../../../../packages/contracts/src/index.ts";
 
 export async function listMoments(store: ApiStore, storyWorldId: string, readerCharacterId: string, limit: number): Promise<MomentDto[]> {
+  if (!Number.isSafeInteger(limit) || limit < 1) {
+    throw new ApiError(400, "BAD_REQUEST", "limit must be a positive integer");
+  }
   const momentStore = requireMomentStore(store);
   if (!(await store.storyWorlds.getById(storyWorldId))) throw new ApiError(404, "NOT_FOUND", "Story world not found");
   if (!(await store.characters.getById(readerCharacterId))) throw new ApiError(404, "NOT_FOUND", "Reader character not found");

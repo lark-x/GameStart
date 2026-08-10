@@ -82,17 +82,19 @@ graph LR
     worker["apps/worker\nBullMQ Worker"]
     web["apps/web\nVue 前端"]
 
-    contracts --> domain
-    domain --> database
-    database --> ai
-    ai --> api
-    ai --> worker
-    config --> api
-    config --> worker
-    contracts --> api
-    contracts --> worker
-    database --> api
-    database --> worker
+    %% 箭头方向: A --> B 表示 A 依赖 B
+    database --> domain
+    ai --> domain
+    api --> contracts
+    api --> domain
+    api --> database
+    api --> ai
+    worker --> contracts
+    worker --> domain
+    worker --> database
+    worker --> ai
+    api --> config
+    worker --> config
 
     web -.->|"HTTP 调用"| api
 ```

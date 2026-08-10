@@ -71,6 +71,9 @@ export async function getWorldCalendar(
   endsAt: string,
   limit: number,
 ): Promise<{ storyWorldId: string; startsAt: string; endsAt: string; definitions: WorldEventDefinitionDto[]; occurrences: ScheduledOccurrenceDto[] }> {
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500) {
+    throw new ApiError(400, "BAD_REQUEST", "limit must be an integer between 1 and 500");
+  }
   const eventStore = requireEventCalendarStore(store);
   if (!(await eventStore.storyWorlds.getById(worldId))) throw new ApiError(404, "NOT_FOUND", "Story world not found");
   try {
