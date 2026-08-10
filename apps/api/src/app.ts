@@ -1,6 +1,4 @@
-import type {
-  ChatProvider,
-} from "../../../packages/ai/src/index.ts";
+import type { ChatProvider } from "../../../packages/ai/src/index.ts";
 import { SecretCipher } from "../../../packages/ai/src/index.ts";
 import {
   createInMemoryRepositories,
@@ -14,6 +12,40 @@ import { ApiMediaStore } from "./media-store.ts";
 import type { HandlerContext, ApiStore } from "./context.ts";
 import { createImageWorkflowTemplate, assertImageWorkflowTemplateBindings } from "../../../packages/domain/src/index.ts";
 import { ApiError, jsonResponse, errorResponse, withHeaders } from "./helpers.ts";
+import type { AutomaticReplyTrace } from "./auto-reply.ts";
+import * as worlds from "./use-cases/worlds.ts";
+import * as characters from "./use-cases/characters.ts";
+import * as relationships from "./use-cases/relationships.ts";
+import * as worldEvents from "./use-cases/world-events.ts";
+import * as conversationUc from "./use-cases/conversations.ts";
+import * as momentUc from "./use-cases/moments.ts";
+import * as imageJobs from "./use-cases/image-jobs.ts";
+import * as workflowUc from "./use-cases/workflows.ts";
+import * as stickerPacks from "./use-cases/sticker-packs.ts";
+import * as settingsUc from "./use-cases/settings.ts";
+import { requestConversationImage, requireConversationImageStore } from "./use-cases/request-conversation-image.ts";
+import {
+  parseCreateConversationRequest,
+  parseSendMessageRequest,
+  parseSwitchRequest,
+  parseCreateMomentInteractionRequest,
+  parseCreateStickerPackRequest,
+  parseCreateStoryWorldRequest,
+  parseUpdateStoryWorldRequest,
+  parseCreateCharacterRequest,
+  parseUpdateCharacterRequest,
+  parseCreateRelationshipEdgeRequest,
+  parseUpdateRelationshipEdgeRequest,
+  parseCreateWorldEventDefinitionRequest,
+  parseUpdateWorldEventDefinitionRequest,
+  parseImportImageWorkflowRequest,
+  parseRequestConversationImageRequest,
+  parseUpdateAppearanceSettingsRequest,
+  parseSaveLlmProviderProfileRequest,
+  parseUpdateComfyUiSettingsRequest,
+  parseCreateWorldLoreEntryRequest,
+  parseUpdateWorldLoreEntryRequest,
+} from "./parsers.ts";
 import { handleWorldContent } from "./routes/world-content.ts";
 import { handleVisualAssets } from "./routes/visual-assets.ts";
 import { handleSettings } from "./routes/settings.ts";
@@ -44,30 +76,6 @@ export interface CreatorEventCandidatesResponse {
 
 export function createApiStore(seed: ApiSeed = {}): ApiStore {
   return createInMemoryRepositories(seed);
-}
-
-function routeRequest(ctx: HandlerContext, method: string, path: string, body?: unknown, extraHeaders?: Record<string, string>): Promise<Response> {
-  const correlationId = extraHeaders?.["x-correlation-id"] ?? crypto.randomUUID();
-  const url = new URL(`http://localhost${path}`);
-  const h = new Headers({ "x-correlation-id": correlationId });
-  if (extraHeaders) { for (const [k, v] of Object.entries(extraHeaders)) { if (k !== "x-correlation-id" && v) h.set(k, v); } }
-  if (body !== undefined) h.set("content-type", "application/json");
-  const req = new Request(url, { method, headers: h, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
-  const handlers = [handleCreatorDispatch, handleWorldContent, handleVisualAssets, handleConversations, handleMoments, handleMedia, handleSettings];
-  return (async () => {
-    for (const handler of handlers) {
-      const result = await handler(ctx, req, url, correlationId);
-      if (result !== undefined) return result;
-    }
-    throw new ApiError(404, "NOT_FOUND", "Route not found");
-  })();
-}
-
-async function routeJson<T>(ctx: HandlerContext, method: string, path: string, body?: unknown, headers?: Record<string, string>): Promise<T> {
-  const resp = await routeRequest(ctx, method, path, body, headers);
-  const json = await resp.json() as { data?: T; error?: { code: string; message: string } };
-  if (resp.status >= 400) throw new ApiError(resp.status as number, (json.error?.code ?? "BAD_REQUEST") as import("./helpers.ts").ApiErrorCode, json.error?.message ?? "Error");
-  return json.data as T;
 }
 
 export class ApiApplication {
@@ -151,209 +159,236 @@ export class ApiApplication {
     } catch (error) { return errorResponse(error); }
   }
 
-  // --- Delegate methods for backward compatibility with tests ---
+  // --- Delegate methods call use-cases directly ---
 
   public async listConversations(characterId: string) {
-    return routeJson(this.ctx, "GET", `/v1/conversations?characterId=${encodeURIComponent(characterId)}`);
+    return conversationUc.listConversations(this.ctx.store, characterId);
   }
 
   public async createConversation(input: unknown) {
-    return routeJson(this.ctx, "POST", "/v1/conversations", input);
+    return conversationUc.createConversation(this.ctx.store, parseCreateConversationRequest(input));
   }
 
   public async sendMessage(conversationId: string, authorCharacterId: string | undefined, input: unknown, trace?: { correlationId?: string; requestId?: string }) {
-    const body = typeof input === "object" && input !== null
-      ? { ...(input as Record<string, unknown>), ...(authorCharacterId !== undefined ? { authorCharacterId } : {}) }
-      : input;
-    const headers: Record<string, string> = {};
-    if (trace?.correlationId) headers["x-correlation-id"] = trace.correlationId;
-    if (trace?.requestId) headers["x-request-id"] = trace.requestId;
-    return routeJson(this.ctx, "POST", `/v1/conversations/${encodeURIComponent(conversationId)}/messages`, body, headers);
+    const parsed = parseSendMessageRequest(input);
+    const effectiveAuthorId = authorCharacterId ?? parsed.authorCharacterId;
+    const autoTrace: AutomaticReplyTrace = {
+      correlationId: trace?.correlationId ?? crypto.randomUUID(),
+      conversationId,
+      ...(effectiveAuthorId !== undefined ? { actorId: effectiveAuthorId } : {}),
+      ...(trace?.requestId !== undefined ? { requestId: trace.requestId } : {}),
+    };
+    return conversationUc.sendMessage(this.ctx, conversationId, effectiveAuthorId, parsed, autoTrace);
   }
 
   public async streamConversation(conversationId: string, characterId: string) {
-    return routeRequest(this.ctx, "GET", `/v1/conversations/${encodeURIComponent(conversationId)}/stream?characterId=${encodeURIComponent(characterId)}`);
+    const url = new URL(`http://localhost/v1/conversations/${encodeURIComponent(conversationId)}/stream?characterId=${encodeURIComponent(characterId)}`);
+    const correlationId = crypto.randomUUID();
+    const request = new Request(url, { method: "GET", headers: { "x-correlation-id": correlationId } });
+    const result = await handleConversations(this.ctx, request, url, correlationId);
+    if (result === undefined) throw new ApiError(404, "NOT_FOUND", "Route not found");
+    return result;
   }
 
   public async switchActorCharacter(input: unknown) {
-    return routeJson(this.ctx, "POST", "/v1/actor-sessions/switch", input);
+    return conversationUc.switchActorCharacter(this.ctx.store, parseSwitchRequest(input));
   }
 
   public async listMoments(storyWorldId: string, readerCharacterId: string, limit = 20) {
-    return routeJson(this.ctx, "GET", `/v1/moments?storyWorldId=${encodeURIComponent(storyWorldId)}&readerCharacterId=${encodeURIComponent(readerCharacterId)}&limit=${limit}`);
+    return momentUc.listMoments(this.ctx.store, storyWorldId, readerCharacterId, limit);
   }
 
   public async listMomentInteractions(momentId: string, readerCharacterId: string) {
-    return routeJson(this.ctx, "GET", `/v1/moments/${encodeURIComponent(momentId)}/interactions?readerCharacterId=${encodeURIComponent(readerCharacterId)}`);
+    return momentUc.listMomentInteractions(this.ctx.store, momentId, readerCharacterId);
   }
 
   public async createMomentInteraction(momentId: string, input: unknown) {
-    return routeJson(this.ctx, "POST", `/v1/moments/${encodeURIComponent(momentId)}/interactions`, input);
+    return momentUc.createMomentInteraction(this.ctx.store, momentId, parseCreateMomentInteractionRequest(input));
   }
 
   public async getImageJob(jobId: string) {
-    return routeJson(this.ctx, "GET", `/v1/image-jobs/${encodeURIComponent(jobId)}`);
+    return imageJobs.getImageJob(this.ctx.store, jobId);
   }
 
   public async listImageWorkflowTemplates() {
-    return routeJson(this.ctx, "GET", "/v1/comfyui/workflows");
+    return workflowUc.listImageWorkflowTemplates(this.ctx.store);
   }
 
   public validateImageWorkflow(input: { id: string; version: string; workflow: unknown; positivePromptPath?: string[]; negativePromptPath?: string[]; seedPath?: string[] }) {
-    
-    try {
-      const template = createImageWorkflowTemplate({ id: input.id, version: input.version, workflow: input.workflow as import("../../../packages/domain/src/index.ts").JsonObject, positivePromptPath: input.positivePromptPath ?? [], ...(input.negativePromptPath === undefined ? {} : { negativePromptPath: input.negativePromptPath }), ...(input.seedPath === undefined ? {} : { seedPath: input.seedPath }) });
-      assertImageWorkflowTemplateBindings(template);
-      return { valid: true, id: template.id, version: template.version, checkedBindings: ["positivePromptPath", ...(template.negativePromptPath === undefined ? [] : ["negativePromptPath"]), ...(template.seedPath === undefined ? [] : ["seedPath"])] };
-    } catch (error) {
-      if (error instanceof TypeError || error instanceof RangeError) throw new ApiError(400, "BAD_REQUEST", error.message);
-      throw error;
-    }
+    return workflowUc.validateImageWorkflow(input as import("../../../packages/contracts/src/index.ts").ValidateImageWorkflowRequest);
   }
 
   public async listStickerPacks(storyWorldId: string) {
-    return routeJson(this.ctx, "GET", `/v1/sticker-packs?storyWorldId=${encodeURIComponent(storyWorldId)}`);
+    return stickerPacks.listStickerPacks(this.ctx.store, storyWorldId);
   }
 
   public async importStickerPack(input: unknown) {
-    return routeJson(this.ctx, "POST", "/v1/sticker-packs", input);
+    return stickerPacks.importStickerPack(this.ctx.store, parseCreateStickerPackRequest(input));
   }
 
   public async getWorldCalendar(storyWorldId: string, startsAt: string, endsAt: string, limit = 200) {
-    return routeJson(this.ctx, "GET", `/v1/worlds/${encodeURIComponent(storyWorldId)}/calendar?startsAt=${encodeURIComponent(startsAt)}&endsAt=${encodeURIComponent(endsAt)}&limit=${limit}`);
+    return worlds.getWorldCalendar(this.ctx.store, storyWorldId, startsAt, endsAt, limit);
   }
 
   public async retryAutomaticReply(conversationId: string, readerCharacterId: string, sourceMessageId: string | undefined, trace: { correlationId: string; requestId?: string }) {
-    const headers: Record<string, string> = { "x-correlation-id": trace.correlationId };
-    if (trace.requestId) headers["x-request-id"] = trace.requestId;
-    return routeJson(this.ctx, "POST", `/v1/conversations/${encodeURIComponent(conversationId)}/auto-reply/retry`, { readerCharacterId, sourceMessageId }, headers);
+    const autoTrace: AutomaticReplyTrace = {
+      correlationId: trace.correlationId,
+      conversationId,
+      actorId: readerCharacterId,
+      ...(trace.requestId !== undefined ? { requestId: trace.requestId } : {}),
+    };
+    return conversationUc.retryAutomaticReply(this.ctx, conversationId, readerCharacterId, sourceMessageId, autoTrace);
   }
 
   public async listMessages(conversationId: string, characterId: string) {
-    return routeJson(this.ctx, "GET", `/v1/conversations/${encodeURIComponent(conversationId)}/messages?characterId=${encodeURIComponent(characterId)}`);
+    return conversationUc.listMessages(this.ctx.store, conversationId, characterId);
   }
 
   public async listCharacters(storyWorldId?: string) {
-    return routeJson(this.ctx, "GET", `/v1/characters${storyWorldId ? `?storyWorldId=${encodeURIComponent(storyWorldId)}` : ""}`);
+    return characters.listCharacters(this.ctx.store, storyWorldId);
   }
 
   public async listWorlds() {
-    return routeJson(this.ctx, "GET", "/v1/worlds");
+    return worlds.listWorlds(this.ctx.store);
   }
 
   public async createStoryWorld(input: unknown) {
-    return routeJson(this.ctx, "POST", "/v1/worlds", input);
+    return worlds.createWorld(this.ctx.store, parseCreateStoryWorldRequest(input));
   }
 
   public async updateStoryWorld(id: string, input: unknown) {
-    return routeJson(this.ctx, "PUT", `/v1/worlds/${encodeURIComponent(id)}`, input);
+    return worlds.updateWorld(this.ctx.store, id, parseUpdateStoryWorldRequest(input));
   }
 
   public async createCharacter(input: unknown) {
-    return routeJson(this.ctx, "POST", "/v1/characters", input);
+    return characters.createCharacter(this.ctx.store, parseCreateCharacterRequest(input));
   }
 
   public async updateCharacter(id: string, input: unknown) {
-    return routeJson(this.ctx, "PUT", `/v1/characters/${encodeURIComponent(id)}`, input);
+    return characters.updateCharacter(this.ctx.store, id, parseUpdateCharacterRequest(input));
   }
 
   public async listRelationships(storyWorldId: string) {
-    return routeJson(this.ctx, "GET", `/v1/relationships?storyWorldId=${encodeURIComponent(storyWorldId)}`);
+    return relationships.listRelationships(this.ctx.store, storyWorldId);
   }
 
   public async createRelationship(input: unknown) {
-    return routeJson(this.ctx, "POST", "/v1/relationships", input);
+    return relationships.createRelationship(this.ctx.store, parseCreateRelationshipEdgeRequest(input));
   }
 
   public async updateRelationship(id: string, input: unknown) {
-    return routeJson(this.ctx, "PUT", `/v1/relationships/${encodeURIComponent(id)}`, input);
+    return relationships.updateRelationship(this.ctx.store, id, parseUpdateRelationshipEdgeRequest(input));
   }
 
   public async createWorldEvent(input: unknown) {
-    return routeJson(this.ctx, "POST", "/v1/world-events", input);
+    return worldEvents.createWorldEvent(this.ctx.store, parseCreateWorldEventDefinitionRequest(input));
   }
 
   public async updateWorldEvent(id: string, input: unknown) {
-    return routeJson(this.ctx, "PUT", `/v1/world-events/${encodeURIComponent(id)}`, input);
+    return worldEvents.updateWorldEvent(this.ctx.store, id, parseUpdateWorldEventDefinitionRequest(input));
   }
 
   public async getCharacterVisualIdentity(characterId: string) {
-    return routeJson(this.ctx, "GET", `/v1/characters/${encodeURIComponent(characterId)}/visual-identity`);
+    return characters.getCharacterVisualIdentity(this.ctx.store, characterId);
   }
 
   public async importImageWorkflow(input: unknown) {
-    return routeJson(this.ctx, "POST", "/v1/comfyui/workflows/import", input);
+    return workflowUc.importImageWorkflow(this.ctx.store, parseImportImageWorkflowRequest(input) as import("../../../packages/domain/src/index.ts").JsonObject & { id: string; version: string });
   }
 
   public async requestConversationImage(conversationId: string, input: unknown) {
-    return routeJson(this.ctx, "POST", `/v1/conversations/${encodeURIComponent(conversationId)}/image-jobs`, input);
+    return requestConversationImage(requireConversationImageStore(this.ctx.store), conversationId, parseRequestConversationImageRequest(input));
   }
 
   public async listStickers(packId: string) {
-    return routeJson(this.ctx, "GET", `/v1/sticker-packs/${encodeURIComponent(packId)}/stickers`);
+    return stickerPacks.listStickers(this.ctx.store, packId);
   }
 
   public async getAppearanceSettings(ownerKey: string) {
-    return routeJson(this.ctx, "GET", `/v1/appearance-settings?ownerKey=${encodeURIComponent(ownerKey)}`);
+    return settingsUc.getAppearanceSettings(this.ctx.store, ownerKey);
   }
 
   public async saveAppearanceSettings(ownerKey: string, input: unknown) {
-    return routeJson(this.ctx, "PUT", `/v1/appearance-settings?ownerKey=${encodeURIComponent(ownerKey)}`, input);
+    return settingsUc.saveAppearanceSettings(this.ctx.store, ownerKey, parseUpdateAppearanceSettingsRequest(input));
   }
 
   public async listLlmProviderProfiles() {
-    return routeJson(this.ctx, "GET", "/v1/llm-provider-profiles");
+    return settingsUc.listLlmProviderProfiles(this.ctx.store);
   }
 
   public async saveLlmProviderProfile(input: unknown) {
-    return routeJson(this.ctx, "PUT", "/v1/llm-provider-profiles", input);
+    return settingsUc.saveLlmProviderProfile(this.ctx.store, parseSaveLlmProviderProfileRequest(input), this.ctx.secretCipher);
   }
 
   public async deleteLlmProviderProfile(id: string) {
-    await routeRequest(this.ctx, "DELETE", `/v1/llm-provider-profiles/${encodeURIComponent(id)}`);
+    return settingsUc.deleteLlmProviderProfile(this.ctx.store, id);
   }
 
   public async getComfyUiSettings() {
-    return routeJson(this.ctx, "GET", "/v1/comfyui/settings");
+    return settingsUc.getComfyUiSettings(this.ctx.store);
   }
 
   public async saveComfyUiSettings(input: unknown) {
-    return routeJson(this.ctx, "PUT", "/v1/comfyui/settings", input);
+    return settingsUc.saveComfyUiSettings(this.ctx.store, parseUpdateComfyUiSettingsRequest(input));
   }
 
   public async listImageAssets(storyWorldId: string) {
-    return routeJson(this.ctx, "GET", `/v1/image-assets?storyWorldId=${encodeURIComponent(storyWorldId)}`);
+    return imageJobs.listImageAssets(this.ctx.store, storyWorldId);
   }
 
   public async listWorldLoreEntries(storyWorldId: string, query?: string) {
-    return routeJson(this.ctx, "GET", `/v1/world-lore?storyWorldId=${encodeURIComponent(storyWorldId)}${query ? `&q=${encodeURIComponent(query)}` : ""}`);
+    return worlds.listWorldLoreEntries(this.ctx.store, storyWorldId, query);
   }
 
   public async createWorldLoreEntry(input: unknown) {
-    return routeJson(this.ctx, "POST", "/v1/world-lore", input);
+    return worlds.createWorldLoreEntry(this.ctx.store, parseCreateWorldLoreEntryRequest(input));
   }
 
   public async updateWorldLoreEntry(id: string, input: unknown) {
-    return routeJson(this.ctx, "PUT", `/v1/world-lore/${encodeURIComponent(id)}`, input);
+    return worlds.updateWorldLoreEntry(this.ctx.store, id, parseUpdateWorldLoreEntryRequest(input));
   }
 
   public async deleteWorldLoreEntry(id: string) {
-    await routeRequest(this.ctx, "DELETE", `/v1/world-lore/${encodeURIComponent(id)}`);
+    return worlds.deleteWorldLoreEntry(this.ctx.store, id);
   }
 
   public async listCreatorEventCandidates(worldId: string, horizonDays = 7) {
-    return routeJson(this.ctx, "GET", `/v1/creator/worlds/${encodeURIComponent(worldId)}/event-candidates?horizonDays=${horizonDays}`);
+    const url = new URL(`http://localhost/v1/creator/worlds/${encodeURIComponent(worldId)}/event-candidates?horizonDays=${horizonDays}`);
+    const correlationId = crypto.randomUUID();
+    const request = new Request(url, { method: "GET", headers: { "x-correlation-id": correlationId } });
+    const result = await handleCreatorDispatch(this.ctx, request, url, correlationId);
+    if (result === undefined) throw new ApiError(404, "NOT_FOUND", "Route not found");
+    const json = await result.json() as { data: CreatorEventCandidatesResponse };
+    return json.data;
   }
 
   public async previewCreatorEventDispatch(worldId: string, selections: unknown) {
-    return routeJson(this.ctx, "POST", `/v1/creator/worlds/${encodeURIComponent(worldId)}/event-dispatches/preview`, { selections });
+    const url = new URL(`http://localhost/v1/creator/worlds/${encodeURIComponent(worldId)}/event-dispatches/preview`);
+    const correlationId = crypto.randomUUID();
+    const request = new Request(url, { method: "POST", headers: { "content-type": "application/json", "x-correlation-id": correlationId }, body: JSON.stringify({ selections }) });
+    const result = await handleCreatorDispatch(this.ctx, request, url, correlationId);
+    if (result === undefined) throw new ApiError(404, "NOT_FOUND", "Route not found");
+    const json = await result.json() as { data: unknown };
+    return json.data;
   }
 
   public async createCreatorEventDispatch(worldId: string, input: unknown) {
-    return routeJson(this.ctx, "POST", `/v1/creator/worlds/${encodeURIComponent(worldId)}/event-dispatches`, input);
+    const url = new URL(`http://localhost/v1/creator/worlds/${encodeURIComponent(worldId)}/event-dispatches`);
+    const correlationId = crypto.randomUUID();
+    const request = new Request(url, { method: "POST", headers: { "content-type": "application/json", "x-correlation-id": correlationId }, body: JSON.stringify(input) });
+    const result = await handleCreatorDispatch(this.ctx, request, url, correlationId);
+    if (result === undefined) throw new ApiError(404, "NOT_FOUND", "Route not found");
+    const json = await result.json() as { data: unknown };
+    return json.data;
   }
 
   public async getCreatorEventDispatchBatch(batchId: string) {
-    return routeJson(this.ctx, "GET", `/v1/creator/event-dispatches/${encodeURIComponent(batchId)}`);
+    const url = new URL(`http://localhost/v1/creator/event-dispatches/${encodeURIComponent(batchId)}`);
+    const correlationId = crypto.randomUUID();
+    const request = new Request(url, { method: "GET", headers: { "x-correlation-id": correlationId } });
+    const result = await handleCreatorDispatch(this.ctx, request, url, correlationId);
+    if (result === undefined) throw new ApiError(404, "NOT_FOUND", "Route not found");
+    const json = await result.json() as { data: unknown };
+    return json.data;
   }
 }

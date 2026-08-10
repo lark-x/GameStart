@@ -45,7 +45,7 @@ graph TD
     end
 
     subgraph Storage["数据存储"]
-        PG["PostgreSQL\n关系数据 + FTS + pgvector"]
+        PG["PostgreSQL\n关系数据 + FTS"]
         Redis["Redis\nBullMQ 队列 + 缓存"]
         FS["本地文件存储\n图片/媒体/缩略图"]
     end
