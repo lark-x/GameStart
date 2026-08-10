@@ -42,6 +42,7 @@ import {
   requireChatStore,
 } from "../store-helpers.ts";
 import type { ChatStore, EventCalendarStore } from "../store-helpers.ts";
+import { requestConversationImage as requestConversationImageUseCase, requireConversationImageStore } from "../use-cases/request-conversation-image.ts";
 import type { ExecutionDispatchRequest } from "../../../../packages/database/src/index.ts";
 
 async function parseBody(request: Request): Promise<unknown> {
@@ -209,80 +210,13 @@ export async function handleVisualAssets(
   const conversationImagePath = /^\/v1\/conversations\/([^/]+)\/image-jobs$/.exec(url.pathname);
   if (conversationImagePath) {
     if (request.method !== "POST") throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
+    const { parseRequestConversationImageRequest } = await import("../parsers.ts");
     const input = parseRequestConversationImageRequest(await parseBody(request));
     trustedActor(ctx, request, input.actorCharacterId);
     const conversationId = decodeURIComponent(conversationImagePath[1] ?? "");
-    const imgStore = requireConversationImageStoreFull(store);
-    const conversation = await imgStore.conversations.getById(conversationId);
-    if (!conversation) throw new ApiError(404, "NOT_FOUND", "Conversation not found");
-    if (conversation.conversation.type !== "PRIVATE") throw new ApiError(400, "BAD_REQUEST", "Image requests are only supported in private conversations");
-    if (conversation.conversation.storyWorldId === "") throw new ApiError(400, "BAD_REQUEST", "Conversation story world is invalid");
-    const activeMembers = conversation.members.filter((m) => m.leftAt === undefined);
-    const memberIds = new Set(activeMembers.map((m) => m.characterId));
-    if (activeMembers.length !== 2 || input.actorCharacterId === input.recipientCharacterId || !memberIds.has(input.actorCharacterId) || !memberIds.has(input.recipientCharacterId)) {
-      throw new ApiError(403, "FORBIDDEN", "Actor and recipient must be the two active private-conversation members");
-    }
-    const actor = await store.characters.getById(input.actorCharacterId);
-    const recipient = await store.characters.getById(input.recipientCharacterId);
-    const storyWorld = await store.storyWorlds.getById(conversation.conversation.storyWorldId);
-    if (!actor || !recipient || !storyWorld) throw new ApiError(404, "NOT_FOUND", "Conversation participants or story world not found");
-    if (actor.storyWorldId !== storyWorld.id || recipient.storyWorldId !== storyWorld.id) throw new ApiError(403, "FORBIDDEN", "Conversation participants must belong to its story world");
-
-    const requestKey = encodeURIComponent(input.idempotencyKey);
-    const prefix = `chat-image:${conversationId}:${requestKey}`;
-    const actionId = `${prefix}:action`;
-    const jobId = `${prefix}:job`;
-    const existing = await imgStore.imageJobs.getByActionId(actionId);
-    if (existing) {
-      if (existing.ownerCharacterId !== input.actorCharacterId || existing.workflowVersion !== input.workflowVersion || existing.prompt !== input.prompt) {
-        throw new ApiError(409, "CONFLICT", "Image request idempotency key was already used with different content");
-      }
-      return jsonResponse({ data: toImageJobDto(existing) }, 201);
-    }
-    const conflictingJob = await imgStore.imageJobs.getById(jobId);
-    if (conflictingJob) throw new ApiError(409, "CONFLICT", "Image request idempotency key conflicts with an existing job");
-
+    const imgStore = requireConversationImageStore(store);
     try {
-      const eventKey = `${prefix}:request`;
-      const definitionId = `${prefix}:definition`;
-      const occurrenceId = `${prefix}:occurrence`;
-      const executionId = `${prefix}:execution`;
-      let definition = await imgStore.worldEventDefinitions.getById(definitionId);
-      if (!definition) {
-        definition = createWorldEventDefinitionDomain({
-          id: definitionId, storyWorld, eventKey, name: "Private chat image request",
-          triggerSource: TriggerSource.USER_INTERACTION,
-          recurrence: { kind: EventRecurrenceKind.ONCE, runAt: input.createdAt },
-          targetCharacters: [actor], recipientCharacters: [recipient],
-          outputs: { sendMessage: false, publishMoment: false, generateImage: true },
-          enabled: false, createdAt: input.createdAt,
-        });
-        await imgStore.worldEventDefinitions.save(definition);
-      }
-      let occurrence = await imgStore.scheduledOccurrences.getById(occurrenceId);
-      if (!occurrence) {
-        occurrence = createScheduledOccurrence({ id: occurrenceId, definition, scheduledFor: input.createdAt, occurrenceKey: occurrenceId, status: ScheduledOccurrenceStatus.RUNNING, createdAt: input.createdAt });
-        await imgStore.scheduledOccurrences.save(occurrence);
-      }
-      let execution = await imgStore.eventExecutions.getById(executionId);
-      if (!execution) {
-        execution = createEventExecution({ id: executionId, occurrence, definition, ruleVersion: "chat-image-v1", inputSnapshot: { conversationId, actorCharacterId: input.actorCharacterId, recipientCharacterId: input.recipientCharacterId, idempotencyKey: input.idempotencyKey }, startedAt: input.createdAt });
-        await imgStore.eventExecutions.save(execution);
-      }
-      let action = await imgStore.behaviorActions.getById(actionId);
-      if (!action) {
-        action = createBehaviorAction({
-          id: actionId, execution, actorCharacterId: input.actorCharacterId,
-          kind: ActionKind.REQUEST_IMAGE,
-          payload: { conversationId, recipientCharacterId: input.recipientCharacterId, prompt: input.prompt, workflowVersion: input.workflowVersion, ...(input.negativePrompt === undefined ? {} : { negativePrompt: input.negativePrompt }), ...(input.seed === undefined ? {} : { seed: input.seed }) },
-          createdAt: input.createdAt,
-        });
-        await imgStore.behaviorActions.save(action);
-      } else if (action.actorCharacterId !== input.actorCharacterId || action.payload.conversationId !== conversationId || action.payload.recipientCharacterId !== input.recipientCharacterId || action.payload.prompt !== input.prompt || action.payload.workflowVersion !== input.workflowVersion) {
-        throw new ApiError(409, "CONFLICT", "Image request idempotency key was already used with different content");
-      }
-      const job = createImageJob({ id: jobId, action, createdAt: input.createdAt });
-      await imgStore.imageJobs.save(job);
+      const job = await requestConversationImageUseCase(imgStore, conversationId, input);
       return jsonResponse({ data: toImageJobDto(job) }, 201);
     } catch (error) {
       if (error instanceof ApiError) throw error;

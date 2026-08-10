@@ -71,7 +71,7 @@ export function toWorldEventDefinitionDto(definition: WorldEventDefinition): Wor
   };
 }
 
-export function toScheduledOccurrenceDto(occurrence: ScheduledOccurrenceDto): ScheduledOccurrenceDto {
+export function toScheduledOccurrenceDto(occurrence: ScheduledOccurrence): ScheduledOccurrenceDto {
   return { ...occurrence };
 }
 

@@ -46,16 +46,17 @@ export function createApiStore(seed: ApiSeed = {}): ApiStore {
   return createInMemoryRepositories(seed);
 }
 
-function routeRequest(ctx: HandlerContext, method: string, path: string, body?: unknown, headers?: Record<string, string>): Promise<Response> {
+function routeRequest(ctx: HandlerContext, method: string, path: string, body?: unknown, extraHeaders?: Record<string, string>): Promise<Response> {
+  const correlationId = extraHeaders?.["x-correlation-id"] ?? crypto.randomUUID();
   const url = new URL(`http://localhost${path}`);
-  const h = new Headers({ "x-correlation-id": crypto.randomUUID(), ...headers });
+  const h = new Headers({ "x-correlation-id": correlationId });
+  if (extraHeaders) { for (const [k, v] of Object.entries(extraHeaders)) { if (k !== "x-correlation-id" && v) h.set(k, v); } }
   if (body !== undefined) h.set("content-type", "application/json");
   const req = new Request(url, { method, headers: h, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
-  const corrId = crypto.randomUUID();
   const handlers = [handleCreatorDispatch, handleWorldContent, handleVisualAssets, handleConversations, handleMoments, handleMedia, handleSettings];
   return (async () => {
     for (const handler of handlers) {
-      const result = await handler(ctx, req, url, corrId);
+      const result = await handler(ctx, req, url, correlationId);
       if (result !== undefined) return result;
     }
     throw new ApiError(404, "NOT_FOUND", "Route not found");
@@ -93,6 +94,7 @@ export class ApiApplication {
   ) {
     this.store = store;
     this.provider = provider;
+    const sharedInteractionLogs = operationalOptions.interactionLogs ?? new InMemoryInteractionLogRepository();
     this.ctx = {
       store, provider, conversationOptions,
       requireTrustedActor: securityOptions.requireTrustedActor ?? false,
@@ -100,9 +102,9 @@ export class ApiApplication {
       secretCipher: operationalOptions.secretCipher,
       creatorDispatchEnabled: operationalOptions.creatorDispatchEnabled ?? false,
       creatorClock: operationalOptions.creatorClock ?? (() => new Date()),
-      interactionLogs: operationalOptions.interactionLogs ?? new InMemoryInteractionLogRepository(),
+      interactionLogs: sharedInteractionLogs,
       logging: operationalOptions.interactionLogging ?? new InteractionLogging({
-        repository: operationalOptions.interactionLogs ?? new InMemoryInteractionLogRepository(),
+        repository: sharedInteractionLogs,
         ...(operationalOptions.loggingCleanupEnabled === undefined ? {} : { cleanupEnabled: operationalOptions.loggingCleanupEnabled }),
         ...(operationalOptions.loggingCleanupIntervalMs === undefined ? {} : { cleanupIntervalMs: operationalOptions.loggingCleanupIntervalMs }),
       }),
@@ -163,7 +165,10 @@ export class ApiApplication {
     const body = typeof input === "object" && input !== null
       ? { ...(input as Record<string, unknown>), ...(authorCharacterId !== undefined ? { authorCharacterId } : {}) }
       : input;
-    return routeJson(this.ctx, "POST", `/v1/conversations/${encodeURIComponent(conversationId)}/messages`, body, { ...(trace?.correlationId ? { "x-correlation-id": trace.correlationId } : {}), ...(trace?.requestId ? { "x-request-id": trace.requestId } : {}) });
+    const headers: Record<string, string> = {};
+    if (trace?.correlationId) headers["x-correlation-id"] = trace.correlationId;
+    if (trace?.requestId) headers["x-request-id"] = trace.requestId;
+    return routeJson(this.ctx, "POST", `/v1/conversations/${encodeURIComponent(conversationId)}/messages`, body, headers);
   }
 
   public async streamConversation(conversationId: string, characterId: string) {
@@ -219,7 +224,13 @@ export class ApiApplication {
   }
 
   public async retryAutomaticReply(conversationId: string, readerCharacterId: string, sourceMessageId: string | undefined, trace: { correlationId: string; requestId?: string }) {
-    return routeJson(this.ctx, "POST", `/v1/conversations/${encodeURIComponent(conversationId)}/auto-reply/retry`, { readerCharacterId, sourceMessageId }, { ...(trace.requestId ? { "x-request-id": trace.requestId } : {}) });
+    const headers: Record<string, string> = { "x-correlation-id": trace.correlationId };
+    if (trace.requestId) headers["x-request-id"] = trace.requestId;
+    return routeJson(this.ctx, "POST", `/v1/conversations/${encodeURIComponent(conversationId)}/auto-reply/retry`, { readerCharacterId, sourceMessageId }, headers);
+  }
+
+  public async listMessages(conversationId: string, characterId: string) {
+    return routeJson(this.ctx, "GET", `/v1/conversations/${encodeURIComponent(conversationId)}/messages?characterId=${encodeURIComponent(characterId)}`);
   }
 
   public async listCharacters(storyWorldId?: string) {

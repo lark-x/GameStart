@@ -27,6 +27,7 @@ import {
   type RetryAutomaticReplyState,
 } from "../auto-reply.ts";
 import { previewMessage } from "../../../../packages/database/src/interaction-log.ts";
+import { requestConversationImage as requestConversationImageUseCase, requireConversationImageStore } from "../use-cases/request-conversation-image.ts";
 
 interface ScheduledAutomaticReply {
   readonly state: AutomaticReplyState;
@@ -296,37 +297,19 @@ export async function handleConversations(
           if (!prompt) return;
           const userId = context.latestUserMessage?.authorCharacterId;
           if (!userId || userId === context.ai.id) return;
-          // Delegate to visual-assets handler via store
-          const imgStore = ctx.store as import("../context.ts").ApiStore & { imageJobs?: NonNullable<import("../context.ts").ApiStore["imageJobs"]>; behaviorActions?: NonNullable<import("../context.ts").ApiStore["behaviorActions"]>; eventExecutions?: NonNullable<import("../context.ts").ApiStore["eventExecutions"]>; worldEventDefinitions?: NonNullable<import("../context.ts").ApiStore["worldEventDefinitions"]>; scheduledOccurrences?: NonNullable<import("../context.ts").ApiStore["scheduledOccurrences"]> };
-          if (!imgStore.imageJobs || !imgStore.behaviorActions || !imgStore.eventExecutions || !imgStore.worldEventDefinitions || !imgStore.scheduledOccurrences) return;
-          // Simplified: just create the image job request inline
-          const requestKey = encodeURIComponent(`auto-image:${context.reply.message.id}`);
-          const conversationId = context.conversation.conversation.id;
-          const prefix = `chat-image:${conversationId}:${requestKey}`;
-          const actionId = `${prefix}:action`;
-          const jobId = `${prefix}:job`;
-          const existingJob = await imgStore.imageJobs.getByActionId(actionId);
-          if (existingJob) return;
-          const storyWorld = await imgStore.storyWorlds.getById(context.conversation.conversation.storyWorldId);
-          if (!storyWorld) return;
-          const eventKey = `${prefix}:request`;
-          const definitionId = `${prefix}:definition`;
-          const occurrenceId = `${prefix}:occurrence`;
-          const executionId = `${prefix}:execution`;
-          const { createWorldEventDefinition: cDef, createScheduledOccurrence: cOcc, createEventExecution: cEx, createBehaviorAction: cAct, createImageJob: cJob, ActionKind: AK, EventRecurrenceKind: ERK, ScheduledOccurrenceStatus: SOS, TriggerSource: TS } = await import("../../../../packages/domain/src/index.ts");
-          let definition = await imgStore.worldEventDefinitions.getById(definitionId);
-          if (!definition) {
-            definition = cDef({ id: definitionId, storyWorld, eventKey, name: "Auto chat image", triggerSource: TS.USER_INTERACTION, recurrence: { kind: ERK.ONCE, runAt: context.reply.message.createdAt }, targetCharacters: [context.ai], recipientCharacters: [context.latestUserMessage ? { id: context.latestUserMessage.authorCharacterId, storyWorldId: storyWorld.id } as any : context.ai], outputs: { sendMessage: false, publishMoment: false, generateImage: true }, enabled: false, createdAt: context.reply.message.createdAt });
-            await imgStore.worldEventDefinitions.save(definition);
+          try {
+            const imgStore = requireConversationImageStore(ctx.store);
+            await requestConversationImageUseCase(imgStore, context.conversation.conversation.id, {
+              actorCharacterId: context.ai.id,
+              recipientCharacterId: userId,
+              prompt,
+              workflowVersion: settings.defaultWorkflowVersion,
+              createdAt: context.reply.message.createdAt,
+              idempotencyKey: `auto-image:${context.reply.message.id}`,
+            });
+          } catch {
+            // auto-image is best-effort; do not fail the stream
           }
-          let occurrence = await imgStore.scheduledOccurrences.getById(occurrenceId);
-          if (!occurrence) { occurrence = cOcc({ id: occurrenceId, definition, scheduledFor: context.reply.message.createdAt, occurrenceKey: occurrenceId, status: SOS.RUNNING, createdAt: context.reply.message.createdAt }); await imgStore.scheduledOccurrences.save(occurrence); }
-          let execution = await imgStore.eventExecutions.getById(executionId);
-          if (!execution) { execution = cEx({ id: executionId, occurrence, definition, ruleVersion: "chat-image-v1", inputSnapshot: {}, startedAt: context.reply.message.createdAt }); await imgStore.eventExecutions.save(execution); }
-          let action = await imgStore.behaviorActions.getById(actionId);
-          if (!action) { action = cAct({ id: actionId, execution, actorCharacterId: context.ai.id, kind: AK.REQUEST_IMAGE, payload: { conversationId, recipientCharacterId: userId, prompt, workflowVersion: settings.defaultWorkflowVersion }, createdAt: context.reply.message.createdAt }); await imgStore.behaviorActions.save(action); }
-          const job = cJob({ id: jobId, action, createdAt: context.reply.message.createdAt });
-          await imgStore.imageJobs.save(job);
         },
       });
       return createSseResponse(orchestrator.streamReply(decodeURIComponent(streamPath[1] ?? ""), characterId));

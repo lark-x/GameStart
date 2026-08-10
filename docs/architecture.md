@@ -2,7 +2,7 @@
 
 ## 概述
 
-Living Network 是一个 AI 角色生活模拟与社交叙事系统，采用 TypeScript monorepo 架构。前端为 Vue 3 + Vite 单页应用，后端为 Fastify 模块化单体 API 加独立 BullMQ Worker，数据层使用 PostgreSQL（关系数据 + 全文检索 + pgvector）、Redis（队列与缓存）和本地文件存储，外部接入 OpenAI-compatible / Anthropic LLM 和 ComfyUI 图片生成服务。
+Living Network 是一个 AI 角色生活模拟与社交叙事系统，采用 TypeScript monorepo 架构。前端为 Vue 3 + Vite 单页应用，后端为 Node.js HTTP 模块化单体 API（基于 node:http） 加独立 BullMQ Worker，数据层使用 PostgreSQL（关系数据 + 全文检索（FTS））、Redis（队列与缓存）和本地文件存储，外部接入 OpenAI-compatible / Anthropic LLM 和 ComfyUI 图片生成服务。
 
 ## 整体架构
 
@@ -22,7 +22,7 @@ graph TD
         Admin["管理 AdminView"]
     end
 
-    subgraph API["Fastify API（:3001）"]
+    subgraph API["HTTP API（:3001）"]
         App["app.ts 核心路由"]
         CO["conversation-orchestrator\n对话编排"]
         CE["creator-events\n创作者事件"]
@@ -75,10 +75,10 @@ graph TD
 graph LR
     contracts["packages/contracts\nAPI Schema 与事件契约"]
     domain["packages/domain\n领域模型与规则"]
-    database["packages/database\nDrizzle Schema、迁移、仓储"]
+    database["packages/database\n手写 SQL 仓储与迁移"]
     ai["packages/ai\nLLM Provider 适配"]
     config["packages/config\n环境变量与共享配置"]
-    api["apps/api\nFastify API"]
+    api["apps/api\nHTTP API"]
     worker["apps/worker\nBullMQ Worker"]
     web["apps/web\nVue 前端"]
 
