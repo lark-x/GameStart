@@ -46,6 +46,8 @@ import {
   parseUpdateComfyUiSettingsRequest,
   parseCreateWorldLoreEntryRequest,
   parseUpdateWorldLoreEntryRequest,
+  parseDispatchPreviewRequest,
+  parseCreateDispatchRequest,
 } from "./parsers.ts";
 import { handleWorldContent } from "./routes/world-content.ts";
 import { handleVisualAssets } from "./routes/visual-assets.ts";
@@ -294,7 +296,7 @@ export class ApiApplication {
   }
 
   public async importImageWorkflow(input: unknown) {
-    return workflowUc.importImageWorkflow(this.ctx.store, parseImportImageWorkflowRequest(input) as import("../../../packages/domain/src/index.ts").JsonObject & { id: string; version: string });
+    return workflowUc.importImageWorkflow(this.ctx.store, parseImportImageWorkflowRequest(input));
   }
 
   public async requestConversationImage(conversationId: string, input: unknown) {
@@ -358,11 +360,12 @@ export class ApiApplication {
   }
 
   public async previewCreatorEventDispatch(worldId: string, selections: unknown) {
-    return creatorUc.previewDispatch(this.ctx, worldId, selections as import("../../../packages/contracts/src/index.ts").EventDispatchSelectionDto[]);
+    const parsed = parseDispatchPreviewRequest({ selections });
+    return creatorUc.previewDispatch(this.ctx, worldId, parsed.selections);
   }
 
   public async createCreatorEventDispatch(worldId: string, input: unknown) {
-    return creatorUc.createCreatorEventDispatch(this.ctx, worldId, input as import("../../../packages/contracts/src/index.ts").CreateEventDispatchBatchRequest);
+    return creatorUc.createCreatorEventDispatch(this.ctx, worldId, parseCreateDispatchRequest(input));
   }
 
   public async getCreatorEventDispatchBatch(batchId: string) {

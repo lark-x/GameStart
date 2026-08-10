@@ -17,8 +17,6 @@ import * as worlds from "../use-cases/worlds.ts";
 import * as characters from "../use-cases/characters.ts";
 import * as relationships from "../use-cases/relationships.ts";
 import * as worldEvents from "../use-cases/world-events.ts";
-import { requireEventCalendarStore } from "../store-helpers.ts";
-import { toWorldEventDefinitionDto, toScheduledOccurrenceDto } from "../mappers.ts";
 
 async function parseBody(request: Request): Promise<unknown> {
   try { return await request.json(); } catch { throw new ApiError(400, "BAD_REQUEST", "Request body must be valid JSON"); }
@@ -28,7 +26,7 @@ export async function handleWorldContent(
   ctx: HandlerContext,
   request: Request,
   url: URL,
-  correlationId: string,
+  _correlationId: string,
 ): Promise<Response | undefined> {
   // --- Worlds ---
   if (url.pathname === "/v1/worlds") {
@@ -83,9 +81,7 @@ export async function handleWorldContent(
     if (request.method === "GET") {
       const storyWorldId = url.searchParams.get("storyWorldId");
       if (!storyWorldId) throw new ApiError(400, "BAD_REQUEST", "storyWorldId is required");
-      const eventStore = requireEventCalendarStore(ctx.store);
-      if (!(await eventStore.storyWorlds.getById(storyWorldId))) throw new ApiError(404, "NOT_FOUND", "Story world not found");
-      return jsonResponse({ data: (await eventStore.worldEventDefinitions.listByStoryWorld(storyWorldId)).map(toWorldEventDefinitionDto) });
+      return jsonResponse({ data: await worldEvents.listWorldEvents(ctx.store, storyWorldId) });
     }
     if (request.method === "POST") {
       trustedActor(ctx, request);

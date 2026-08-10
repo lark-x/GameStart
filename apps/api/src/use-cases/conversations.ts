@@ -9,8 +9,7 @@ import { ApiError } from "../helpers.ts";
 import { toConversationDto, toMessageDto, toSessionDto } from "../mappers.ts";
 import { requireChatStore } from "../store-helpers.ts";
 import { ConversationOrchestrator } from "../conversation-orchestrator.ts";
-import type { ConversationReply, ConversationReplyContext } from "../conversation-orchestrator.ts";
-import { promptForExplicitChatImageIntent } from "../auto-image-intent.ts";
+import type { ConversationReply } from "../conversation-orchestrator.ts";
 import {
   assistantReplyId,
   automaticReplyFlightKey,
@@ -20,7 +19,6 @@ import {
   type AutomaticReplyTrace,
 } from "../auto-reply.ts";
 import { previewMessage } from "../../../../packages/database/src/interaction-log.ts";
-import { requestConversationImage as requestConversationImageUseCase, requireConversationImageStore } from "./request-conversation-image.ts";
 import type {
   CreateConversationRequest,
   SendMessageRequest,

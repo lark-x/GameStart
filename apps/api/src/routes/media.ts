@@ -3,7 +3,6 @@ import { trustedActor } from "../context.ts";
 import { ApiError, jsonResponse, withHeaders } from "../helpers.ts";
 import type { InteractionLogDto, InteractionLogQuery } from "../../../../packages/contracts/src/index.ts";
 import { encodeInteractionLogCursor } from "../../../../packages/database/src/interaction-log.ts";
-import type { StoredMedia } from "../media-store.ts";
 
 export async function handleMedia(
   ctx: HandlerContext,

@@ -12,7 +12,7 @@ export async function handleCreatorDispatch(
   ctx: HandlerContext,
   request: Request,
   url: URL,
-  correlationId: string,
+  _correlationId: string,
 ): Promise<Response | undefined> {
   // --- Creator Event Candidates ---
   const creatorCandidatesPath = /^\/v1\/creator\/worlds\/([^/]+)\/event-candidates$/.exec(url.pathname);

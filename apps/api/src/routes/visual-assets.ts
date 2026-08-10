@@ -1,14 +1,13 @@
 import type { HandlerContext } from "../context.ts";
 import { trustedActor } from "../context.ts";
 import { ApiError, jsonResponse } from "../helpers.ts";
-import { toCharacterVisualIdentityDto, toImageWorkflowTemplateDto, toImageJobDto, toImageAssetDto, toStickerPackDto, toStickerDto, toStickerPackImportResult } from "../mappers.ts";
+import { toImageJobDto } from "../mappers.ts";
 import {
   parseValidateImageWorkflowRequest,
   parseImportImageWorkflowRequest,
   parseRequestConversationImageRequest,
   parseCreateStickerPackRequest,
 } from "../parsers.ts";
-import { requireVisualWorkflowStore, requireImageJobStore, requireImageAssetStore, requireStickerStore } from "../store-helpers.ts";
 import * as characters from "../use-cases/characters.ts";
 import * as workflowUc from "../use-cases/workflows.ts";
 import * as stickerPacks from "../use-cases/sticker-packs.ts";
@@ -23,7 +22,7 @@ export async function handleVisualAssets(
   ctx: HandlerContext,
   request: Request,
   url: URL,
-  correlationId: string,
+  _correlationId: string,
 ): Promise<Response | undefined> {
   // --- Visual Identity ---
   const visualIdentityPath = /^\/v1\/characters\/([^/]+)\/visual-identity$/.exec(url.pathname);

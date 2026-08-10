@@ -12,6 +12,14 @@ import type {
   WorldEventDefinitionDto,
 } from "../../../../packages/contracts/src/index.ts";
 
+export async function listWorldEvents(store: ApiStore, storyWorldId: string): Promise<WorldEventDefinitionDto[]> {
+  const eventStore = requireEventCalendarStore(store);
+  if (!(await eventStore.storyWorlds.getById(storyWorldId))) {
+    throw new ApiError(404, "NOT_FOUND", "Story world not found");
+  }
+  return (await eventStore.worldEventDefinitions.listByStoryWorld(storyWorldId)).map(toWorldEventDefinitionDto);
+}
+
 export async function createWorldEvent(store: ApiStore, input: CreateWorldEventDefinitionRequest): Promise<WorldEventDefinitionDto> {
   const eventStore = requireEventCalendarStore(store);
   if (await eventStore.worldEventDefinitions.getById(input.id)) throw new ApiError(409, "CONFLICT", "World event already exists");

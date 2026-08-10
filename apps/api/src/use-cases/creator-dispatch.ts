@@ -21,7 +21,7 @@ import type {
   EventDispatchSelectionDto,
   CreateEventDispatchBatchRequest,
 } from "../../../../packages/contracts/src/index.ts";
-import type { DispatchRequestRepository, ExecutionDispatchRequest } from "../../../../packages/database/src/index.ts";
+import type { ExecutionDispatchRequest } from "../../../../packages/database/src/index.ts";
 
 // --- Store types ---
 

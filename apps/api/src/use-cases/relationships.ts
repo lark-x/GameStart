@@ -1,6 +1,5 @@
 import {
   createRelationshipEdge as createRelationshipEdgeDomain,
-  type Character,
 } from "../../../../packages/domain/src/index.ts";
 import type { ApiStore } from "../context.ts";
 import { ApiError } from "../helpers.ts";

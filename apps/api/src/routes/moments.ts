@@ -12,7 +12,7 @@ export async function handleMoments(
   ctx: HandlerContext,
   request: Request,
   url: URL,
-  correlationId: string,
+  _correlationId: string,
 ): Promise<Response | undefined> {
   if (request.method === "GET" && url.pathname === "/v1/moments") {
     const storyWorldId = url.searchParams.get("storyWorldId");
