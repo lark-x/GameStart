@@ -895,6 +895,33 @@ export interface EventDispatchBatchDto {
   updatedAt: string;
 }
 
+export const ImageAssetCategory = {
+  CHAT: "CHAT",
+  MOMENT: "MOMENT",
+  EVENT: "EVENT",
+} as const;
+
+export type ImageAssetCategory =
+  (typeof ImageAssetCategory)[keyof typeof ImageAssetCategory];
+
+/** A completed ComfyUI result exposed through the persistent story-world album. */
+export interface ImageAssetDto {
+  id: ImageJobId;
+  category: ImageAssetCategory;
+  storyWorldId: StoryWorldId;
+  ownerCharacterId: CharacterId;
+  subjectCharacterId: CharacterId;
+  conversationId?: ConversationId;
+  momentDraftId?: MomentDraftId;
+  workflowVersion: string;
+  prompt: string;
+  negativePrompt?: string;
+  seed?: number;
+  mediaRef: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface CreateEventDispatchBatchRequest {
   idempotencyKey: string;
   selections: readonly EventDispatchSelectionDto[];
@@ -1931,6 +1958,42 @@ export const imageJobSchema = {
   ],
 } as const satisfies JsonSchema;
 
+export const imageAssetSchema = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $id: "urn:living-network:image-asset",
+  title: "ImageAsset",
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    id: idSchema,
+    category: { type: "string", enum: Object.values(ImageAssetCategory) },
+    storyWorldId: idSchema,
+    ownerCharacterId: idSchema,
+    subjectCharacterId: idSchema,
+    conversationId: idSchema,
+    momentDraftId: idSchema,
+    workflowVersion: nonEmptyStringSchema,
+    prompt: nonEmptyStringSchema,
+    negativePrompt: nonEmptyStringSchema,
+    seed: { type: "number", minimum: 0 },
+    mediaRef: nonEmptyStringSchema,
+    createdAt: timestampSchema,
+    updatedAt: timestampSchema,
+  },
+  required: [
+    "id",
+    "category",
+    "storyWorldId",
+    "ownerCharacterId",
+    "subjectCharacterId",
+    "workflowVersion",
+    "prompt",
+    "mediaRef",
+    "createdAt",
+    "updatedAt",
+  ],
+} as const satisfies JsonSchema;
+
 export const momentSchema = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   $id: "urn:living-network:moment",
@@ -2048,6 +2111,7 @@ export const contractSchemas = {
   behaviorAction: behaviorActionSchema,
   momentDraft: momentDraftSchema,
   imageJob: imageJobSchema,
+  imageAsset: imageAssetSchema,
   moment: momentSchema,
   momentInteraction: momentInteractionSchema,
   createMomentInteractionRequest: createMomentInteractionRequestSchema,

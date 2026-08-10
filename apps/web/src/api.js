@@ -173,6 +173,10 @@ export class ApiClient {
     return this.request(`/v1/sticker-packs?storyWorldId=${encodeURIComponent(storyWorldId)}`);
   }
 
+  getImageAssets(storyWorldId) {
+    return this.request(`/v1/image-assets?storyWorldId=${encodeURIComponent(storyWorldId)}`);
+  }
+
   getConversations(characterId) {
     return this.request(`/v1/conversations?characterId=${encodeURIComponent(characterId)}`);
   }

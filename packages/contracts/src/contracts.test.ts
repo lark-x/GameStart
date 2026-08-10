@@ -47,10 +47,12 @@ import {
   ActionStatus,
   ImageJobKind,
   ImageJobStatus,
+  ImageAssetCategory,
   MomentDraftStatus,
   MomentVisibility,
   behaviorActionSchema,
   imageJobSchema,
+  imageAssetSchema,
   momentDraftSchema,
   momentSchema,
   momentInteractionSchema,
@@ -280,6 +282,7 @@ test("registry exposes every schema by its stable contract name", () => {
     "createWorldLoreEntryRequest",
     "eventExecution",
     "eventRecurrence",
+    "imageAsset",
     "imageJob",
     "imageWorkflowTemplate",
     "memoryItem",
@@ -426,6 +429,8 @@ test("behavior and media schemas expose structured actions, drafts, and image li
   assert.deepEqual(imageJobSchema.properties?.kind.enum, Object.values(ImageJobKind));
   assert.deepEqual(imageJobSchema.properties?.status.enum, Object.values(ImageJobStatus));
   assert.equal(imageJobSchema.properties?.prompt.minLength, 1);
+  assert.deepEqual(imageAssetSchema.properties?.category.enum, Object.values(ImageAssetCategory));
+  assert.ok(imageAssetSchema.required.includes("mediaRef"));
 });
 
 test("conversation image requests require both private-chat participants and an idempotency key", () => {

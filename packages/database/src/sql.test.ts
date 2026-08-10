@@ -1046,19 +1046,22 @@ test("maps and upserts behavior actions and moment drafts", async () => {
 });
 
 test("maps and upserts image jobs with Fake ComfyUI lifecycle fields", async () => {
-  const readClient = new RecordingSqlClient([[imageJobRow()], [imageJobRow()], [imageJobRow()], []]);
+  const readClient = new RecordingSqlClient([[imageJobRow()], [imageJobRow()], [imageJobRow()], [imageJobRow()], []]);
   const repositories = createSqlRepositories(readClient);
   assert.ok(repositories.imageJobs);
   assert.deepEqual(await repositories.imageJobs.getById(imageJob.id), imageJob);
   assert.deepEqual(await repositories.imageJobs.getByActionId(action.id), imageJob);
+  assert.deepEqual(await repositories.imageJobs.listSucceededByStoryWorld(imageJob.storyWorldId), [imageJob]);
   assert.deepEqual(await repositories.imageJobs.listQueued(), [imageJob]);
   assert.deepEqual(await repositories.imageJobs.listSubmitted(), []);
   assert.deepEqual(readClient.calls[0]?.values, [imageJob.id]);
   assert.deepEqual(readClient.calls[1]?.values, [action.id]);
-  assert.deepEqual(readClient.calls[2]?.values, [100]);
-  assert.match(readClient.calls[2]?.text ?? "", /status = 'QUEUED'/);
+  assert.deepEqual(readClient.calls[2]?.values, [imageJob.storyWorldId]);
+  assert.match(readClient.calls[2]?.text ?? "", /status = 'SUCCEEDED'/);
   assert.deepEqual(readClient.calls[3]?.values, [100]);
-  assert.match(readClient.calls[3]?.text ?? "", /status = 'SUBMITTED'/);
+  assert.match(readClient.calls[3]?.text ?? "", /status = 'QUEUED'/);
+  assert.deepEqual(readClient.calls[4]?.values, [100]);
+  assert.match(readClient.calls[4]?.text ?? "", /status = 'SUBMITTED'/);
 
   const writeClient = new RecordingSqlClient();
   const writeRepositories = createSqlRepositories(writeClient);

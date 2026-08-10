@@ -56,6 +56,7 @@ test("ApiClient builds every JSON endpoint request with the actor context", asyn
     await client.getMomentInteractions("moment", "reader");
     await client.createMomentInteraction("moment", { kind: "LIKE" });
     await client.getStickerPacks("world");
+    await client.getImageAssets("world one");
     await client.getConversations("reader");
     await client.getMessages("conversation", "reader");
     await client.sendMessage("conversation", { text: "hello" });
@@ -70,7 +71,7 @@ test("ApiClient builds every JSON endpoint request with the actor context", asyn
       headers: { "x-custom": "yes" },
     });
 
-    assert.equal(calls.length, 26);
+    assert.equal(calls.length, 27);
     assert.equal(calls[0].url, "https://api.example.test/v1/worlds");
     assert.equal(calls[1].url, "https://api.example.test/v1/characters?storyWorldId=world%20one");
     assert.equal(calls[2].url, "https://api.example.test/v1/relationships?storyWorldId=world%20one");
@@ -92,7 +93,8 @@ test("ApiClient builds every JSON endpoint request with the actor context", asyn
         "x-actor-character-id": "actor-2",
       },
     });
-    assert.deepEqual(calls[21].init, {
+    assert.equal(calls[17].url, "https://api.example.test/v1/image-assets?storyWorldId=world%20one");
+    assert.deepEqual(calls[22].init, {
       method: "POST",
       body: JSON.stringify({ id: "world" }),
       headers: {
@@ -101,10 +103,10 @@ test("ApiClient builds every JSON endpoint request with the actor context", asyn
         "x-actor-character-id": "actor-2",
       },
     });
-    assert.equal(calls[22].url, "https://api.example.test/v1/worlds/world");
-    assert.equal(calls[23].url, "https://api.example.test/v1/characters");
-    assert.equal(calls[24].url, "https://api.example.test/v1/characters/character");
-    assert.deepEqual(calls[25].init, {
+    assert.equal(calls[23].url, "https://api.example.test/v1/worlds/world");
+    assert.equal(calls[24].url, "https://api.example.test/v1/characters");
+    assert.equal(calls[25].url, "https://api.example.test/v1/characters/character");
+    assert.deepEqual(calls[26].init, {
       method: "PATCH",
       body: JSON.stringify({ value: 1 }),
       headers: {

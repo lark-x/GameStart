@@ -1,3 +1,6 @@
+import { isAbsolute, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
 export type AppEnvironment = "development" | "test" | "production";
 
 export interface FeatureFlags {
@@ -50,6 +53,8 @@ export interface SafeConfigSummary {
 }
 
 export type EnvironmentInput = Readonly<Record<string, string | undefined>>;
+
+const repositoryRoot = fileURLToPath(new URL("../../../", import.meta.url));
 
 export class ConfigError extends Error {
   public readonly field: string;
@@ -186,6 +191,11 @@ function parseBoolean(
   throw new ConfigError(field, "must be a boolean (true/false, 1/0, yes/no, or on/off)");
 }
 
+function parseMediaRoot(env: EnvironmentInput): string {
+  const raw = requiredString(env, "MEDIA_ROOT", { defaultValue: "./data/media" });
+  return isAbsolute(raw) ? raw : resolve(repositoryRoot, raw);
+}
+
 function freezeConfig(config: AppConfig): AppConfig {
   Object.freeze(config.api.corsOrigins);
   Object.freeze(config.api);
@@ -233,7 +243,7 @@ export function loadAppConfig(env: EnvironmentInput = {}): AppConfig {
     },
     llm,
     media: {
-      root: requiredString(env, "MEDIA_ROOT", { defaultValue: "./data/media" }),
+      root: parseMediaRoot(env),
     },
     flags: {
       autonomousEventsEnabled: parseBoolean(env, "AUTONOMOUS_EVENTS_ENABLED", false),

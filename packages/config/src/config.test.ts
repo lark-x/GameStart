@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
+import { resolve } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
   ConfigError,
   getSafeConfigSummary,
   loadAppConfig,
 } from "./index.ts";
+
+const repositoryRoot = fileURLToPath(new URL("../../../", import.meta.url));
 
 const minimalEnvironment = {
   NODE_ENV: "test",
@@ -25,6 +29,7 @@ test("loads safe development defaults and freezes nested configuration", () => {
   assert.equal(config.redis.url, "redis://127.0.0.1:6379");
   assert.equal(config.comfyui.baseUrl, "http://127.0.0.1:8188");
   assert.equal(config.comfyui.timeoutMs, 30_000);
+  assert.equal(config.media.root, resolve(repositoryRoot, "data/media"));
   assert.equal(config.flags.manualReviewBeforePublish, true);
   assert.equal(config.flags.imageGenerationEnabled, false);
   assert.equal(Object.isFrozen(config), true);
@@ -64,6 +69,7 @@ test("parses explicit URL, port, LLM and feature flag values", () => {
     apiKey: "secret-value",
     model: "provider/model",
   });
+  assert.equal(config.media.root, "/srv/living-network/media");
   assert.deepEqual(config.flags, {
     autonomousEventsEnabled: true,
     proactiveMessagesEnabled: true,

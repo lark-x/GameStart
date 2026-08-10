@@ -75,14 +75,15 @@ test("image job pump uses persisted ComfyUI settings, submits queued work, and c
   assert.equal(client.request?.workflowVersion, "moment@v1");
   assert.deepEqual(client.request?.workflow, { prompt: { inputs: { text: "astronomer, night observatory" } } });
   const usefulLogs = (await logger.query()).items.filter((item) => item.action !== "image.scan");
-  assert.deepEqual(usefulLogs.map((item) => [item.category, item.action, item.outcome]), [
+  assert.deepEqual(usefulLogs.map((item) => [item.category, item.action, item.outcome]).sort(), [
     ["IMAGE", "image.progress", "COMPLETED"],
     ["IMAGE", "image.submit", "SUCCESS"],
-  ]);
-  assert.equal(usefulLogs[0]?.details?.service, "ComfyUI");
-  assert.equal(usefulLogs[0]?.details?.prompt, "night observatory");
-  assert.equal(usefulLogs[0]?.details?.externalJobId, "comfy-pump-job");
-  assert.match(String(usefulLogs[0]?.details?.mediaRef), /^media:\/\/local\//);
+  ].sort());
+  const completedLog = usefulLogs.find((item) => item.action === "image.progress");
+  assert.equal(completedLog?.details?.service, "ComfyUI");
+  assert.equal(completedLog?.details?.prompt, "night observatory");
+  assert.equal(completedLog?.details?.externalJobId, "comfy-pump-job");
+  assert.match(String(completedLog?.details?.mediaRef), /^media:\/\/local\//);
 });
 
 test("image job pump leaves retryable ComfyUI submit failures queued for the next tick", async () => {

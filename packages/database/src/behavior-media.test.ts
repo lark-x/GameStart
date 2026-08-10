@@ -129,3 +129,26 @@ test("rejects duplicate action-linked drafts and image jobs", async () => {
     { name: "TypeError", message: /Duplicate image job action/ },
   );
 });
+
+test("lists every completed ComfyUI image for the story-world album", async () => {
+  const completed = {
+    ...imageJob,
+    status: "SUCCEEDED" as const,
+    externalJobId: "comfy-output-1",
+    mediaRef: "media://local/completed.png",
+    updatedAt: "2026-08-05T17:05:00.000Z",
+  };
+  const repositories = createInMemoryRepositories({
+    worlds: [world],
+    characters: [character],
+    worldEventDefinitions: [definition],
+    scheduledOccurrences: [occurrence],
+    eventExecutions: [execution],
+    behaviorActions: [action],
+    momentDrafts: [draft],
+    imageJobs: [completed],
+  });
+  assert.ok(repositories.imageJobs);
+  assert.deepEqual(await repositories.imageJobs.listSucceededByStoryWorld(world.id), [completed]);
+  assert.deepEqual(await repositories.imageJobs.listSucceededByStoryWorld("another-world"), []);
+});

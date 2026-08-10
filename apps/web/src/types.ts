@@ -9,6 +9,7 @@ import type {
   EventDispatchPreviewDto as ContractEventDispatchPreviewDto,
   EventDispatchSelectionDto,
   ImageJobDto,
+  ImageAssetDto,
   ImageWorkflowTemplateDto,
   LlmProviderProfileDto,
   MomentDto,
@@ -33,6 +34,7 @@ export type ApiEvent = WorldEventDefinitionDto;
 export type ApiWorldLore = WorldLoreEntryDto;
 export type ApiWorkflow = ImageWorkflowTemplateDto;
 export type ApiImageJob = ImageJobDto;
+export type ApiImageAsset = ImageAssetDto;
 export type ApiLlmProviderProfile = LlmProviderProfileDto;
 export type ApiComfyUiSettings = ComfyUiSettingsDto;
 export type ApiInteractionLog = InteractionLogDto;

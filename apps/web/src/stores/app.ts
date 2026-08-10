@@ -36,10 +36,12 @@ export const useAppStore = defineStore("app", () => {
     const result = await api.getCharacters(currentWorldId.value);
     characters.value = result.data ?? [];
     const firstCharacter = characters.value[0];
-    if (firstCharacter && !currentCharacterId.value) {
+    const currentInWorld = characters.value.some((character) => character.id === currentCharacterId.value);
+    if (firstCharacter && !currentInWorld) {
       const userChar = characters.value.find((c) => c.role === "USER");
       currentCharacterId.value = userChar?.id ?? firstCharacter.id;
     }
+    if (!firstCharacter) currentCharacterId.value = "";
     api.setActorCharacterId(currentCharacterId.value);
   }
 

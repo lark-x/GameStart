@@ -55,6 +55,7 @@ import {
   type ChatDelta,
   type ChatProvider,
 } from "../../../packages/ai/src/index.ts";
+import { ImageAssetCategory } from "../../../packages/contracts/src/index.ts";
 import type {
   ActorSessionDto,
   ActorSessionSwitchRequest,
@@ -74,6 +75,7 @@ import type {
   CharacterVisualIdentityDto,
   ImageWorkflowTemplateDto,
   ImageJobDto,
+  ImageAssetDto,
   StickerPackDto,
   StickerDto,
   CreateStickerPackRequest,
@@ -264,6 +266,42 @@ function toImageJobDto(
   return { ...job };
 }
 
+function toImageAssetDto(
+  job: import("../../../packages/domain/src/index.ts").ImageJob,
+  action: import("../../../packages/domain/src/index.ts").BehaviorAction,
+): ImageAssetDto {
+  if (job.mediaRef === undefined) {
+    throw new ApiError(500, "INTERNAL_ERROR", "Completed image job is missing media");
+  }
+  const conversationId = typeof action.payload.conversationId === "string" && action.payload.conversationId.trim()
+    ? action.payload.conversationId
+    : undefined;
+  const recipientCharacterId = typeof action.payload.recipientCharacterId === "string" && action.payload.recipientCharacterId.trim()
+    ? action.payload.recipientCharacterId
+    : undefined;
+  const category = conversationId !== undefined
+    ? ImageAssetCategory.CHAT
+    : job.momentDraftId !== undefined
+      ? ImageAssetCategory.MOMENT
+      : ImageAssetCategory.EVENT;
+  return {
+    id: job.id,
+    category,
+    storyWorldId: job.storyWorldId,
+    ownerCharacterId: job.ownerCharacterId,
+    subjectCharacterId: recipientCharacterId ?? job.ownerCharacterId,
+    ...(conversationId === undefined ? {} : { conversationId }),
+    ...(job.momentDraftId === undefined ? {} : { momentDraftId: job.momentDraftId }),
+    workflowVersion: job.workflowVersion,
+    prompt: job.prompt,
+    ...(job.negativePrompt === undefined ? {} : { negativePrompt: job.negativePrompt }),
+    ...(job.seed === undefined ? {} : { seed: job.seed }),
+    mediaRef: job.mediaRef,
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
+  };
+}
+
 function toStickerPackDto(
   pack: import("../../../packages/domain/src/index.ts").StickerPack,
 ): StickerPackDto {
@@ -371,6 +409,18 @@ function requireImageJobStore(store: ApiStore): ImageJobStore {
     throw new ApiError(501, "NOT_IMPLEMENTED", "Image job repository is not configured");
   }
   return store as ImageJobStore;
+}
+
+type ImageAssetStore = ApiStore & {
+  imageJobs: NonNullable<ApiStore["imageJobs"]>;
+  behaviorActions: NonNullable<ApiStore["behaviorActions"]>;
+};
+
+function requireImageAssetStore(store: ApiStore): ImageAssetStore {
+  if (!store.imageJobs || !store.behaviorActions) {
+    throw new ApiError(501, "NOT_IMPLEMENTED", "Image album repositories are not configured");
+  }
+  return store as ImageAssetStore;
 }
 
 type StickerStore = ApiStore & {
@@ -2125,6 +2175,18 @@ export class ApiApplication {
     return toImageJobDto(job);
   }
 
+  public async listImageAssets(storyWorldId: string): Promise<ImageAssetDto[]> {
+    const store = requireImageAssetStore(this.store);
+    const world = await store.storyWorlds.getById(storyWorldId);
+    if (!world) throw new ApiError(404, "NOT_FOUND", "Story world not found");
+    const jobs = await store.imageJobs.listSucceededByStoryWorld(storyWorldId);
+    return Promise.all(jobs.map(async (job) => {
+      const action = await store.behaviorActions.getById(job.actionId);
+      if (!action) throw new ApiError(500, "INTERNAL_ERROR", "Image asset action is missing");
+      return toImageAssetDto(job, action);
+    }));
+  }
+
   public async importImageWorkflow(input: { id: string; version: string; workflow: JsonObject; positivePromptPath?: string[]; negativePromptPath?: string[]; seedPath?: string[] }): Promise<ImageWorkflowTemplateDto> {
     const store = requireVisualWorkflowStore(this.store);
     try {
@@ -3267,6 +3329,20 @@ throw error;
         });
       }
 
+      if (url.pathname === "/v1/image-assets") {
+        if (request.method !== "GET") throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
+        const storyWorldId = url.searchParams.get("storyWorldId");
+        if (!storyWorldId) throw new ApiError(400, "BAD_REQUEST", "storyWorldId is required");
+        const actor = this.trustedActor(request);
+        if (this.requireTrustedActor && actor !== undefined) {
+          const character = await this.store.characters.getById(actor);
+          if (!character || character.storyWorldId !== storyWorldId) {
+            throw new ApiError(403, "FORBIDDEN", "Trusted actor cannot view this story-world album");
+          }
+        }
+        return jsonResponse({ data: await this.listImageAssets(storyWorldId) });
+      }
+
       if (url.pathname === "/v1/sticker-packs") {
         if (request.method === "POST") {
           let body: unknown;
@@ -3589,6 +3665,7 @@ throw error;
         url.pathname === "/v1/characters" ||
         url.pathname === "/v1/relationships" ||
         url.pathname === "/v1/comfyui/workflows" ||
+        url.pathname === "/v1/image-assets" ||
         url.pathname === "/v1/sticker-packs" ||
         url.pathname === "/v1/moments" ||
         url.pathname === "/v1/conversations" ||

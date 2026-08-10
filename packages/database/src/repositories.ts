@@ -150,6 +150,8 @@ export interface MomentDraftRepository {
 export interface ImageJobRepository {
   getById(id: string): Promise<ImageJob | undefined>;
   getByActionId(actionId: string): Promise<ImageJob | undefined>;
+  /** Completed ComfyUI outputs retained for the story-world album. */
+  listSucceededByStoryWorld(storyWorldId: string): Promise<readonly ImageJob[]>;
   /** Jobs that have not been submitted to the external image service. */
   listQueued(limit?: number): Promise<readonly ImageJob[]>;
   /** Submitted jobs are retained so a restarted worker can resume watching them. */

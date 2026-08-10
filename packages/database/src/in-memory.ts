@@ -1261,6 +1261,13 @@ this.storyWorlds = {
         );
         return job ? copyImageJob(job) : undefined;
       },
+      listSucceededByStoryWorld: async (storyWorldId) => {
+        if (!storyWorldId.trim()) throw new TypeError("storyWorldId must not be empty");
+        return [...this.imageJobMap.values()]
+          .filter((candidate) => candidate.storyWorldId === storyWorldId && candidate.status === "SUCCEEDED")
+          .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.id.localeCompare(left.id))
+          .map(copyImageJob);
+      },
       listQueued: async (limit = 100) => {
         if (!Number.isSafeInteger(limit) || limit < 1) throw new RangeError("image job limit must be positive");
         return [...this.imageJobMap.values()]

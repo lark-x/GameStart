@@ -20,6 +20,7 @@ import type {
   ConversationDetailDto,
   ImageWorkflowTemplateDto,
   ImageJobDto,
+  ImageAssetDto,
   MessageDto,
   MomentDto,
   MomentInteractionWriteResultDto,
@@ -85,6 +86,7 @@ export class ApiClient {
   public getMoments(storyWorldId: string, readerCharacterId: string, limit?: number): Promise<ApiResponse<MomentDto[]>>;
   public createMomentInteraction(momentId: string, input: unknown): Promise<ApiResponse<MomentInteractionWriteResultDto>>;
   public getStickerPacks(storyWorldId: string): Promise<ApiResponse<StickerPackDto[]>>;
+  public getImageAssets(storyWorldId: string): Promise<ApiResponse<ImageAssetDto[]>>;
   public getStickers(packId: string): Promise<ApiResponse<StickerDto[]>>;
   public getConversations(characterId: string): Promise<ApiResponse<ConversationDetailDto[]>>;
   public getMessages(conversationId: string, characterId: string): Promise<ApiResponse<MessageDto[]>>;

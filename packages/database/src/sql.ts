@@ -1991,6 +1991,14 @@ private readonly client: SqlClient;
         const row = result.rows[0];
         return row ? mapImageJobRow(row) : undefined;
       },
+      listSucceededByStoryWorld: async (storyWorldId) => {
+        if (!storyWorldId.trim()) throw new TypeError("storyWorldId must not be empty");
+        const result = await this.client.query(
+          `${IMAGE_JOB_SELECT} WHERE story_world_id = $1 AND status = 'SUCCEEDED' ORDER BY updated_at DESC, id DESC`,
+          [storyWorldId],
+        );
+        return result.rows.map(mapImageJobRow);
+      },
       listQueued: async (limit = 100) => {
         if (!Number.isSafeInteger(limit) || limit < 1) throw new RangeError("image job limit must be positive");
         const result = await this.client.query(
