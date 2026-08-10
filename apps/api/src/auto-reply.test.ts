@@ -77,16 +77,36 @@ test("POST USER PRIVATE TEXT returns QUEUED, passes trace, logs lifecycle, and p
   for (const item of (await logs(app, "corr-one")).filter((entry) => entry.action.startsWith("auto_reply."))) { assert.equal(item.correlationId, "corr-one"); assert.equal(item.requestId, "request-auto"); assert.equal(item.conversationId, "auto-private"); assert.equal(item.entityId, "source-one"); } app.stop();
 });
 
-test("AI, GROUP, IMAGE, and STICKER messages are NOT_APPLICABLE and never call provider", async () => {
+test("AI and GROUP messages are NOT_APPLICABLE and never call provider", async () => {
   const provider = new RecordingProvider(); const app = application(provider); await createConversation(app, "auto-boundary"); await createConversation(app, "auto-group", "GROUP");
   const cases = [
     ["auto-boundary", textMessage("ai-text", ai.id)],
     ["auto-group", textMessage("group-text")],
-    ["auto-boundary", { id: "image", authorCharacterId: user.id, kind: "IMAGE", mediaRef: "image-ref", createdAt: new Date().toISOString(), idempotencyKey: "key-image" }],
-    ["auto-boundary", { id: "sticker", authorCharacterId: user.id, kind: "STICKER", stickerId: "sticker-ref", createdAt: new Date().toISOString(), idempotencyKey: "key-sticker" }],
   ] as const;
   for (const [conversationId, payload] of cases) { const sent = await postMessage(app, conversationId, payload); assert.equal(sent.body.data.autoReply.status, "NOT_APPLICABLE"); }
   await new Promise<void>((resolve) => setImmediate(resolve)); assert.equal(provider.calls.length, 0); app.stop();
+});
+
+test("USER IMAGE and STICKER private messages queue automatic replies", async () => {
+  const provider = new RecordingProvider(); const app = application(provider); await createConversation(app, "auto-image"); await createConversation(app, "auto-sticker");
+  const image = await postMessage(app, "auto-image", { id: "image", authorCharacterId: user.id, kind: "IMAGE", mediaRef: "image-ref", createdAt: new Date().toISOString(), idempotencyKey: "key-image" }, "corr-image");
+  const sticker = await postMessage(app, "auto-sticker", { id: "sticker", authorCharacterId: user.id, kind: "STICKER", stickerId: "sticker-ref", createdAt: new Date().toISOString(), idempotencyKey: "key-sticker" }, "corr-sticker");
+  assert.equal(image.body.data.autoReply.status, "QUEUED");
+  assert.equal(sticker.body.data.autoReply.status, "QUEUED");
+  await waitUntil(() => provider.calls.length === 2);
+  app.stop();
+});
+
+test("suppressAutoReply lets a media batch trigger only on the final message", async () => {
+  const provider = new RecordingProvider(); const app = application(provider); await createConversation(app, "auto-batch");
+  const first = await postMessage(app, "auto-batch", { id: "batch-image-1", authorCharacterId: user.id, kind: "IMAGE", mediaRef: "media://batch/one.png", suppressAutoReply: true, createdAt: new Date().toISOString(), idempotencyKey: "key-batch-image-1" });
+  assert.equal(first.body.data.autoReply.status, "NOT_APPLICABLE");
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(provider.calls.length, 0);
+  const second = await postMessage(app, "auto-batch", { id: "batch-image-2", authorCharacterId: user.id, kind: "IMAGE", mediaRef: "media://batch/two.png", createdAt: new Date().toISOString(), idempotencyKey: "key-batch-image-2" });
+  assert.equal(second.body.data.autoReply.status, "QUEUED");
+  await waitUntil(() => provider.calls.length === 1);
+  app.stop();
 });
 
 test("duplicate source shares one flight and invokes provider once", async () => {

@@ -1,20 +1,29 @@
 <script setup lang="ts">
 import { computed, nextTick, onUnmounted, ref, watch, type ComponentPublicInstance } from "vue";
-import { ImagePlus, Paperclip, RefreshCw, RotateCcw, Send, Type, X } from "@lucide/vue";
+import { Check, Image as ImageIcon, ImagePlus, Keyboard, RefreshCw, Send, Smile, Trash2, Wallpaper, X } from "@lucide/vue";
 import Button from "../components/ui/Button.vue";
 import EmptyState from "../components/ui/EmptyState.vue";
 import Input from "../components/ui/Input.vue";
 import Textarea from "../components/ui/Textarea.vue";
 import { useAppStore } from "../stores/app.js";
-import { importChatBackgroundFile, useTheme } from "../lib/theme";
+import { createChatBackgroundItem, importChatBackgroundFile, MAX_CHAT_BACKGROUND_ITEMS, useTheme } from "../lib/theme";
 import {
   deterministicReplyId,
   findPendingSource,
   normalizeAutoReply,
   type AutoReplyResult,
 } from "../lib/auto-reply";
-import { errorMessage, type ApiCharacter, type ApiConversation, type ApiImageJob, type ApiMessage } from "../types";
+import { errorMessage, type ApiCharacter, type ApiConversation, type ApiImageJob, type ApiMessage, type ApiStickerPack } from "../types";
 import { splitChatMessage } from "../lib/chat-message";
+import {
+  COMPOSER_IMAGE_LIMIT,
+  buildComposerMessageDrafts,
+  createComposerImageAttachment,
+  validateComposerImage,
+  type ComposerImageAttachment,
+} from "../lib/chat-composer";
+
+type StickerOption = NonNullable<ApiStickerPack["_stickers"]>[number];
 
 const store = useAppStore();
 const { chatBackground, setChatBackground } = useTheme();
@@ -22,9 +31,9 @@ const messages = ref<ApiMessage[]>([]);
 const conversations = ref<ApiConversation[]>([]);
 const currentConversationId = ref("");
 const messageInput = ref("");
-const selectedImage = ref<File | null>(null);
-const imagePreview = ref("");
-const imageUploadStatus = ref("");
+const selectedImages = ref<ComposerImageAttachment<File>[]>([]);
+const composerStatus = ref("");
+const isSendingMessage = ref(false);
 const unavailableImageIds = ref(new Set<string>());
 const imageInput = ref<HTMLInputElement | null>(null);
 const composerInput = ref<ComponentPublicInstance | null>(null);
@@ -37,12 +46,17 @@ const replyError = ref("");
 let replyTimer: number | undefined;
 const backgroundInput = ref<HTMLInputElement | null>(null);
 const backgroundStatus = ref("");
-const showImageRequest = ref(false);
+const backgroundPickerOpen = ref(false);
+const imageRequestOpen = ref(false);
 const imagePrompt = ref("");
 const imageWorkflowVersion = ref("");
 const imageJob = ref<ApiImageJob | null>(null);
 const imageStatus = ref("");
 const isRequestingImage = ref(false);
+const stickerPacks = ref<ApiStickerPack[]>([]);
+const activeStickerPackId = ref("");
+const stickerPanelOpen = ref(false);
+const stickerStatus = ref("");
 
 /** 聊天背景层样式：自定义图片或跟随主题的默认纹理 */
 const backdropStyle = computed(() => {
@@ -63,6 +77,10 @@ const backdropStyle = computed(() => {
 });
 
 function pickBackgroundImage() {
+  if (chatBackground.items.length >= MAX_CHAT_BACKGROUND_ITEMS) {
+    backgroundStatus.value = `最多保存 ${MAX_CHAT_BACKGROUND_ITEMS} 个聊天背景，请先删除旧背景`;
+    return;
+  }
   backgroundInput.value?.click();
 }
 
@@ -71,19 +89,47 @@ async function onBackgroundFileChange(event: Event) {
   const file = input.files?.[0];
   input.value = "";
   if (!file) return;
+  if (chatBackground.items.length >= MAX_CHAT_BACKGROUND_ITEMS) {
+    backgroundStatus.value = `最多保存 ${MAX_CHAT_BACKGROUND_ITEMS} 个聊天背景，请先删除旧背景`;
+    return;
+  }
   backgroundStatus.value = "正在导入背景…";
   try {
     const imageRef = await importChatBackgroundFile(file);
-    setChatBackground({ kind: "custom", imageRef });
-    backgroundStatus.value = "聊天背景已更新";
+    const item = createChatBackgroundItem(file.name, imageRef);
+    setChatBackground({
+      kind: "custom",
+      imageRef,
+      items: [...chatBackground.items, item],
+    });
+    backgroundPickerOpen.value = true;
+    backgroundStatus.value = "聊天背景已导入";
   } catch (e: unknown) {
     backgroundStatus.value = errorMessage(e);
   }
 }
 
-function resetBackground() {
+function selectThemeBackground() {
   setChatBackground({ kind: "theme" });
-  backgroundStatus.value = "已恢复为主题默认背景";
+  backgroundStatus.value = "已切换为主题默认背景";
+}
+
+function selectCustomBackground(imageRef: string) {
+  setChatBackground({ kind: "custom", imageRef });
+  backgroundStatus.value = "聊天背景已切换";
+}
+
+function removeBackgroundItem(id: string) {
+  const item = chatBackground.items.find((candidate) => candidate.id === id);
+  if (!item) return;
+  const items = chatBackground.items.filter((candidate) => candidate.id !== id);
+  const removingActive = chatBackground.kind === "custom" && chatBackground.imageRef === item.imageRef;
+  setChatBackground(
+    removingActive
+      ? { kind: "theme", items }
+      : { kind: chatBackground.kind, ...(chatBackground.imageRef ? { imageRef: chatBackground.imageRef } : {}), items },
+  );
+  backgroundStatus.value = removingActive ? "已删除背景，并切回主题默认" : "背景已删除";
 }
 
 const currentConversation = computed(() =>
@@ -141,6 +187,23 @@ const imageRecipientId = computed(() => {
     (member) => member.characterId !== store.currentCharacterId && !member.leftAt,
   )?.characterId;
 });
+const canSend = computed(() => messageInput.value.trim().length > 0 || selectedImages.value.length > 0);
+const activeStickerPack = computed(() =>
+  stickerPacks.value.find((pack) => pack.id === activeStickerPackId.value) ?? stickerPacks.value[0],
+);
+const stickerById = computed(() => {
+  const stickers = new Map<string, StickerOption>();
+  for (const pack of stickerPacks.value) {
+    for (const sticker of pack._stickers ?? []) stickers.set(sticker.id, sticker);
+  }
+  return stickers;
+});
+const composerHint = computed(() => {
+  if (composerStatus.value) return composerStatus.value;
+  if (selectedImages.value.length) return `${selectedImages.value.length} 张图片待发送`;
+  return "";
+});
+const enterModeLabel = computed(() => enterSends.value ? "Enter 发送" : "Enter 换行");
 
 function conversationLabel(item: ApiConversation) {
   return (
@@ -194,33 +257,87 @@ function openImagePicker() {
   imageInput.value?.click();
 }
 
-function clearSelectedImage() {
-  if (imagePreview.value) URL.revokeObjectURL(imagePreview.value);
-  selectedImage.value = null;
-  imagePreview.value = "";
-  imageUploadStatus.value = "";
+function toggleBackgroundPicker() {
+  backgroundPickerOpen.value = !backgroundPickerOpen.value;
+  if (backgroundPickerOpen.value) stickerPanelOpen.value = false;
+}
+
+function toggleStickerPanel() {
+  stickerPanelOpen.value = !stickerPanelOpen.value;
+  if (stickerPanelOpen.value) {
+    backgroundPickerOpen.value = false;
+    if (stickerPacks.value.length === 0) void loadStickerPacks();
+  }
+}
+
+function updateSelectedImage(id: string, patch: Partial<ComposerImageAttachment<File>>) {
+  selectedImages.value = selectedImages.value.map((image) => image.id === id ? { ...image, ...patch } : image);
+}
+
+function addImageFiles(files: readonly File[]) {
+  const remaining = COMPOSER_IMAGE_LIMIT - selectedImages.value.length;
+  if (remaining <= 0) {
+    composerStatus.value = `一次最多发送 ${COMPOSER_IMAGE_LIMIT} 张图片`;
+    return;
+  }
+  const accepted: ComposerImageAttachment<File>[] = [];
+  const rejected: string[] = [];
+  for (const file of files.slice(0, remaining)) {
+    const error = validateComposerImage(file);
+    if (error) {
+      rejected.push(`${file.name}: ${error}`);
+      continue;
+    }
+    accepted.push(createComposerImageAttachment(file, URL.createObjectURL(file), crypto.randomUUID()));
+  }
+  if (files.length > remaining) rejected.push(`已达到 ${COMPOSER_IMAGE_LIMIT} 张上限`);
+  selectedImages.value = [...selectedImages.value, ...accepted];
+  composerStatus.value = rejected[0] ?? (accepted.length ? `${selectedImages.value.length} 张图片待发送` : "");
+}
+
+function clearSelectedImages() {
+  for (const image of selectedImages.value) URL.revokeObjectURL(image.previewUrl);
+  selectedImages.value = [];
+  composerStatus.value = "";
+}
+
+function removeSelectedImage(id: string) {
+  const image = selectedImages.value.find((item) => item.id === id);
+  if (image) URL.revokeObjectURL(image.previewUrl);
+  selectedImages.value = selectedImages.value.filter((item) => item.id !== id);
+  composerStatus.value = selectedImages.value.length ? `${selectedImages.value.length} 张图片待发送` : "";
 }
 
 function markImageUnavailable(messageId: string) {
   unavailableImageIds.value = new Set([...unavailableImageIds.value, messageId]);
 }
 
-function onImageSelected(event: Event) {
+function stickerForMessage(message: ApiMessage) {
+  return message.stickerId ? stickerById.value.get(message.stickerId) : undefined;
+}
+
+function stickerLabel(message: ApiMessage) {
+  return stickerForMessage(message)?.label ?? message.stickerId ?? "未知表情";
+}
+
+function stickerImageUrl(message: ApiMessage) {
+  if (unavailableImageIds.value.has(message.id)) return "";
+  const mediaRef = stickerForMessage(message)?.mediaRef;
+  return mediaRef ? store.api.mediaUrl(mediaRef) : "";
+}
+
+function onImagesSelected(event: Event) {
   const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
+  const files = Array.from(input.files ?? []);
   input.value = "";
-  if (!file) return;
-  if (!["image/png", "image/jpeg", "image/webp", "image/gif"].includes(file.type)) {
-    imageUploadStatus.value = "请选择图片文件";
-    return;
-  }
-  if (file.size > 12 * 1024 * 1024) {
-    imageUploadStatus.value = "图片不能超过 12MB";
-    return;
-  }
-  selectedImage.value = file;
-  imageUploadStatus.value = `${Math.ceil(file.size / 1024)} KB`;
-  imagePreview.value = URL.createObjectURL(file);
+  addImageFiles(files);
+}
+
+function onComposerPaste(event: ClipboardEvent) {
+  const files = Array.from(event.clipboardData?.files ?? []);
+  if (!files.length) return;
+  event.preventDefault();
+  addImageFiles(files);
 }
 
 function onComposerKeydown(event: KeyboardEvent) {
@@ -273,39 +390,103 @@ async function loadMessages() {
   }
 }
 
-async function sendMessage() {
-  const value = messageInput.value.trim();
-  if ((!value && !selectedImage.value) || !currentConversationId.value || !store.currentCharacterId)
+async function loadStickerPacks() {
+  if (!store.currentWorldId) {
+    stickerPacks.value = [];
+    activeStickerPackId.value = "";
     return;
-  const id = crypto.randomUUID();
+  }
   try {
-    let mediaRef: string | undefined;
-    if (selectedImage.value) {
-      imageUploadStatus.value = "正在上传图片…";
-      const uploaded = await store.api.uploadChatImage(selectedImage.value);
-      mediaRef = uploaded.data.mediaRef;
-    }
+    const result = await store.api.getStickerPacks(store.currentWorldId);
+    const packs = (result.data ?? []) as ApiStickerPack[];
+    await Promise.all(packs.map(async (pack) => {
+      const stickers = await store.api.getStickers(pack.id);
+      pack._stickers = stickers.data ?? [];
+    }));
+    stickerPacks.value = packs;
+    if (!packs.some((pack) => pack.id === activeStickerPackId.value)) activeStickerPackId.value = packs[0]?.id ?? "";
+    stickerStatus.value = "";
+  } catch (error: unknown) {
+    stickerPacks.value = [];
+    activeStickerPackId.value = "";
+    stickerStatus.value = errorMessage(error);
+  }
+}
+
+async function sendSticker(sticker: StickerOption) {
+  if (!currentConversationId.value || !store.currentCharacterId || isSendingMessage.value) return;
+  const id = crypto.randomUUID();
+  isSendingMessage.value = true;
+  composerStatus.value = "正在发送表情…";
+  try {
     const result = await store.api.sendMessage(currentConversationId.value, {
       id,
       authorCharacterId: store.currentCharacterId,
-      kind: mediaRef ? "IMAGE" : "TEXT",
-      ...(mediaRef ? { mediaRef, ...(value ? { text: value } : {}) } : { text: value }),
+      kind: "STICKER",
+      stickerId: sticker.id,
       createdAt: new Date().toISOString(),
       idempotencyKey: id,
     });
-    messageInput.value = "";
-    clearSelectedImage();
-    resizeComposer();
+    stickerPanelOpen.value = false;
+    composerStatus.value = "";
     await loadMessages();
     applyAutoReply(normalizeAutoReply(result.data?.autoReply), id);
   } catch (e: unknown) {
-    status.value = errorMessage(e);
-    replyError.value = errorMessage(e);
-    const correlationId = (e as { correlationId?: string }).correlationId;
-    autoReply.value = {
-      status: "FAILED",
-      ...(correlationId ? { correlationId } : {}),
-    };
+    const message = errorMessage(e);
+    composerStatus.value = message;
+    status.value = message;
+  } finally {
+    isSendingMessage.value = false;
+  }
+}
+
+async function sendMessage() {
+  const value = messageInput.value.trim();
+  if (!canSend.value || !currentConversationId.value || !store.currentCharacterId || isSendingMessage.value)
+    return;
+  const batchId = crypto.randomUUID();
+  const imageFiles = [...selectedImages.value];
+  isSendingMessage.value = true;
+  composerStatus.value = imageFiles.length ? "正在上传图片…" : "正在发送…";
+  try {
+    const mediaRefs: string[] = [];
+    for (const image of imageFiles) {
+      updateSelectedImage(image.id, { status: "uploading" });
+      const uploaded = await store.api.uploadChatImage(image.file);
+      mediaRefs.push(uploaded.data.mediaRef);
+      updateSelectedImage(image.id, { status: "sent" });
+    }
+    const drafts = buildComposerMessageDrafts({ batchId, text: value, mediaRefs });
+    let autoReplyResult: AutoReplyResult | null = null;
+    for (const [index, draft] of drafts.entries()) {
+      const result = await store.api.sendMessage(currentConversationId.value, {
+        id: draft.id,
+        authorCharacterId: store.currentCharacterId,
+        kind: draft.kind,
+        ...(draft.text === undefined ? {} : { text: draft.text }),
+        ...(draft.mediaRef === undefined ? {} : { mediaRef: draft.mediaRef }),
+        ...(draft.suppressAutoReply ? { suppressAutoReply: true } : {}),
+        createdAt: new Date(Date.now() + index).toISOString(),
+        idempotencyKey: draft.idempotencyKey,
+      });
+      if (!draft.suppressAutoReply) autoReplyResult = normalizeAutoReply(result.data?.autoReply);
+    }
+    messageInput.value = "";
+    clearSelectedImages();
+    resizeComposer();
+    await loadMessages();
+    applyAutoReply(autoReplyResult, batchId);
+  } catch (e: unknown) {
+    const message = errorMessage(e);
+    composerStatus.value = message;
+    status.value = message;
+    for (const image of imageFiles) {
+      if (selectedImages.value.some((item) => item.id === image.id && item.status === "uploading")) {
+        updateSelectedImage(image.id, { status: "failed", error: message });
+      }
+    }
+  } finally {
+    isSendingMessage.value = false;
   }
 }
 
@@ -448,6 +629,8 @@ async function requestConversationImage() {
     });
     imageJob.value = result.data ?? null;
     imagePrompt.value = "";
+    imageRequestOpen.value = false;
+    imageStatus.value = "已请求对方生成图片，完成后会出现在聊天里。";
     if (imageJob.value) void pollImageJob(imageJob.value.id);
   } catch (error: unknown) {
     imageStatus.value = errorMessage(error);
@@ -486,12 +669,15 @@ watch(currentConversationId, () => {
   stopReplyPolling();
   autoReply.value = null;
   replyError.value = "";
+  stickerPanelOpen.value = false;
+  backgroundPickerOpen.value = false;
   void loadMessages();
 });
+watch(() => store.currentWorldId, () => void loadStickerPacks(), { immediate: true });
 void loadImageDefaults();
 onUnmounted(() => {
   stopReplyPolling();
-  if (imagePreview.value) URL.revokeObjectURL(imagePreview.value);
+  clearSelectedImages();
 });
 </script>
 
@@ -556,41 +742,11 @@ onUnmounted(() => {
             <p>{{ characterSubtitle }}</p>
           </div>
         </div>
-        <div class="header-actions">
-          <input
-            ref="backgroundInput"
-            type="file"
-            accept="image/*"
-            class="visually-hidden"
-            aria-hidden="true"
-            tabindex="-1"
-            @change="onBackgroundFileChange"
-          />
-          <Button
-            variant="ghost"
-            size="icon"
-            title="导入图片作为聊天背景"
-            aria-label="导入图片作为聊天背景"
-            @click="pickBackgroundImage"
-            ><ImagePlus :size="17" /></Button
-          >
-          <Button
-            v-if="chatBackground.kind === 'custom'"
-            variant="ghost"
-            size="icon"
-            title="恢复主题默认背景"
-            aria-label="恢复主题默认背景"
-            @click="resetBackground"
-            ><RotateCcw :size="17" /></Button
-          >
-          <Button class="image-action" variant="ghost" :disabled="!imageRecipientId" title="打开聊天配图" aria-label="打开聊天配图" @click="showImageRequest = !showImageRequest"><ImagePlus :size="15" /><span>配图</span></Button>
-          <Button class="retry-action" v-if="pendingSource || autoReply?.status === 'FAILED' || replyError" title="重试回复" aria-label="重试回复" @click="triggerGenerateReply" :disabled="isGenerating || !pendingSource"><RefreshCw :size="15" /><span>{{ isGenerating ? "生成中" : "重试回复" }}</span></Button>
-        </div>
       </header>
 
       <div class="chat-status-strip">
         <span class="thought-status">{{ isGenerating ? `${characterName} 正在回复…` : chatStatus }}</span>
-        <span v-if="backgroundStatus" class="background-status">{{ backgroundStatus }}</span>
+        <span v-if="imageStatus || backgroundStatus" class="background-status">{{ imageStatus || backgroundStatus }}</span>
       </div>
 
       <div v-if="replyError || autoReply?.status === 'FAILED'" class="reply-error" role="alert">
@@ -630,7 +786,16 @@ onUnmounted(() => {
                 <p v-else class="image-unavailable">图片不可用</p>
                 <p v-if="item.display.body" class="image-caption">{{ item.display.body }}</p>
               </template>
-              <p v-else-if="item.message.kind === 'STICKER'">贴纸 · {{ item.message.stickerId || "未知" }}</p>
+              <template v-else-if="item.message.kind === 'STICKER'">
+                  <img
+                    v-if="stickerImageUrl(item.message)"
+                    class="sticker-message"
+                    :src="stickerImageUrl(item.message)"
+                    :alt="stickerLabel(item.message)"
+                    @error="markImageUnavailable(item.message.id)"
+                  />
+                  <p v-else>贴纸 · {{ stickerLabel(item.message) }}</p>
+                </template>
               <p v-else-if="item.display.body">{{ item.display.body }}</p>
               <p v-else class="message-empty">消息没有可显示的正文</p>
             </div>
@@ -641,64 +806,152 @@ onUnmounted(() => {
         </template>
       </div>
 
-      <section v-if="showImageRequest" class="image-request-panel">
-        <header><strong>聊天配图</strong><span>图片请求与消息正文分开显示。</span></header>
-        <div class="image-request-fields">
-          <Input v-model="imagePrompt" class="image-prompt-input" placeholder="描述想生成的聊天配图" @keyup.enter="requestConversationImage" />
-          <Input v-model="imageWorkflowVersion" class="image-workflow-input" placeholder="workflow@version" @keyup.enter="requestConversationImage" />
-          <Button @click="requestConversationImage" :disabled="isRequestingImage || !imagePrompt.trim() || !imageRecipientId">{{ isRequestingImage ? "提交中" : "生成" }}</Button>
-        </div>
-        <p v-if="imageStatus" class="image-request-status">{{ imageStatus }}</p>
-        <img v-if="imageJob?.status === 'SUCCEEDED' && imageJob.mediaRef" class="image-request-result" :src="store.api.mediaUrl(imageJob.mediaRef)" alt="已生成的聊天配图" />
-      </section>
 
-      <footer class="composer">
-        <input ref="imageInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" class="visually-hidden" @change="onImageSelected" />
-        <Button variant="ghost" size="icon" class="composer-tool" title="添加图片" aria-label="添加图片" @click="openImagePicker"><Paperclip :size="17" /></Button>
+      <footer class="composer" @paste="onComposerPaste">
+        <input ref="imageInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple class="visually-hidden" @change="onImagesSelected" />
+        <input ref="backgroundInput" type="file" accept="image/*" class="visually-hidden" aria-hidden="true" tabindex="-1" @change="onBackgroundFileChange" />
+
+        <div class="composer-toolbar" role="toolbar" aria-label="聊天功能">
+          <Button variant="ghost" size="icon" class="composer-tool" title="表情包" aria-label="表情包" :class="{ active: stickerPanelOpen }" @click="toggleStickerPanel"><Smile :size="17" /></Button>
+          <Button variant="ghost" size="icon" class="composer-tool" title="发送图片" aria-label="发送图片" @click="openImagePicker"><ImageIcon :size="17" /></Button>
+          <Button variant="ghost" size="icon" class="composer-tool" :disabled="!imageRecipientId" title="请求对方发图" aria-label="请求对方发图" @click="imageRequestOpen = true; backgroundPickerOpen = false; stickerPanelOpen = false"><ImagePlus :size="17" /></Button>
+          <Button variant="ghost" size="icon" class="composer-tool" title="聊天背景" aria-label="聊天背景" :class="{ active: backgroundPickerOpen || chatBackground.kind === 'custom' }" @click="toggleBackgroundPicker"><Wallpaper :size="17" /></Button>
+          <Button variant="ghost" size="icon" class="composer-tool" title="重试回复" aria-label="重试回复" @click="triggerGenerateReply" :disabled="isGenerating || !pendingSource"><RefreshCw :size="17" /></Button>
+          <Button variant="ghost" size="icon" class="composer-tool" :title="enterModeLabel" :aria-label="enterModeLabel" :aria-pressed="enterSends" :class="{ active: enterSends }" @click="setEnterSends(!enterSends)"><Keyboard :size="17" /></Button>
+        </div>
+
         <div class="composer-main">
-          <div v-if="selectedImage" class="image-attachment">
-            <img :src="imagePreview" alt="待发送图片预览" />
-            <span>{{ selectedImage.name }}</span>
-            <Button variant="ghost" size="icon" title="移除图片" aria-label="移除图片" @click="clearSelectedImage"><X :size="15" /></Button>
+          <div v-if="backgroundPickerOpen" class="background-picker">
+            <div class="background-picker-head">
+              <div>
+                <strong>聊天背景</strong>
+                <span>选择主题默认或已导入背景</span>
+              </div>
+              <Button variant="ghost" size="icon" title="导入背景" aria-label="导入背景" :disabled="chatBackground.items.length >= MAX_CHAT_BACKGROUND_ITEMS" @click="pickBackgroundImage"><ImageIcon :size="16" /></Button>
+            </div>
+            <div class="background-options">
+              <button type="button" class="background-option theme-option" :class="{ active: chatBackground.kind === 'theme' }" @click="selectThemeBackground">
+                <span class="background-thumb theme-thumb" />
+                <span>主题默认</span>
+                <Check v-if="chatBackground.kind === 'theme'" :size="15" />
+              </button>
+              <article v-for="item in chatBackground.items" :key="item.id" class="background-option custom-option" :class="{ active: chatBackground.kind === 'custom' && chatBackground.imageRef === item.imageRef }">
+                <button type="button" @click="selectCustomBackground(item.imageRef)">
+                  <img :src="item.imageRef" :alt="item.label" />
+                  <span>{{ item.label }}</span>
+                  <Check v-if="chatBackground.kind === 'custom' && chatBackground.imageRef === item.imageRef" :size="15" />
+                </button>
+                <Button variant="ghost" size="icon" title="删除背景" aria-label="删除背景" @click="removeBackgroundItem(item.id)"><Trash2 :size="14" /></Button>
+              </article>
+            </div>
+            <p class="background-picker-hint">最多保存 {{ MAX_CHAT_BACKGROUND_ITEMS }} 个背景；主题默认始终可用。</p>
           </div>
-          <Textarea
-            ref="composerInput"
-            v-model="messageInput"
-            class="composer-input"
-            :rows="1"
-            :placeholder="selectedImage ? '可添加图片说明…' : '输入消息…'"
-            @keydown="onComposerKeydown"
-            @input="resizeComposer"
-          />
-          <div class="composer-meta">
-            <button type="button" class="enter-mode" :aria-pressed="enterSends" @click="setEnterSends(!enterSends)"><Type :size="14" /> {{ enterSends ? 'Enter 发送' : 'Enter 换行' }}</button>
-            <span v-if="imageUploadStatus">{{ imageUploadStatus }}</span>
-            <span v-else>{{ enterSends ? 'Shift+Enter 换行' : 'Ctrl/Cmd+Enter 发送' }}</span>
+
+          <div v-if="stickerPanelOpen" class="sticker-picker">
+            <div v-if="stickerPacks.length" class="sticker-pack-tabs" role="tablist" aria-label="表情包主题">
+              <button
+                v-for="pack in stickerPacks"
+                :key="pack.id"
+                type="button"
+                :class="{ active: activeStickerPack?.id === pack.id }"
+                @click="activeStickerPackId = pack.id"
+              >{{ pack.name }}</button>
+            </div>
+            <div v-if="activeStickerPack && (activeStickerPack._stickers || []).length" class="sticker-options">
+              <button
+                v-for="sticker in activeStickerPack._stickers || []"
+                :key="sticker.id"
+                type="button"
+                class="sticker-choice"
+                :title="sticker.label"
+                :aria-label="sticker.label"
+                :disabled="isSendingMessage"
+                @click="sendSticker(sticker)"
+              >
+                <img :src="store.api.mediaUrl(sticker.mediaRef)" :alt="sticker.label" loading="lazy" />
+              </button>
+            </div>
+            <p v-else class="sticker-empty">{{ stickerStatus || "还没有可发送的表情包" }}</p>
+          </div>
+
+          <div v-if="selectedImages.length" class="composer-previews" aria-label="待发送图片">
+            <article v-for="image in selectedImages" :key="image.id" class="composer-preview" :class="image.status">
+              <img :src="image.previewUrl" :alt="image.file.name" />
+              <div>
+                <strong>{{ image.file.name }}</strong>
+                <span>{{ image.error || image.sizeLabel }}</span>
+              </div>
+              <Button variant="ghost" size="icon" title="移除图片" aria-label="移除图片" :disabled="isSendingMessage" @click="removeSelectedImage(image.id)"><X :size="14" /></Button>
+            </article>
+          </div>
+
+          <div class="composer-input-row">
+            <Textarea
+              ref="composerInput"
+              v-model="messageInput"
+              class="composer-input"
+              :rows="1"
+              :placeholder="selectedImages.length ? '可添加图片说明…' : '输入消息…'"
+              @keydown="onComposerKeydown"
+              @input="resizeComposer"
+            />
+            <Button
+              size="icon"
+              class="send-button"
+              title="发送消息"
+              aria-label="发送消息"
+              :loading="isSendingMessage"
+              @click="sendMessage"
+              :disabled="!canSend || isSendingMessage"
+              ><Send :size="17" /></Button
+            >
+          </div>
+          <div v-if="composerHint" class="composer-meta">
+            <span>{{ composerHint }}</span>
           </div>
         </div>
-        <Button
-          size="icon"
-          class="send-button"
-          title="发送消息"
-          aria-label="发送消息"
-          @click="sendMessage"
-          :disabled="!messageInput.trim() && !selectedImage"
-          ><Send :size="17" /></Button
-        >
       </footer>
     </section>
   </div>
+
+  <Teleport to="body">
+    <div v-if="imageRequestOpen" class="image-request-overlay" role="presentation" @click.self="imageRequestOpen = false">
+      <form class="image-request-dialog" @submit.prevent="requestConversationImage">
+        <header>
+          <div>
+            <strong>让对方发图</strong>
+            <span>提交后由对方角色把图片发进当前聊天。</span>
+          </div>
+          <Button variant="ghost" size="icon" title="关闭" aria-label="关闭" @click="imageRequestOpen = false"><X :size="16" /></Button>
+        </header>
+        <Input v-model="imagePrompt" class="image-prompt-input" placeholder="描述你希望对方发来的图片" autofocus />
+        <Input v-model="imageWorkflowVersion" class="image-workflow-input" placeholder="workflow@version" />
+        <p v-if="imageStatus" class="image-request-status">{{ imageStatus }}</p>
+        <footer>
+          <Button variant="ghost" @click="imageRequestOpen = false">取消</Button>
+          <Button type="submit" :loading="isRequestingImage" :disabled="isRequestingImage || !imagePrompt.trim() || !imageRecipientId">请求发图</Button>
+        </footer>
+      </form>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
-/* 聊天页正好撑满视口高度，页面级无滚动条；消息流是唯一功能滚动区 */
+:global(.app-main:has(.chat-layout)) {
+  overflow: hidden;
+}
+
 .chat-layout {
   position: relative;
   z-index: 1;
   display: flex;
-  height: 100dvh;
-  padding: var(--space-4);
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  max-height: 100dvh;
   gap: var(--space-4);
+  padding: var(--space-4);
+  overflow: hidden;
 }
 .conversation-panel {
   width: clamp(220px, 24vw, 300px);
@@ -707,30 +960,34 @@ onUnmounted(() => {
   flex-direction: column;
   min-height: 0;
   padding: var(--space-4) var(--space-3);
+  border: 1px solid var(--border);
   border-radius: var(--radius-xl);
   background: var(--surface-glass);
-  border: 1px solid var(--border);
+  overflow: hidden;
 }
 .panel-title {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  justify-content: space-between;
   padding: 0 var(--space-2) var(--space-3);
+  color: var(--text-strong);
   font-size: var(--text-lg);
   font-weight: 750;
-  color: var(--text-strong);
 }
 .conversation-list {
   display: grid;
   gap: 7px;
-  overflow-y: auto;
   min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 2px;
 }
 .conversation-item {
   width: 100%;
+  min-height: 0;
   justify-content: flex-start;
   gap: 10px;
-  min-height: 0;
   padding: 10px;
   border-radius: var(--radius-md);
   font-weight: 400;
@@ -749,14 +1006,18 @@ onUnmounted(() => {
   gap: 4px;
 }
 .conversation-copy strong {
+  overflow: hidden;
+  color: var(--text-strong);
   font-size: var(--text-base);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .conversation-copy small {
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   color: var(--muted);
   font-size: var(--text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .panel-empty {
   padding: var(--space-6) var(--space-2);
@@ -767,326 +1028,372 @@ onUnmounted(() => {
 .chat-room {
   position: relative;
   min-width: 0;
+  min-height: 0;
   flex: 1;
   display: flex;
   flex-direction: column;
-  min-height: 0;
   overflow: hidden;
+  border: 1px solid var(--border);
   border-radius: var(--radius-xl);
   background: var(--surface-glass);
-  border: 1px solid var(--border);
   box-shadow: var(--shadow-sm);
 }
-.chat-backdrop {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background-repeat: repeat;
-  transition: opacity var(--motion-base);
-}
+.chat-backdrop,
 .chat-backdrop-veil {
   position: absolute;
   inset: 0;
   z-index: 0;
   pointer-events: none;
+}
+.chat-backdrop {
+  background-repeat: repeat;
+  transition: opacity var(--motion-base);
+}
+.chat-backdrop-veil {
   background: var(--surface);
   opacity: 0.34;
 }
 .chat-header,
+.chat-status-strip,
+.reply-error,
 .message-stream,
 .composer {
-  position: relative;
-  z-index: 1;
-}
-.chat-header {
-  min-height: 72px;
   flex: 0 0 auto;
+  display: grid;
+  gap: 8px;
+  max-height: min(44vh, 360px);
+  margin: 0 var(--space-6) var(--space-5);
+  padding: 8px 10px 10px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.composer-toolbar {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 2px 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: thin;
+}
+.composer-tool {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border-radius: var(--radius-full);
+}
+.composer-tool.active {
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+.background-picker {
+  display: grid;
+  gap: 10px;
+  max-height: 210px;
+  overflow: hidden;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+}
+.background-picker-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-4);
-  padding: 0 var(--space-6);
-  border-bottom: 1px solid var(--border);
-}
-.header-profile {
-  display: flex;
-  align-items: center;
   gap: 10px;
-  min-width: 0;
 }
-.header-profile h1 {
-  font-size: var(--text-lg);
-  font-weight: 750;
+.background-picker-head strong,
+.background-picker-head span {
+  display: block;
+}
+.background-picker-head strong {
   color: var(--text-strong);
-}
-.header-profile p {
-  margin-top: 4px;
-  color: var(--primary);
   font-size: var(--text-sm);
-  font-weight: 700;
 }
-.header-profile em {
-  font-style: normal;
-  font-size: var(--text-xs);
-  color: var(--faint);
-}
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-}
-.thought-status {
-  max-width: 300px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.background-picker-head span,
+.background-picker-hint {
   color: var(--muted);
   font-size: var(--text-xs);
-  font-style: italic;
 }
-.background-status {
-  max-width: 180px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--primary);
-  font-size: var(--text-xs);
-}
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  clip-path: inset(50%);
-}
-.reply-error {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 9px var(--space-6);
-  color: var(--danger);
-  background: var(--surface-soft);
-  border-bottom: 1px solid var(--border);
-  font-size: var(--text-xs);
-}
-.reply-error code,
-.reply-error a {
-  overflow-wrap: anywhere;
-}
-.message-stream {
-  flex: 1;
+.background-options {
   min-height: 0;
-  overflow-y: auto;
-  padding: var(--space-6) max(6%, var(--space-6));
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-.day-separator {
-  align-self: center;
-  padding: 3px 9px;
-  color: var(--muted);
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  font-size: var(--text-xs);
-}
-.composer-main { min-width: 0; flex: 1; display: grid; gap: 3px; }
-.image-attachment { display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--muted); font-size: var(--text-xs); }
-.image-attachment img { width: 38px; height: 38px; border-radius: var(--radius-sm); object-fit: cover; }
-.image-attachment span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.composer-meta { display: flex; align-items: center; gap: 10px; color: var(--faint); font-size: 11px; }
-.enter-mode { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: transparent; color: var(--primary); cursor: pointer; font: inherit; }
-.message-row {
-  display: flex;
-  gap: 9px;
-  align-items: flex-start;
-  max-width: min(76%, 720px);
-}
-.message-row.system {
-  align-self: center;
-  max-width: min(86%, 720px);
-}
-.message-row.system .message-wrap {
-  justify-items: center;
-}
-.message-row.system .message-bubble {
-  padding: 7px 11px;
-  color: var(--muted);
-  background: color-mix(in srgb, var(--surface) 82%, transparent);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  box-shadow: none;
-  font-size: var(--text-sm);
-}
-.message-row.mine {
-  align-self: flex-end;
-  flex-direction: row-reverse;
-}
-.message-wrap {
   display: grid;
-  gap: 4px;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 8px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.background-option {
   min-width: 0;
-}
-.message-row.mine .message-wrap {
-  justify-items: end;
-}
-.message-name {
-  color: var(--faint);
-  font-size: var(--text-xs);
-  padding: 0 4px;
-}
-.message-time {
-  padding: 0 4px;
-  color: var(--faint);
-  font-size: var(--text-xs);
-}
-.message-row.mine .message-time {
-  text-align: right;
-}
-.message-bubble {
-  max-width: 620px;
-  border-radius: 6px 16px 16px 16px;
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 30px;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   background: var(--surface);
   color: var(--text);
-  padding: 12px 15px;
-  box-shadow: var(--shadow-sm);
-  font-size: var(--text-md);
-  line-height: 1.7;
 }
-.message-row.mine .message-bubble {
-  border-radius: 16px 6px 16px 16px;
-  background: var(--primary);
-  color: var(--on-primary);
+.background-option.active {
+  border-color: color-mix(in srgb, var(--primary) 48%, var(--border));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 28%, transparent);
 }
-.message-bubble p {
-  white-space: pre-wrap;
-}
-.message-bubble img {
-  display: block;
-  width: 100%;
-  max-width: 520px;
-  max-height: 430px;
-  object-fit: cover;
-  border-radius: var(--radius-md);
-}
-.avatar {
+.background-option button,
+.theme-option {
+  min-width: 0;
   display: grid;
-  place-items: center;
-  overflow: hidden;
-  flex: 0 0 auto;
-  width: 34px;
-  height: 34px;
-  border-radius: var(--radius-full);
-  font-size: var(--text-base);
-  font-weight: 700;
-}
-.avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.character-avatar {
-  background: var(--primary-soft);
-  color: var(--primary);
-}
-.user-avatar {
-  background: var(--primary);
-  color: var(--on-primary);
-}
-.compact {
-  width: 36px;
-  height: 36px;
-}
-.empty-chat {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
-.composer {
-  flex: 0 0 auto;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 9px;
-  margin: 0 var(--space-6) var(--space-5);
-  padding: 7px 8px 7px 14px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-full);
-  box-shadow: var(--shadow-sm);
-}
-.image-request-panel {
-  flex: 0 0 100%;
-  display: flex;
-  flex-wrap: wrap;
+  grid-template-columns: 42px minmax(0, 1fr) 18px;
   align-items: center;
   gap: 8px;
-  padding: 4px 2px 8px;
+  width: 100%;
+  height: 100%;
+  padding: 7px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
 }
-.image-prompt-input {
-  min-width: 180px;
-  flex: 1 1 260px;
+.theme-option {
+  grid-column: 1 / -1;
+  grid-template-columns: 42px minmax(0, 1fr) 18px;
 }
-.image-workflow-input {
-  min-width: 130px;
-  flex: 0 1 170px;
+.background-thumb,
+.background-option img {
+  width: 42px;
+  height: 42px;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
 }
-.image-request-status {
-  flex: 1 0 100%;
+.theme-thumb {
+  border: 1px solid var(--border);
+  background-image: var(--chat-texture);
+  background-size: var(--chat-texture-size);
+}
+.background-option span:not(.background-thumb) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sticker-picker {
+  display: grid;
+  gap: 8px;
+  max-height: 178px;
+  overflow: hidden;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+}
+.sticker-pack-tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+.sticker-pack-tabs button {
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--text-xs);
+}
+.sticker-pack-tabs button.active {
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+  color: var(--primary);
+}
+.sticker-options {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(48px, 1fr));
+  gap: 6px;
+  overflow-y: auto;
+}
+.sticker-choice {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  padding: 5px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  cursor: pointer;
+}
+.sticker-choice:hover {
+  border-color: color-mix(in srgb, var(--primary) 38%, var(--border));
+}
+.sticker-choice img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.sticker-empty {
   color: var(--muted);
   font-size: var(--text-xs);
 }
-.image-request-result {
-  display: block;
-  max-width: min(100%, 340px);
-  max-height: 220px;
+.composer-main {
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+}
+.composer-input-row {
+  min-width: 0;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+.composer-previews {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 6px;
+  max-height: 104px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.composer-preview {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 7px;
+  padding: 5px;
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
+  background: var(--surface-soft);
+}
+.composer-preview.uploading {
+  border-color: var(--primary);
+}
+.composer-preview.failed {
+  border-color: var(--danger);
+}
+.composer-preview img {
+  width: 42px;
+  height: 42px;
+  border-radius: var(--radius-sm);
   object-fit: cover;
 }
-.composer-input {
-  min-height: 0;
+.composer-preview div {
   min-width: 0;
-  flex: 1;
+  display: grid;
+  gap: 2px;
+}
+.composer-preview strong,
+.composer-preview span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer-preview strong {
+  color: var(--text-strong);
+  font-size: var(--text-xs);
+}
+.composer-preview span {
+  color: var(--muted);
+  font-size: 11px;
+}
+.composer-input {
+  min-width: 0;
+  min-height: 38px;
+  max-height: 150px;
+  padding: 8px 2px;
   border-color: transparent;
   background: transparent;
-  padding: 7px 2px;
   font-size: var(--text-base);
-  resize: none;
-  overflow-y: auto;
   line-height: 1.45;
+  resize: none;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 .composer-input:focus {
   border-color: transparent;
   box-shadow: none;
 }
-.composer-tool,
+.composer-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--faint);
+  font-size: 11px;
+}
 .send-button {
+  flex: 0 0 auto;
   border-radius: var(--radius-full);
 }
 .send-button {
   width: 36px;
   height: 36px;
 }
+.image-request-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+  background: color-mix(in srgb, var(--background) 46%, transparent);
+  backdrop-filter: blur(10px);
+}
+.image-request-dialog {
+  width: min(100%, 460px);
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+.image-request-dialog header,
+.image-request-dialog footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.image-request-dialog header strong {
+  display: block;
+  color: var(--text-strong);
+  font-size: var(--text-lg);
+}
+.image-request-dialog header span,
+.image-request-status {
+  color: var(--muted);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+.image-request-dialog footer {
+  justify-content: flex-end;
+}
 
 @media (max-width: 767px) {
   .chat-layout {
     flex-direction: column;
-    padding: var(--space-3);
     gap: var(--space-3);
+    padding: var(--space-3);
   }
   .conversation-panel {
     width: 100%;
+    max-height: 28vh;
     flex: 0 0 auto;
-    max-height: 32vh;
   }
   .chat-header {
+    min-height: 64px;
     padding: 0 var(--space-4);
   }
   .header-actions {
@@ -1102,13 +1409,8 @@ onUnmounted(() => {
   .header-actions .retry-action span {
     display: none;
   }
-  .header-profile h1 {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .thought-status {
-    display: none;
+  .chat-status-strip {
+    padding: 0 var(--space-4);
   }
   .reply-error {
     padding-inline: var(--space-4);
@@ -1120,20 +1422,23 @@ onUnmounted(() => {
     max-width: 92%;
   }
   .composer {
+    max-height: 42vh;
     margin: 0 var(--space-3) var(--space-3);
+    border-radius: var(--radius-lg);
+  }
+  .composer-toolbar {
+    gap: 3px;
+    padding-bottom: 3px;
+  }
+  .composer-tool {
+    width: 33px;
+    height: 33px;
+  }
+  .sticker-picker {
+    max-height: 160px;
+  }
+  .composer-previews {
+    grid-template-columns: 1fr;
   }
 }
-
-.chat-status-strip { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: 32px; padding: 0 var(--space-6); border-bottom: 1px solid var(--border); color: var(--muted); font-size: var(--text-xs); }
-.chat-status-strip .thought-status { display: block; }
-.message-empty, .image-unavailable { color: var(--muted); }
-.image-request-panel { flex: 0 0 auto; margin: 0 var(--space-6) var(--space-3); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); box-shadow: var(--shadow-sm); }
-.image-request-panel header { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-2); color: var(--text-strong); }
-.image-request-panel header span { color: var(--muted); font-size: var(--text-xs); }
-.image-request-fields { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.image-request-fields .image-prompt-input { flex: 1 1 260px; min-width: 180px; }
-.image-request-fields .image-workflow-input { flex: 0 1 170px; min-width: 130px; }
-.image-request-panel .image-request-status { margin-top: 7px; color: var(--muted); font-size: var(--text-xs); }
-.image-request-panel .image-request-result { margin-top: 8px; }
-@media (max-width: 767px) { .chat-status-strip { padding: 0 var(--space-4); } .chat-status-strip .thought-status { display: block; } .image-request-panel { margin: 0 var(--space-3) var(--space-3); } .image-request-panel header { align-items: flex-start; flex-direction: column; gap: 2px; } .image-request-fields { align-items: stretch; flex-direction: column; } .image-request-fields .image-prompt-input, .image-request-fields .image-workflow-input { width: 100%; min-width: 0; flex: none; } }
 </style>

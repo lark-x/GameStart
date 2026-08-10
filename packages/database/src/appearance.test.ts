@@ -17,6 +17,7 @@ const settings = createAppearanceSettings({
     imageRef: "data:image/jpeg;base64,aGVsbG8=",
     opacity: 0.55,
     blur: 6,
+    items: [{ id: "bg-1", label: "夜色窗边", kind: ChatBackgroundKind.CUSTOM, imageRef: "data:image/png;base64,aGVsbG8=", createdAt: "2026-08-08T10:01:00.000Z" }],
   },
   updatedAt: "2026-08-08T10:00:00.000Z",
 });
@@ -32,9 +33,14 @@ test("stores appearance settings by owner key with defensive copies", async () =
   assert.deepEqual(loaded, settings);
   assert.ok(loaded);
   loaded.chatBackground.opacity = 0.01;
+  (loaded.chatBackground.items?.[0] as { label: string }).label = "mutated";
   assert.equal(
     (await repositories.appearanceSettings.getByOwnerKey("local-user"))?.chatBackground.opacity,
     0.55,
+  );
+  assert.equal(
+    (await repositories.appearanceSettings.getByOwnerKey("local-user"))?.chatBackground.items?.[0]?.label,
+    "夜色窗边",
   );
 });
 

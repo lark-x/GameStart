@@ -5,13 +5,13 @@ import { applyMigrations, listMigrationFiles, type MigrationDatabase } from "./m
 
 test("migration files are ordered and include reversible SQL", async () => {
   const migrations = listMigrationFiles();
-  assert.deepEqual(migrations.map((migration) => migration.version), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]);
+  assert.deepEqual(migrations.map((migration) => migration.version), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
   const logMigration = migrations.find((migration) => migration.version === 17);
   assert.ok(logMigration);
   assert.match(await (await import("node:fs/promises")).readFile(logMigration.upPath, "utf8"), /CREATE TABLE interaction_logs[\s\S]*created_at[\s\S]*correlation_id[\s\S]*details/);
   assert.match(await (await import("node:fs/promises")).readFile(logMigration.downPath, "utf8"), /DROP TABLE IF EXISTS interaction_logs/);
   for (const migration of migrations) {
-    assert.match(await (await import("node:fs/promises")).readFile(migration.upPath, "utf8"), /(CREATE TABLE|ALTER TABLE)/);
+    assert.match(await (await import("node:fs/promises")).readFile(migration.upPath, "utf8"), /(CREATE TABLE|ALTER TABLE|CREATE INDEX)/);
     assert.match(await (await import("node:fs/promises")).readFile(migration.downPath, "utf8"), /DROP/);
   }
 });

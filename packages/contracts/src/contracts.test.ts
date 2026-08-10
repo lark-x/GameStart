@@ -269,6 +269,7 @@ test("registry exposes every schema by its stable contract name", () => {
     "character",
     "characterPlan",
     "characterVisualIdentity",
+    "chatBackgroundItem",
     "chatBackgroundSettings",
     "compiledImageWorkflow",
     "conversation",

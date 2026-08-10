@@ -394,7 +394,7 @@ test("serves, persists, and validates appearance settings per owner", async () =
       id: string;
       ownerKey: string;
       themeId: string;
-      chatBackground: { kind: string; opacity: number; blur: number };
+      chatBackground: { kind: string; opacity: number; blur: number; items?: readonly { id: string; label: string; kind: string; imageRef: string; createdAt: string }[] };
       updatedAt: string;
     };
   };
@@ -417,6 +417,7 @@ test("serves, persists, and validates appearance settings per owner", async () =
           imageRef: "data:image/png;base64,aGk=",
           opacity: 0.7,
           blur: 3,
+          items: [{ id: "bg-1", label: "夜色窗边", kind: "custom", imageRef: "data:image/png;base64,aGk=", createdAt: "2026-08-08T10:01:00.000Z" }],
         },
       }),
     }),
@@ -425,6 +426,7 @@ test("serves, persists, and validates appearance settings per owner", async () =
   const updatedPayload = (await json(updated)) as typeof defaultsPayload;
   assert.equal(updatedPayload.data.themeId, "blossom");
   assert.equal(updatedPayload.data.chatBackground.kind, "custom");
+  assert.equal(updatedPayload.data.chatBackground.items?.[0]?.label, "夜色窗边");
 
   const reloaded = await application.handle(
     new Request("http://localhost/v1/appearance-settings?ownerKey=local-user"),
@@ -436,6 +438,7 @@ test("serves, persists, and validates appearance settings per owner", async () =
     "data:image/png;base64,aGk=",
   );
   assert.equal(reloadedPayload.data.id, updatedPayload.data.id);
+  assert.equal(reloadedPayload.data.chatBackground.items?.[0]?.id, "bg-1");
 
   const otherOwner = await application.handle(
     new Request("http://localhost/v1/appearance-settings?ownerKey=someone-else"),

@@ -40,7 +40,7 @@ test("covers parser errors for switch, workflow, sticker, conversation, message,
 
 test("covers method guards and missing optional repository boundaries", async () => {
   const app = developmentApplication();
-  assert.equal(await status(app, "/v1/sticker-packs/dev-sticker-pack/stickers", { method: "POST" }), 405);
+  assert.equal(await status(app, "/v1/sticker-packs/dev-sticker-pack/stickers", { method: "PUT" }), 405);
   assert.equal(await status(app, "/v1/moments/missing/interactions", { method: "PUT" }), 405);
   assert.equal(await status(app, "/v1/conversations/dev-conversation/messages", { method: "PUT" }), 405);
   assert.equal(await status(app, "/v1/conversations/dev-conversation/stream", { method: "POST" }), 405);
@@ -144,8 +144,8 @@ test("serializes image, sticker, and system messages for stream context", async 
     async complete() { return { id: "unused", model: "unused", content: "unused" }; },
     async *stream(input) {
       assert.deepEqual(input.messages.map((message) => message.content), [
-        "[image:media://image]",
-        "[sticker:dev-sticker-wave]",
+        "用户发送了一张图片。\n[图片未能传给模型本体。]",
+        "用户发送了表情：dev-sticker-wave",
         "system notice",
       ]);
       yield { content: "reply" };

@@ -110,6 +110,32 @@ test("imports validated sticker pack metadata and exposes it to clients", async 
   assert.equal(malformed.status, 400);
 });
 
+test("appends imported stickers to an existing pack", async () => {
+  const app = application();
+  const response = await app.handle(new Request(`http://localhost/v1/sticker-packs/${pack.id}/stickers`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      stickers: [{ id: "sticker-api-laugh", label: "laugh", mediaRef: "media://api/laugh.gif", tags: ["fun"] }],
+    }),
+  }));
+  assert.equal(response.status, 200);
+  const payload = await json(response) as { data: { pack: typeof pack; stickers: Array<{ id: string; packId: string; storyWorldId: string; label: string; mediaRef: string; tags: string[]; createdAt: string }> } };
+  assert.deepEqual(payload.data.pack, pack);
+  assert.deepEqual({ ...payload.data.stickers[0], createdAt: "<timestamp>" }, {
+    id: "sticker-api-laugh",
+    packId: pack.id,
+    storyWorldId: world.id,
+    label: "laugh",
+    mediaRef: "media://api/laugh.gif",
+    tags: ["fun"],
+    createdAt: "<timestamp>",
+  });
+  assert.doesNotThrow(() => new Date(payload.data.stickers[0]!.createdAt).toISOString());
+  const stickers = await app.handle(new Request(`http://localhost/v1/sticker-packs/${pack.id}/stickers`));
+  assert.equal(((await json(stickers)) as { data: unknown[] }).data.length, 2);
+});
+
 test("bounds missing story world/pack and missing query", async () => {
   const app = application();
   const missingQuery = await app.handle(new Request("http://localhost/v1/sticker-packs"));

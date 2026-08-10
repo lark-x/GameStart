@@ -31,6 +31,8 @@ const migrationNames = [
   "0015_event_output_policy",
   "0016_execution_dispatch_requests",
   "0017_interaction_logs",
+  "0018_image_album",
+  "0019_chat_background_library",
 ] as const;
 
 export function listMigrationFiles(): readonly MigrationFile[] {

@@ -1,6 +1,6 @@
-import type { InteractionLogDto, InteractionLogQuery } from "../../../packages/contracts/src/index.ts";
+﻿import type { InteractionLogDto, InteractionLogQuery } from "../../../packages/contracts/src/index.ts";
 import { previewMessage, type InteractionLogInput, type InteractionLogRepository } from "../../../packages/database/src/interaction-log.ts";
-import type { ChatObservationHook } from "../../../packages/ai/src/index.ts";
+import type { ChatContent, ChatObservationHook } from "../../../packages/ai/src/index.ts";
 
 export type LogSubscriber = (log: InteractionLogDto) => void;
 
@@ -69,6 +69,17 @@ export function createChatObservationLogHook(logging: Pick<InteractionLogging, "
     const cancelled = observation.outcome === "cancelled";
     const trace = observation.trace;
     const redactBearer = (value: string): string => value.replace(/Bearer\s+[^\s]+/gi, "Bearer [REDACTED]");
+    const base64ByteLength = (value: string): number => {
+      const compact = value.replace(/\s/g, "");
+      const padding = compact.endsWith("==") ? 2 : compact.endsWith("=") ? 1 : 0;
+      return Math.max(0, Math.floor((compact.length * 3) / 4) - padding);
+    };
+    const contentPreview = (content: ChatContent): string => {
+      if (typeof content === "string") return previewMessage(redactBearer(content)) ?? "";
+      return previewMessage(content.map((part) => part.type === "text"
+        ? redactBearer(part.text)
+        : `[image:${part.mediaType};${base64ByteLength(part.dataBase64)} bytes]`).join("\n")) ?? "";
+    };
     const message = observation.error?.message ?? observation.preview;
     const safeMessage = message === undefined ? undefined : previewMessage(redactBearer(message));
     const safeError = observation.error === undefined
@@ -96,7 +107,7 @@ export function createChatObservationLogHook(logging: Pick<InteractionLogging, "
         ...(observation.requestMessages === undefined ? {} : {
           requestMessages: observation.requestMessages.slice(-20).map((item) => ({
             role: item.role,
-            content: previewMessage(redactBearer(item.content)) ?? "",
+            content: contentPreview(item.content),
           })),
         }),
         ...(observation.preview === undefined ? {} : { response: previewMessage(redactBearer(observation.preview)) ?? "" }),

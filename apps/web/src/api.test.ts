@@ -210,3 +210,34 @@ test("parseSseBlock keeps error event ids", () => { const value = parseSseBlock(
 test("ApiClient retryAutoReply uses the retry endpoint", async () => { const previous = globalThis.fetch; globalThis.fetch = async (input, init) => { assert.match(String(input), /auto-reply\/retry/); assert.equal(init.method, "POST"); return new Response(JSON.stringify({ data: { status: "QUEUED" } }), { status: 200, headers: { "content-type": "application/json" } }); }; try { const result = await new ApiClient("https://api.example.test").retryAutoReply("conv", { readerCharacterId: "reader", sourceMessageId: "source" }); assert.equal(result.data.status, "QUEUED"); } finally { globalThis.fetch = previous; } });
 test("ApiClient logs query encodes filters", async () => { const previous = globalThis.fetch; globalThis.fetch = async (input) => { assert.match(String(input), /correlationId=corr/); return new Response(JSON.stringify({ data: { items: [] } }), { status: 200, headers: { "content-type": "application/json" } }); }; try { await new ApiClient("https://api.example.test").getInteractionLogs({ correlationId: "corr", limit: 20 }); } finally { globalThis.fetch = previous; } });
 test("ApiClient provider test uses profile endpoint", async () => { const previous = globalThis.fetch; globalThis.fetch = async (input) => { assert.match(String(input), /llm-provider-profiles\/profile\/test/); return new Response(JSON.stringify({ data: { success: true, ok: true } }), { status: 200, headers: { "content-type": "application/json" } }); }; try { const result = await new ApiClient("https://api.example.test").testLlmProfile("profile"); assert.equal(result.data.success, true); } finally { globalThis.fetch = previous; } });
+
+test("ApiClient uploads general images and imports stickers with actor context", async () => {
+  const previousFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (input, init) => {
+    calls.push({ url: String(input), init });
+    return new Response(JSON.stringify({ data: { mediaRef: "media://local/image.gif", contentType: "image/gif" } }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+
+  try {
+    const client = new ApiClient("https://api.example.test", "actor");
+    await client.uploadImage(new Blob([new Uint8Array([1, 2, 3])], { type: "image/gif" }));
+    await client.importStickerPack({ id: "pack", storyWorldId: "world", name: "Pack", createdAt: "2026-08-05T00:00:00.000Z", stickers: [] });
+    await client.importStickersToPack("pack one", [{ id: "sticker", label: "Sticker", mediaRef: "media://local/image.gif" }]);
+
+    assert.equal(calls[0].url, "https://api.example.test/v1/media/images");
+    assert.deepEqual(calls[0].init.headers, {
+      accept: "application/json",
+      "content-type": "image/gif",
+      "x-actor-character-id": "actor",
+    });
+    assert.equal(calls[1].url, "https://api.example.test/v1/sticker-packs");
+    assert.equal(calls[2].url, "https://api.example.test/v1/sticker-packs/pack%20one/stickers");
+    assert.deepEqual(JSON.parse(calls[2].init.body), { stickers: [{ id: "sticker", label: "Sticker", mediaRef: "media://local/image.gif" }] });
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});

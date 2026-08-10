@@ -1,4 +1,4 @@
-import assert from "node:assert/strict";
+﻿import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
@@ -6,6 +6,7 @@ import {
   type ChatCompletionResult,
   type ChatDelta,
   type ChatProvider,
+  type ChatMessage,
 } from "../../../packages/ai/src/index.ts";
 import {
   CharacterRole,
@@ -38,7 +39,7 @@ const ai = createCharacter({
 });
 
 function chatProvider(
-  stream: (messages: readonly { role: string; content: string }[]) => AsyncIterable<ChatDelta>,
+  stream: (messages: readonly ChatMessage[]) => AsyncIterable<ChatDelta>,
 ): ChatProvider {
   return {
     complete: async (): Promise<ChatCompletionResult> => ({
@@ -87,7 +88,7 @@ async function createApplication(provider: ChatProvider): Promise<ApiApplication
 }
 
 test("streams provider deltas as SSE and preserves conversation history", async () => {
-  let received: readonly { role: string; content: string }[] = [];
+  let received: readonly ChatMessage[] = [];
   const provider = chatProvider(async function* (messages) {
     received = messages;
     yield { content: "Once" };

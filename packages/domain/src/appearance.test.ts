@@ -5,6 +5,7 @@ import {
   ChatBackgroundKind,
   DEFAULT_APPEARANCE_OWNER_KEY,
   MAX_BACKGROUND_IMAGE_REF_LENGTH,
+  MAX_CHAT_BACKGROUND_ITEMS,
   createAppearanceSettings,
   createDefaultAppearanceSettings,
   defaultChatBackground,
@@ -30,6 +31,59 @@ test("creates appearance settings with a custom chat background", () => {
   assert.equal(settings.chatBackground.imageRef, "data:image/jpeg;base64,aGVsbG8=");
   assert.equal(settings.chatBackground.opacity, 0.6);
   assert.equal(settings.chatBackground.blur, 4);
+});
+
+test("accepts imported chat background library items", () => {
+  const settings = createAppearanceSettings({
+    ...VALID_INPUT,
+    chatBackground: {
+      ...VALID_INPUT.chatBackground,
+      items: [
+        {
+          id: "bg-1",
+          label: "夜色窗边",
+          kind: ChatBackgroundKind.CUSTOM,
+          imageRef: "data:image/png;base64,aGVsbG8=",
+          createdAt: "2026-08-08T10:01:00.000Z",
+        },
+      ],
+    },
+  });
+  assert.equal(settings.chatBackground.items?.[0]?.label, "夜色窗边");
+  settings.chatBackground.items?.length && ((settings.chatBackground.items[0] as { label: string }).label = "changed");
+  const copied = createAppearanceSettings({ ...settings });
+  assert.equal(copied.chatBackground.items?.[0]?.label, "changed");
+});
+
+test("rejects too many or invalid background library items", () => {
+  assert.throws(
+    () =>
+      createAppearanceSettings({
+        ...VALID_INPUT,
+        chatBackground: {
+          ...VALID_INPUT.chatBackground,
+          items: Array.from({ length: MAX_CHAT_BACKGROUND_ITEMS + 1 }, (_, index) => ({
+            id: `bg-${index}`,
+            label: `背景 ${index}`,
+            kind: ChatBackgroundKind.CUSTOM,
+            imageRef: "data:image/png;base64,aGVsbG8=",
+            createdAt: "2026-08-08T10:01:00.000Z",
+          })),
+        },
+      }),
+    { name: "TypeError", message: /cannot contain more/ },
+  );
+  assert.throws(
+    () =>
+      createAppearanceSettings({
+        ...VALID_INPUT,
+        chatBackground: {
+          ...VALID_INPUT.chatBackground,
+          items: [{ id: "bg-1", label: "bad", kind: "theme", imageRef: "data:image/png;base64,aGVsbG8=", createdAt: "2026-08-08T10:01:00.000Z" } as never],
+        },
+      }),
+    { name: "TypeError", message: /kind/ },
+  );
 });
 
 test("creates default appearance settings for an owner", () => {

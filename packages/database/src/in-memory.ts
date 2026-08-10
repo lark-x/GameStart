@@ -216,7 +216,11 @@ return { ...interaction };
 }
 
 function copyAppearanceSettings(settings: AppearanceSettings): AppearanceSettings {
-return { ...settings, chatBackground: { ...settings.chatBackground } };
+const chatBackground = { ...settings.chatBackground };
+if (settings.chatBackground.items !== undefined) {
+chatBackground.items = settings.chatBackground.items.map((item) => ({ ...item }));
+}
+return { ...settings, chatBackground };
 }
 
 function copyLlmProviderProfile(profile: LlmProviderProfile): LlmProviderProfile {

@@ -1,8 +1,22 @@
 export type ChatRole = "system" | "user" | "assistant";
 
+export interface ChatTextPart {
+  readonly type: "text";
+  readonly text: string;
+}
+
+export interface ChatImagePart {
+  readonly type: "image";
+  readonly mediaType: string;
+  readonly dataBase64: string;
+}
+
+export type ChatContentPart = ChatTextPart | ChatImagePart;
+export type ChatContent = string | readonly ChatContentPart[];
+
 export interface ChatMessage {
   role: ChatRole;
-  content: string;
+  content: ChatContent;
 }
 
 export interface ChatCompletionRequest {
@@ -80,12 +94,30 @@ export class ProviderError extends Error {
   }
 }
 
+function hasContentValue(content: ChatContent): boolean {
+  if (typeof content === "string") return content.trim().length > 0;
+  return content.some((part) => part.type === "text"
+    ? part.text.trim().length > 0
+    : part.mediaType.trim().length > 0 && part.dataBase64.trim().length > 0);
+}
+
+function openAiContent(content: ChatContent): string | Array<Record<string, unknown>> {
+  if (typeof content === "string") return content;
+  return content.map((part) => part.type === "text"
+    ? { type: "text", text: part.text }
+    : { type: "image_url", image_url: { url: `data:${part.mediaType};base64,${part.dataBase64}` } });
+}
+
+function openAiMessages(messages: readonly ChatMessage[]): Array<{ role: ChatRole; content: string | Array<Record<string, unknown>> }> {
+  return messages.map((message) => ({ role: message.role, content: openAiContent(message.content) }));
+}
+
 function assertRequest(request: ChatCompletionRequest, model: string | undefined): string {
   if (request.messages.length === 0) {
     throw new ProviderError("CONFIGURATION", "At least one chat message is required");
   }
   for (const [index, message] of request.messages.entries()) {
-    if (message.content.trim().length === 0) {
+    if (!hasContentValue(message.content)) {
       throw new ProviderError("CONFIGURATION", `Chat message ${index} has empty content`);
     }
   }
@@ -307,7 +339,7 @@ export class OpenAICompatibleProvider implements ChatProvider {
     if (this.apiKey !== undefined) headers.authorization = `Bearer ${this.apiKey}`;
     const body: Record<string, unknown> = {
       model,
-      messages: request.messages,
+      messages: openAiMessages(request.messages),
       stream,
     };
     if (request.temperature !== undefined) body.temperature = request.temperature;

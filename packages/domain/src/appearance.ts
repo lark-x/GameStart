@@ -26,11 +26,21 @@ export const MAX_BACKGROUND_IMAGE_REF_LENGTH = 2_000_000;
 
 export const MAX_CHAT_BACKGROUND_BLUR = 40;
 
+export const MAX_CHAT_BACKGROUND_ITEMS = 12;
+
 export const DEFAULT_APPEARANCE_OWNER_KEY = "local-user";
 
 export const DEFAULT_THEME_ID = "dawn";
 
 const THEME_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
+
+export interface ChatBackgroundItem {
+  id: string;
+  label: string;
+  kind: typeof ChatBackgroundKind.CUSTOM;
+  imageRef: string;
+  createdAt: string;
+}
 
 export interface ChatBackgroundSettings {
   kind: ChatBackgroundKind;
@@ -40,6 +50,8 @@ export interface ChatBackgroundSettings {
   opacity: number;
   /** 背景虚化像素，0 ~ 40 */
   blur: number;
+  /** 用户导入的可切换背景库；主题默认背景由客户端合成，不存入列表 */
+  items?: readonly ChatBackgroundItem[];
 }
 
 export interface AppearanceSettings {
@@ -96,6 +108,38 @@ function assertBlur(value: unknown, field: string): asserts value is number {
   }
 }
 
+export function assertChatBackgroundItem(value: unknown, field = "chatBackground.items[]"): asserts value is ChatBackgroundItem {
+  if (typeof value !== "object" || value === null) {
+    throw new TypeError(`${field} must be an object`);
+  }
+  const item = value as ChatBackgroundItem;
+  assertNonEmptyString(item.id, `${field}.id`);
+  assertNonEmptyString(item.label, `${field}.label`);
+  if (item.kind !== ChatBackgroundKind.CUSTOM) {
+    throw new TypeError(`${field}.kind must be custom`);
+  }
+  assertBackgroundImageRef(item.imageRef, `${field}.imageRef`);
+  assertIsoTimestamp(item.createdAt, `${field}.createdAt`);
+}
+
+export function assertChatBackgroundItems(value: unknown, field = "chatBackground.items"): asserts value is readonly ChatBackgroundItem[] {
+  if (value === undefined) return;
+  if (!Array.isArray(value)) {
+    throw new TypeError(`${field} must be an array`);
+  }
+  if (value.length > MAX_CHAT_BACKGROUND_ITEMS) {
+    throw new TypeError(`${field} cannot contain more than ${MAX_CHAT_BACKGROUND_ITEMS} items`);
+  }
+  const ids = new Set<string>();
+  for (const [index, item] of value.entries()) {
+    assertChatBackgroundItem(item, `${field}[${index}]`);
+    if (ids.has(item.id)) {
+      throw new TypeError(`${field} contains duplicate item ids`);
+    }
+    ids.add(item.id);
+  }
+}
+
 export function assertChatBackground(value: unknown, field = "chatBackground"): asserts value is ChatBackgroundSettings {
   if (typeof value !== "object" || value === null) {
     throw new TypeError(`${field} must be an object`);
@@ -111,6 +155,7 @@ export function assertChatBackground(value: unknown, field = "chatBackground"): 
   }
   assertRatio(background.opacity, `${field}.opacity`);
   assertBlur(background.blur, `${field}.blur`);
+  assertChatBackgroundItems(background.items, `${field}.items`);
 }
 
 export function defaultChatBackground(): ChatBackgroundSettings {
@@ -144,6 +189,9 @@ export function createAppearanceSettings(input: AppearanceSettingsInput): Appear
   };
   if (input.chatBackground.imageRef !== undefined) {
     background.imageRef = input.chatBackground.imageRef;
+  }
+  if (input.chatBackground.items !== undefined) {
+    background.items = input.chatBackground.items.map((item) => ({ ...item }));
   }
   const settings: AppearanceSettings = {
     id: input.id,

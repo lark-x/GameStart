@@ -45,5 +45,5 @@ export function findEligibleAi(
 }
 
 export function isEligibleSource(message: Message | undefined, readerCharacterId: string): message is Message {
-  return message?.authorCharacterId === readerCharacterId && message.kind === MessageKind.TEXT;
+  return message?.authorCharacterId === readerCharacterId && (message.kind === MessageKind.TEXT || message.kind === MessageKind.IMAGE || message.kind === MessageKind.STICKER);
 }

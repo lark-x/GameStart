@@ -75,3 +75,45 @@ test("ActiveProfile missing without fallback rejects", async () => { await asser
 test("ActiveProfile missing uses fallback", async () => { assert.equal((await new ActiveProfileChatProvider(repo(),undefined,fake).complete(req)).content,"fallback"); });
 test("ActiveProfile decrypt failure is reported without key", async () => { const events:ChatObservation[]=[]; await assert.rejects(new ActiveProfileChatProvider(repo(profile),undefined,undefined,(e)=>{ events.push(e); }).complete(req),/cannot be decrypted/); assert.equal(events[0]?.outcome,"error"); assert.equal(JSON.stringify(events).includes("bad"),false); });
 test("ActiveProfile provider construction failure is reported", async () => { const broken={...profile,baseUrl:"not-a-url"}; delete broken.encryptedApiKey; delete broken.encryptionIv; const events:ChatObservation[]=[]; await assert.rejects(new ActiveProfileChatProvider(repo(broken),undefined,undefined,(e)=>{ events.push(e); }).complete(req),/valid URL/); assert.equal(events[0]?.outcome,"error"); });
+
+test("Anthropic provider serializes image content parts as base64 sources", async () => {
+  let body = "";
+  const provider = new AnthropicProvider({ baseUrl: "https://x.test/v1", model: "vision", apiKey: "key" }, async (_input, init) => {
+    body = String(init?.body);
+    return new Response(JSON.stringify({ id: "1", model: "vision", content: [{ type: "text", text: "ok" }] }));
+  });
+  await provider.complete({
+    messages: [
+      { role: "system", content: "system rules" },
+      { role: "user", content: [
+        { type: "text", text: "look" },
+        { type: "image", mediaType: "image/webp", dataBase64: "aGVsbG8=" },
+      ] },
+    ],
+  });
+  const parsed = JSON.parse(body);
+  assert.equal(parsed.system, "system rules");
+  assert.deepEqual(parsed.messages[0].content, [
+    { type: "text", text: "look" },
+    { type: "image", source: { type: "base64", media_type: "image/webp", data: "aGVsbG8=" } },
+  ]);
+});
+
+test("observability redacts image base64 while preserving media metadata", async () => {
+  const seen: ChatObservation[] = [];
+  const { emitObservation } = await import("./observability.ts");
+  await emitObservation((event) => { seen.push(event); }, {
+    name: "completed",
+    requestMessages: [{
+      role: "user",
+      content: [
+        { type: "text", text: "Bearer secret-token" },
+        { type: "image", mediaType: "image/png", dataBase64: "aGVsbG8=" },
+      ],
+    }],
+  });
+  const json = JSON.stringify(seen);
+  assert.equal(json.includes("secret-token"), false);
+  assert.equal(json.includes("aGVsbG8="), false);
+  assert.equal(json.includes("[image:image/png;5 bytes]"), true);
+});

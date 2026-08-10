@@ -1,14 +1,17 @@
 <script setup lang="ts">
-import { computed, ref, watch, type Component } from "vue";
+import { computed, onUnmounted, ref, watch, type Component } from "vue";
 import {
   CalendarDays,
   Download,
   Image as ImageIcon,
   Images,
+  Plus,
   MessageCircle,
   RefreshCw,
   Smile,
   Sparkles,
+  Trash2,
+  Upload,
   X,
 } from "@lucide/vue";
 import Button from "../components/ui/Button.vue";
@@ -27,6 +30,20 @@ interface CategoryOption {
   icon: Component;
 }
 
+type StickerImportMode = "existing" | "new";
+
+interface StickerImportItem {
+  readonly id: string;
+  readonly file: File;
+  readonly previewUrl: string;
+  label: string;
+  error?: string;
+}
+
+const STICKER_IMPORT_LIMIT = 50;
+const STICKER_IMPORT_MAX_BYTES = 5 * 1024 * 1024;
+const STICKER_IMPORT_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+
 const store = useAppStore();
 const imageAssets = ref<ApiImageAsset[]>([]);
 const packs = ref<ApiStickerPack[]>([]);
@@ -36,6 +53,14 @@ const selectedAsset = ref<ApiImageAsset | null>(null);
 const unavailableImages = ref(new Set<string>());
 const status = ref("准备加载相册…");
 const loading = ref(false);
+const stickerImportOpen = ref(false);
+const stickerImportInput = ref<HTMLInputElement | null>(null);
+const stickerImportMode = ref<StickerImportMode>("existing");
+const stickerImportPackId = ref("");
+const stickerImportNewPackName = ref("");
+const stickerImportItems = ref<StickerImportItem[]>([]);
+const stickerImportStatus = ref("");
+const stickerImporting = ref(false);
 
 const categoryOptions: readonly CategoryOption[] = [
   { value: "ALL", label: "全部", icon: Images },
@@ -47,6 +72,11 @@ const categoryOptions: readonly CategoryOption[] = [
 const visibleAssets = computed(() => activeCategory.value === "ALL"
   ? imageAssets.value
   : imageAssets.value.filter((asset) => asset.category === activeCategory.value));
+const canSubmitStickerImport = computed(() => {
+  if (stickerImporting.value || stickerImportItems.value.length === 0) return false;
+  if (stickerImportMode.value === "new") return stickerImportNewPackName.value.trim().length > 0;
+  return stickerImportPackId.value.trim().length > 0;
+});
 
 function categoryCount(category: CategoryFilter) {
   return category === "ALL"
@@ -88,6 +118,117 @@ function downloadAsset(asset: ApiImageAsset) {
   anchor.click();
 }
 
+function stickerLabelFromFile(name: string) {
+  return name.replace(/\.[^.]+$/, "").trim() || "sticker";
+}
+
+function validateStickerFile(file: File) {
+  if (!STICKER_IMPORT_TYPES.has(file.type)) return "仅支持 PNG、JPEG、WebP、GIF";
+  if (file.size > STICKER_IMPORT_MAX_BYTES) return "单张不能超过 5MB";
+  return undefined;
+}
+
+function pickStickerImportFiles() {
+  stickerImportInput.value?.click();
+}
+
+function openStickerImport() {
+  activeCollection.value = "STICKERS";
+  stickerImportOpen.value = true;
+  stickerImportStatus.value = "";
+  if (!stickerImportPackId.value && packs.value[0]) stickerImportPackId.value = packs.value[0].id;
+  if (!packs.value.length) stickerImportMode.value = "new";
+}
+
+function clearStickerImportItems() {
+  for (const item of stickerImportItems.value) URL.revokeObjectURL(item.previewUrl);
+  stickerImportItems.value = [];
+}
+
+function closeStickerImport() {
+  if (stickerImporting.value) return;
+  stickerImportOpen.value = false;
+  stickerImportStatus.value = "";
+  clearStickerImportItems();
+}
+
+function addStickerImportFiles(files: readonly File[]) {
+  const remaining = STICKER_IMPORT_LIMIT - stickerImportItems.value.length;
+  if (remaining <= 0) {
+    stickerImportStatus.value = `一次最多导入 ${STICKER_IMPORT_LIMIT} 张`;
+    return;
+  }
+  const accepted: StickerImportItem[] = [];
+  const rejected: string[] = [];
+  for (const file of files.slice(0, remaining)) {
+    const error = validateStickerFile(file);
+    if (error) {
+      rejected.push(`${file.name}: ${error}`);
+      continue;
+    }
+    accepted.push({
+      id: crypto.randomUUID(),
+      file,
+      previewUrl: URL.createObjectURL(file),
+      label: stickerLabelFromFile(file.name),
+    });
+  }
+  if (files.length > remaining) rejected.push(`已达到 ${STICKER_IMPORT_LIMIT} 张上限`);
+  stickerImportItems.value = [...stickerImportItems.value, ...accepted];
+  stickerImportStatus.value = rejected[0] ?? (accepted.length ? `${stickerImportItems.value.length} 张待导入` : "");
+}
+
+function onStickerImportFiles(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const files = Array.from(input.files ?? []);
+  input.value = "";
+  addStickerImportFiles(files);
+}
+
+function removeStickerImportItem(id: string) {
+  const item = stickerImportItems.value.find((candidate) => candidate.id === id);
+  if (item) URL.revokeObjectURL(item.previewUrl);
+  stickerImportItems.value = stickerImportItems.value.filter((candidate) => candidate.id !== id);
+}
+
+async function submitStickerImport() {
+  if (!store.currentWorldId || !canSubmitStickerImport.value) return;
+  stickerImporting.value = true;
+  stickerImportStatus.value = "正在上传表情…";
+  try {
+    const stickers = [];
+    for (const item of stickerImportItems.value) {
+      const uploaded = await store.api.uploadImage(item.file);
+      stickers.push({
+        id: `sticker:${crypto.randomUUID()}`,
+        label: item.label.trim() || stickerLabelFromFile(item.file.name),
+        mediaRef: uploaded.data.mediaRef,
+      });
+    }
+    if (stickerImportMode.value === "new") {
+      await store.api.importStickerPack({
+        id: `sticker-pack:${crypto.randomUUID()}`,
+        storyWorldId: store.currentWorldId,
+        name: stickerImportNewPackName.value.trim(),
+        sourceRef: "album-import",
+        createdAt: new Date().toISOString(),
+        stickers,
+      });
+    } else {
+      await store.api.importStickersToPack(stickerImportPackId.value, stickers);
+    }
+    stickerImportStatus.value = "导入完成";
+    clearStickerImportItems();
+    stickerImportOpen.value = false;
+    stickerImportNewPackName.value = "";
+    await loadAssets();
+  } catch (error: unknown) {
+    stickerImportStatus.value = errorMessage(error);
+  } finally {
+    stickerImporting.value = false;
+  }
+}
+
 async function loadAssets() {
   if (!store.currentWorldId) {
     status.value = "准备加载相册…";
@@ -115,6 +256,8 @@ async function loadAssets() {
       const stickers = await store.api.getStickers(pack.id);
       pack._stickers = stickers.data ?? [];
     }));
+    if (!packs.value.some((pack) => pack.id === stickerImportPackId.value)) stickerImportPackId.value = packs.value[0]?.id ?? "";
+    if (!packs.value.length) stickerImportMode.value = "new";
   } catch (error: unknown) {
     packs.value = [];
     failures.push(`表情包：${errorMessage(error)}`);
@@ -131,6 +274,7 @@ watch(
   () => void loadAssets(),
   { immediate: true },
 );
+onUnmounted(() => clearStickerImportItems());
 </script>
 <template>
   <section class="page assets-page">
@@ -141,6 +285,9 @@ watch(
       :status="status"
     >
       <template #actions>
+        <Button v-if="activeCollection === 'STICKERS'" variant="secondary" @click="openStickerImport">
+          <Upload :size="16" />导入表情
+        </Button>
         <Button variant="secondary" :loading="loading" @click="loadAssets">
           <RefreshCw :size="16" />刷新
         </Button>
@@ -224,6 +371,7 @@ watch(
       </div>
       <EmptyState v-else-if="!loading" title="还没有表情包" description="导入表情包后会显示在这里。">
         <template #icon><Smile :size="28" /></template>
+        <Button variant="secondary" @click="openStickerImport"><Plus :size="16" />导入表情</Button>
       </EmptyState>
     </template>
 
@@ -254,10 +402,70 @@ watch(
         </section>
       </div>
     </Teleport>
+
+    <Teleport to="body">
+      <div v-if="stickerImportOpen" class="sticker-import-overlay" role="presentation" @click.self="closeStickerImport">
+        <form class="sticker-import-dialog" role="dialog" aria-modal="true" aria-label="导入表情包" @submit.prevent="submitStickerImport">
+          <header>
+            <div>
+              <span>表情包</span>
+              <h2>导入表情</h2>
+            </div>
+            <Button variant="ghost" size="icon" title="关闭" aria-label="关闭" @click="closeStickerImport"><X :size="18" /></Button>
+          </header>
+          <input ref="stickerImportInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple class="visually-hidden" @change="onStickerImportFiles" />
+          <div class="sticker-import-target">
+            <label :class="{ disabled: !packs.length }">
+              <input v-model="stickerImportMode" type="radio" value="existing" :disabled="!packs.length" />
+              <span>追加到现有主题</span>
+            </label>
+            <label>
+              <input v-model="stickerImportMode" type="radio" value="new" />
+              <span>新建主题</span>
+            </label>
+          </div>
+          <select v-if="stickerImportMode === 'existing'" v-model="stickerImportPackId" class="sticker-import-control">
+            <option v-for="pack in packs" :key="pack.id" :value="pack.id">{{ pack.name }}</option>
+          </select>
+          <input v-else v-model="stickerImportNewPackName" class="sticker-import-control" placeholder="主题名称" />
+          <div class="sticker-import-pick">
+            <Button type="button" variant="secondary" @click="pickStickerImportFiles"><Upload :size="16" />选择图片</Button>
+            <span>最多 50 张，每张 5MB，支持 PNG/JPEG/WebP/GIF</span>
+          </div>
+          <div v-if="stickerImportItems.length" class="sticker-import-list">
+            <article v-for="item in stickerImportItems" :key="item.id" class="sticker-import-item">
+              <img :src="item.previewUrl" :alt="item.label" />
+              <input v-model="item.label" aria-label="表情名称" />
+              <Button type="button" variant="ghost" size="icon" title="移除" aria-label="移除" @click="removeStickerImportItem(item.id)"><Trash2 :size="15" /></Button>
+            </article>
+          </div>
+          <p v-if="stickerImportStatus" class="sticker-import-status">{{ stickerImportStatus }}</p>
+          <footer>
+            <Button type="button" variant="ghost" @click="closeStickerImport">取消</Button>
+            <Button type="submit" :loading="stickerImporting" :disabled="!canSubmitStickerImport">导入</Button>
+          </footer>
+        </form>
+      </div>
+    </Teleport>
   </section>
 </template>
 <style scoped>
 .assets-page { width: min(100%, 1380px); margin: 0 auto; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+.sticker-import-overlay { position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; padding: 16px; background: rgb(8 10 16 / 68%); backdrop-filter: blur(10px); }
+.sticker-import-dialog { display: grid; gap: 12px; width: min(100%, 620px); max-height: calc(100vh - 32px); overflow: hidden; padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); box-shadow: var(--shadow-lg); }
+.sticker-import-dialog > header, .sticker-import-dialog > footer, .sticker-import-pick { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sticker-import-dialog > header span, .sticker-import-pick span, .sticker-import-status { color: var(--muted); font-size: var(--text-xs); }
+.sticker-import-dialog > header h2 { color: var(--text-strong); font-size: var(--text-lg); }
+.sticker-import-target { display: flex; flex-wrap: wrap; gap: 8px; }
+.sticker-import-target label { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font-size: var(--text-sm); }
+.sticker-import-target label.disabled { opacity: 0.55; }
+.sticker-import-control { min-height: 38px; width: 100%; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-soft); color: var(--text); font: inherit; }
+.sticker-import-list { min-height: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 8px; overflow-y: auto; padding-right: 2px; }
+.sticker-import-item { display: grid; grid-template-columns: 48px minmax(0, 1fr) 32px; align-items: center; gap: 8px; padding: 6px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-soft); }
+.sticker-import-item img { width: 48px; height: 48px; object-fit: contain; border-radius: var(--radius-sm); background: var(--surface); }
+.sticker-import-item input { min-width: 0; height: 32px; padding: 0 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); }
+
 .collection-tabs, .category-tabs { display: flex; align-items: center; gap: 4px; overflow-x: auto; scrollbar-width: none; }
 .collection-tabs { margin-bottom: var(--space-5); border-bottom: 1px solid var(--border); }
 .collection-tabs button, .category-tabs button { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 7px; border: 0; background: transparent; color: var(--muted); cursor: pointer; font: inherit; }

@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   ApiCharacter,
   ApiEvent,
   ApiRelationship,
@@ -27,6 +27,9 @@ import type {
   RelationshipEdgeDto,
   SendMessageRequest,
   RequestConversationImageRequest,
+  CreateStickerInput,
+  CreateStickerPackRequest,
+  StickerPackImportResultDto,
   StickerDto,
   StickerPackDto,
   StoryWorldDto,
@@ -88,8 +91,11 @@ export class ApiClient {
   public getStickerPacks(storyWorldId: string): Promise<ApiResponse<StickerPackDto[]>>;
   public getImageAssets(storyWorldId: string): Promise<ApiResponse<ImageAssetDto[]>>;
   public getStickers(packId: string): Promise<ApiResponse<StickerDto[]>>;
+  public importStickerPack(input: CreateStickerPackRequest): Promise<ApiResponse<StickerPackImportResultDto>>;
+  public importStickersToPack(packId: string, stickers: readonly CreateStickerInput[]): Promise<ApiResponse<StickerPackImportResultDto>>;
   public getConversations(characterId: string): Promise<ApiResponse<ConversationDetailDto[]>>;
   public getMessages(conversationId: string, characterId: string): Promise<ApiResponse<MessageDto[]>>;
+  public uploadImage(file: Blob): Promise<ApiResponse<UploadedMediaDto>>;
   public uploadChatImage(file: Blob): Promise<ApiResponse<UploadedMediaDto>>;
   public mediaUrl(mediaRef: string): string;
   public requestConversationImage(conversationId: string, input: RequestConversationImageRequest): Promise<ApiResponse<ImageJobDto>>;

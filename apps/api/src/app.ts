@@ -79,6 +79,7 @@ import type {
   StickerPackDto,
   StickerDto,
   CreateStickerPackRequest,
+  CreateStickerInput,
   StickerPackImportResultDto,
   RelationshipEdgeDto,
   WorldCalendarDto,
@@ -130,7 +131,7 @@ import { createProviderFromProfile } from "../../../packages/ai/src/profile-prov
 import { InteractionLogging } from "./interaction-logging.ts";
 import { encodeInteractionLogCursor } from "../../../packages/database/src/interaction-log.ts";
 import { ConversationOrchestrator } from "./conversation-orchestrator.ts";
-import type { ConversationOrchestratorOptions, ConversationReply, ConversationReplyContext } from "./conversation-orchestrator.ts";
+import type { ConversationOrchestratorOptions, ConversationReply, ConversationReplyContext, ResolvedMessageMedia } from "./conversation-orchestrator.ts";
 import { assistantReplyId, automaticReplyFlightKey, findEligibleAi, isEligibleSource, type AutomaticReplyState, type AutomaticReplyTrace, type RetryAutomaticReplyState } from "./auto-reply.ts";
 import { promptForExplicitChatImageIntent } from "./auto-image-intent.ts";
 import {
@@ -322,7 +323,11 @@ return { pack: toStickerPackDto(pack), stickers: stickers.map(toStickerDto) };
 }
 
 function toAppearanceSettingsDto(settings: AppearanceSettings): AppearanceSettingsDto {
-return { ...settings, chatBackground: { ...settings.chatBackground } };
+const chatBackground: ChatBackgroundSettingsDto = { ...settings.chatBackground };
+if (settings.chatBackground.items !== undefined) {
+chatBackground.items = settings.chatBackground.items.map((item) => ({ ...item }));
+}
+return { ...settings, chatBackground };
 }
 
 function toWorldLoreEntryDto(entry: WorldLoreEntry): WorldLoreEntryDto {
@@ -542,16 +547,14 @@ function bodyString(value: unknown, field: string): string {
   return value;
 }
 
-function parseCreateStickerPackRequest(value: unknown): CreateStickerPackRequest {
-  if (!isRecord(value)) throw new ApiError(400, "BAD_REQUEST", "Request body must be an object");
-  assertAllowedBodyKeys(value, ["id", "storyWorldId", "name", "sourceRef", "createdAt", "stickers"]);
-  if (!Array.isArray(value.stickers)) {
+function parseStickerInputs(value: unknown): CreateStickerInput[] {
+  if (!Array.isArray(value)) {
     throw new ApiError(400, "BAD_REQUEST", "stickers must be an array");
   }
-  const stickers = value.stickers.map((item, index) => {
+  return value.map((item, index) => {
     if (!isRecord(item)) throw new ApiError(400, "BAD_REQUEST", `stickers[${index}] must be an object`);
     assertAllowedBodyKeys(item, ["id", "label", "mediaRef", "tags"]);
-    const parsed: { id: string; label: string; mediaRef: string; tags?: string[] } = {
+    const parsed: CreateStickerInput = {
       id: bodyString(item.id, `stickers[${index}].id`),
       label: bodyString(item.label, `stickers[${index}].label`),
       mediaRef: bodyString(item.mediaRef, `stickers[${index}].mediaRef`),
@@ -562,6 +565,18 @@ function parseCreateStickerPackRequest(value: unknown): CreateStickerPackRequest
     }
     return parsed;
   });
+}
+
+function parseAppendStickersRequest(value: unknown): CreateStickerInput[] {
+  if (!isRecord(value)) throw new ApiError(400, "BAD_REQUEST", "Request body must be an object");
+  assertAllowedBodyKeys(value, ["stickers"]);
+  return parseStickerInputs(value.stickers);
+}
+
+function parseCreateStickerPackRequest(value: unknown): CreateStickerPackRequest {
+  if (!isRecord(value)) throw new ApiError(400, "BAD_REQUEST", "Request body must be an object");
+  assertAllowedBodyKeys(value, ["id", "storyWorldId", "name", "sourceRef", "createdAt", "stickers"]);
+  const stickers = parseStickerInputs(value.stickers);
   const result: CreateStickerPackRequest = {
     id: bodyString(value.id, "id"),
     storyWorldId: bodyString(value.storyWorldId, "storyWorldId"),
@@ -587,11 +602,38 @@ throw new ApiError(400, "BAD_REQUEST", `${field} must be a number`);
 return value;
 }
 
+function parseChatBackgroundItems(value: unknown): NonNullable<ChatBackgroundSettingsDto["items"]> | undefined {
+if (value === undefined) return undefined;
+if (!Array.isArray(value)) {
+throw new ApiError(400, "BAD_REQUEST", "chatBackground.items must be an array");
+}
+if (value.length > 12) {
+throw new ApiError(400, "BAD_REQUEST", "chatBackground.items cannot contain more than 12 items");
+}
+return value.map((item, index) => {
+if (!isRecord(item)) {
+throw new ApiError(400, "BAD_REQUEST", `chatBackground.items[${index}] must be an object`);
+}
+assertAllowedBodyKeys(item, ["id", "label", "kind", "imageRef", "createdAt"]);
+const kind = bodyString(item.kind, `chatBackground.items[${index}].kind`);
+if (kind !== ChatBackgroundKind.CUSTOM) {
+throw new ApiError(400, "BAD_REQUEST", `chatBackground.items[${index}].kind must be custom`);
+}
+return {
+id: bodyString(item.id, `chatBackground.items[${index}].id`),
+label: bodyString(item.label, `chatBackground.items[${index}].label`),
+kind,
+imageRef: bodyString(item.imageRef, `chatBackground.items[${index}].imageRef`),
+createdAt: bodyString(item.createdAt, `chatBackground.items[${index}].createdAt`),
+};
+});
+}
+
 function parseChatBackgroundSettings(value: unknown): ChatBackgroundSettingsDto {
 if (!isRecord(value)) {
 throw new ApiError(400, "BAD_REQUEST", "chatBackground must be an object");
 }
-assertAllowedBodyKeys(value, ["kind", "imageRef", "opacity", "blur"]);
+assertAllowedBodyKeys(value, ["kind", "imageRef", "opacity", "blur", "items"]);
 const kind = bodyString(value.kind, "chatBackground.kind");
 if (kind !== ChatBackgroundKind.THEME && kind !== ChatBackgroundKind.CUSTOM) {
 throw new ApiError(400, "BAD_REQUEST", "chatBackground.kind must be theme or custom");
@@ -604,6 +646,8 @@ blur: bodyNumber(value.blur, "chatBackground.blur"),
 if (value.imageRef !== undefined) {
 background.imageRef = bodyString(value.imageRef, "chatBackground.imageRef");
 }
+const items = parseChatBackgroundItems(value.items);
+if (items !== undefined) background.items = items;
 return background;
 }
 
@@ -781,6 +825,7 @@ function parseSendMessageRequest(value: unknown): SendMessageRequest {
     "mediaRef",
     "stickerId",
     "createdAt",
+    "suppressAutoReply",
     "idempotencyKey",
   ]);
   if (
@@ -803,6 +848,10 @@ function parseSendMessageRequest(value: unknown): SendMessageRequest {
   if (value.text !== undefined) result.text = bodyString(value.text, "text");
   if (value.mediaRef !== undefined) result.mediaRef = bodyString(value.mediaRef, "mediaRef");
   if (value.stickerId !== undefined) result.stickerId = bodyString(value.stickerId, "stickerId");
+  if (value.suppressAutoReply !== undefined) {
+    if (typeof value.suppressAutoReply !== "boolean") throw new ApiError(400, "BAD_REQUEST", "suppressAutoReply must be a boolean");
+    result.suppressAutoReply = value.suppressAutoReply;
+  }
   return result;
 }
 
@@ -1337,7 +1386,6 @@ export class ApiApplication {
   ) {
     this.store = store;
     this.provider = provider;
-    this.conversationOptions = conversationOptions;
     this.requireTrustedActor = securityOptions.requireTrustedActor ?? false;
     this.readiness = operationalOptions.readiness;
     this.secretCipher = operationalOptions.secretCipher;
@@ -1346,8 +1394,31 @@ export class ApiApplication {
     this.interactionLogs = operationalOptions.interactionLogs ?? new InMemoryInteractionLogRepository();
     this.logging = operationalOptions.interactionLogging ?? new InteractionLogging({ repository: this.interactionLogs, ...(operationalOptions.loggingCleanupEnabled === undefined ? {} : { cleanupEnabled: operationalOptions.loggingCleanupEnabled }), ...(operationalOptions.loggingCleanupIntervalMs === undefined ? {} : { cleanupIntervalMs: operationalOptions.loggingCleanupIntervalMs }) });
     this.media = new ApiMediaStore(operationalOptions.mediaRoot ?? "./data/media");
+    this.conversationOptions = {
+      ...conversationOptions,
+      mediaResolver: conversationOptions.mediaResolver ?? ((message) => this.resolveMessageMedia(message)),
+    };
   }
 
+
+  private async resolveMessageMedia(message: Message): Promise<ResolvedMessageMedia | undefined> {
+    let mediaRef: string | undefined;
+    let label: string | undefined;
+    if (message.kind === MessageKind.IMAGE) {
+      mediaRef = message.mediaRef;
+    } else if (message.kind === MessageKind.STICKER && message.stickerId && this.store.stickers) {
+      const sticker = await this.store.stickers.getById(message.stickerId);
+      mediaRef = sticker?.mediaRef;
+      label = sticker?.label;
+    }
+    if (!mediaRef?.startsWith("media://local/")) return undefined;
+    const media = await this.media.get(mediaRef);
+    return {
+      mediaType: media.contentType,
+      dataBase64: Buffer.from(media.bytes).toString("base64"),
+      ...(label === undefined ? {} : { label }),
+    };
+  }
   private trustedActor(request: Request, requestedCharacterId?: string): string | undefined {
     if (!this.requireTrustedActor) return requestedCharacterId;
     const actor = request.headers.get("x-actor-character-id")?.trim();
@@ -2431,6 +2502,29 @@ throw error;
 }
 }
 
+
+  public async appendStickersToPack(packId: string, inputs: readonly CreateStickerInput[]): Promise<StickerPackImportResultDto> {
+    const store = requireStickerStore(this.store);
+    const pack = await store.stickerPacks.getById(packId);
+    if (!pack) throw new ApiError(404, "NOT_FOUND", "Sticker pack not found");
+    try {
+      const stickers = inputs.map((sticker) => createStickerDomain({
+        id: sticker.id,
+        pack,
+        label: sticker.label,
+        mediaRef: sticker.mediaRef,
+        ...(sticker.tags === undefined ? {} : { tags: sticker.tags }),
+        createdAt: new Date().toISOString(),
+      }));
+      for (const sticker of stickers) await store.stickers.save(sticker);
+      return toStickerPackImportResult(pack, stickers);
+    } catch (error) {
+      if (error instanceof TypeError || error instanceof RangeError) {
+        throw new ApiError(400, "BAD_REQUEST", error.message);
+      }
+      throw error;
+    }
+  }
 public async getAppearanceSettings(ownerKey: string): Promise<AppearanceSettingsDto> {
 const store = requireAppearanceStore(this.store);
 const existing = await store.appearanceSettings.getByOwnerKey(ownerKey);
@@ -2458,6 +2552,9 @@ blur: input.chatBackground.blur,
 ...(input.chatBackground.imageRef === undefined
 ? {}
 : { imageRef: input.chatBackground.imageRef }),
+...(input.chatBackground.items === undefined
+? {}
+: { items: input.chatBackground.items.map((item) => ({ ...item })) }),
 },
 updatedAt: new Date().toISOString(),
 });
@@ -2797,13 +2894,15 @@ throw error;
         entityId: result.message.id,
         ...(previewMessage(result.message.text) === undefined ? {} : { message: previewMessage(result.message.text)! }),
       });
-      const scheduled = await this.scheduleAutomaticReply(
-        conversationId,
-        authorCharacterId ?? "",
-        result.message.id,
-        trace,
-        false,
-      );
+      const scheduled = input.suppressAutoReply === true
+        ? { state: this.automaticReplyState("NOT_APPLICABLE", trace, result.message.id) }
+        : await this.scheduleAutomaticReply(
+          conversationId,
+          authorCharacterId ?? "",
+          result.message.id,
+          trace,
+          false,
+        );
       return {
         message: toMessageDto(result.message),
         inserted: result.inserted,
@@ -3039,7 +3138,7 @@ throw error;
         return jsonResponse({ status: "ok" });
       }
 
-      if (url.pathname === "/v1/media/chat-images") {
+      if (url.pathname === "/v1/media/chat-images" || url.pathname === "/v1/media/images") {
         if (request.method !== "POST") throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
         this.trustedActor(request);
         return jsonResponse({ data: await this.uploadChatImage(request) }, 201);
@@ -3371,14 +3470,32 @@ throw error;
 
       const stickerPath = /^\/v1\/sticker-packs\/([^/]+)\/stickers$/.exec(url.pathname);
       if (stickerPath) {
+        const packId = decodeURIComponent(stickerPath[1] ?? "");
+        if (request.method === "POST") {
+          let body: unknown;
+          try {
+            body = await request.json();
+          } catch {
+            throw new ApiError(400, "BAD_REQUEST", "Request body must be valid JSON");
+          }
+          const actor = this.trustedActor(request);
+          if (this.requireTrustedActor && actor !== undefined) {
+            const pack = await requireStickerStore(this.store).stickerPacks.getById(packId);
+            if (!pack) throw new ApiError(404, "NOT_FOUND", "Sticker pack not found");
+            const character = await this.store.characters.getById(actor);
+            if (!character || character.storyWorldId !== pack.storyWorldId) {
+              throw new ApiError(403, "FORBIDDEN", "Trusted actor cannot import into this sticker pack");
+            }
+          }
+          return jsonResponse({ data: await this.appendStickersToPack(packId, parseAppendStickersRequest(body)) });
+        }
         if (request.method !== "GET") {
           throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
         }
         return jsonResponse({
-          data: await this.listStickers(decodeURIComponent(stickerPath[1] ?? "")),
+          data: await this.listStickers(packId),
         });
       }
-
       if (request.method === "GET" && url.pathname === "/v1/moments") {
         const storyWorldId = url.searchParams.get("storyWorldId");
         const readerCharacterId = url.searchParams.get("readerCharacterId");

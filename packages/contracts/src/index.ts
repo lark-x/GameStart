@@ -153,6 +153,14 @@ export const ChatBackgroundKindDto = {
 export type ChatBackgroundKindDto =
   (typeof ChatBackgroundKindDto)[keyof typeof ChatBackgroundKindDto];
 
+export interface ChatBackgroundItemDto {
+  id: string;
+  label: string;
+  kind: typeof ChatBackgroundKindDto.CUSTOM;
+  imageRef: string;
+  createdAt: string;
+}
+
 export interface ChatBackgroundSettingsDto {
   kind: ChatBackgroundKindDto;
   /** kind �?custom 时必填：data:image/、media:// �?http(s) 图片引用 */
@@ -161,6 +169,8 @@ export interface ChatBackgroundSettingsDto {
   opacity: number;
   /** 背景虚化像素 0 ~ 40 */
   blur: number;
+  /** 用户导入的可切换背景库；主题默认背景由前端合成 */
+  items?: readonly ChatBackgroundItemDto[];
 }
 
 export interface AppearanceSettingsDto {
@@ -411,6 +421,7 @@ export interface SendMessageRequest {
   text?: string;
   mediaRef?: string;
   stickerId?: string;
+  suppressAutoReply?: boolean;
   createdAt: string;
   idempotencyKey: string;
 }
@@ -1194,6 +1205,22 @@ export const updateWorldLoreEntryRequestSchema = {
   },
 } as const satisfies JsonSchema;
 
+export const chatBackgroundItemSchema = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $id: "urn:living-network:chat-background-item",
+  title: "ChatBackgroundItem",
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    id: idSchema,
+    label: nonEmptyStringSchema,
+    kind: { type: "string", enum: [ChatBackgroundKindDto.CUSTOM] },
+    imageRef: { type: "string", minLength: 1, maxLength: 2_000_000 },
+    createdAt: timestampSchema,
+  },
+  required: ["id", "label", "kind", "imageRef", "createdAt"],
+} as const satisfies JsonSchema;
+
 export const chatBackgroundSettingsSchema = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   $id: "urn:living-network:chat-background-settings",
@@ -1208,6 +1235,7 @@ export const chatBackgroundSettingsSchema = {
     imageRef: { type: "string", minLength: 1, maxLength: 2_000_000 },
     opacity: { type: "number", minimum: 0, maximum: 1 },
     blur: { type: "number", minimum: 0, maximum: 40 },
+    items: { type: "array", items: chatBackgroundItemSchema },
   },
   required: ["kind", "opacity", "blur"],
 } as const satisfies JsonSchema;
@@ -1436,6 +1464,7 @@ export const messageSchema = {
     text: nonEmptyStringSchema,
     mediaRef: nonEmptyStringSchema,
     stickerId: nonEmptyStringSchema,
+    suppressAutoReply: { type: "boolean" },
     createdAt: timestampSchema,
     idempotencyKey: idSchema,
   },
@@ -2092,6 +2121,7 @@ export const contractSchemas = {
   actorSessionSwitchRequest: actorSessionSwitchRequestSchema,
   appearanceSettings: appearanceSettingsSchema,
   chatBackgroundSettings: chatBackgroundSettingsSchema,
+  chatBackgroundItem: chatBackgroundItemSchema,
   conversation: conversationSchema,
   conversationMember: conversationMemberSchema,
   message: messageSchema,

@@ -9,18 +9,26 @@ import {
   type MemoryItem,
   type MemoryVisibility,
 } from "../../../packages/domain/src/index.ts";
-import type {
-  ChatDelta,
-  ChatMessage,
-  ChatProvider,
+import {
+  ProviderError,
+  type ChatDelta,
+  type ChatMessage,
+  type ChatProvider,
 } from "../../../packages/ai/src/index.ts";
 import type { DomainRepositories } from "../../../packages/database/src/index.ts";
 import type { ChatTraceContext } from "../../../packages/contracts/src/index.ts";
+
+export interface ResolvedMessageMedia {
+  readonly mediaType: string;
+  readonly dataBase64: string;
+  readonly label?: string;
+}
 
 export interface ConversationOrchestratorOptions {
   readonly memoryRetrievalEnabled?: boolean;
   readonly memoryWriteEnabled?: boolean;
   readonly maxMemories?: number;
+  readonly mediaResolver?: (message: Message) => Promise<ResolvedMessageMedia | undefined>;
   /**
    * Best-effort post-reply hook. It is intentionally detached from the reply
    * path so auxiliary work (such as optional image generation) cannot fail or
@@ -34,18 +42,70 @@ export interface ConversationReply {
   readonly inserted: boolean;
 }
 
-function messageContent(message: Message): string {
-  if (message.text !== undefined) return message.text;
-  if (message.mediaRef !== undefined) return `[image:${message.mediaRef}]`;
-  return `[sticker:${message.stickerId ?? "unknown"}]`;
+function fallbackText(message: Message, media: ResolvedMessageMedia | undefined): string {
+  if (message.kind === MessageKind.IMAGE) {
+    const caption = message.text?.trim() || "用户发送了一张图片。";
+    return media
+      ? `${caption}\n[图片已发送，但当前模型未接收图片本体：${media.mediaType}]`
+      : `${caption}\n[图片未能传给模型本体。]`;
+  }
+  if (message.kind === MessageKind.STICKER) {
+    const label = media?.label ?? message.stickerId ?? "未知表情";
+    return media
+      ? `用户发送了表情：${label}\n[表情图片已发送，但当前模型未接收图片本体：${media.mediaType}]`
+      : `用户发送了表情：${label}`;
+  }
+  return message.text ?? "";
 }
 
-function toChatMessage(message: Message, author: Character | undefined): ChatMessage {
-  if (message.kind === MessageKind.SYSTEM) return { role: "system", content: messageContent(message) };
+async function messageContent(
+  message: Message,
+  mediaResolver: ConversationOrchestratorOptions["mediaResolver"],
+): Promise<ChatMessage["content"]> {
+  if (message.kind === MessageKind.TEXT || message.kind === MessageKind.SYSTEM) return message.text ?? "";
+  let media: ResolvedMessageMedia | undefined;
+  try {
+    media = await mediaResolver?.(message);
+  } catch {
+    media = undefined;
+  }
+  if (!media) return fallbackText(message, undefined);
+  const text = message.kind === MessageKind.IMAGE
+    ? (message.text?.trim() || "用户发送了一张图片。")
+    : `用户发送了表情：${media.label ?? message.stickerId ?? "未知表情"}`;
+  return [
+    { type: "text", text },
+    { type: "image", mediaType: media.mediaType, dataBase64: media.dataBase64 },
+  ];
+}
+
+async function toChatMessage(
+  message: Message,
+  author: Character | undefined,
+  mediaResolver: ConversationOrchestratorOptions["mediaResolver"],
+): Promise<ChatMessage> {
+  if (message.kind === MessageKind.SYSTEM) return { role: "system", content: await messageContent(message, mediaResolver) };
   return {
     role: author?.role === CharacterRole.USER ? "user" : "assistant",
-    content: messageContent(message),
+    content: await messageContent(message, mediaResolver),
   };
+}
+
+function containsImageParts(messages: readonly ChatMessage[]): boolean {
+  return messages.some((message) => Array.isArray(message.content) && message.content.some((part) => part.type === "image"));
+}
+
+function downgradedMessages(messages: readonly ChatMessage[]): ChatMessage[] {
+  return messages.map((message) => ({
+    role: message.role,
+    content: Array.isArray(message.content)
+      ? message.content.map((part) => part.type === "text" ? part.text : `[图片已发送，但当前模型未接收图片本体：${part.mediaType}]`).join("\n")
+      : message.content,
+  }));
+}
+
+function shouldFallbackToText(error: unknown): boolean {
+  return error instanceof ProviderError && ["CONFIGURATION", "HTTP_ERROR", "INVALID_RESPONSE", "STREAM_ERROR"].includes(error.code);
 }
 
 function memorySystemPrompt(memories: readonly MemoryItem[]): string | undefined {
@@ -86,8 +146,8 @@ function personaSystemPrompt(character: Character): string | undefined {
 export class ConversationOrchestrator {
   private readonly repositories: DomainRepositories;
   private readonly provider: ChatProvider;
-  private readonly options: Required<Omit<ConversationOrchestratorOptions, "afterReplySaved">>
-    & Pick<ConversationOrchestratorOptions, "afterReplySaved">;
+  private readonly options: Required<Omit<ConversationOrchestratorOptions, "afterReplySaved" | "mediaResolver">>
+    & Pick<ConversationOrchestratorOptions, "afterReplySaved" | "mediaResolver">;
 
   public constructor(
     repositories: DomainRepositories,
@@ -103,6 +163,7 @@ export class ConversationOrchestrator {
       memoryRetrievalEnabled: options.memoryRetrievalEnabled ?? false,
       memoryWriteEnabled: options.memoryWriteEnabled ?? false,
       maxMemories: options.maxMemories ?? 5,
+      ...(options.mediaResolver === undefined ? {} : { mediaResolver: options.mediaResolver }),
       ...(options.afterReplySaved === undefined ? {} : { afterReplySaved: options.afterReplySaved }),
     };
     if (!Number.isSafeInteger(this.options.maxMemories) || this.options.maxMemories < 1 || this.options.maxMemories > 20) {
@@ -113,7 +174,7 @@ export class ConversationOrchestrator {
   private async context(
     conversationId: string,
     readerCharacterId: string,
-  ): Promise<{ conversation: ConversationAggregate; messages: readonly Message[]; ai: Character; latestUserMessage: Message | undefined; chat: readonly ChatMessage[] }> {
+  ): Promise<{ conversation: ConversationAggregate; messages: readonly Message[]; ai: Character; latestUserMessage: Message | undefined; chat: readonly ChatMessage[]; hasMediaParts: boolean }> {
     const conversation = await this.repositories.conversations!.getById(conversationId);
     if (!conversation) throw new TypeError("Conversation not found");
     const member = conversation.members.find(
@@ -148,9 +209,9 @@ export class ConversationOrchestrator {
     const chat = [
       ...(personaPrompt === undefined ? [] : [{ role: "system" as const, content: personaPrompt }]),
       ...(systemPrompt === undefined ? [] : [{ role: "system" as const, content: systemPrompt }]),
-      ...messages.map((message) => toChatMessage(message, message.authorCharacterId === undefined ? undefined : byId.get(message.authorCharacterId))),
+      ...await Promise.all(messages.map((message) => toChatMessage(message, message.authorCharacterId === undefined ? undefined : byId.get(message.authorCharacterId), this.options.mediaResolver))),
     ];
-    return { conversation, messages, ai, latestUserMessage: latestUser, chat };
+    return { conversation, messages, ai, latestUserMessage: latestUser, chat, hasMediaParts: containsImageParts(chat) };
   }
 
   private async saveReply(
@@ -225,10 +286,19 @@ export class ConversationOrchestrator {
     trace?: ChatTraceContext,
   ): Promise<ConversationReply> {
     const context = await this.context(conversationId, readerCharacterId);
-    const result = await this.provider.complete({
-      messages: context.chat,
-      ...(trace === undefined ? {} : { trace }),
-    });
+    let result;
+    try {
+      result = await this.provider.complete({
+        messages: context.chat,
+        ...(trace === undefined ? {} : { trace }),
+      });
+    } catch (error) {
+      if (!context.hasMediaParts || !shouldFallbackToText(error)) throw error;
+      result = await this.provider.complete({
+        messages: downgradedMessages(context.chat),
+        ...(trace === undefined ? {} : { trace }),
+      });
+    }
     const reply = await this.saveReply(context, result.content);
     this.scheduleAfterReply(context, readerCharacterId, reply);
     return reply;
@@ -239,9 +309,20 @@ export class ConversationOrchestrator {
   ): AsyncGenerator<ChatDelta> {
     const context = await this.context(conversationId, readerCharacterId);
     let content = "";
-    for await (const delta of this.provider.stream({ messages: context.chat })) {
-      if (delta.content !== undefined) content += delta.content;
-      yield delta;
+    let messages = context.chat;
+    let retriedAsText = false;
+    while (true) {
+      try {
+        for await (const delta of this.provider.stream({ messages })) {
+          if (delta.content !== undefined) content += delta.content;
+          yield delta;
+        }
+        break;
+      } catch (error) {
+        if (content.length > 0 || retriedAsText || !context.hasMediaParts || !shouldFallbackToText(error)) throw error;
+        retriedAsText = true;
+        messages = downgradedMessages(context.chat);
+      }
     }
     const reply = await this.saveReply(context, content);
     this.scheduleAfterReply(context, readerCharacterId, reply);

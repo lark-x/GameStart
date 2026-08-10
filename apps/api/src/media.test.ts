@@ -31,6 +31,16 @@ test("uploads and serves local chat images through the API", async () => {
     assert.deepEqual([...new Uint8Array(await served.arrayBuffer())], [137, 80, 78, 71, 13, 10]);
     assert.equal((await readFile(join(root, filename))).byteLength, 6);
 
+    const genericUpload = await application.handle(new Request("http://localhost/v1/media/images", {
+      method: "POST",
+      headers: { "content-type": "image/gif" },
+      body: new Uint8Array([71, 73, 70, 56]),
+    }));
+    assert.equal(genericUpload.status, 201);
+    const generic = (await genericUpload.json()) as { data: { mediaRef: string; contentType: string } };
+    assert.equal(generic.data.contentType, "image/gif");
+    assert.match(generic.data.mediaRef, /^media:\/\/local\/[a-f0-9]{64}\.gif$/);
+
     const rejected = await application.handle(new Request("http://localhost/v1/media/chat-images", {
       method: "POST",
       headers: { "content-type": "text/plain" },

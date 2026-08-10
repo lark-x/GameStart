@@ -37,20 +37,32 @@ export const THEMES: readonly ThemeDefinition[] = [
   { id: "midnight", label: "星夜", dot: "#8f94d8", decoration: "stars", symbol: "✦", tagline: "星星值班的时候，灵感不会打烊。" },
 ];
 
+export interface ChatBackgroundItem {
+  id: string;
+  label: string;
+  kind: "custom";
+  imageRef: string;
+  createdAt: string;
+}
+
 export interface ChatBackgroundState {
   kind: "theme" | "custom";
   imageRef?: string;
   opacity: number;
   blur: number;
+  items: ChatBackgroundItem[];
 }
 
 const THEME_STORAGE_KEY = "living-network-theme";
 const APPEARANCE_STORAGE_KEY = "living-network-appearance-v1";
 const DEFAULT_THEME = "dawn";
+export const MAX_CHAT_BACKGROUND_ITEMS = 12;
+
 const DEFAULT_BACKGROUND: ChatBackgroundState = {
   kind: "theme",
   opacity: 0.4,
   blur: 0,
+  items: [],
 };
 
 /** 自定义聊天背景图压缩参数（服务端上限约 2MB base64） */
@@ -90,15 +102,67 @@ function clampNumber(value: unknown, min: number, max: number, fallback: number)
     : fallback;
 }
 
-function normalizeBackground(value: unknown): ChatBackgroundState {
-  if (typeof value !== "object" || value === null) return { ...DEFAULT_BACKGROUND };
+function isImageRef(value: unknown): value is string {
+  return typeof value === "string" && /^(?:data:image\/|media:\/\/|https?:\/\/)/i.test(value);
+}
+
+function normalizeBackgroundItem(value: unknown): ChatBackgroundItem | null {
+  if (typeof value !== "object" || value === null) return null;
   const raw = value as Record<string, unknown>;
+  if (!isImageRef(raw.imageRef)) return null;
+  return {
+    id: typeof raw.id === "string" && raw.id.trim() ? raw.id.trim() : `background-${Math.random().toString(36).slice(2)}`,
+    label: typeof raw.label === "string" && raw.label.trim() ? raw.label.trim().slice(0, 48) : "已导入背景",
+    kind: "custom",
+    imageRef: raw.imageRef,
+    createdAt: typeof raw.createdAt === "string" && raw.createdAt ? raw.createdAt : new Date().toISOString(),
+  };
+}
+
+function normalizeBackgroundItems(value: unknown): ChatBackgroundItem[] {
+  const source = Array.isArray(value) ? value : [];
+  const seen = new Set<string>();
+  const items: ChatBackgroundItem[] = [];
+  for (const item of source) {
+    const normalized = normalizeBackgroundItem(item);
+    if (!normalized || seen.has(normalized.id)) continue;
+    seen.add(normalized.id);
+    items.push(normalized);
+    if (items.length >= MAX_CHAT_BACKGROUND_ITEMS) break;
+  }
+  return items;
+}
+
+function cloneBackground(background: ChatBackgroundState): ChatBackgroundState {
   const next: ChatBackgroundState = {
-    kind: raw.kind === "custom" && typeof raw.imageRef === "string" && raw.imageRef
-      ? "custom"
-      : "theme",
+    kind: background.kind,
+    opacity: background.opacity,
+    blur: background.blur,
+    items: background.items.map((item) => ({ ...item })),
+  };
+  if (background.kind === "custom" && background.imageRef) next.imageRef = background.imageRef;
+  return next;
+}
+
+function normalizeBackground(value: unknown): ChatBackgroundState {
+  if (typeof value !== "object" || value === null) return cloneBackground(DEFAULT_BACKGROUND);
+  const raw = value as Record<string, unknown>;
+  const items = normalizeBackgroundItems(raw.items);
+  const hasCustom = raw.kind === "custom" && isImageRef(raw.imageRef);
+  if (hasCustom && !items.some((item) => item.imageRef === raw.imageRef)) {
+    items.unshift({
+      id: "legacy-custom-background",
+      label: "已导入背景",
+      kind: "custom",
+      imageRef: raw.imageRef as string,
+      createdAt: new Date().toISOString(),
+    });
+  }
+  const next: ChatBackgroundState = {
+    kind: hasCustom ? "custom" : "theme",
     opacity: clampNumber(raw.opacity, 0, 1, DEFAULT_BACKGROUND.opacity),
     blur: clampNumber(raw.blur, 0, 40, DEFAULT_BACKGROUND.blur),
+    items: items.slice(0, MAX_CHAT_BACKGROUND_ITEMS),
   };
   if (next.kind === "custom") next.imageRef = raw.imageRef as string;
   return next;
@@ -106,7 +170,13 @@ function normalizeBackground(value: unknown): ChatBackgroundState {
 
 function applyState(themeId: string, background: ChatBackgroundState): void {
   currentTheme.value = themeId;
-  Object.assign(chatBackground, background);
+  const next = cloneBackground(background);
+  chatBackground.kind = next.kind;
+  chatBackground.opacity = next.opacity;
+  chatBackground.blur = next.blur;
+  chatBackground.items = next.items;
+  if (next.imageRef) chatBackground.imageRef = next.imageRef;
+  else delete chatBackground.imageRef;
   if (isBrowser()) document.documentElement.dataset.theme = themeId;
 }
 
@@ -123,7 +193,7 @@ function readCache(): { themeId: string; background: ChatBackgroundState } | nul
     // 兼容旧版本只存主题 id 的缓存
     const legacyTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
     if (themeExists(legacyTheme)) {
-      return { themeId: legacyTheme, background: { ...DEFAULT_BACKGROUND } };
+      return { themeId: legacyTheme, background: cloneBackground(DEFAULT_BACKGROUND) };
     }
   } catch {
     // 缓存损坏时静默回退默认外观
@@ -136,7 +206,7 @@ function writeCache(): void {
   try {
     window.localStorage.setItem(
       APPEARANCE_STORAGE_KEY,
-      JSON.stringify({ themeId: currentTheme.value, chatBackground: { ...chatBackground } }),
+      JSON.stringify({ themeId: currentTheme.value, chatBackground: cloneBackground(chatBackground) }),
     );
     window.localStorage.setItem(THEME_STORAGE_KEY, currentTheme.value);
   } catch {
@@ -170,7 +240,7 @@ function pushToServer(): void {
   syncState.value = "saving";
   const payload = {
     themeId: currentTheme.value,
-    chatBackground: { ...chatBackground },
+    chatBackground: cloneBackground(chatBackground),
   };
   apiClient
     .updateAppearanceSettings(payload)
@@ -210,6 +280,18 @@ export function setChatBackground(patch: Partial<ChatBackgroundState>): void {
   const next = normalizeBackground({ ...chatBackground, ...patch });
   applyState(currentTheme.value, next);
   pushToServer();
+}
+
+export function createChatBackgroundItem(label: string, imageRef: string): ChatBackgroundItem {
+  const cleanLabel = label.replace(/\.[a-z0-9]+$/i, "").trim().slice(0, 48) || "聊天背景";
+  const randomId = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
+  return {
+    id: `background-${randomId}`,
+    label: cleanLabel,
+    kind: "custom",
+    imageRef,
+    createdAt: new Date().toISOString(),
+  };
 }
 
 /** 读取本地图片文件，压缩为适合做聊天背景的 data URL。 */
@@ -254,6 +336,8 @@ export function useTheme() {
     syncState,
     setTheme,
     setChatBackground,
+    createChatBackgroundItem,
+    MAX_CHAT_BACKGROUND_ITEMS,
     THEMES,
   };
 }

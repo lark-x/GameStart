@@ -1,4 +1,4 @@
-export class ApiClient {
+﻿export class ApiClient {
   constructor(baseUrl, actorCharacterId = "") {
     this.baseUrl = baseUrl.replace(/\/$/, "");
     this.actorCharacterId = actorCharacterId;
@@ -32,8 +32,8 @@ export class ApiClient {
     return { ...payload, correlationId: response.headers?.get("x-correlation-id") || correlationId };
   }
 
-  async uploadChatImage(file) {
-    const response = await fetch(`${this.baseUrl}/v1/media/chat-images`, {
+  async uploadRawImage(path, file) {
+    const response = await fetch(`${this.baseUrl}${path}`, {
       method: "POST",
       body: file,
       headers: {
@@ -45,6 +45,14 @@ export class ApiClient {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload?.error?.message ?? `Image upload failed (${response.status})`);
     return payload;
+  }
+
+  async uploadImage(file) {
+    return this.uploadRawImage("/v1/media/images", file);
+  }
+
+  async uploadChatImage(file) {
+    return this.uploadRawImage("/v1/media/chat-images", file);
   }
 
   mediaUrl(mediaRef) {
@@ -290,6 +298,19 @@ export class ApiClient {
     return this.request(`/v1/sticker-packs/${encodeURIComponent(packId)}/stickers`);
   }
 
+  importStickerPack(input) {
+    return this.request("/v1/sticker-packs", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  }
+
+  importStickersToPack(packId, stickers) {
+    return this.request(`/v1/sticker-packs/${encodeURIComponent(packId)}/stickers`, {
+      method: "POST",
+      body: JSON.stringify({ stickers }),
+    });
+  }
   getAppearanceSettings(ownerKey = "local-user") {
     return this.request(`/v1/appearance-settings?ownerKey=${encodeURIComponent(ownerKey)}`);
   }

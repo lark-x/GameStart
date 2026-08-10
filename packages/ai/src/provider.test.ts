@@ -245,3 +245,28 @@ test("covers provider network, timeout, and error-body handling", async () => {
     return true;
   });
 });
+
+test("sends image content parts as OpenAI-compatible data URLs", async () => {
+  const recorder = fetchRecorder(new Response(JSON.stringify({
+    id: "completion-image",
+    model: "vision-model",
+    choices: [{ message: { content: "I can see it" } }],
+  })));
+  const provider = new OpenAICompatibleProvider({ baseUrl: "https://llm.example/v1", model: "vision-model" }, recorder.fetch);
+
+  await provider.complete({
+    messages: [{
+      role: "user",
+      content: [
+        { type: "text", text: "describe this" },
+        { type: "image", mediaType: "image/png", dataBase64: "aGVsbG8=" },
+      ],
+    }],
+  });
+
+  const body = JSON.parse(String(recorder.calls[0]?.init?.body));
+  assert.deepEqual(body.messages[0].content, [
+    { type: "text", text: "describe this" },
+    { type: "image_url", image_url: { url: "data:image/png;base64,aGVsbG8=" } },
+  ]);
+});

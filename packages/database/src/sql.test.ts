@@ -1414,6 +1414,7 @@ test("covers SQL row parser failures and less-traveled repository branches", asy
     chat_background_image_ref: "data:image/jpeg;base64,aGVsbG8=",
     chat_background_opacity: 0.55,
     chat_background_blur: 6,
+    chat_background_items: [{ id: "bg-1", label: "夜色窗边", kind: "custom", imageRef: "data:image/png;base64,aGVsbG8=", createdAt: "2026-08-08T10:01:00.000Z" }],
     updated_at: "2026-08-08T10:00:00.000Z",
   };
   const appearanceClient = new RecordingSqlClient([[appearanceRow]]);
@@ -1428,6 +1429,7 @@ test("covers SQL row parser failures and less-traveled repository branches", asy
       imageRef: "data:image/jpeg;base64,aGVsbG8=",
       opacity: 0.55,
       blur: 6,
+      items: [{ id: "bg-1", label: "夜色窗边", kind: "custom", imageRef: "data:image/png;base64,aGVsbG8=", createdAt: "2026-08-08T10:01:00.000Z" }],
     },
     updatedAt: "2026-08-08T10:00:00.000Z",
   });
@@ -1436,6 +1438,7 @@ test("covers SQL row parser failures and less-traveled repository branches", asy
   const themeBackground = await createSqlRepositories(appearanceNullImageClient).appearanceSettings?.getByOwnerKey("local-user");
   assert.equal(themeBackground?.chatBackground.kind, "theme");
   assert.equal(themeBackground?.chatBackground.imageRef, undefined);
+  assert.deepEqual(themeBackground?.chatBackground.items, appearanceRow.chat_background_items);
   const appearanceSaveClient = new RecordingSqlClient();
   await createSqlRepositories(appearanceSaveClient).appearanceSettings?.save({
     id: "appearance-local-user",
@@ -1453,6 +1456,7 @@ test("covers SQL row parser failures and less-traveled repository branches", asy
     "theme",
   ]);
   assert.equal(appearanceSaveClient.calls[0]?.values[4], null);
+  assert.equal(appearanceSaveClient.calls[0]?.values[7], "[]");
 
   const interactionConflict = createSqlRepositories(new RecordingSqlClient([[], [{ ...momentInteractionRow(), kind: MomentInteractionKind.COMMENT, text: "different" }]]));
   await assert.rejects(interactionConflict.momentInteractions.save(momentInteraction), /idempotency key conflict/);

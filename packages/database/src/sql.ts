@@ -492,6 +492,21 @@ function jsonObject(value: unknown, field: string): JsonObject {
   return parsed as JsonObject;
 }
 
+function jsonArray(value: unknown, field: string): readonly unknown[] {
+  let parsed: unknown = value;
+  if (typeof value === "string") {
+    try {
+      parsed = JSON.parse(value) as unknown;
+    } catch {
+      throw new TypeError(`Database row ${field} must contain valid JSON`);
+    }
+  }
+  if (!Array.isArray(parsed)) {
+    throw new TypeError(`Database row ${field} must contain a JSON array`);
+  }
+  return parsed;
+}
+
 function mapCharacterPlanRow(row: SqlRow): CharacterPlan {
   const plan: CharacterPlan = {
     id: requiredString(row.id, "character_plans.id"),
@@ -960,7 +975,7 @@ FROM moment_interactions`;
 
 const APPEARANCE_SETTINGS_SELECT = `
 SELECT id, owner_key, theme_id, chat_background_kind, chat_background_image_ref,
-chat_background_opacity, chat_background_blur, updated_at
+chat_background_opacity, chat_background_blur, chat_background_items, updated_at
 FROM appearance_settings`;
 
 const LLM_PROVIDER_PROFILE_SELECT = `
@@ -1051,6 +1066,7 @@ row.chat_background_image_ref,
 "appearance_settings.chat_background_image_ref",
 );
 if (imageRef !== undefined) settings.chatBackground.imageRef = imageRef;
+settings.chatBackground.items = jsonArray(row.chat_background_items ?? [], "appearance_settings.chat_background_items") as NonNullable<AppearanceSettings["chatBackground"]["items"]>;
 assertAppearanceSettings(settings);
 return settings;
 }
@@ -2193,14 +2209,15 @@ assertAppearanceSettings(settings);
 await this.client.query(
 `INSERT INTO appearance_settings (
 id, owner_key, theme_id, chat_background_kind, chat_background_image_ref,
-chat_background_opacity, chat_background_blur, updated_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+chat_background_opacity, chat_background_blur, chat_background_items, updated_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 ON CONFLICT (owner_key) DO UPDATE SET
 theme_id = EXCLUDED.theme_id,
 chat_background_kind = EXCLUDED.chat_background_kind,
 chat_background_image_ref = EXCLUDED.chat_background_image_ref,
 chat_background_opacity = EXCLUDED.chat_background_opacity,
 chat_background_blur = EXCLUDED.chat_background_blur,
+chat_background_items = EXCLUDED.chat_background_items,
 updated_at = EXCLUDED.updated_at`,
 [
 settings.id,
@@ -2210,6 +2227,7 @@ settings.chatBackground.kind,
 settings.chatBackground.imageRef ?? null,
 settings.chatBackground.opacity,
 settings.chatBackground.blur,
+JSON.stringify(settings.chatBackground.items ?? []),
 settings.updatedAt,
 ],
 );

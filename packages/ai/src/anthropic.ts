@@ -4,6 +4,7 @@ import {
   type ChatCompletionRequest,
   type ChatCompletionResult,
   type ChatDelta,
+  type ChatContent,
   type ChatMessage,
   type ChatProvider,
   type FetchImplementation,
@@ -42,10 +43,17 @@ function parseUrl(value: string): string {
   return trimmed;
 }
 
+function hasContentValue(content: ChatContent): boolean {
+  if (typeof content === "string") return content.trim().length > 0;
+  return content.some((part) => part.type === "text"
+    ? part.text.trim().length > 0
+    : part.mediaType.trim().length > 0 && part.dataBase64.trim().length > 0);
+}
+
 function validateRequest(request: ChatCompletionRequest, fallback: string | undefined): string {
   if (request.messages.length === 0) throw new ProviderError("CONFIGURATION", "At least one chat message is required");
   for (const [index, message] of request.messages.entries()) {
-    if (message.content.trim().length === 0) {
+    if (!hasContentValue(message.content)) {
       throw new ProviderError("CONFIGURATION", `Chat message ${index} has empty content`);
     }
   }
@@ -60,15 +68,32 @@ function validateRequest(request: ChatCompletionRequest, fallback: string | unde
   return model;
 }
 
-function splitMessages(messages: readonly ChatMessage[]): { system?: string; messages: { role: "user" | "assistant"; content: string }[] } {
-  const systems = messages.filter((message) => message.role === "system").map((message) => message.content);
-  const turns: { role: "user" | "assistant"; content: string }[] = [];
+type AnthropicBlock =
+  | { type: "text"; text: string }
+  | { type: "image"; source: { type: "base64"; media_type: string; data: string } };
+
+function textFromContent(content: ChatContent): string {
+  if (typeof content === "string") return content;
+  return content.filter((part) => part.type === "text").map((part) => part.text).join("\n");
+}
+
+function anthropicBlocks(content: ChatContent): AnthropicBlock[] {
+  if (typeof content === "string") return [{ type: "text", text: content }];
+  return content.map((part) => part.type === "text"
+    ? { type: "text", text: part.text }
+    : { type: "image", source: { type: "base64", media_type: part.mediaType, data: part.dataBase64 } });
+}
+
+function splitMessages(messages: readonly ChatMessage[]): { system?: string; messages: { role: "user" | "assistant"; content: AnthropicBlock[] }[] } {
+  const systems = messages.filter((message) => message.role === "system").map((message) => textFromContent(message.content)).filter((content) => content.trim().length > 0);
+  const turns: { role: "user" | "assistant"; content: AnthropicBlock[] }[] = [];
   for (const message of messages) {
     if (message.role === "system") continue;
     const role = message.role;
+    const blocks = anthropicBlocks(message.content);
     const previous = turns.at(-1);
-    if (previous?.role === role) previous.content = `${previous.content}\n${message.content}`;
-    else turns.push({ role, content: message.content });
+    if (previous?.role === role) previous.content = [...previous.content, { type: "text", text: "\n" }, ...blocks];
+    else turns.push({ role, content: blocks });
   }
   if (turns.length === 0) throw new ProviderError("CONFIGURATION", "Anthropic requests require a user or assistant message");
   return { ...(systems.length === 0 ? {} : { system: systems.join("\n\n") }), messages: turns };
