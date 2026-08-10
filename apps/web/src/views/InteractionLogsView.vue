@@ -15,6 +15,7 @@ import PageHeader from "../components/layout/PageHeader.vue";
 import { useAppStore } from "../stores/app";
 import type { SseEvent } from "../api";
 import type { ApiInteractionLog } from "../types";
+import { focusedLogQueries, isUsefulInteractionLog } from "../lib/interaction-log";
 
 interface LogPage {
   items: ApiInteractionLog[];
@@ -52,15 +53,41 @@ const statusLabel = computed(() =>
   connected.value ? "实时连接正常" : "实时连接已断开",
 );
 const showAllLogs = ref(false);
-const visibleLogs = computed(() => showAllLogs.value ? logs.value : logs.value.filter(isUsefulLog));
-const newCount = computed(() => pendingLogs.value.filter((item) => showAllLogs.value || isUsefulLog(item)).length);
+const visibleLogs = computed(() => showAllLogs.value ? logs.value : logs.value.filter(isUsefulInteractionLog));
+const newCount = computed(() => pendingLogs.value.filter((item) => showAllLogs.value || isUsefulInteractionLog(item)).length);
 
-function isUsefulLog(item: ApiInteractionLog) {
-  if (item.level === "ERROR" || item.level === "WARN") return true;
-  if (item.category === "LLM") return ["provider.completed", "provider.error", "provider.test"].includes(item.action);
-  if (item.category === "CHAT") return ["message.save", "auto_reply.completed", "auto_reply.failed"].includes(item.action);
-  if (item.category === "IMAGE") return ["image.submit", "image.progress"].includes(item.action) && item.outcome !== "STARTED";
-  return false;
+interface LogTimeline {
+  id: string;
+  items: ApiInteractionLog[];
+  latest: ApiInteractionLog;
+  first: ApiInteractionLog;
+}
+
+const visibleTimelines = computed(() => {
+  const groups = new Map<string, ApiInteractionLog[]>();
+  for (const item of visibleLogs.value) {
+    const key = item.correlationId || item.conversationId || item.entityId || item.id;
+    const current = groups.get(key) ?? [];
+    current.push(item);
+    groups.set(key, current);
+  }
+  return [...groups.entries()]
+    .map(([id, items]): LogTimeline => {
+      const ordered = [...items].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+      return { id, items: ordered, first: ordered[0]!, latest: ordered[ordered.length - 1]! };
+    })
+    .sort((left, right) => right.latest.createdAt.localeCompare(left.latest.createdAt));
+});
+
+function timelineState(timeline: LogTimeline) {
+  if (timeline.items.some((item) => item.level === "ERROR" || item.outcome === "FAILED" || item.outcome === "FAILURE")) return "error";
+  if (timeline.items.some((item) => item.outcome === "COMPLETED" || item.outcome === "SUCCESS")) return "success";
+  return "pending";
+}
+
+function timelineSummary(timeline: LogTimeline) {
+  const meaningful = [...timeline.items].reverse().find((item) => isUsefulInteractionLog(item)) ?? timeline.latest;
+  return logSummary(meaningful);
 }
 
 function logSummary(item: ApiInteractionLog) {
@@ -161,6 +188,22 @@ async function load(reset = true) {
   loading.value = true;
   loadError.value = "";
   try {
+    if (!showAllLogs.value) {
+      const results = await Promise.all(
+        focusedLogQueries(filterQuery()).map((focusedQuery) => store.api.getInteractionLogs(focusedQuery)),
+      );
+      if (reset) {
+        logs.value = [];
+        pendingLogs.value = [];
+        seenIds.clear();
+      }
+      const items = results
+        .flatMap((result) => ((result.data ?? result) as LogPage).items ?? [])
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+      mergeLogs(items, false);
+      nextCursor.value = "";
+      return;
+    }
     const result = await store.api.getInteractionLogs({
       ...filterQuery(),
       ...(reset || !nextCursor.value ? {} : { cursor: nextCursor.value }),
@@ -178,6 +221,11 @@ async function load(reset = true) {
   } finally {
     loading.value = false;
   }
+}
+
+async function toggleLogScope() {
+  showAllLogs.value = !showAllLogs.value;
+  await load();
 }
 
 function stopStream() {
@@ -356,45 +404,53 @@ onUnmounted(() => {
         <input v-model="autoScroll" type="checkbox" />
         自动滚动
       </label>
-      <Button variant="ghost" size="sm" @click="showAllLogs = !showAllLogs">{{ showAllLogs ? "只看重点交互" : "显示全部日志" }}</Button>
+      <Button variant="ghost" size="sm" @click="toggleLogScope">{{ showAllLogs ? "只看重点交互" : "显示全部日志" }}</Button>
       <span v-if="newCount" class="new-count">{{ newCount }} 条新日志</span>
     </div>
 
     <p v-if="loadError" class="load-error">{{ loadError }}</p>
 
     <div ref="logContainer" class="log-table">
-      <article v-for="item in visibleLogs" :key="item.id" class="log-row">
+      <article v-for="timeline in visibleTimelines" :key="timeline.id" class="log-row">
         <button
           class="log-main"
           type="button"
-          @click="expanded = expanded === item.id ? null : item.id"
+          @click="expanded = expanded === timeline.id ? null : timeline.id"
         >
-          <time>{{ new Date(item.createdAt).toLocaleString() }}</time>
-          <strong :class="item.level.toLowerCase()">{{ item.level }}</strong>
-          <span>{{ item.source }} / {{ item.category }}</span>
-          <span class="action log-summary">{{ logSummary(item) }}</span>
-          <span class="duration">{{ item.durationMs ?? "-" }} ms</span>
+          <time>{{ new Date(timeline.latest.createdAt).toLocaleString() }}</time>
+          <strong :class="timelineState(timeline)">{{ timelineState(timeline) === "error" ? "异常" : timelineState(timeline) === "success" ? "完成" : "进行中" }}</strong>
+          <span>{{ timeline.latest.category }} · {{ timeline.items.length }} 个事件</span>
+          <span class="action log-summary">{{ timelineSummary(timeline) }}</span>
+          <span class="duration">{{ timeline.latest.durationMs ?? "-" }} ms</span>
           <ChevronDown :size="15" />
         </button>
-        <div v-if="expanded === item.id" class="details">
-          <p class="details-summary">{{ logSummary(item) }}</p>
-          <div v-if="dialogueMessages(item).length" class="dialogue-trace">
-            <article v-for="(message, index) in dialogueMessages(item)" :key="`${message.role}-${index}`" :class="`role-${message.role}`">
-              <strong>{{ dialogueRole(message.role) }}</strong>
-              <p>{{ message.content }}</p>
-            </article>
-          </div>
-          <pre v-if="hasDetails(technicalDetails(item))">{{ JSON.stringify({ ...detailPayload(item), details: technicalDetails(item) }, null, 2) }}</pre>
-          <p v-else-if="!dialogueMessages(item).length" class="details-empty">没有附加上下文</p>
+        <div v-if="expanded === timeline.id" class="details">
+          <p class="details-summary">{{ timelineSummary(timeline) }}</p>
+          <ol class="timeline-events">
+            <li v-for="item in timeline.items" :key="item.id">
+              <time>{{ new Date(item.createdAt).toLocaleTimeString() }}</time>
+              <span>{{ logSummary(item) }}</span>
+              <strong>{{ item.outcome }}</strong>
+            </li>
+          </ol>
+          <template v-for="item in timeline.items" :key="`${timeline.id}-${item.id}`">
+            <div v-if="dialogueMessages(item).length" class="dialogue-trace">
+              <article v-for="(message, index) in dialogueMessages(item)" :key="`${message.role}-${index}`" :class="`role-${message.role}`">
+                <strong>{{ dialogueRole(message.role) }}</strong>
+                <p>{{ message.content }}</p>
+              </article>
+            </div>
+            <pre v-if="hasDetails(technicalDetails(item))">{{ JSON.stringify({ ...detailPayload(item), details: technicalDetails(item) }, null, 2) }}</pre>
+          </template>
         </div>
       </article>
-      <p v-if="!visibleLogs.length && logs.length && !loading" class="empty">暂时没有用户对话或外部服务调用；过程日志已默认隐藏。</p>
+      <p v-if="!visibleTimelines.length && logs.length && !loading" class="empty">暂时没有用户对话或外部服务调用；过程日志已默认隐藏。</p>
       <p v-if="!logs.length && !loading" class="empty">暂无匹配日志</p>
       <p v-if="loading" class="empty">正在读取日志……</p>
     </div>
 
     <Button
-      v-if="nextCursor"
+      v-if="showAllLogs && nextCursor"
       class="load-more"
       variant="secondary"
       :disabled="loading"
@@ -514,6 +570,8 @@ onUnmounted(() => {
 .error {
   color: var(--danger);
 }
+.success { color: var(--success); }
+.pending { color: var(--warning); }
 .action {
   min-width: 0;
   overflow: hidden;
@@ -529,6 +587,27 @@ onUnmounted(() => {
 .details pre {
   overflow-wrap: anywhere;
 }
+.timeline-events {
+  display: grid;
+  gap: 5px;
+  margin: 10px 0;
+  padding: 0;
+  list-style: none;
+}
+.timeline-events li {
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: baseline;
+  padding: 6px 8px;
+  background: var(--surface-soft);
+}
+.timeline-events time,
+.timeline-events strong {
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+.timeline-events span { overflow-wrap: anywhere; }
 .dialogue-trace {
   display: grid;
   gap: 8px;
@@ -616,6 +695,8 @@ onUnmounted(() => {
     min-width: 0;
     overflow-wrap: anywhere;
   }
+  .timeline-events li { grid-template-columns: 1fr auto; }
+  .timeline-events span { grid-column: 1 / -1; }
 }
 .log-summary { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .details-summary { margin-bottom: 8px; color: var(--text); white-space: pre-wrap; }

@@ -29,6 +29,7 @@ import {
   createSticker as createStickerDomain,
   createStickerPack as createStickerPackDomain,
   createImageWorkflowTemplate,
+  importImageWorkflow,
   createRelationshipEdge as createRelationshipEdgeDomain,
   createWorldEventDefinition as createWorldEventDefinitionDomain,
   createScheduledOccurrence,
@@ -115,6 +116,7 @@ import type {
   ProviderConnectionTestResultDto,
   ChatTraceContext,
 } from "../../../packages/contracts/src/index.ts";
+import { ApiMediaStore, type StoredMedia } from "./media-store.ts";
 import {
   createInMemoryRepositories,
   type DomainRepositories,
@@ -155,14 +157,16 @@ export type ApiErrorCode =
   | "NOT_FOUND"
   | "METHOD_NOT_ALLOWED"
   | "NOT_IMPLEMENTED"
+  | "PAYLOAD_TOO_LARGE"
+  | "UNSUPPORTED_MEDIA_TYPE"
   | "INTERNAL_ERROR";
 
 export class ApiError extends Error {
-  public readonly statusCode: 401 | 400 | 403 | 404 | 405 | 409 | 500 | 501 | 503;
+  public readonly statusCode: number;
   public readonly code: ApiErrorCode;
 
   public constructor(
-    statusCode: 401 | 400 | 403 | 404 | 405 | 409 | 500 | 501 | 503,
+    statusCode: number,
     code: ApiErrorCode,
     message: string,
   ) {
@@ -818,6 +822,20 @@ function parseUpdateStoryWorldRequest(value: unknown): UpdateStoryWorldRequest {
   return result;
 }
 
+function parseImportImageWorkflowRequest(value: unknown): { id: string; version: string; workflow: JsonObject; positivePromptPath?: string[]; negativePromptPath?: string[]; seedPath?: string[] } {
+  if (!isRecord(value)) throw new ApiError(400, "BAD_REQUEST", "Request body must be an object");
+  assertAllowedBodyKeys(value, ["id", "version", "workflow", "positivePromptPath", "negativePromptPath", "seedPath"]);
+  if (!isRecord(value.workflow)) throw new ApiError(400, "BAD_REQUEST", "workflow must be an object");
+  return {
+    id: bodyString(value.id, "id"),
+    version: bodyString(value.version, "version"),
+    workflow: value.workflow as JsonObject,
+    ...(value.positivePromptPath === undefined ? {} : { positivePromptPath: bodyStringArray(value.positivePromptPath, "positivePromptPath") }),
+    ...(value.negativePromptPath === undefined ? {} : { negativePromptPath: bodyStringArray(value.negativePromptPath, "negativePromptPath") }),
+    ...(value.seedPath === undefined ? {} : { seedPath: bodyStringArray(value.seedPath, "seedPath") }),
+  };
+}
+
 function parseRequestConversationImageRequest(value: unknown): RequestConversationImageRequest {
   if (!isRecord(value)) {
     throw new ApiError(400, "BAD_REQUEST", "Request body must be an object");
@@ -1248,6 +1266,7 @@ export class ApiApplication {
   private readonly interactionLogs: InteractionLogRepository;
   private readonly logging: InteractionLogging;
   private readonly replyFlights = new Map<string, Promise<ConversationReply>>();
+  private readonly media: ApiMediaStore;
 
   public constructor(
     store: ApiStore,
@@ -1263,6 +1282,7 @@ export class ApiApplication {
       interactionLogging?: InteractionLogging;
       loggingCleanupEnabled?: boolean;
       loggingCleanupIntervalMs?: number;
+      mediaRoot?: string;
     } = {},
   ) {
     this.store = store;
@@ -1275,6 +1295,7 @@ export class ApiApplication {
     this.creatorClock = operationalOptions.creatorClock ?? (() => new Date());
     this.interactionLogs = operationalOptions.interactionLogs ?? new InMemoryInteractionLogRepository();
     this.logging = operationalOptions.interactionLogging ?? new InteractionLogging({ repository: this.interactionLogs, ...(operationalOptions.loggingCleanupEnabled === undefined ? {} : { cleanupEnabled: operationalOptions.loggingCleanupEnabled }), ...(operationalOptions.loggingCleanupIntervalMs === undefined ? {} : { cleanupIntervalMs: operationalOptions.loggingCleanupIntervalMs }) });
+    this.media = new ApiMediaStore(operationalOptions.mediaRoot ?? "./data/media");
   }
 
   private trustedActor(request: Request, requestedCharacterId?: string): string | undefined {
@@ -2104,6 +2125,27 @@ export class ApiApplication {
     return toImageJobDto(job);
   }
 
+  public async importImageWorkflow(input: { id: string; version: string; workflow: JsonObject; positivePromptPath?: string[]; negativePromptPath?: string[]; seedPath?: string[] }): Promise<ImageWorkflowTemplateDto> {
+    const store = requireVisualWorkflowStore(this.store);
+    try {
+      const imported = importImageWorkflow(input.workflow);
+      const template = createImageWorkflowTemplate({
+        id: input.id,
+        version: input.version,
+        workflow: imported.workflow,
+        positivePromptPath: input.positivePromptPath ?? imported.positivePromptPath,
+        ...(input.negativePromptPath ?? imported.negativePromptPath ? { negativePromptPath: input.negativePromptPath ?? imported.negativePromptPath } : {}),
+        ...(input.seedPath ?? imported.seedPath ? { seedPath: input.seedPath ?? imported.seedPath } : {}),
+      });
+      assertImageWorkflowTemplateBindings(template);
+      await store.imageWorkflowTemplates.save(template);
+      return toImageWorkflowTemplateDto(template);
+    } catch (error) {
+      if (error instanceof TypeError || error instanceof RangeError) throw new ApiError(400, "BAD_REQUEST", error.message);
+      throw error;
+    }
+  }
+
   /**
    * Records an explicit private-chat image request as a normal behavior action
    * and image job.  The small, disabled event record provides the execution
@@ -2867,6 +2909,42 @@ throw error;
     try { return await this.logging.query(q); } catch (error) { throw new ApiError(400, "BAD_REQUEST", error instanceof Error ? error.message : "Invalid log query"); }
   }
 
+  private async uploadChatImage(request: Request): Promise<StoredMedia> {
+    const contentType = ((request.headers.get("content-type") ?? "").split(";", 1)[0] ?? "").trim().toLowerCase();
+    const length = Number(request.headers.get("content-length") ?? "0");
+    if (Number.isFinite(length) && length > 12 * 1024 * 1024) {
+      throw new ApiError(413, "PAYLOAD_TOO_LARGE", "Image must be 12MB or smaller");
+    }
+    if (!contentType.startsWith("image/")) {
+      throw new ApiError(415, "UNSUPPORTED_MEDIA_TYPE", "Upload must be a PNG, JPEG, WebP, or GIF image");
+    }
+    const bytes = new Uint8Array(await request.arrayBuffer());
+    if (bytes.byteLength > 12 * 1024 * 1024) {
+      throw new ApiError(413, "PAYLOAD_TOO_LARGE", "Image must be 12MB or smaller");
+    }
+    try {
+      return await this.media.put(bytes, contentType);
+    } catch (error) {
+      if (error instanceof TypeError) throw new ApiError(400, "BAD_REQUEST", error.message);
+      throw error;
+    }
+  }
+
+  private async readLocalMedia(reference: string): Promise<Response> {
+    try {
+      const media = await this.media.get(reference);
+      return new Response(media.bytes.buffer as ArrayBuffer, {
+        headers: { "content-type": media.contentType, "cache-control": "public, max-age=31536000, immutable" },
+      });
+    } catch (error) {
+      if (error instanceof TypeError) throw new ApiError(400, "BAD_REQUEST", error.message);
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+        throw new ApiError(404, "NOT_FOUND", "Media not found");
+      }
+      throw error;
+    }
+  }
+
   private async testLlmProfile(id: string, correlationId: string): Promise<ProviderConnectionTestResultDto> {
     const store = requireLlmProviderProfileStore(this.store); const profile = await store.llmProviderProfiles.getById(id);
     if (!profile) throw new ApiError(404, "NOT_FOUND", "LLM provider profile not found");
@@ -2897,6 +2975,18 @@ throw error;
       const correlationId = (() => { const value = request.headers.get("x-correlation-id")?.trim(); return value && value.length <= 128 && /^[A-Za-z0-9._:-]+$/.test(value) ? value : crypto.randomUUID(); })();
       if (request.method === "GET" && url.pathname === "/health") {
         return jsonResponse({ status: "ok" });
+      }
+
+      if (url.pathname === "/v1/media/chat-images") {
+        if (request.method !== "POST") throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
+        this.trustedActor(request);
+        return jsonResponse({ data: await this.uploadChatImage(request) }, 201);
+      }
+      const localMediaPath = /^\/v1\/media\/local\/([^/]+)$/.exec(url.pathname);
+      if (localMediaPath) {
+        if (request.method !== "GET") throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
+        const filename = decodeURIComponent(localMediaPath[1] ?? "");
+        return this.readLocalMedia(`media://local/${filename}`);
       }
 
       if (request.method === "GET" && url.pathname === "/ready") {
@@ -3159,9 +3249,7 @@ throw error;
           } catch {
             throw new ApiError(400, "BAD_REQUEST", "Request body must be valid JSON");
           }
-          return jsonResponse({
-            data: this.validateImageWorkflow(parseValidateImageWorkflowRequest(body)),
-          });
+          return jsonResponse({ data: this.validateImageWorkflow(parseValidateImageWorkflowRequest(body)) });
         }
         if (request.method !== "GET") {
           throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
@@ -3301,6 +3389,14 @@ throw error;
           ...(request.headers.get("x-request-id") === null ? {} : { requestId: request.headers.get("x-request-id")! }),
         };
         return jsonResponse({ data: await this.retryAutomaticReply(conversationId, readerCharacterId, sourceMessageId, trace) });
+      }
+
+      if (url.pathname === "/v1/comfyui/workflows/import") {
+        if (request.method !== "POST") throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
+        this.trustedActor(request);
+        let body: unknown;
+        try { body = await request.json(); } catch { throw new ApiError(400, "BAD_REQUEST", "Request body must be valid JSON"); }
+        return jsonResponse({ data: await this.importImageWorkflow(parseImportImageWorkflowRequest(body)) }, 201);
       }
       const messagePath = /^\/v1\/conversations\/([^/]+)\/messages$/.exec(url.pathname);
       if (messagePath) {

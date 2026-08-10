@@ -48,6 +48,13 @@ export interface ApiResponse<T> {
   data: T;
 }
 
+export interface UploadedMediaDto {
+  mediaRef: string;
+  contentType: string;
+  byteLength: number;
+  sha256: string;
+}
+
 export interface SseHandlers {
   onDelta?: (delta: { content?: string }) => void;
   onError?: (error: unknown) => void;
@@ -73,6 +80,7 @@ export class ApiClient {
   public getCharacterVisualIdentity(characterId: string): Promise<ApiResponse<CharacterVisualIdentityDto>>;
   public getWorkflows(): Promise<ApiResponse<ImageWorkflowTemplateDto[]>>;
   public validateWorkflow(workflow: unknown): Promise<ApiResponse<ValidateImageWorkflowResultDto>>;
+  public importWorkflow(input: { id: string; version: string; workflow: Record<string, unknown>; positivePromptPath?: string[]; negativePromptPath?: string[]; seedPath?: string[] }): Promise<ApiResponse<ImageWorkflowTemplateDto>>;
   public switchCharacter(actorSessionId: string, nextCharacterId: string): Promise<ApiResponse<unknown>>;
   public getMoments(storyWorldId: string, readerCharacterId: string, limit?: number): Promise<ApiResponse<MomentDto[]>>;
   public createMomentInteraction(momentId: string, input: unknown): Promise<ApiResponse<MomentInteractionWriteResultDto>>;
@@ -80,6 +88,8 @@ export class ApiClient {
   public getStickers(packId: string): Promise<ApiResponse<StickerDto[]>>;
   public getConversations(characterId: string): Promise<ApiResponse<ConversationDetailDto[]>>;
   public getMessages(conversationId: string, characterId: string): Promise<ApiResponse<MessageDto[]>>;
+  public uploadChatImage(file: Blob): Promise<ApiResponse<UploadedMediaDto>>;
+  public mediaUrl(mediaRef: string): string;
   public requestConversationImage(conversationId: string, input: RequestConversationImageRequest): Promise<ApiResponse<ImageJobDto>>;
   public getImageJob(jobId: string): Promise<ApiResponse<ImageJobDto>>;
   public sendMessage(conversationId: string, input: SendMessageRequest): Promise<ApiResponse<{ autoReply?: AutoReplyState }>>;

@@ -11,12 +11,14 @@ import {
   createCharacter,
   createCharacterVisualIdentity,
   createComfyUiSettings,
+  createConversation,
   createEventExecution,
   createImageJob,
   createImageWorkflowTemplate,
   createScheduledOccurrence,
   createStoryWorld,
   createWorldEventDefinition,
+  ConversationType,
 } from "../../../packages/domain/src/index.ts";
 import { createInMemoryRepositories, InMemoryInteractionLogRepository } from "../../../packages/database/src/index.ts";
 import { ComfyUiError, type ComfyUiProgressClient, type ComfyUiSubmitRequest } from "./media.ts";
@@ -96,4 +98,61 @@ test("image job pump leaves retryable ComfyUI submit failures queued for the nex
   const result = await pump.runOnce();
   assert.equal(result.deferred, 1);
   assert.equal((await repositories.imageJobs?.getById(job.id))?.status, "QUEUED");
+});
+
+test("chat image jobs use the recipient identity and append one image message", async () => {
+  const world = createStoryWorld({ id: "chat-world", name: "Chat", timezone: "UTC", storyMode: StoryMode.STATIC, relationshipDynamicsEnabled: false });
+  const user = createCharacter({ id: "chat-user", displayName: "User", role: CharacterRole.USER, storyWorldId: world.id, timezone: "UTC" });
+  const ai = createCharacter({ id: "chat-ai", displayName: "AI", role: CharacterRole.AI, storyWorldId: world.id, timezone: "UTC" });
+  const conversation = createConversation({ id: "chat-conversation", storyWorld: world, type: ConversationType.PRIVATE, members: [user, ai], createdAt });
+  const definition = createWorldEventDefinition({
+    id: "chat-definition", storyWorld: world, eventKey: "chat:image", name: "Chat image",
+    triggerSource: TriggerSource.USER_INTERACTION, recurrence: { kind: EventRecurrenceKind.ONCE, runAt: createdAt },
+    targetCharacters: [user], recipientCharacters: [ai], createdAt,
+  });
+  const occurrence = createScheduledOccurrence({ id: "chat-occurrence", definition, scheduledFor: createdAt, occurrenceKey: "chat:once", createdAt });
+  const execution = createEventExecution({ id: "chat-execution", occurrence, definition, ruleVersion: "test", inputSnapshot: {}, startedAt: createdAt });
+  const action = createBehaviorAction({
+    id: "chat-action", execution, actorCharacterId: user.id, kind: ActionKind.REQUEST_IMAGE,
+    payload: { conversationId: conversation.conversation.id, recipientCharacterId: ai.id, prompt: "at a train station", workflowVersion: "moment@v1" },
+    createdAt,
+  });
+  const job = createImageJob({ id: "chat-job", action, createdAt });
+  const repositories = createInMemoryRepositories({
+    worlds: [world], characters: [user, ai], conversations: [conversation], worldEventDefinitions: [definition],
+    scheduledOccurrences: [occurrence], eventExecutions: [execution], behaviorActions: [action], imageJobs: [job],
+    characterVisualIdentities: [
+      createCharacterVisualIdentity({ id: "user-identity", characterId: user.id, storyWorldId: world.id, positivePrompt: "user portrait", updatedAt: createdAt }),
+      createCharacterVisualIdentity({ id: "ai-identity", characterId: ai.id, storyWorldId: world.id, positivePrompt: "AI character portrait", updatedAt: createdAt }),
+    ],
+    imageWorkflowTemplates: [createImageWorkflowTemplate({ id: "moment", version: "v1", workflow: { prompt: { inputs: { text: "" } } }, positivePromptPath: ["prompt", "inputs", "text"] })],
+    comfyUiSettings: createComfyUiSettings({ id: "default", baseUrl: "http://127.0.0.1:8188", timeoutMs: 1000, autoImageIntentEnabled: false, updatedAt: createdAt }),
+  });
+  const client = new CompletingClient();
+  const pump = createImageJobPump(repositories, {
+    fallbackSettings: { baseUrl: "http://127.0.0.1:8188", timeoutMs: 1000 },
+    mediaRoot: "unused",
+    createClient: () => client,
+  });
+  await pump.runOnce();
+  assert.deepEqual(client.request?.workflow, { prompt: { inputs: { text: "AI character portrait, at a train station" } } });
+  const messages = await repositories.messages?.listByConversation(conversation.conversation.id);
+  assert.equal(messages?.length, 1);
+  assert.deepEqual(messages?.[0] && {
+    id: messages[0].id,
+    conversationId: messages[0].conversationId,
+    authorCharacterId: messages[0].authorCharacterId,
+    kind: messages[0].kind,
+    mediaRef: messages[0].mediaRef,
+    idempotencyKey: messages[0].idempotencyKey,
+  }, {
+    id: "image-message:chat-job",
+    conversationId: conversation.conversation.id,
+    authorCharacterId: ai.id,
+    kind: "IMAGE",
+    mediaRef: "media://local/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png",
+    idempotencyKey: "image-message:chat-job",
+  });
+  await pump.runOnce();
+  assert.equal((await repositories.messages?.listByConversation(conversation.conversation.id))?.length, 1);
 });

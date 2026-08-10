@@ -65,6 +65,14 @@ export interface CompiledImageWorkflow {
   workflow: JsonObject;
 }
 
+export interface ImportedImageWorkflow {
+  readonly workflow: JsonObject;
+  readonly positivePromptPath: readonly string[];
+  readonly negativePromptPath?: readonly string[];
+  readonly seedPath?: readonly string[];
+  readonly sourceFormat: "API" | "CANVAS";
+}
+
 function assertStringList(values: readonly string[], field: string): void {
   const seen = new Set<string>();
   for (const value of values) {
@@ -167,6 +175,166 @@ export function assertImageWorkflowTemplate(template: ImageWorkflowTemplate): vo
 
 function isJsonObject(value: JsonValue | undefined): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isCanvasWorkflow(value: JsonObject): boolean {
+  return Array.isArray(value.nodes) && Array.isArray(value.links);
+}
+
+function canvasNodes(value: JsonObject): readonly Record<string, JsonValue>[] {
+  return Array.isArray(value.nodes)
+    ? value.nodes.filter(isJsonObject)
+    : [];
+}
+
+function linkedInputMap(value: JsonObject): Map<string, JsonValue> {
+  const links = Array.isArray(value.links) ? value.links : [];
+  const direct = new Map<string, readonly [string, number]>();
+  const nodes = new Map(
+    canvasNodes(value)
+      .filter((node) => node.id !== undefined)
+      .map((node) => [String(node.id), node]),
+  );
+  for (const raw of links) {
+    if (!Array.isArray(raw) || raw.length < 5) continue;
+    const sourceNode = String(raw[1]);
+    const sourceSlot = Number(raw[2]);
+    const targetNode = String(raw[3]);
+    const targetSlot = Number(raw[4]);
+    if (Number.isInteger(sourceSlot) && Number.isInteger(targetSlot)) {
+      direct.set(`${targetNode}:${targetSlot}`, [sourceNode, sourceSlot]);
+    }
+  }
+  const resolveSource = (
+    source: readonly [string, number],
+    seen = new Set<string>(),
+  ): readonly [string, number] => {
+    const [nodeId] = source;
+    if (seen.has(nodeId) || nodes.get(nodeId)?.type !== "Reroute") return source;
+    seen.add(nodeId);
+    const upstream = direct.get(`${nodeId}:0`);
+    return upstream === undefined ? source : resolveSource(upstream, seen);
+  };
+  const result = new Map<string, JsonValue>();
+  for (const [target, source] of direct) {
+    result.set(target, [...resolveSource(source)] as unknown as JsonValue);
+  }
+  return result;
+}
+
+function canvasNodeInputs(node: Record<string, JsonValue>, links: Map<string, JsonValue>): JsonObject {
+  const inputs: Record<string, JsonValue> = {};
+  const nodeId = String(node.id);
+  const nodeInputs = Array.isArray(node.inputs) ? node.inputs : [];
+  for (let index = 0; index < nodeInputs.length; index += 1) {
+    const input = nodeInputs[index];
+    if (!isJsonObject(input) || typeof input.name !== "string") continue;
+    const linked = links.get(`${nodeId}:${index}`);
+    if (linked !== undefined) inputs[input.name] = linked;
+  }
+
+  const widgets = Array.isArray(node.widgets_values) ? node.widgets_values : [];
+  const type = typeof node.type === "string" ? node.type : "";
+  const setIfUnlinked = (name: string, value: JsonValue | undefined): void => {
+    if (value !== undefined && inputs[name] === undefined) inputs[name] = value;
+  };
+  if (type === "PrimitiveString" || type === "PrimitiveInt") setIfUnlinked("value", widgets[0]);
+  else if (type === "CLIPTextEncode") setIfUnlinked("text", widgets[0]);
+  else if (type === "EmptyLatentImage") {
+    setIfUnlinked("width", widgets[0]);
+    setIfUnlinked("height", widgets[1]);
+    setIfUnlinked("batch_size", widgets[2]);
+  } else if (type === "KSampler") {
+    const values = [widgets[0], widgets[2], widgets[3], widgets[4], widgets[5], widgets[6]];
+    for (const [index, name] of ["seed", "steps", "cfg", "sampler_name", "scheduler", "denoise"].entries()) {
+      setIfUnlinked(name, values[index]);
+    }
+  } else {
+    let widgetIndex = 0;
+    for (const raw of nodeInputs) {
+      if (!isJsonObject(raw) || typeof raw.name !== "string") continue;
+      if (raw.link !== null && raw.link !== undefined) continue;
+      if (raw.widget === undefined) continue;
+      setIfUnlinked(raw.name, widgets[widgetIndex]);
+      widgetIndex += 1;
+    }
+  }
+  return inputs;
+}
+
+function canvasToApiWorkflow(value: JsonObject): JsonObject {
+  const links = linkedInputMap(value);
+  const workflow: Record<string, JsonValue> = {};
+  for (const raw of canvasNodes(value)) {
+    if (!isJsonObject(raw) || raw.id === undefined || typeof raw.type !== "string" || raw.type === "Reroute") continue;
+    workflow[String(raw.id)] = {
+      inputs: canvasNodeInputs(raw, links),
+      class_type: raw.type,
+      _meta: { title: typeof raw.title === "string" ? raw.title : raw.type },
+    } as unknown as JsonValue;
+  }
+  return workflow;
+}
+
+function findCanvasNode(value: JsonObject, predicate: (node: Record<string, JsonValue>) => boolean): string[] | undefined {
+  for (const raw of canvasNodes(value)) {
+    if (!isJsonObject(raw) || raw.id === undefined || !predicate(raw)) continue;
+    return [String(raw.id), "inputs", "value"];
+  }
+  return undefined;
+}
+
+function canvasNodeTitle(node: Record<string, JsonValue>): string {
+  const title = typeof node.title === "string" ? node.title : "";
+  const type = typeof node.type === "string" ? node.type : "";
+  return `${title} ${type}`.toLowerCase();
+}
+
+function canvasNodeWidgetText(node: Record<string, JsonValue>): string {
+  const values = Array.isArray(node.widgets_values) ? node.widgets_values : [];
+  return typeof values[0] === "string" ? values[0] : "";
+}
+
+function apiNodeTitle(node: JsonObject): string {
+  const meta = isJsonObject(node._meta) ? node._meta : undefined;
+  return `${typeof meta?.title === "string" ? meta.title : ""} ${typeof node.class_type === "string" ? node.class_type : ""}`.toLowerCase();
+}
+
+export function importImageWorkflow(value: JsonObject): ImportedImageWorkflow {
+  if (!isCanvasWorkflow(value)) {
+    const nodes = Object.entries(value).filter(([, node]) => isJsonObject(node) && typeof node.class_type === "string");
+    if (nodes.length === 0) throw new TypeError("Workflow must be a ComfyUI canvas or API workflow JSON object");
+    const textNodes = nodes.filter(([, node]) => isJsonObject(node) && node.class_type === "CLIPTextEncode");
+    const positive = textNodes.find(([, node]) => {
+      if (!isJsonObject(node)) return false;
+      const title = apiNodeTitle(node);
+      return title.includes("positive") || title.includes("prompt") || title.includes("正向") || title.includes("画面");
+    }) ?? textNodes[0];
+    const negative = textNodes.find(([, node]) => {
+      if (!isJsonObject(node)) return false;
+      const title = apiNodeTitle(node);
+      return title.includes("negative") || title.includes("负向") || title.includes("avoid");
+    }) ?? (textNodes.length > 1 ? textNodes[1] : undefined);
+    const sampler = nodes.find(([, node]) => isJsonObject(node) && node.class_type === "KSampler");
+    return { workflow: cloneJsonObject(value), positivePromptPath: [positive?.[0] ?? "", "inputs", "text"], ...(negative === undefined || negative[0] === positive?.[0] ? {} : { negativePromptPath: [negative[0], "inputs", "text"] }), ...(sampler === undefined ? {} : { seedPath: [sampler[0], "inputs", "seed"] }), sourceFormat: "API" };
+  }
+  const workflow = canvasToApiWorkflow(value);
+  const primitiveNodes = canvasNodes(value).filter((node) => node.type === "PrimitiveString");
+  const positivePrimitive = primitiveNodes.find((node) => {
+    const title = canvasNodeTitle(node);
+    return title.includes("画面") || title.includes("scene") || title.includes("prompt") || canvasNodeWidgetText(node).includes("请输入");
+  }) ?? primitiveNodes.at(-1);
+  const positivePromptPath = positivePrimitive?.id === undefined
+    ? undefined
+    : [String(positivePrimitive.id), "inputs", "value"];
+  const negativeNode = canvasNodes(value).find((node) => {
+    if (node.type !== "CLIPTextEncode" || node.id === undefined) return false;
+    const title = canvasNodeTitle(node);
+    return title.includes("negative") || title.includes("负向") || canvasNodeWidgetText(node).trim().length > 0;
+  });
+  const sampler = canvasNodes(value).find((node) => node.type === "KSampler" && node.id !== undefined);
+  if (positivePromptPath === undefined) throw new TypeError("Canvas workflow has no editable positive prompt node");
+  return { workflow, positivePromptPath, ...(negativeNode && negativeNode.id !== undefined ? { negativePromptPath: [String(negativeNode.id), "inputs", "text"] } : {}), ...(sampler && sampler.id !== undefined ? { seedPath: [String(sampler.id), "inputs", "seed"] } : {}), sourceFormat: "CANVAS" };
 }
 
 function setJsonPath(root: JsonObject, path: readonly string[], value: JsonValue): JsonObject {

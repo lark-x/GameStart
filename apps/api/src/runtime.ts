@@ -35,7 +35,7 @@ export function createApiRuntime(
   provider?: ChatProvider,
   conversationOptions?: ConversationOrchestratorOptions,
   securityOptions?: { requireTrustedActor?: boolean },
-  operationalOptions?: { readiness?: () => Promise<void>; secretCipher?: SecretCipher; creatorDispatchEnabled?: boolean; creatorClock?: () => Date; interactionLogs?: InteractionLogRepository; interactionLogging?: InteractionLogging; loggingCleanupEnabled?: boolean; loggingCleanupIntervalMs?: number },
+  operationalOptions?: { readiness?: () => Promise<void>; secretCipher?: SecretCipher; creatorDispatchEnabled?: boolean; creatorClock?: () => Date; interactionLogs?: InteractionLogRepository; interactionLogging?: InteractionLogging; loggingCleanupEnabled?: boolean; loggingCleanupIntervalMs?: number; mediaRoot?: string },
 ): ApiRuntime {
   const application = new ApiApplication(
     repositories,
@@ -57,7 +57,7 @@ export function createApiRuntimeFromEnvironment(
   provider?: ChatProvider,
   conversationOptions?: ConversationOrchestratorOptions,
   securityOptions?: { requireTrustedActor?: boolean },
-  operationalOptions?: { readiness?: () => Promise<void>; secretCipher?: SecretCipher; creatorDispatchEnabled?: boolean; creatorClock?: () => Date; interactionLogs?: InteractionLogRepository; interactionLogging?: InteractionLogging; loggingCleanupEnabled?: boolean; loggingCleanupIntervalMs?: number },
+  operationalOptions?: { readiness?: () => Promise<void>; secretCipher?: SecretCipher; creatorDispatchEnabled?: boolean; creatorClock?: () => Date; interactionLogs?: InteractionLogRepository; interactionLogging?: InteractionLogging; loggingCleanupEnabled?: boolean; loggingCleanupIntervalMs?: number; mediaRoot?: string },
 ): ApiRuntime {
   const config = loadAppConfig(env);
   const resolvedProvider = provider ?? createProviderFromConfig({ ...config.llm });

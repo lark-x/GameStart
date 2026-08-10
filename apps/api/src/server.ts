@@ -20,13 +20,13 @@ export function resolveCorsOrigin(
   return allowedOrigins.includes(origin) ? origin : undefined;
 }
 
-function readBody(request: IncomingMessage): Promise<string> {
+function readBody(request: IncomingMessage): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     request.on("data", (chunk: Buffer | string) => {
       chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
     });
-    request.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    request.on("end", () => resolve(Buffer.concat(chunks)));
     request.on("error", reject);
   });
 }
@@ -47,7 +47,7 @@ async function toRequest(request: IncomingMessage, requestId: string, correlatio
   const method = request.method ?? "GET";
   const body = method === "GET" || method === "HEAD" ? undefined : await readBody(request);
   const init: RequestInit = { method, headers, signal: controller.signal };
-  if (body) init.body = body;
+  if (body && body.byteLength > 0) init.body = new Uint8Array(body);
   return { request: new Request(url, init), abort };
 }
 

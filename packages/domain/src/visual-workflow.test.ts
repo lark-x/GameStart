@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   compileImageWorkflow,
   assertImageWorkflowTemplateBindings,
   createCharacterVisualIdentity,
   createImageWorkflowTemplate,
+  importImageWorkflow,
 } from "./visual-workflow.ts";
 
 const updatedAt = "2026-08-05T10:00:00.000Z";
@@ -132,4 +134,38 @@ test("rejects invalid revisions and scene seeds", () => {
     () => compileImageWorkflow(makeTemplate(), makeIdentity(), { prompt: "scene", seed: -1 }),
     /scene\.seed/,
   );
+});
+
+test("imports the bundled ComfyUI canvas and maps editable widgets", async () => {
+  const source = JSON.parse(await readFile(
+    new URL("../../database/seed/workflows/comfy-anima-v1.canvas.json", import.meta.url),
+    "utf8",
+  )) as import("./life-simulation.ts").JsonObject;
+  const imported = importImageWorkflow(source);
+  assert.equal(imported.sourceFormat, "CANVAS");
+  assert.deepEqual(imported.positivePromptPath, ["121", "inputs", "value"]);
+  assert.deepEqual(imported.negativePromptPath, ["12", "inputs", "text"]);
+  assert.deepEqual(imported.seedPath, ["63", "inputs", "seed"]);
+  const sampler = imported.workflow["63"] as { inputs: Record<string, unknown> };
+  assert.equal(sampler.inputs.steps, 31);
+  assert.equal(sampler.inputs.cfg, 5);
+  assert.equal(sampler.inputs.sampler_name, "er_sde");
+  const latent = imported.workflow["28"] as { inputs: Record<string, unknown> };
+  assert.deepEqual(latent.inputs, {
+    width: ["122", 0],
+    height: ["124", 0],
+    batch_size: 1,
+  });
+  assert.equal(imported.workflow["108"], undefined);
+  assert.equal(imported.workflow["109"], undefined);
+  assert.equal((imported.workflow["122"] as { inputs: { value: number } }).inputs.value, 768);
+  assert.equal((imported.workflow["124"] as { inputs: { value: number } }).inputs.value, 512);
+  assertImageWorkflowTemplateBindings(createImageWorkflowTemplate({
+    id: "comfy-anima",
+    version: "v1",
+    workflow: imported.workflow,
+    positivePromptPath: imported.positivePromptPath,
+    negativePromptPath: imported.negativePromptPath,
+    seedPath: imported.seedPath,
+  }));
 });

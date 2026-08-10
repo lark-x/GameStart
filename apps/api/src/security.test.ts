@@ -38,4 +38,9 @@ test("trusted actor mode rejects missing and mismatched identity headers", async
     body: JSON.stringify({ actorSessionId: session.id, nextCharacterId: other.id }),
   }));
   assert.equal(switchMismatch.status, 403);
+  const anonymousWorkflowImport = await app.handle(new Request("http://localhost/v1/comfyui/workflows/import", {
+    method: "POST",
+    body: JSON.stringify({ id: "anonymous", version: "v1", workflow: {} }),
+  }));
+  assert.equal(anonymousWorkflowImport.status, 401);
 });

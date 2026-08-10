@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import {
   CharacterRole,
   ConversationType,
@@ -8,11 +10,14 @@ import {
   createCharacterVisualIdentity,
   createConversation,
   createImageWorkflowTemplate,
+  createComfyUiSettings,
+  importImageWorkflow,
   createMessage,
   createRelationshipEdge,
   createSticker,
   createStickerPack,
   createStoryWorld,
+  type JsonObject,
 } from "../../../packages/domain/src/index.ts";
 import {
   createInMemoryRepositories,
@@ -20,6 +25,22 @@ import {
 } from "../../../packages/database/src/index.ts";
 
 const createdAt = "2026-08-05T00:00:00.000Z";
+
+function createDefaultImageWorkflow() {
+  const source = JSON.parse(readFileSync(
+    new URL("../../../packages/database/seed/workflows/comfy-anima-v1.canvas.json", import.meta.url),
+    "utf8",
+  )) as JsonObject;
+  const imported = importImageWorkflow(source);
+  return createImageWorkflowTemplate({
+    id: "comfy-anima",
+    version: "v1",
+    workflow: imported.workflow,
+    positivePromptPath: imported.positivePromptPath,
+    ...(imported.negativePromptPath === undefined ? {} : { negativePromptPath: imported.negativePromptPath }),
+    ...(imported.seedPath === undefined ? {} : { seedPath: imported.seedPath }),
+  });
+}
 
 /**
  * Deterministic local data for the development server.
@@ -119,17 +140,14 @@ export function createDevelopmentRepositories(): DomainRepositories {
     referenceImageRefs: [],
     updatedAt: createdAt,
   });
-  const workflow = createImageWorkflowTemplate({
-    id: "dev-moment",
-    version: "v1",
-    workflow: {
-      "6": { inputs: { text: "placeholder-positive" } },
-      "7": { inputs: { text: "placeholder-negative" } },
-      "9": { inputs: { seed: 1 } },
-    },
-    positivePromptPath: ["6", "inputs", "text"],
-    negativePromptPath: ["7", "inputs", "text"],
-    seedPath: ["9", "inputs", "seed"],
+  const workflow = createDefaultImageWorkflow();
+  const comfyUiSettings = createComfyUiSettings({
+    id: "default",
+    baseUrl: "http://127.0.0.1:8188",
+    timeoutMs: 120_000,
+    defaultWorkflowVersion: "comfy-anima@v1",
+    autoImageIntentEnabled: false,
+    updatedAt: createdAt,
   });
   const stickerPack = createStickerPack({
     id: "dev-sticker-pack",
@@ -156,6 +174,7 @@ export function createDevelopmentRepositories(): DomainRepositories {
     messages: [welcome, prompt],
     characterVisualIdentities: [visualIdentity, userVisualIdentity],
     imageWorkflowTemplates: [workflow],
+    comfyUiSettings,
     stickerPacks: [stickerPack],
     stickers: [sticker],
   });

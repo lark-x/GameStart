@@ -86,6 +86,7 @@ export interface ImageWorkflowResolver {
 export type RepositoryImageWorkflowResolverRepositories = {
   readonly characterVisualIdentities: CharacterVisualIdentityRepository;
   readonly imageWorkflowTemplates: ImageWorkflowTemplateRepository;
+  readonly behaviorActions?: import("../../../packages/database/src/index.ts").BehaviorActionRepository;
 };
 
 function splitWorkflowVersion(value: string): { id: string; version: string } {
@@ -118,13 +119,19 @@ export class RepositoryImageWorkflowResolver implements ImageWorkflowResolver {
         `Image workflow template not found: ${job.workflowVersion}`,
       );
     }
-    const identity = await this.repositories.characterVisualIdentities.getByCharacterId(
-      job.ownerCharacterId,
-    );
+    let visualCharacterId = job.ownerCharacterId;
+    const action = this.repositories.behaviorActions === undefined
+      ? undefined
+      : await this.repositories.behaviorActions.getById(job.actionId);
+    const recipientCharacterId = action?.payload.recipientCharacterId;
+    if (typeof recipientCharacterId === "string" && recipientCharacterId.trim().length > 0) {
+      visualCharacterId = recipientCharacterId;
+    }
+    const identity = await this.repositories.characterVisualIdentities.getByCharacterId(visualCharacterId);
     if (!identity) {
       throw new ComfyUiError(
         "CONFIGURATION",
-        `Character visual identity not found: ${job.ownerCharacterId}`,
+        `Character visual identity not found: ${visualCharacterId}`,
       );
     }
     const compiled = compileImageWorkflow(template, identity, {
@@ -145,6 +152,7 @@ export function createRepositoryImageWorkflowResolver(
   return new RepositoryImageWorkflowResolver({
     characterVisualIdentities: repositories.characterVisualIdentities,
     imageWorkflowTemplates: repositories.imageWorkflowTemplates,
+    ...(repositories.behaviorActions === undefined ? {} : { behaviorActions: repositories.behaviorActions }),
   });
 }
 

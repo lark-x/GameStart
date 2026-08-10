@@ -32,6 +32,29 @@ export class ApiClient {
     return { ...payload, correlationId: response.headers?.get("x-correlation-id") || correlationId };
   }
 
+  async uploadChatImage(file) {
+    const response = await fetch(`${this.baseUrl}/v1/media/chat-images`, {
+      method: "POST",
+      body: file,
+      headers: {
+        accept: "application/json",
+        "content-type": file.type || "application/octet-stream",
+        ...(this.actorCharacterId ? { "x-actor-character-id": this.actorCharacterId } : {}),
+      },
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload?.error?.message ?? `Image upload failed (${response.status})`);
+    return payload;
+  }
+
+  mediaUrl(mediaRef) {
+    if (!mediaRef) return "";
+    if (mediaRef.startsWith("media://local/")) {
+      return `${this.baseUrl}/v1/media/local/${encodeURIComponent(mediaRef.slice("media://local/".length))}`;
+    }
+    return mediaRef;
+  }
+
   getWorlds() {
     return this.request("/v1/worlds");
   }
@@ -156,6 +179,10 @@ export class ApiClient {
 
   getMessages(conversationId, characterId) {
     return this.request(`/v1/conversations/${encodeURIComponent(conversationId)}/messages?characterId=${encodeURIComponent(characterId)}`);
+  }
+
+  importWorkflow(input) {
+    return this.request("/v1/comfyui/workflows/import", { method: "POST", body: JSON.stringify(input) });
   }
 
   requestConversationImage(conversationId, input) {

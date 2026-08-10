@@ -56,14 +56,6 @@ VALUES
    ARRAY['warm light', 'natural portrait'], ARRAY[]::text[], 1, '2026-08-05T00:00:00.000Z')
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO image_workflow_templates
-  (id, version, workflow, positive_prompt_path, negative_prompt_path, seed_path)
-VALUES
-  ('dev-moment', 'v1',
-   '{"6":{"inputs":{"text":"placeholder-positive"}},"7":{"inputs":{"text":"placeholder-negative"}},"9":{"inputs":{"seed":1}}}',
-   ARRAY['6', 'inputs', 'text'], ARRAY['7', 'inputs', 'text'], ARRAY['9', 'inputs', 'seed'])
-ON CONFLICT (id, version) DO NOTHING;
-
 INSERT INTO sticker_packs (id, story_world_id, name, source_ref, created_at)
 VALUES ('dev-sticker-pack', 'dev-world', '开发表情', 'local://dev', '2026-08-05T00:00:00.000Z')
 ON CONFLICT (id) DO NOTHING;

@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, onUnmounted, ref, watch } from "vue";
-import { Image, ImagePlus, RefreshCw, RotateCcw, Send, Type } from "@lucide/vue";
+import { computed, nextTick, onUnmounted, ref, watch, type ComponentPublicInstance } from "vue";
+import { ImagePlus, Paperclip, RefreshCw, RotateCcw, Send, Type, X } from "@lucide/vue";
 import Button from "../components/ui/Button.vue";
 import EmptyState from "../components/ui/EmptyState.vue";
 import Input from "../components/ui/Input.vue";
+import Textarea from "../components/ui/Textarea.vue";
 import { useAppStore } from "../stores/app.js";
 import { importChatBackgroundFile, useTheme } from "../lib/theme";
 import {
@@ -14,7 +15,6 @@ import {
 } from "../lib/auto-reply";
 import { errorMessage, type ApiCharacter, type ApiConversation, type ApiImageJob, type ApiMessage } from "../types";
 import { splitChatMessage } from "../lib/chat-message";
-import type { MessageKind } from "../../../../packages/contracts/src/index.ts";
 
 const store = useAppStore();
 const { chatBackground, setChatBackground } = useTheme();
@@ -22,7 +22,13 @@ const messages = ref<ApiMessage[]>([]);
 const conversations = ref<ApiConversation[]>([]);
 const currentConversationId = ref("");
 const messageInput = ref("");
-const messageKind = ref<MessageKind>("TEXT");
+const selectedImage = ref<File | null>(null);
+const imagePreview = ref("");
+const imageUploadStatus = ref("");
+const unavailableImageIds = ref(new Set<string>());
+const imageInput = ref<HTMLInputElement | null>(null);
+const composerInput = ref<ComponentPublicInstance | null>(null);
+const enterSends = ref(localStorage.getItem("living-network.chat.enter-sends") !== "false");
 const status = ref("准备加载会话……");
 const messagesContainer = ref<HTMLElement | null>(null);
 const isGenerating = ref(false);
@@ -33,7 +39,7 @@ const backgroundInput = ref<HTMLInputElement | null>(null);
 const backgroundStatus = ref("");
 const showImageRequest = ref(false);
 const imagePrompt = ref("");
-const imageWorkflowVersion = ref("portrait@v1");
+const imageWorkflowVersion = ref("");
 const imageJob = ref<ApiImageJob | null>(null);
 const imageStatus = ref("");
 const isRequestingImage = ref(false);
@@ -165,6 +171,66 @@ function messageTime(message: ApiMessage) {
 function isMine(message: ApiMessage) {
   return message.authorCharacterId === store.currentCharacterId;
 }
+
+function setEnterSends(value: boolean) {
+  enterSends.value = value;
+  localStorage.setItem("living-network.chat.enter-sends", String(value));
+}
+
+function resizeComposer(event?: Event) {
+  const emittedTarget = event?.target;
+  const componentElement = composerInput.value?.$el;
+  const element = emittedTarget instanceof HTMLTextAreaElement
+    ? emittedTarget
+    : componentElement instanceof HTMLTextAreaElement
+      ? componentElement
+      : undefined;
+  if (!element) return;
+  element.style.height = "auto";
+  element.style.height = `${Math.min(element.scrollHeight, 180)}px`;
+}
+
+function openImagePicker() {
+  imageInput.value?.click();
+}
+
+function clearSelectedImage() {
+  if (imagePreview.value) URL.revokeObjectURL(imagePreview.value);
+  selectedImage.value = null;
+  imagePreview.value = "";
+  imageUploadStatus.value = "";
+}
+
+function markImageUnavailable(messageId: string) {
+  unavailableImageIds.value = new Set([...unavailableImageIds.value, messageId]);
+}
+
+function onImageSelected(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file) return;
+  if (!["image/png", "image/jpeg", "image/webp", "image/gif"].includes(file.type)) {
+    imageUploadStatus.value = "请选择图片文件";
+    return;
+  }
+  if (file.size > 12 * 1024 * 1024) {
+    imageUploadStatus.value = "图片不能超过 12MB";
+    return;
+  }
+  selectedImage.value = file;
+  imageUploadStatus.value = `${Math.ceil(file.size / 1024)} KB`;
+  imagePreview.value = URL.createObjectURL(file);
+}
+
+function onComposerKeydown(event: KeyboardEvent) {
+  const send = enterSends.value
+    ? event.key === "Enter" && !event.shiftKey
+    : event.key === "Enter" && (event.ctrlKey || event.metaKey);
+  if (!send) return;
+  event.preventDefault();
+  void sendMessage();
+}
 function authorName(message: ApiMessage) {
   if (message.kind === "SYSTEM" || !message.authorCharacterId) return "系统";
   return isMine(message)
@@ -209,21 +275,27 @@ async function loadMessages() {
 
 async function sendMessage() {
   const value = messageInput.value.trim();
-  if (!value || !currentConversationId.value || !store.currentCharacterId)
+  if ((!value && !selectedImage.value) || !currentConversationId.value || !store.currentCharacterId)
     return;
   const id = crypto.randomUUID();
   try {
+    let mediaRef: string | undefined;
+    if (selectedImage.value) {
+      imageUploadStatus.value = "正在上传图片…";
+      const uploaded = await store.api.uploadChatImage(selectedImage.value);
+      mediaRef = uploaded.data.mediaRef;
+    }
     const result = await store.api.sendMessage(currentConversationId.value, {
       id,
       authorCharacterId: store.currentCharacterId,
-      kind: messageKind.value,
-      ...(messageKind.value === "IMAGE"
-        ? { mediaRef: value }
-        : { text: value }),
+      kind: mediaRef ? "IMAGE" : "TEXT",
+      ...(mediaRef ? { mediaRef, ...(value ? { text: value } : {}) } : { text: value }),
       createdAt: new Date().toISOString(),
       idempotencyKey: id,
     });
     messageInput.value = "";
+    clearSelectedImage();
+    resizeComposer();
     await loadMessages();
     applyAutoReply(normalizeAutoReply(result.data?.autoReply), id);
   } catch (e: unknown) {
@@ -339,6 +411,7 @@ async function pollImageJob(jobId: string) {
       imageJob.value = result.data ?? null;
       if (imageJob.value?.status === "SUCCEEDED") {
         imageStatus.value = "图片已生成";
+        await loadMessages();
         return;
       }
       if (imageJob.value?.status === "FAILED" || imageJob.value?.status === "CANCELLED") {
@@ -369,7 +442,7 @@ async function requestConversationImage() {
       actorCharacterId: store.currentCharacterId,
       recipientCharacterId: imageRecipientId.value,
       prompt,
-      workflowVersion: imageWorkflowVersion.value.trim() || "portrait@v1",
+      workflowVersion: imageWorkflowVersion.value.trim() || "comfy-anima@v1",
       createdAt: new Date().toISOString(),
       idempotencyKey,
     });
@@ -380,6 +453,15 @@ async function requestConversationImage() {
     imageStatus.value = errorMessage(error);
   } finally {
     isRequestingImage.value = false;
+  }
+}
+
+async function loadImageDefaults() {
+  try {
+    const result = await store.api.getComfyUiSettings();
+    imageWorkflowVersion.value = result.data.defaultWorkflowVersion ?? "comfy-anima@v1";
+  } catch {
+    imageWorkflowVersion.value = "comfy-anima@v1";
   }
 }
 
@@ -406,7 +488,11 @@ watch(currentConversationId, () => {
   replyError.value = "";
   void loadMessages();
 });
-onUnmounted(stopReplyPolling);
+void loadImageDefaults();
+onUnmounted(() => {
+  stopReplyPolling();
+  if (imagePreview.value) URL.revokeObjectURL(imagePreview.value);
+});
 </script>
 
 <template>
@@ -534,7 +620,16 @@ onUnmounted(stopReplyPolling);
           <div class="message-wrap">
             <span v-if="item.message.kind !== 'SYSTEM'" class="message-name">{{ authorName(item.message) }}</span>
             <div class="message-bubble">
-              <img v-if="item.message.kind === 'IMAGE' && item.message.mediaRef" :src="item.message.mediaRef" alt="聊天图片" />
+              <template v-if="item.message.kind === 'IMAGE'">
+                <img
+                  v-if="item.message.mediaRef && !unavailableImageIds.has(item.message.id)"
+                  :src="store.api.mediaUrl(item.message.mediaRef)"
+                  alt="聊天图片"
+                  @error="markImageUnavailable(item.message.id)"
+                />
+                <p v-else class="image-unavailable">图片不可用</p>
+                <p v-if="item.display.body" class="image-caption">{{ item.display.body }}</p>
+              </template>
               <p v-else-if="item.message.kind === 'STICKER'">贴纸 · {{ item.message.stickerId || "未知" }}</p>
               <p v-else-if="item.display.body">{{ item.display.body }}</p>
               <p v-else class="message-empty">消息没有可显示的正文</p>
@@ -554,33 +649,40 @@ onUnmounted(stopReplyPolling);
           <Button @click="requestConversationImage" :disabled="isRequestingImage || !imagePrompt.trim() || !imageRecipientId">{{ isRequestingImage ? "提交中" : "生成" }}</Button>
         </div>
         <p v-if="imageStatus" class="image-request-status">{{ imageStatus }}</p>
-        <img v-if="imageJob?.status === 'SUCCEEDED' && imageJob.mediaRef" class="image-request-result" :src="imageJob.mediaRef" alt="已生成的聊天配图" />
+        <img v-if="imageJob?.status === 'SUCCEEDED' && imageJob.mediaRef" class="image-request-result" :src="store.api.mediaUrl(imageJob.mediaRef)" alt="已生成的聊天配图" />
       </section>
 
       <footer class="composer">
-                <Button
-          variant="ghost"
-          size="icon"
-          class="composer-tool"
-          @click="messageKind = messageKind === 'TEXT' ? 'IMAGE' : 'TEXT'"
-          :title="messageKind === 'TEXT' ? '切换为图片消息' : '切换为文本消息'"
-          :aria-label="messageKind === 'TEXT' ? '切换为图片消息' : '切换为文本消息'"
-        >
-          <Type v-if="messageKind === 'TEXT'" :size="17" /><Image v-else :size="17" />
-        </Button>
-        <Input
-          v-model="messageInput"
-          class="composer-input"
-          @keyup.enter="sendMessage"
-          :placeholder="messageKind === 'IMAGE' ? '粘贴图片地址…' : '输入消息…'"
-        />
+        <input ref="imageInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" class="visually-hidden" @change="onImageSelected" />
+        <Button variant="ghost" size="icon" class="composer-tool" title="添加图片" aria-label="添加图片" @click="openImagePicker"><Paperclip :size="17" /></Button>
+        <div class="composer-main">
+          <div v-if="selectedImage" class="image-attachment">
+            <img :src="imagePreview" alt="待发送图片预览" />
+            <span>{{ selectedImage.name }}</span>
+            <Button variant="ghost" size="icon" title="移除图片" aria-label="移除图片" @click="clearSelectedImage"><X :size="15" /></Button>
+          </div>
+          <Textarea
+            ref="composerInput"
+            v-model="messageInput"
+            class="composer-input"
+            :rows="1"
+            :placeholder="selectedImage ? '可添加图片说明…' : '输入消息…'"
+            @keydown="onComposerKeydown"
+            @input="resizeComposer"
+          />
+          <div class="composer-meta">
+            <button type="button" class="enter-mode" :aria-pressed="enterSends" @click="setEnterSends(!enterSends)"><Type :size="14" /> {{ enterSends ? 'Enter 发送' : 'Enter 换行' }}</button>
+            <span v-if="imageUploadStatus">{{ imageUploadStatus }}</span>
+            <span v-else>{{ enterSends ? 'Shift+Enter 换行' : 'Ctrl/Cmd+Enter 发送' }}</span>
+          </div>
+        </div>
         <Button
           size="icon"
           class="send-button"
           title="发送消息"
           aria-label="发送消息"
           @click="sendMessage"
-          :disabled="!messageInput.trim()"
+          :disabled="!messageInput.trim() && !selectedImage"
           ><Send :size="17" /></Button
         >
       </footer>
@@ -791,9 +893,15 @@ onUnmounted(stopReplyPolling);
   color: var(--muted);
   background: color-mix(in srgb, var(--surface) 88%, transparent);
   border: 1px solid var(--border);
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-lg);
   font-size: var(--text-xs);
 }
+.composer-main { min-width: 0; flex: 1; display: grid; gap: 3px; }
+.image-attachment { display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--muted); font-size: var(--text-xs); }
+.image-attachment img { width: 38px; height: 38px; border-radius: var(--radius-sm); object-fit: cover; }
+.image-attachment span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.composer-meta { display: flex; align-items: center; gap: 10px; color: var(--faint); font-size: 11px; }
+.enter-mode { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: transparent; color: var(--primary); cursor: pointer; font: inherit; }
 .message-row {
   display: flex;
   gap: 9px;
@@ -950,6 +1058,9 @@ onUnmounted(stopReplyPolling);
   background: transparent;
   padding: 7px 2px;
   font-size: var(--text-base);
+  resize: none;
+  overflow-y: auto;
+  line-height: 1.45;
 }
 .composer-input:focus {
   border-color: transparent;
@@ -1015,7 +1126,7 @@ onUnmounted(stopReplyPolling);
 
 .chat-status-strip { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: 32px; padding: 0 var(--space-6); border-bottom: 1px solid var(--border); color: var(--muted); font-size: var(--text-xs); }
 .chat-status-strip .thought-status { display: block; }
-.message-empty { color: var(--muted); }
+.message-empty, .image-unavailable { color: var(--muted); }
 .image-request-panel { flex: 0 0 auto; margin: 0 var(--space-6) var(--space-3); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); box-shadow: var(--shadow-sm); }
 .image-request-panel header { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-2); color: var(--text-strong); }
 .image-request-panel header span { color: var(--muted); font-size: var(--text-xs); }

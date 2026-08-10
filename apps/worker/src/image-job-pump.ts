@@ -1,4 +1,6 @@
 import {
+  MessageKind,
+  createMessage,
   ImageJobStatus,
   type ComfyUiSettings,
   type ImageJob,
@@ -63,6 +65,46 @@ function imageLogDetails(job: ImageJob | undefined): Record<string, unknown> {
     ...(job.externalJobId === undefined ? {} : { externalJobId: job.externalJobId }),
     ...(job.mediaRef === undefined ? {} : { mediaRef: job.mediaRef }),
   };
+}
+
+async function writeConversationImageMessage(
+  repositories: RequiredImageRepositories,
+  job: ImageJob,
+  logger: WorkerLogger | undefined,
+): Promise<void> {
+  if (!repositories.messages || !repositories.conversations || !repositories.characters) return;
+  const action = repositories.behaviorActions === undefined
+    ? undefined
+    : await repositories.behaviorActions.getById(job.actionId);
+  const payload = action?.payload;
+  const conversationId = payload?.conversationId;
+  const recipientCharacterId = payload?.recipientCharacterId;
+  if (typeof conversationId !== "string" || typeof recipientCharacterId !== "string") return;
+  if (job.mediaRef === undefined) return;
+  const conversation = await repositories.conversations.getById(conversationId);
+  const recipient = await repositories.characters.getById(recipientCharacterId);
+  if (!conversation || !recipient) return;
+  const message = createMessage({
+    id: `image-message:${job.id}`,
+    conversation,
+    author: recipient,
+    kind: MessageKind.IMAGE,
+    mediaRef: job.mediaRef,
+    createdAt: job.updatedAt,
+    idempotencyKey: `image-message:${job.id}`,
+  });
+  const result = await repositories.messages.save(message);
+  await bestEffortLog(logger, {
+    category: "CHAT",
+    action: "message.save",
+    outcome: result.inserted ? "SUCCESS" : "REPLAY",
+    correlationId: `worker:image_job:${job.id}`,
+    conversationId,
+    entityType: "message",
+    entityId: result.message.id,
+    message: "ComfyUI 图片已写入聊天",
+    details: { kind: MessageKind.IMAGE, mediaRef: job.mediaRef, imageJobId: job.id },
+  });
 }
 
 /**
@@ -136,7 +178,7 @@ export class ImageJobPump {
             // The coordinator performs terminal persistence while streaming.
           }
           const after = await this.repositories.imageJobs.getById(jobId);
-          if (after?.status === ImageJobStatus.SUCCEEDED) { completed += 1; await bestEffortLog(this.options.logger, { category: "IMAGE", action: "image.progress", outcome: "COMPLETED", correlationId: "worker:image_job:" + jobId, entityType: "image_job", entityId: jobId, jobId, message: after.prompt, details: imageLogDetails(after) }); }
+          if (after?.status === ImageJobStatus.SUCCEEDED) { completed += 1; await writeConversationImageMessage(this.repositories, after, this.options.logger); await bestEffortLog(this.options.logger, { category: "IMAGE", action: "image.progress", outcome: "COMPLETED", correlationId: "worker:image_job:" + jobId, entityType: "image_job", entityId: jobId, jobId, message: after.prompt, details: imageLogDetails(after) }); }
           if (after?.status === ImageJobStatus.FAILED) { failed += 1; await bestEffortLog(this.options.logger, { category: "IMAGE", action: "image.progress", outcome: "FAILED", correlationId: "worker:image_job:" + jobId, entityType: "image_job", entityId: jobId, jobId, message: after.failureReason, details: imageLogDetails(after) }); }
         } catch (error) {
           if (isRetryable(error)) {

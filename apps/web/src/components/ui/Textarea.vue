@@ -9,7 +9,15 @@ withDefaults(
   }>(),
   { rows: 4 },
 );
-defineEmits<{ "update:modelValue": [value: string] }>();
+const emit = defineEmits<{
+  "update:modelValue": [value: string];
+  input: [event: Event];
+}>();
+
+function onInput(event: Event) {
+  emit("update:modelValue", (event.target as HTMLTextAreaElement).value);
+  emit("input", event);
+}
 </script>
 
 <template>
@@ -20,8 +28,6 @@ defineEmits<{ "update:modelValue": [value: string] }>();
     :disabled="disabled"
     :rows="rows"
     class="ui-input ui-textarea"
-    @input="
-      $emit('update:modelValue', ($event.target as HTMLTextAreaElement).value)
-    "
+    @input="onInput"
   />
 </template>

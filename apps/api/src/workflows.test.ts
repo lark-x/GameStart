@@ -63,3 +63,34 @@ test("rejects invalid workflow paths and malformed requests", async () => {
   ));
   assert.equal(method.status, 405);
 });
+
+test("imports and persists a ComfyUI API workflow", async () => {
+  const app = application();
+  const response = await app.handle(new Request(
+    "http://localhost/v1/comfyui/workflows/import",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        id: "imported-portrait",
+        version: "v1",
+        workflow: {
+          positive: {
+            class_type: "CLIPTextEncode",
+            _meta: { title: "Positive Prompt" },
+            inputs: { text: "placeholder" },
+          },
+          sampler: { class_type: "KSampler", inputs: { seed: 1 } },
+        },
+      }),
+    },
+  ));
+  assert.equal(response.status, 201);
+  const imported = (await response.json()) as { data: typeof validWorkflow };
+  assert.equal(imported.data.id, "imported-portrait");
+  assert.deepEqual(imported.data.positivePromptPath, ["positive", "inputs", "text"]);
+  assert.deepEqual(imported.data.seedPath, ["sampler", "inputs", "seed"]);
+
+  const listed = await app.handle(new Request("http://localhost/v1/comfyui/workflows"));
+  const payload = (await listed.json()) as { data: Array<{ id: string; version: string }> };
+  assert.ok(payload.data.some((item) => item.id === "imported-portrait" && item.version === "v1"));
+});

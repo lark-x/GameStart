@@ -53,7 +53,7 @@ export async function startPersistentApi(
         memoryWriteEnabled: config.flags.memoryWriteEnabled,
       },
       { requireTrustedActor: true },
-      { readiness: async () => { await database.query("SELECT 1"); }, creatorDispatchEnabled: true, interactionLogs: interactionLogRepository, interactionLogging, ...(cipher === undefined ? {} : { secretCipher: cipher }) },
+      { readiness: async () => { await database.query("SELECT 1"); }, creatorDispatchEnabled: true, interactionLogs: interactionLogRepository, interactionLogging, mediaRoot: config.media.root, ...(cipher === undefined ? {} : { secretCipher: cipher }) },
     );
     await listenApiRuntime(runtime);
     return { runtime, database };
