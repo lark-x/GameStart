@@ -156,3 +156,48 @@ test("rejects occurrence references that do not match a stored definition", asyn
     { name: "TypeError", message: /invalid event definition/ },
   );
 });
+
+test("in-memory rejects event definition with invalid recipient character", async () => {
+  const otherWorld = createStoryWorld({
+    id: "other-world",
+    name: "Other",
+    timezone: "Asia/Shanghai",
+    storyMode: StoryMode.STATIC,
+    relationshipDynamicsEnabled: false,
+  });
+  const otherChar = createCharacter({
+    id: "other-char",
+    displayName: "Other",
+    role: CharacterRole.AI,
+    storyWorldId: otherWorld.id,
+    timezone: otherWorld.timezone,
+  });
+  assert.throws(
+    () => createInMemoryRepositories({
+      worlds: [world, otherWorld],
+      characters: [character, otherChar],
+      worldEventDefinitions: [{
+        ...definition(),
+        recipientCharacterIds: ["other-char"],
+      }],
+    }),
+    /invalid recipient character/,
+  );
+});
+
+test("in-memory listForCreatorScan rejects invalid limit and horizonEnd", async () => {
+  const repos = createInMemoryRepositories({
+    worlds: [world],
+    characters: [character],
+    worldEventDefinitions: [definition()],
+    scheduledOccurrences: [],
+  });
+  await assert.rejects(
+    repos.scheduledOccurrences!.listForCreatorScan(world.id, "2026-08-10T00:00:00.000Z", 0),
+    /positive integer/,
+  );
+  await assert.rejects(
+    repos.scheduledOccurrences!.listForCreatorScan(world.id, "not-a-date", 10),
+    /valid ISO timestamp/,
+  );
+});
