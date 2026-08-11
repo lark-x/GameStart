@@ -1,4 +1,4 @@
-import type { JsonObject } from "../../../packages/domain/src/index.ts";
+import type { JsonObject } from "@living-network/domain";
 import type { ComfyUiProgressEvent, ComfyUiResult, ComfyUiSubmitRequest, ComfyUiSubmitResult, ComfyUiWebSocket, ComfyUiWebSocketFactory, ComfyUiClient, ComfyUiProgressClient } from "./comfyui-types.ts";
 
 export type ComfyUiFetchImplementation = (

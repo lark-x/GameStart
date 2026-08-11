@@ -1,4 +1,4 @@
-import type { JsonObject } from "../../../packages/domain/src/index.ts";
+import type { JsonObject } from "@living-network/domain";
 
 export interface ComfyUiSubmitRequest {
   jobId: string;

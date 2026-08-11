@@ -1,5 +1,5 @@
-import { applyMigrations, createPostgresSqlClient } from "../../../packages/database/src/index.ts";
-import { loadAppConfig } from "../../../packages/config/src/index.ts";
+import { applyMigrations, createPostgresSqlClient } from "@living-network/database";
+import { loadAppConfig } from "@living-network/config";
 import { pathToFileURL } from "node:url";
 
 export async function migratePersistentDatabase(

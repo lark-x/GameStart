@@ -1,9 +1,9 @@
-import { compileImageWorkflow, type ImageJob, type JsonObject } from "../../../packages/domain/src/index.ts";
+import { compileImageWorkflow, type ImageJob, type JsonObject } from "@living-network/domain";
 import type {
   DomainRepositories,
   CharacterVisualIdentityRepository,
   ImageWorkflowTemplateRepository,
-} from "../../../packages/database/src/index.ts";
+} from "@living-network/database";
 import type { ComfyUiClient } from "./comfyui-types.ts";
 import { ComfyUiError } from "./comfyui-client.ts";
 
@@ -14,7 +14,7 @@ export interface ImageWorkflowResolver {
 export type RepositoryImageWorkflowResolverRepositories = {
   readonly characterVisualIdentities: CharacterVisualIdentityRepository;
   readonly imageWorkflowTemplates: ImageWorkflowTemplateRepository;
-  readonly behaviorActions?: import("../../../packages/database/src/index.ts").BehaviorActionRepository;
+  readonly behaviorActions?: import("@living-network/database").BehaviorActionRepository;
 };
 
 function splitWorkflowVersion(value: string): { id: string; version: string } {

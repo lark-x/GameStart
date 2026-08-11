@@ -670,7 +670,7 @@ test("ComfyUI watchProgress handles socket close before completion", async () =>
 
 test("Fake ComfyUI rejects unrecognized externalJobId prefix", async () => {
   const fake = new FakeComfyUiClient();
-  await fake.submit({ jobId: "job-1", workflow: {} as never, positivePrompt: "p" });
+  await fake.submit({ jobId: "job-1", workflowVersion: "v1", workflow: {} as never, prompt: "p" });
   await assert.rejects(
     (async () => { for await (const _ of fake.watchProgress("real-job-1")) {} })(),
     /does not recognize/,

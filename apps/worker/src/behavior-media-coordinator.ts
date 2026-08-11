@@ -17,15 +17,15 @@ import {
   type ImageJob,
   type JsonObject,
   type MomentDraft,
-} from "../../../packages/domain/src/index.ts";
-import { assertIsoTimestamp } from "../../../packages/domain/src/validation.ts";
+} from "@living-network/domain";
+import { assertIsoTimestamp } from "@living-network/domain";
 import type {
   BehaviorActionRepository,
   DomainRepositories,
   EventExecutionRepository,
   ImageJobRepository,
   MomentDraftRepository,
-} from "../../../packages/database/src/index.ts";
+} from "@living-network/database";
 import type { ComfyUiClient, ComfyUiProgressClient, ComfyUiProgressEvent } from "./comfyui-types.ts";
 import type { ImageWorkflowResolver } from "./workflow-resolver.ts";
 import { ComfyUiError } from "./comfyui-client.ts";
