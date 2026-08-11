@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { InteractionLogCategory, InteractionLogLevel, InteractionLogSource, type InteractionLogDto, type InteractionLogQuery } from "@living-network/contracts";
+import { type InteractionLogDto, type InteractionLogQuery } from "@living-network/contracts";
 import { InMemoryInteractionLogRepository, SqlInteractionLogRepository, encodeInteractionLogCursor, previewMessage, redactSensitive } from "./interaction-log.ts";
 import type { SqlClient, SqlQueryResult, SqlRow } from "./sql.ts";
 

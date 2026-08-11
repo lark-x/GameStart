@@ -36,7 +36,7 @@ interface ScheduledAutomaticReply {
 }
 
 function automaticReplyState(
-  ctx: HandlerContext,
+  _ctx: HandlerContext,
   status: AutomaticReplyState["status"],
   trace: AutomaticReplyTrace,
   sourceMessageId: string,

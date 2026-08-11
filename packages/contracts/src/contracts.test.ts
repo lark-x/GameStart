@@ -30,7 +30,6 @@ import {
   MemoryVisibility,
   memoryItemSchema,
   eventRecurrenceSchema,
-  EventRecurrenceKind,
   ScheduledOccurrenceStatus,
   scheduledOccurrenceSchema,
   worldCalendarSchema,

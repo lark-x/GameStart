@@ -117,7 +117,6 @@ import type {
   InteractionLogDto,
   InteractionLogQuery,
   ProviderConnectionTestResultDto,
-  ChatTraceContext,
 } from "@living-network/contracts";
 import { ApiMediaStore, type StoredMedia } from "./media-store.ts";
 import {

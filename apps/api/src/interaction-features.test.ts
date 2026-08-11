@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { ApiApplication, createApiStore } from "./index.ts";
-import { CharacterRole, StoryMode, createCharacter, createStoryWorld, createLlmProviderProfile } from "@living-network/domain";
+import { CharacterRole, StoryMode, createCharacter, createStoryWorld } from "@living-network/domain";
 import type { ChatProvider } from "@living-network/ai";
 
 const world = createStoryWorld({ id: "log-world", name: "Logs", timezone: "UTC", storyMode: StoryMode.STATIC, relationshipDynamicsEnabled: false });

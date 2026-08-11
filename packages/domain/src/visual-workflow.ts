@@ -276,13 +276,6 @@ function canvasToApiWorkflow(value: JsonObject): JsonObject {
   return workflow;
 }
 
-function findCanvasNode(value: JsonObject, predicate: (node: Record<string, JsonValue>) => boolean): string[] | undefined {
-  for (const raw of canvasNodes(value)) {
-    if (!isJsonObject(raw) || raw.id === undefined || !predicate(raw)) continue;
-    return [String(raw.id), "inputs", "value"];
-  }
-  return undefined;
-}
 
 function canvasNodeTitle(node: Record<string, JsonValue>): string {
   const title = typeof node.title === "string" ? node.title : "";

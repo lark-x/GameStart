@@ -56,8 +56,6 @@ import {
   type ScheduledOccurrence,
   type WorldEventDefinition,
   type ImageWorkflowTemplate,
-  type LlmProviderProfile,
-  type ComfyUiSettings,
 } from "@living-network/domain";
 import {
   createSqlRepositories,

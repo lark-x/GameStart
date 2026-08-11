@@ -43,7 +43,6 @@ import {
   type MessageInput,
   type MemoryItem,
   type MemorySearchQuery,
-  type MemorySearchResult,
   type ProactiveMessageBudget,
   type MomentDraft,
   type Moment,
