@@ -613,3 +613,24 @@ test("covers fake client identity, resolver boundaries, and coordinator lifecycl
   await assert.rejects(resolver.resolve(queuedJob), /templateId@version/);
   await assert.rejects(resolver.resolve({ ...queuedJob, workflowVersion: "template@v1" }), /visual identity/);
 });
+
+test("ComfyUI watchProgress rejects empty externalJobId and invalid timeoutMs", async () => {
+  const client = new ComfyUiHttpClient({
+    baseUrl: "https://comfy.example/",
+    clientId: "validation-test",
+    timeoutMs: 100,
+    webSocketFactory: () => new FakeProgressSocket(),
+  });
+  await assert.rejects(
+    (async () => { for await (const _ of client.watchProgress("")) {} })(),
+    (error: unknown) => error instanceof ComfyUiError && error.code === "CONFIGURATION",
+  );
+  await assert.rejects(
+    (async () => { for await (const _ of client.watchProgress("job-1", { timeoutMs: 0 })) {} })(),
+    (error: unknown) => error instanceof ComfyUiError && error.code === "CONFIGURATION",
+  );
+  await assert.rejects(
+    (async () => { for await (const _ of client.watchProgress("job-1", { timeoutMs: -1 })) {} })(),
+    (error: unknown) => error instanceof ComfyUiError && error.code === "CONFIGURATION",
+  );
+});
