@@ -1615,3 +1615,33 @@ test("SQL comfyUiSettings.save rejects non-default id", async () => {
     { name: "TypeError", message: /must be default/ },
   );
 });
+
+test("SQL storyWorlds.save and characters.save execute insert/upsert", async () => {
+  const client = new RecordingSqlClient();
+  const repos = createSqlRepositories(client);
+  await repos.storyWorlds.save(world);
+  assert.match(client.calls[0]?.text ?? "", /INSERT INTO story_worlds/);
+  assert.deepEqual(client.calls[0]?.values, [
+    world.id, world.name, world.timezone, world.storyMode, world.relationshipDynamicsEnabled,
+  ]);
+
+  await repos.characters.save(user);
+  assert.match(client.calls[1]?.text ?? "", /INSERT INTO characters/);
+  assert.deepEqual(client.calls[1]?.values, [
+    user.id, user.displayName, user.role, user.storyWorldId, user.timezone,
+    user.birthDate ?? null, user.personaPrompt ?? null, user.personaPromptRef ?? null, user.visualPromptRef ?? null,
+  ]);
+});
+
+test("SQL scheduledOccurrences.listForCreatorScan validates limit and horizonEnd", async () => {
+  const client = new RecordingSqlClient();
+  const repos = createSqlRepositories(client);
+  await assert.rejects(
+    repos.scheduledOccurrences.listForCreatorScan(world.id, "2026-08-10T00:00:00.000Z", 0),
+    /positive integer/,
+  );
+  await assert.rejects(
+    repos.scheduledOccurrences.listForCreatorScan(world.id, "not-a-date", 10),
+    /valid ISO timestamp/,
+  );
+});
