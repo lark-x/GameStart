@@ -1579,3 +1579,39 @@ test("maps, searches, and persists categorized world lore entries", async () => 
   assert.match(writeClient.calls[1]?.text ?? "", /DELETE FROM world_lore_entries WHERE id = \$1/);
   await assert.rejects(repository.search(world.id, " "), /queryText/);
 });
+
+test("SQL llmProviderProfiles.list returns all profiles ordered by id", async () => {
+  const llmProfile = createLlmProviderProfile({
+    id: "llm-list", name: "List Test", protocol: LlmProviderProtocol.OPENAI_COMPATIBLE,
+    baseUrl: "https://api.test.com", model: "gpt-4",
+    createdAt: "2026-08-09T00:00:00.000Z", updatedAt: "2026-08-09T00:00:00.000Z",
+  });
+  const profileRow: SqlRow = {
+    id: llmProfile.id, name: llmProfile.name, protocol: llmProfile.protocol,
+    base_url: llmProfile.baseUrl, model: llmProfile.model, timeout_ms: llmProfile.timeoutMs,
+    max_tokens: llmProfile.maxTokens, temperature: llmProfile.temperature,
+    encrypted_api_key: null, encryption_iv: null,
+    is_active: llmProfile.isActive, created_at: llmProfile.createdAt, updated_at: llmProfile.updatedAt,
+  };
+  const client = new RecordingSqlClient([[profileRow]]);
+  const repos = createSqlRepositories(client);
+  const list = await repos.llmProviderProfiles.list();
+  assert.equal(list.length, 1);
+  assert.equal(list[0].id, llmProfile.id);
+  assert.match(client.calls[0]?.text ?? "", /ORDER BY id/);
+});
+
+test("SQL comfyUiSettings.save rejects non-default id", async () => {
+  const client = new RecordingSqlClient();
+  const repos = createSqlRepositories(client);
+  await assert.rejects(
+    repos.comfyUiSettings.save({
+      id: "wrong-id",
+      baseUrl: "http://localhost:8188",
+      timeoutMs: 30_000,
+      autoImageIntentEnabled: false,
+      updatedAt: "2026-08-09T00:00:00.000Z",
+    }),
+    { name: "TypeError", message: /must be default/ },
+  );
+});
