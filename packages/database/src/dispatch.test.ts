@@ -343,3 +343,32 @@ test("SQL dispatch getHeartbeat throws on invalid metadata", async () => {
   const repo = createSqlDispatchRequestRepository(mockClient([badMeta]));
   await assert.rejects(repo.getHeartbeat("w1"), TypeError);
 });
+
+test("SQL dispatch markEnqueued and recordFailure execute updates", async () => {
+  const { createSqlDispatchRequestRepository } = await import("./dispatch.ts");
+  const client = mockClient([sampleRow]);
+  const repo = createSqlDispatchRequestRepository(client);
+  await repo.markEnqueued("d1", "2026-08-09T01:00:00.000Z");
+  assert.ok(client.queries.some((q) => q.sql.includes("ENQUEUED")));
+  await repo.recordFailure("d1", "timeout");
+  assert.ok(client.queries.some((q) => q.sql.includes("attempts + 1")));
+});
+
+test("in-memory dispatch markEnqueued and recordFailure", async () => {
+  const req = dispatch("d1", "ik1");
+  const repositories = createInMemoryRepositories({
+    worlds: [world],
+    characters: [character],
+    worldEventDefinitions: [definition],
+    scheduledOccurrences: [
+      occurrence("occurrence-pending", ScheduledOccurrenceStatus.PENDING, "2026-08-09T01:00:00.000Z"),
+    ],
+    dispatchRequests: [req],
+  });
+  const repo = repositories.dispatchRequests!;
+  await repo.markEnqueued("d1", "2026-08-09T01:00:00.000Z");
+  const enqueued = await repo.getById("d1");
+  assert.equal(enqueued?.status, "ENQUEUED");
+  assert.equal(enqueued?.enqueuedAt, "2026-08-09T01:00:00.000Z");
+  assert.equal(enqueued?.lastError, undefined);
+});
