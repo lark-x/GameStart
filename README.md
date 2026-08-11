@@ -153,9 +153,20 @@ pnpm test:integration
 一次执行全部检查：
 
 ```sh
-pnpm test:all
+pnpm typecheck
+pnpm test
+pnpm test:coverage
 pnpm build
+pnpm --filter @living-network/web lint
 ```
+
+### CI 质量门槛
+
+GitHub Actions CI 在每个 PR 和 main push 上运行三个 Job：
+
+1. **verify** — `pnpm typecheck`、`pnpm test`、`pnpm test:coverage`（100% 行覆盖率）、`pnpm build`、`pnpm --filter @living-network/web lint`
+2. **real-services** — PostgreSQL/Redis 真实集成测试（`RUN_REAL_INTEGRATION=1 pnpm test:integration`）
+3. **e2e** — Playwright 端到端测试（依赖 verify + real-services 通过）
 
 真实 PostgreSQL/Redis 集成测试需要先启动对应容器：
 
