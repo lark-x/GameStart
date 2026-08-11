@@ -1679,3 +1679,20 @@ test("SQL scheduledOccurrences.listForCreatorScan executes query with valid para
   assert.deepEqual(result, []);
   assert.match(client.calls[0]?.text ?? "", /scheduled_for <= \$2/);
 });
+
+test("SQL jsonArray rejects invalid JSON strings", async () => {
+  const badJsonRow: SqlRow = {
+    id: "appearance-bad-json",
+    owner_key: "user",
+    theme_id: "blossom",
+    chat_background_kind: "custom",
+    chat_background_image_ref: "data:image/png;base64,aGVsbG8=",
+    chat_background_opacity: 0.5,
+    chat_background_blur: 0,
+    chat_background_items: "{invalid json",
+    updated_at: "2026-08-08T10:00:00.000Z",
+  };
+  const client = new RecordingSqlClient([[badJsonRow]]);
+  const repos = createSqlRepositories(client);
+  await assert.rejects(repos.appearanceSettings.getByOwnerKey("user"), /valid JSON/);
+});
