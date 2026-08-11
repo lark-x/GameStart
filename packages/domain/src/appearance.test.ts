@@ -269,3 +269,17 @@ test("rejects non-array items field", () => {
     { name: "TypeError", message: /must be an array/ },
   );
 });
+
+test("rejects non-object items in chat background items array", () => {
+  assert.throws(
+    () =>
+      createAppearanceSettings({
+        ...VALID_INPUT,
+        chatBackground: {
+          ...VALID_INPUT.chatBackground,
+          items: [null as never],
+        },
+      }),
+    { name: "TypeError", message: /must be an object/ },
+  );
+});
