@@ -1,8 +1,10 @@
 import { ref } from "vue";
-import { useTheme, createChatBackgroundItem, importChatBackgroundFile, MAX_CHAT_BACKGROUND_ITEMS } from "../lib/theme";
+import { useTheme, createChatBackgroundItem, compressChatBackgroundImage, MAX_CHAT_BACKGROUND_ITEMS } from "../lib/theme";
+import { useAppStore } from "../stores/app";
 
 export function useChatBackground() {
   const { chatBackground, setChatBackground } = useTheme();
+  const store = useAppStore();
   const backgroundStatus = ref("");
   const backgroundPickerOpen = ref(false);
 
@@ -25,7 +27,9 @@ export function useChatBackground() {
     }
     backgroundStatus.value = "正在导入背景…";
     try {
-      const imageRef = await importChatBackgroundFile(file);
+      const compressed = await compressChatBackgroundImage(file);
+      const uploaded = await store.api.uploadImage(compressed);
+      const imageRef = uploaded.data.mediaRef;
       const item = createChatBackgroundItem(file.name, imageRef);
       setChatBackground({
         ...chatBackground,

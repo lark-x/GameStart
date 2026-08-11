@@ -114,7 +114,7 @@ const enterModeLabel = computed(() => enterSends.value ? "Enter 发送" : "Enter
 const backdropStyle = computed(() => {
   if (chatBackground.kind === "custom" && chatBackground.imageRef) {
     return {
-      backgroundImage: `url("${chatBackground.imageRef}")`,
+      backgroundImage: `url("${store.api.mediaUrl(chatBackground.imageRef)}")`,
       backgroundSize: "cover",
       backgroundPosition: "center",
       opacity: chatBackground.opacity,
@@ -497,7 +497,7 @@ onUnmounted(() => {
               </button>
               <article v-for="item in chatBackground.items" :key="item.id" class="background-option custom-option" :class="{ active: chatBackground.kind === 'custom' && chatBackground.imageRef === item.imageRef }">
                 <button type="button" @click="selectCustomBackground(item.imageRef)">
-                  <img :src="item.imageRef" :alt="item.label" />
+                  <img :src="store.api.mediaUrl(item.imageRef)" :alt="item.label" />
                   <span>{{ item.label }}</span>
                   <Check v-if="chatBackground.kind === 'custom' && chatBackground.imageRef === item.imageRef" :size="15" />
                 </button>
