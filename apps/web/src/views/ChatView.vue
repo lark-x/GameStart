@@ -344,7 +344,6 @@ onUnmounted(() => {
   cleanupBackground();
 });
 </script>
-</script>
 
 <template>
   <div class="chat-layout">
