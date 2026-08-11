@@ -80,3 +80,28 @@ test("failed enqueue remains pending and records retry details", async () => {
     ["dispatch-2"],
   );
 });
+
+test("dispatch pump rejects invalid payload shape", async () => {
+  const repository = createInMemoryDispatchRequestRepository([
+    {
+      id: "dispatch-bad",
+      batchId: "batch-1",
+      candidateId: "candidate-bad",
+      action: "EXECUTE_EXISTING",
+      idempotencyKey: "dispatch:bad",
+      storyWorldId: "world-1",
+      occurrenceId: "occ-1",
+      payload: { occurrenceId: 123, execution: null } as unknown as { occurrenceId: string; execution: Record<string, unknown> },
+      status: "PENDING" as const,
+      attempts: 0,
+      requestedAt: "2026-08-09T00:00:00.000Z",
+    },
+  ]);
+  const queue = { enqueue: async () => {}, close: async () => {} };
+  const pump = createDispatchPump(repository, queue, { workerId: "worker-a" });
+  assert.equal(await pump.runOnce(), 0);
+  const stored = await repository.getById("dispatch-bad");
+  assert.equal(stored?.status, "PENDING");
+  assert.equal(stored?.attempts, 1);
+  assert.ok(stored?.lastError?.includes("WorkerOccurrenceTask"));
+});
