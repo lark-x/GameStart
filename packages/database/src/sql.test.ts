@@ -1597,7 +1597,7 @@ test("SQL llmProviderProfiles.list returns all profiles ordered by id", async ()
   const repos = createSqlRepositories(client);
   const list = await repos.llmProviderProfiles.list();
   assert.equal(list.length, 1);
-  assert.equal(list[0].id, llmProfile.id);
+  assert.equal(list[0]!.id, llmProfile.id);
   assert.match(client.calls[0]?.text ?? "", /ORDER BY id/);
 });
 

@@ -191,7 +191,7 @@ const sampleRowWithOptionals: SqlRow = {
   last_error: "timeout",
 };
 
-function mockClient(rows: SqlRow[] = []): SqlClient & { queries: Array<{ sql: string; params: unknown[] }> } {
+function mockClient(rows: SqlRow[] = []): SqlClient & { queries: Array<{ sql: string; params: unknown[] }>; transaction?: (op: (client: SqlClient) => Promise<unknown>) => Promise<unknown> } {
   const queries: Array<{ sql: string; params: unknown[] }> = [];
   return {
     queries,
@@ -244,7 +244,7 @@ test("SQL dispatch listByBatch and listPending map rows", async () => {
   const repo = createSqlDispatchRequestRepository(mockClient([sampleRow, sampleRowWithOptionals]));
   const batch = await repo.listByBatch("b1");
   assert.equal(batch.length, 2);
-  assert.equal(batch[0].id, "d1");
+  assert.equal(batch[0]!.id, "d1");
 
   const pending = await repo.listPending(5);
   assert.equal(pending.length, 2);
