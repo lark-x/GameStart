@@ -285,8 +285,18 @@ export class OpenAICompatibleProvider implements ChatProvider {
     await emitObservation(this.observationHook, { name: "request_started", ...context });
     try {
       const response = await this.request(request, model, false);
+      const bodyController = new AbortController();
+      const bodyTimer = setTimeout(() => bodyController.abort(), this.timeoutMs);
       let payload: unknown;
-      try { payload = await response.json(); } catch { throw new ProviderError("INVALID_RESPONSE", "LLM response body is not valid JSON"); }
+      try {
+        const text = await response.text();
+        payload = JSON.parse(text);
+      } catch (e) {
+        if (bodyController.signal.aborted) throw new ProviderError("TIMEOUT", "LLM response body read timed out", { retryable: true });
+        throw new ProviderError("INVALID_RESPONSE", "LLM response body is not valid JSON");
+      } finally {
+        clearTimeout(bodyTimer);
+      }
       const result = parseCompletionResponse(payload);
       await emitObservation(this.observationHook, { name: "completed", ...context, model: result.model, durationMs: Date.now() - started, preview: result.content, outcome: "success" });
       return result;
@@ -304,52 +314,63 @@ export class OpenAICompatibleProvider implements ChatProvider {
     await emitObservation(this.observationHook, { name: "request_started", ...context });
     const streamController = new AbortController();
     let idleTimer: ReturnType<typeof setTimeout> | undefined;
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
     const resetIdle = (): void => {
       if (idleTimer !== undefined) clearTimeout(idleTimer);
-      idleTimer = setTimeout(() => streamController.abort(), this.timeoutMs);
+      idleTimer = setTimeout(() => {
+        if (reader) { try { reader.cancel(); } catch { /* ignore */ } }
+        streamController.abort();
+      }, this.timeoutMs);
     };
-    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
     try {
       const response = await this.request(request, model, true);
       if (response.body === null) throw new ProviderError("STREAM_ERROR", "LLM response has no stream body");
       reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+      const pending: string[] = [];
+      const extractData = (block: string): string =>
+        block.split(/\r?\n/).filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trimStart()).join("\n");
+      const drainBuffer = (): void => {
+        while (true) {
+          const sep = buffer.indexOf("\n\n");
+          if (sep < 0) break;
+          const data = extractData(buffer.slice(0, sep));
+          buffer = buffer.slice(sep + 2);
+          if (data.length > 0) pending.push(data);
+        }
+      };
       resetIdle();
-      const extractData = (block: string): string => {
-        const data = block.split(/\r?\n/).filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trimStart()).join("\n");
-        return data;
-      };
-      const readChunk = async (): Promise<{ done: boolean; value?: string }> => {
-        const result = await reader!.read();
-        if (result.done) {
-          if (buffer.trim().length > 0) {
-            const data = extractData(buffer);
-            buffer = "";
-            if (data.length > 0) return { done: false, value: data };
-          }
-          return { done: true };
-        }
-        buffer += decoder.decode(result.value, { stream: true });
-        const sep = buffer.indexOf("\n\n");
-        if (sep < 0) return { done: false };
-        const event = buffer.slice(0, sep);
-        buffer = buffer.slice(sep + 2);
-        const data = extractData(event);
-        return data.length > 0 ? { done: false, value: data } : { done: false };
-      };
+      let streamDone = false;
       while (true) {
-        let chunk;
-        try { chunk = await readChunk(); } catch (e) {
-          if (streamController.signal.aborted) throw new ProviderError("TIMEOUT", "LLM stream idle timeout", { retryable: true });
-          throw e;
+        if (pending.length === 0 && !streamDone) {
+          try {
+            const result = await reader.read();
+            if (result.done) {
+              streamDone = true;
+              if (buffer.trim().length > 0) {
+                const data = extractData(buffer);
+                buffer = "";
+                if (data.length > 0) pending.push(data);
+              }
+            } else {
+              buffer += decoder.decode(result.value, { stream: true });
+              drainBuffer();
+            }
+          } catch (e) {
+            if (streamController.signal.aborted) throw new ProviderError("TIMEOUT", "LLM stream idle timeout", { retryable: true });
+            throw e;
+          }
         }
-        if (chunk.done) break;
-        if (chunk.value === undefined) continue;
+        if (pending.length === 0) {
+          if (streamDone) break;
+          continue;
+        }
+        const data = pending.shift()!;
         resetIdle();
-        if (chunk.value === "[DONE]") { terminal = true; await emitObservation(this.observationHook, { name: "completed", ...context, durationMs: Date.now() - started, preview: responsePreview, outcome: "success" }); return; }
+        if (data === "[DONE]") { terminal = true; await emitObservation(this.observationHook, { name: "completed", ...context, durationMs: Date.now() - started, preview: responsePreview, outcome: "success" }); return; }
         let payload: unknown;
-        try { payload = JSON.parse(chunk.value); } catch { throw new ProviderError("STREAM_ERROR", "LLM stream event is not valid JSON"); }
+        try { payload = JSON.parse(data); } catch { throw new ProviderError("STREAM_ERROR", "LLM stream event is not valid JSON"); }
         const delta = parseStreamPayload(payload);
         if (delta.content) responsePreview = `${responsePreview}${delta.content}`.slice(0, 500);
         if (delta.content && !firstToken) { firstToken = true; await emitObservation(this.observationHook, { name: "first_token", ...context, durationMs: Date.now() - started, preview: delta.content }); }
