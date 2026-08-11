@@ -634,3 +634,53 @@ test("ComfyUI watchProgress rejects empty externalJobId and invalid timeoutMs", 
     (error: unknown) => error instanceof ComfyUiError && error.code === "CONFIGURATION",
   );
 });
+
+test("ComfyUI watchProgress wraps non-ComfyUiError from WebSocket factory", async () => {
+  const client = new ComfyUiHttpClient({
+    baseUrl: "https://comfy.example/",
+    clientId: "wrap-test",
+    timeoutMs: 100,
+    webSocketFactory: () => { throw new Error("connection refused"); },
+  });
+  await assert.rejects(
+    (async () => { for await (const _ of client.watchProgress("prompt-1")) {} })(),
+    (error: unknown) => error instanceof ComfyUiError && error.code === "NETWORK_ERROR",
+  );
+});
+
+test("ComfyUI watchProgress handles socket close before completion", async () => {
+  const socket = new FakeProgressSocket();
+  const client = new ComfyUiHttpClient({
+    baseUrl: "https://comfy.example/",
+    clientId: "close-test",
+    timeoutMs: 100,
+    webSocketFactory: () => {
+      queueMicrotask(() => {
+        socket.emit({ type: "progress", data: { prompt_id: "p1", node: "1", value: 1, max: 2 } });
+        socket.onclose?.();
+      });
+      return socket;
+    },
+  });
+  const events: ComfyUiProgressEvent[] = [];
+  for await (const event of client.watchProgress("p1")) events.push(event);
+  assert.equal(events.length, 1);
+  assert.equal(events[0]?.kind, "progress");
+});
+
+test("Fake ComfyUI rejects unrecognized externalJobId prefix", async () => {
+  const fake = new FakeComfyUiClient();
+  await fake.submit({ jobId: "job-1", workflow: {} as never, positivePrompt: "p" });
+  await assert.rejects(
+    (async () => { for await (const _ of fake.watchProgress("real-job-1")) {} })(),
+    /does not recognize/,
+  );
+});
+
+test("Fake ComfyUI rejects missing job", async () => {
+  const fake = new FakeComfyUiClient();
+  await assert.rejects(
+    (async () => { for await (const _ of fake.watchProgress("fake-comfy:missing")) {} })(),
+    /not found/,
+  );
+});
