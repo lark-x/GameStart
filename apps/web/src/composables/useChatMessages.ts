@@ -1,5 +1,4 @@
 import { ref, type Ref } from "vue";
-import { nextTick } from "vue";
 import type { ApiMessage } from "../types";
 import { useAppStore } from "../stores/app";
 import { errorMessage } from "../types";
