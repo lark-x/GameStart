@@ -167,7 +167,13 @@ export class AnthropicProvider implements ChatProvider {
     try {
       const response = await this.request(request, model, false);
       let payload: unknown;
-      try { payload = await response.json(); } catch { throw new ProviderError("INVALID_RESPONSE", "Anthropic response body is not valid JSON"); }
+      try {
+        const text = await readBodyWithTimeout(response, this.timeoutMs);
+        payload = JSON.parse(text);
+      } catch (e) {
+        if (e instanceof ProviderError) throw e;
+        throw new ProviderError("INVALID_RESPONSE", "Anthropic response body is not valid JSON");
+      }
       if (!record(payload) || typeof payload.id !== "string" || typeof payload.model !== "string" || !Array.isArray(payload.content)) throw new ProviderError("INVALID_RESPONSE", "Anthropic response has an invalid shape");
       const content = payload.content.filter(record).filter((part) => part.type === "text" && typeof part.text === "string").map((part) => part.text as string).join("");
       if (!content) throw new ProviderError("INVALID_RESPONSE", "Anthropic response has no text content");
@@ -302,3 +308,4 @@ export class AnthropicProvider implements ChatProvider {
     }
   }
 }
+import { readBodyWithTimeout } from "./read-timeout.ts";

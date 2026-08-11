@@ -285,17 +285,13 @@ export class OpenAICompatibleProvider implements ChatProvider {
     await emitObservation(this.observationHook, { name: "request_started", ...context });
     try {
       const response = await this.request(request, model, false);
-      const bodyController = new AbortController();
-      const bodyTimer = setTimeout(() => bodyController.abort(), this.timeoutMs);
       let payload: unknown;
       try {
-        const text = await response.text();
+        const text = await readBodyWithTimeout(response, this.timeoutMs);
         payload = JSON.parse(text);
       } catch (e) {
-        if (bodyController.signal.aborted) throw new ProviderError("TIMEOUT", "LLM response body read timed out", { retryable: true });
+        if (e instanceof ProviderError) throw e;
         throw new ProviderError("INVALID_RESPONSE", "LLM response body is not valid JSON");
-      } finally {
-        clearTimeout(bodyTimer);
       }
       const result = parseCompletionResponse(payload);
       await emitObservation(this.observationHook, { name: "completed", ...context, model: result.model, durationMs: Date.now() - started, preview: result.content, outcome: "success" });
@@ -467,3 +463,4 @@ export function createProviderFromConfig(
     fetchImpl,
   );
 }
+import { readBodyWithTimeout } from "./read-timeout.ts";

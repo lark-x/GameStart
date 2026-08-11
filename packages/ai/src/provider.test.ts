@@ -270,3 +270,71 @@ test("sends image content parts as OpenAI-compatible data URLs", async () => {
     { type: "image_url", image_url: { url: "data:image/png;base64,aGVsbG8=" } },
   ]);
 });
+
+// Test A: HTTP 200 returned but body never ends → TIMEOUT
+test("complete() body timeout when response body never ends", async () => {
+  const provider = new OpenAICompatibleProvider(
+    { baseUrl: "https://llm.example", model: "m", timeoutMs: 50 },
+    async () => {
+      // HTTP 200 with a body that never closes.
+      const stream = new ReadableStream<Uint8Array>({
+        start() { /* never enqueue, never close */ },
+      });
+      return new Response(stream, { status: 200 });
+    },
+  );
+  await assert.rejects(provider.complete({ messages: request.messages }), (error: unknown) => {
+    assert.ok(error instanceof ProviderError);
+    assert.equal(error.code, "TIMEOUT");
+    assert.equal(error.retryable, true);
+    return true;
+  });
+});
+
+// Test C: tokens arriving regularly within timeout → no false timeout
+test("complete() body does not timeout when data arrives within window", async () => {
+  const provider = new OpenAICompatibleProvider(
+    { baseUrl: "https://llm.example", model: "m", timeoutMs: 500 },
+    async () => {
+      const payload = JSON.stringify({
+        id: "r1", model: "m",
+        choices: [{ message: { content: "slow but fine" } }],
+      });
+      const stream = new ReadableStream<Uint8Array>({
+        async start(controller) {
+          // Simulate a slow but eventually complete body (well within timeout).
+          await new Promise((r) => setTimeout(r, 20));
+          controller.enqueue(new TextEncoder().encode(payload));
+          controller.close();
+        },
+      });
+      return new Response(stream, { status: 200 });
+    },
+  );
+  const result = await provider.complete({ messages: request.messages });
+  assert.equal(result.content, "slow but fine");
+});
+
+// Test D: Provider returns oversized JSON body → explicit failure
+test("complete() rejects oversized response body", async () => {
+  const provider = new OpenAICompatibleProvider(
+    { baseUrl: "https://llm.example", model: "m", timeoutMs: 5000 },
+    async () => {
+      // 5 MiB exceeds the 4 MiB limit.
+      const big = "x".repeat(5 * 1024 * 1024);
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(big));
+          controller.close();
+        },
+      });
+      return new Response(stream, { status: 200 });
+    },
+  );
+  await assert.rejects(provider.complete({ messages: request.messages }), (error: unknown) => {
+    assert.ok(error instanceof ProviderError);
+    assert.equal(error.code, "INVALID_RESPONSE");
+    assert.match(error.message, /maximum size/);
+    return true;
+  });
+});
