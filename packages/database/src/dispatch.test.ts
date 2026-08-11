@@ -372,3 +372,32 @@ test("in-memory dispatch markEnqueued and recordFailure", async () => {
   assert.equal(enqueued?.enqueuedAt, "2026-08-09T01:00:00.000Z");
   assert.equal(enqueued?.lastError, undefined);
 });
+
+test("in-memory dispatch listPending rejects invalid limit", async () => {
+  const repositories = createInMemoryRepositories({
+    worlds: [world],
+    characters: [character],
+    worldEventDefinitions: [definition],
+    scheduledOccurrences: [],
+    dispatchRequests: [],
+  });
+  const repo = repositories.dispatchRequests!;
+  await assert.rejects(repo.listPending(0), RangeError);
+  await assert.rejects(repo.listPending(-1), RangeError);
+});
+
+test("in-memory dispatch save rejects duplicate request id", async () => {
+  const req = dispatch("d1", "ik1");
+  const repositories = createInMemoryRepositories({
+    worlds: [world],
+    characters: [character],
+    worldEventDefinitions: [definition],
+    scheduledOccurrences: [],
+    dispatchRequests: [req],
+  });
+  const repo = repositories.dispatchRequests!;
+  await assert.rejects(
+    repo.save({ ...dispatch("d1", "ik2") }),
+    /duplicate dispatch request id/i,
+  );
+});
