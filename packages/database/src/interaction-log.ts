@@ -1,8 +1,9 @@
-import { InteractionLogCategory, InteractionLogLevel, InteractionLogSource, type InteractionLogDto, type InteractionLogPageDto, type InteractionLogQuery } from "../../contracts/src/index.ts";
+import { InteractionLogCategory, InteractionLogLevel, InteractionLogSource, type InteractionLogDto, type InteractionLogPageDto, type InteractionLogQuery } from "@living-network/contracts";
 import type { SqlClient, SqlRow } from "./sql.ts";
 
-export type InteractionLogInput = Omit<InteractionLogDto, "id" | "createdAt"> & { id?: string; createdAt?: string };
-export interface InteractionLogRepository { append(input: InteractionLogInput): Promise<InteractionLogDto>; query(query?: InteractionLogQuery): Promise<InteractionLogPageDto>; deleteOlderThan(cutoff: Date): Promise<number>; }
+export type { InteractionLogInput, InteractionLogRepository } from "@living-network/ports";
+import type { InteractionLogInput, InteractionLogRepository } from "@living-network/ports";
+
 
 const SENSITIVE_KEY = /api[-_ ]?key|authorization|cookie|set-cookie|secret|token|password|cipher|encrypted/i;
 const CURSOR_PREFIX = "v1.";
