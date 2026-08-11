@@ -20,18 +20,37 @@ export function resolveCorsOrigin(
   return allowedOrigins.includes(origin) ? origin : undefined;
 }
 
-function readBody(request: IncomingMessage): Promise<Buffer> {
+function bodySizeLimit(pathname: string): number {
+  if (pathname === "/v1/media/chat-images" || pathname === "/v1/media/images") return 12 * 1024 * 1024;
+  if (pathname === "/v1/appearance-settings") return 24 * 1024 * 1024;
+  return 1 * 1024 * 1024;
+}
+
+function readBody(request: IncomingMessage, pathname: string): Promise<Buffer> {
+  const limit = bodySizeLimit(pathname);
+  const contentLength = Number(request.headers["content-length"] ?? "0");
+  if (Number.isFinite(contentLength) && contentLength > limit) {
+    return Promise.reject({ statusCode: 413, code: "PAYLOAD_TOO_LARGE", message: `Request body must be ${limit / (1024 * 1024)}MiB or smaller` });
+  }
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
+    let total = 0;
     request.on("data", (chunk: Buffer | string) => {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      total += buf.byteLength;
+      if (total > limit) {
+        request.destroy();
+        reject({ statusCode: 413, code: "PAYLOAD_TOO_LARGE", message: `Request body must be ${limit / (1024 * 1024)}MiB or smaller` });
+        return;
+      }
+      chunks.push(buf);
     });
     request.on("end", () => resolve(Buffer.concat(chunks)));
     request.on("error", reject);
   });
 }
 
-async function toRequest(request: IncomingMessage, requestId: string, correlationId: string): Promise<{ request: Request; abort: () => void }> {
+async function toRequest(request: IncomingMessage, requestId: string, correlationId: string, pathname: string): Promise<{ request: Request; abort: () => void }> {
   const host = request.headers.host ?? "localhost";
   const url = `http://${host}${request.url ?? "/"}`;
   const headers = new Headers();
@@ -45,7 +64,7 @@ async function toRequest(request: IncomingMessage, requestId: string, correlatio
   request.once("aborted", abort);
   request.once("close", abort);
   const method = request.method ?? "GET";
-  const body = method === "GET" || method === "HEAD" ? undefined : await readBody(request);
+  const body = method === "GET" || method === "HEAD" ? undefined : await readBody(request, pathname);
   const init: RequestInit = { method, headers, signal: controller.signal };
   if (body && body.byteLength > 0) init.body = new Uint8Array(body);
   return { request: new Request(url, init), abort };
@@ -98,16 +117,22 @@ export function createApiServer(
       const requestStartedAt = Date.now();
       const method = request.method ?? "GET";
       const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
-      const converted = await toRequest(request, requestId, correlationId);
+      const converted = await toRequest(request, requestId, correlationId, pathname);
       try {
         const response = await application.handle(converted.request);
         await writeResponse(response, reply);
         application.recordHttpCompletion({ method, pathname, status: reply.statusCode, durationMs: Date.now() - requestStartedAt, requestId, correlationId });
       } finally { converted.abort(); }
-    } catch {
+    } catch (error: unknown) {
       if (!reply.headersSent) {
-        reply.statusCode = 500;
+        const err = error as Record<string, unknown> | null;
+        const isBodyLimit = err !== null && typeof err === "object" && typeof err.statusCode === "number";
+        reply.statusCode = isBodyLimit ? (err!.statusCode as number) : 500;
         reply.setHeader("content-type", "application/json; charset=utf-8");
+        if (isBodyLimit) {
+          reply.end(JSON.stringify({ error: { code: String(err!.code ?? "PAYLOAD_TOO_LARGE"), message: String(err!.message ?? "Request body too large") } }));
+          return;
+        }
       }
       reply.end(JSON.stringify({ error: { code: "INTERNAL_ERROR", message: "Internal server error" } }));
     }
