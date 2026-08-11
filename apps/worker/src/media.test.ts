@@ -684,3 +684,77 @@ test("Fake ComfyUI rejects missing job", async () => {
     /not found/,
   );
 });
+
+test("watchImageJobProgress rejects non-submitted image job", async () => {
+  const { data, repositories } = makeRepositories();
+  const comfy = new FakeComfyUiClient();
+  const coordinator = createBehaviorMediaCoordinator(repositories, comfy, () => createdAt);
+  const action = await coordinator.planAction({
+    id: "not-submitted-action",
+    executionId: data.execution.id,
+    actorCharacterId: character.id,
+    kind: ActionKind.REQUEST_IMAGE,
+    payload: { prompt: "test", workflowVersion: "v@1" },
+  });
+  const queued = await repositories.imageJobs!.getByActionId(action.id);
+  assert.ok(queued);
+  // Don't submit - job is still QUEUED
+  await assert.rejects(
+    (async () => { for await (const _ of coordinator.watchImageJobProgress(queued.id)) {} })(),
+    /not submitted/,
+  );
+});
+
+test("watchImageJobProgress rejects when ComfyUI has no watchProgress", async () => {
+  const { data, repositories } = makeRepositories();
+  const minimalClient = {
+    async submit() { return { externalJobId: "minimal" }; },
+    async getResult() { return { externalJobId: "minimal", mediaRef: "media://x" }; },
+  };
+  const coordinator = createBehaviorMediaCoordinator(repositories, minimalClient, () => createdAt);
+  const action = await coordinator.planAction({
+    id: "no-watch-action",
+    executionId: data.execution.id,
+    actorCharacterId: character.id,
+    kind: ActionKind.REQUEST_IMAGE,
+    payload: { prompt: "test", workflowVersion: "v@1" },
+  });
+  const queued = await repositories.imageJobs!.getByActionId(action.id);
+  assert.ok(queued);
+  await coordinator.submitImageJob(queued.id);
+  await assert.rejects(
+    (async () => { for await (const _ of coordinator.watchImageJobProgress(queued.id)) {} })(),
+    /does not support progress watching/,
+  );
+});
+
+test("watchImageJobProgress passes maxCompletionAttempts option", async () => {
+  const { data, repositories } = makeRepositories();
+  let receivedOptions: unknown;
+  const trackingClient = {
+    async submit() { return { externalJobId: "tracking" }; },
+    async getResult() { return { externalJobId: "tracking", mediaRef: "media://x" }; },
+    async *watchProgress(_id: string, options?: unknown) {
+      receivedOptions = options;
+      yield { externalJobId: "tracking", kind: "completed" as const };
+    },
+  };
+  const coordinator = createBehaviorMediaCoordinator(repositories, trackingClient, () => createdAt);
+  const action = await coordinator.planAction({
+    id: "options-action",
+    executionId: data.execution.id,
+    actorCharacterId: character.id,
+    kind: ActionKind.REQUEST_IMAGE,
+    payload: { prompt: "test", workflowVersion: "v@1" },
+  });
+  const queued = await repositories.imageJobs!.getByActionId(action.id);
+  assert.ok(queued);
+  await coordinator.submitImageJob(queued.id);
+  const events: ComfyUiProgressEvent[] = [];
+  for await (const event of coordinator.watchImageJobProgress(queued.id, {
+    timeoutMs: 5000,
+    maxCompletionAttempts: 3,
+    completionDelayMs: 1000,
+  })) events.push(event);
+  assert.equal(events.length, 1);
+});
