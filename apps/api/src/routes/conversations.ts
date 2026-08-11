@@ -7,8 +7,8 @@ import {
   parseSwitchRequest,
 } from "../parsers.ts";
 import { ConversationOrchestrator } from "../conversation-orchestrator.ts";
-import type { ConversationReplyContext } from "../conversation-orchestrator.ts";
-import { promptForExplicitChatImageIntent } from "../auto-image-intent.ts";
+import { createAutoImageAfterReply } from "../auto-image-after-reply.ts";
+
 import type { AutomaticReplyTrace } from "../auto-reply.ts";
 import {
   listConversations,
@@ -18,7 +18,7 @@ import {
   switchActorCharacter,
   retryAutomaticReply,
 } from "../use-cases/conversations.ts";
-import { requestConversationImage as requestConversationImageUseCase, requireConversationImageStore } from "../use-cases/request-conversation-image.ts";
+
 
 async function parseBody(request: Request): Promise<unknown> {
   try { return await request.json(); } catch { throw new ApiError(400, "BAD_REQUEST", "Request body must be valid JSON"); }
@@ -103,29 +103,7 @@ export async function handleConversations(
     try {
       const orchestrator = new ConversationOrchestrator(ctx.store, ctx.provider, {
         ...ctx.conversationOptions,
-        afterReplySaved: async (context: ConversationReplyContext) => {
-          if (!context.reply.inserted || context.conversation.conversation.type !== "PRIVATE") return;
-          const settings = ctx.store.comfyUiSettings === undefined ? undefined : await ctx.store.comfyUiSettings.get();
-          if (!settings?.autoImageIntentEnabled || !settings.defaultWorkflowVersion) return;
-          const userContent = context.latestUserMessage?.text;
-          const prompt = promptForExplicitChatImageIntent(userContent, context.reply.message.text ?? "");
-          if (!prompt) return;
-          const userId = context.latestUserMessage?.authorCharacterId;
-          if (!userId || userId === context.ai.id) return;
-          try {
-            const imgStore = requireConversationImageStore(ctx.store);
-            await requestConversationImageUseCase(imgStore, context.conversation.conversation.id, {
-              actorCharacterId: context.ai.id,
-              recipientCharacterId: userId,
-              prompt,
-              workflowVersion: settings.defaultWorkflowVersion,
-              createdAt: context.reply.message.createdAt,
-              idempotencyKey: `auto-image:${context.reply.message.id}`,
-            });
-          } catch {
-            // auto-image is best-effort; do not fail the stream
-          }
-        },
+        afterReplySaved: createAutoImageAfterReply(ctx),
       });
       return createSseResponse(orchestrator.streamReply(decodeURIComponent(streamPath[1] ?? ""), characterId));
     } catch (error) {

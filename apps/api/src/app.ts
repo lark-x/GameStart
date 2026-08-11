@@ -17,7 +17,7 @@ import type {
 } from "./conversation-orchestrator.ts";
 import { ApiError, errorResponse, jsonResponse, withHeaders, type ApiErrorCode } from "./helpers.ts";
 import type { HandlerContext } from "./context.ts";
-import type { AutomaticReplyState } from "./auto-reply.ts";
+import type { AutomaticReplyState, RetryAutomaticReplyState } from "./auto-reply.ts";
 import { InteractionLogging } from "./interaction-logging.ts";
 import { ApiMediaStore } from "./media-store.ts";
 import type {
@@ -76,8 +76,7 @@ import * as imageJobsUc from "./use-cases/image-jobs.ts";
 import * as momentsUc from "./use-cases/moments.ts";
 import * as stickerPacksUc from "./use-cases/sticker-packs.ts";
 import { ConversationOrchestrator } from "./conversation-orchestrator.ts";
-import type { ConversationReplyContext } from "./conversation-orchestrator.ts";
-import { promptForExplicitChatImageIntent } from "./auto-image-intent.ts";
+import { createAutoImageAfterReply } from "./auto-image-after-reply.ts";
 import { requestConversationImage as requestConversationImageUseCase, requireConversationImageStore } from "./use-cases/request-conversation-image.ts";
 import { handleConversations } from "./routes/conversations.ts";
 import { handleWorldContent } from "./routes/world-content.ts";
@@ -226,25 +225,7 @@ export class ApiApplication {
     try {
     const orchestrator = new ConversationOrchestrator(ctx.store, ctx.provider, {
       ...ctx.conversationOptions,
-      afterReplySaved: async (context: ConversationReplyContext) => {
-        if (!context.reply.inserted || context.conversation.conversation.type !== "PRIVATE") return;
-        const settings = ctx.store.comfyUiSettings === undefined ? undefined : await ctx.store.comfyUiSettings.get();
-        if (!settings?.autoImageIntentEnabled || !settings.defaultWorkflowVersion) return;
-        const userContent = context.latestUserMessage?.text;
-        const prompt = promptForExplicitChatImageIntent(userContent, context.reply.message.text ?? "");
-        if (!prompt) return;
-        const userId = context.latestUserMessage?.authorCharacterId;
-        if (!userId || userId === context.ai.id) return;
-        try {
-          const imgStore = requireConversationImageStore(ctx.store);
-          await requestConversationImageUseCase(imgStore, context.conversation.conversation.id, {
-            actorCharacterId: context.ai.id, recipientCharacterId: userId, prompt,
-            workflowVersion: settings.defaultWorkflowVersion,
-            createdAt: context.reply.message.createdAt,
-            idempotencyKey: `auto-image:${context.reply.message.id}`,
-          });
-        } catch { /* best-effort */ }
-      },
+      afterReplySaved: createAutoImageAfterReply(ctx),
     });
     return createSseResponse(orchestrator.streamReply(conversationId, characterId));
     } catch (error) {
@@ -323,150 +304,133 @@ export class ApiApplication {
 
   // --- Worlds ---
   public async listWorlds(): Promise<StoryWorldDto[]> {
-    return worldsUc.listWorlds(this.store as never);
+    return worldsUc.listWorlds(this.store);
   }
 
   public async createStoryWorld(input: CreateStoryWorldRequest): Promise<StoryWorldDto> {
-    return worldsUc.createWorld(this.store as never, input);
+    return worldsUc.createWorld(this.store, input);
   }
 
   public async updateStoryWorld(id: string, input: UpdateStoryWorldRequest): Promise<StoryWorldDto> {
-    return worldsUc.updateWorld(this.store as never, id, input);
+    return worldsUc.updateWorld(this.store, id, input);
   }
 
   // --- Characters ---
   public async listCharacters(storyWorldId?: string): Promise<CharacterDto[]> {
-    return charactersUc.listCharacters(this.store as never, storyWorldId);
+    return charactersUc.listCharacters(this.store, storyWorldId);
   }
 
   public async createCharacter(input: CreateCharacterRequest): Promise<CharacterDto> {
-    return charactersUc.createCharacter(this.store as never, input);
+    return charactersUc.createCharacter(this.store, input);
   }
 
   public async updateCharacter(id: string, input: UpdateCharacterRequest): Promise<CharacterDto> {
-    return charactersUc.updateCharacter(this.store as never, id, input);
+    return charactersUc.updateCharacter(this.store, id, input);
   }
 
   public async getCharacterVisualIdentity(characterId: string): Promise<CharacterVisualIdentityDto> {
-    return charactersUc.getCharacterVisualIdentity(this.store as never, characterId);
+    return charactersUc.getCharacterVisualIdentity(this.store, characterId);
   }
 
   // --- Relationships ---
   public async listRelationships(storyWorldId: string): Promise<RelationshipEdgeDto[]> {
-    return relationshipsUc.listRelationships(this.store as never, storyWorldId);
+    return relationshipsUc.listRelationships(this.store, storyWorldId);
   }
 
   public async createRelationship(input: CreateRelationshipEdgeRequest): Promise<RelationshipEdgeDto> {
-    return relationshipsUc.createRelationship(this.store as never, input);
+    return relationshipsUc.createRelationship(this.store, input);
   }
 
   public async updateRelationship(id: string, input: UpdateRelationshipEdgeRequest): Promise<RelationshipEdgeDto> {
-    return relationshipsUc.updateRelationship(this.store as never, id, input);
+    return relationshipsUc.updateRelationship(this.store, id, input);
   }
 
   // --- World Events ---
   public async createWorldEvent(input: CreateWorldEventDefinitionRequest): Promise<WorldEventDefinitionDto> {
-    return worldEventsUc.createWorldEvent(this.store as never, input);
+    return worldEventsUc.createWorldEvent(this.store, input);
   }
 
   public async updateWorldEvent(id: string, input: UpdateWorldEventDefinitionRequest): Promise<WorldEventDefinitionDto> {
-    return worldEventsUc.updateWorldEvent(this.store as never, id, input);
+    return worldEventsUc.updateWorldEvent(this.store, id, input);
   }
 
   // --- World Lore ---
   public async listWorldLoreEntries(storyWorldId: string, query?: string): Promise<WorldLoreEntryDto[]> {
-    return worldsUc.listWorldLoreEntries(this.store as never, storyWorldId, query);
+    return worldsUc.listWorldLoreEntries(this.store, storyWorldId, query);
   }
 
   public async createWorldLoreEntry(input: CreateWorldLoreEntryRequest): Promise<WorldLoreEntryDto> {
-    return worldsUc.createWorldLoreEntry(this.store as never, input);
+    return worldsUc.createWorldLoreEntry(this.store, input);
   }
 
   public async updateWorldLoreEntry(id: string, input: UpdateWorldLoreEntryRequest): Promise<WorldLoreEntryDto> {
-    return worldsUc.updateWorldLoreEntry(this.store as never, id, input);
+    return worldsUc.updateWorldLoreEntry(this.store, id, input);
   }
 
   public async deleteWorldLoreEntry(id: string): Promise<void> {
-    return worldsUc.deleteWorldLoreEntry(this.store as never, id);
+    return worldsUc.deleteWorldLoreEntry(this.store, id);
   }
 
   // --- Image Assets & Workflows ---
   public async listImageAssets(storyWorldId: string): Promise<ImageAssetDto[]> {
-    return imageJobsUc.listImageAssets(this.store as never, storyWorldId);
+    return imageJobsUc.listImageAssets(this.store, storyWorldId);
   }
 
   public async importImageWorkflow(input: { id: string; version: string; workflow: import("../../../packages/domain/src/index.ts").JsonObject; positivePromptPath?: string[]; negativePromptPath?: string[]; seedPath?: string[] }): Promise<ImageWorkflowTemplateDto> {
-    return workflowUc.importImageWorkflow(this.store as never, input);
+    return workflowUc.importImageWorkflow(this.store, input);
   }
 
   public async requestConversationImage(conversationId: string, input: import("../../../packages/contracts/src/index.ts").RequestConversationImageRequest): Promise<ImageJobDto> {
-    return requestConversationImageUseCase(this.store as never, conversationId, input);
+    return requestConversationImageUseCase(requireConversationImageStore(this.store), conversationId, input);
   }
 
   // --- Stickers ---
   public async listStickers(packId: string): Promise<StickerDto[]> {
-    return stickerPacksUc.listStickers(this.store as never, packId);
+    return stickerPacksUc.listStickers(this.store, packId);
   }
 
   public async appendStickersToPack(packId: string, inputs: readonly CreateStickerInput[]): Promise<StickerPackImportResultDto> {
-    const ctx = this.getHandlerContext();
-    const pack = await ctx.store.stickerPacks?.getById(packId);
-    if (!pack) throw new ApiError(404, "NOT_FOUND", "Sticker pack not found");
-    const stickers = inputs.map((sticker) => ({
-      id: sticker.id,
-      label: sticker.label,
-      mediaRef: sticker.mediaRef,
-      createdAt: new Date().toISOString(),
-      ...(sticker.tags === undefined ? {} : { tags: sticker.tags }),
-    }));
-    return stickerPacksUc.importStickerPack(ctx.store as never, {
-      id: packId,
-      storyWorldId: pack.storyWorldId,
-      name: pack.name,
-      createdAt: new Date().toISOString(),
-      
-      stickers,
-    });
+    return stickerPacksUc.appendStickersToPack(this.store, packId, inputs);
   }
 
   // --- Appearance Settings ---
   public async getAppearanceSettings(ownerKey: string): Promise<AppearanceSettingsDto> {
-    return settingsUc.getAppearanceSettings(this.store as never, ownerKey);
+    return settingsUc.getAppearanceSettings(this.store, ownerKey);
   }
 
   public async saveAppearanceSettings(ownerKey: string, input: UpdateAppearanceSettingsRequest): Promise<AppearanceSettingsDto> {
-    return settingsUc.saveAppearanceSettings(this.store as never, ownerKey, input);
+    return settingsUc.saveAppearanceSettings(this.store, ownerKey, input);
   }
 
   // --- LLM Provider Profiles ---
   public async listLlmProviderProfiles(): Promise<LlmProviderProfileDto[]> {
-    return settingsUc.listLlmProviderProfiles(this.store as never);
+    return settingsUc.listLlmProviderProfiles(this.store);
   }
 
   public async saveLlmProviderProfile(input: SaveLlmProviderProfileRequest): Promise<LlmProviderProfileDto> {
-    return settingsUc.saveLlmProviderProfile(this.store as never, input, this.secretCipher);
+    return settingsUc.saveLlmProviderProfile(this.store, input, this.secretCipher);
   }
 
   public async deleteLlmProviderProfile(id: string): Promise<void> {
-    return settingsUc.deleteLlmProviderProfile(this.store as never, id);
+    return settingsUc.deleteLlmProviderProfile(this.store, id);
   }
 
   // --- ComfyUI Settings ---
   public async getComfyUiSettings(): Promise<ComfyUiSettingsDto> {
-    return settingsUc.getComfyUiSettings(this.store as never);
+    return settingsUc.getComfyUiSettings(this.store);
   }
 
   public async saveComfyUiSettings(input: UpdateComfyUiSettingsRequest): Promise<ComfyUiSettingsDto> {
-    return settingsUc.saveComfyUiSettings(this.store as never, input);
+    return settingsUc.saveComfyUiSettings(this.store, input);
   }
 
   // --- Messages ---
   public async listMessages(conversationId: string, characterId: string): Promise<MessageDto[]> {
-    return conversationsUc.listMessages(this.store as never, conversationId, characterId);
+    return conversationsUc.listMessages(this.store, conversationId, characterId);
   }
 
-  public async retryAutomaticReply(conversationId: string, readerCharacterId: string, sourceMessageId: string | undefined, trace: AutomaticReplyTrace): Promise<AutomaticReplyState> {
-    return conversationsUc.retryAutomaticReply(this.getHandlerContext(), conversationId, readerCharacterId, sourceMessageId, trace) as Promise<AutomaticReplyState>;
+  public async retryAutomaticReply(conversationId: string, readerCharacterId: string, sourceMessageId: string | undefined, trace: AutomaticReplyTrace): Promise<RetryAutomaticReplyState> {
+    return conversationsUc.retryAutomaticReply(this.getHandlerContext(), conversationId, readerCharacterId, sourceMessageId, trace);
   }
 
   // --- Creator Dispatch ---
