@@ -44,24 +44,9 @@ importers:
 
   apps/web:
     dependencies:
-      '@living-network/ai':
-        specifier: workspace:*
-        version: link:../../packages/ai
-      '@living-network/config':
-        specifier: workspace:*
-        version: link:../../packages/config
       '@living-network/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@living-network/database':
-        specifier: workspace:*
-        version: link:../../packages/database
-      '@living-network/domain':
-        specifier: workspace:*
-        version: link:../../packages/domain
-      '@living-network/ports':
-        specifier: workspace:*
-        version: link:../../packages/ports
       '@lucide/vue':
         specifier: ^1.29.0
         version: 1.29.0(vue@3.5.40(typescript@5.9.3))
