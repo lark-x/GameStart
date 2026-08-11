@@ -60,7 +60,7 @@ function creatorDispatchId(batchId: string, candidateId: string): string {
 }
 
 async function enrichCreatorCandidateRisks(
-  ctx: HandlerContext,
+  _ctx: HandlerContext,
   candidates: readonly CreatorEventCandidateDto[],
   store: ApiStore,
 ): Promise<CreatorEventCandidateDto[]> {
@@ -128,7 +128,7 @@ function creatorDispatchAvailable(store: ApiStore, enabled: boolean): boolean {
 }
 
 async function aggregateCreatorDispatchBatch(
-  ctx: HandlerContext,
+  _ctx: HandlerContext,
   store: CreatorScanStore & { dispatchRequests: NonNullable<ApiStore["dispatchRequests"]> },
   batchId: string,
 ): Promise<EventDispatchBatchDto> {

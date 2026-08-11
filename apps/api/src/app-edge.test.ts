@@ -3,7 +3,7 @@ import test from "node:test";
 
 import type { ChatProvider } from "@living-network/ai";
 import { createDevelopmentRepositories } from "./dev-seed.ts";
-import { ApiApplication, ApiError, createApiStore, type ApiStore } from "./index.ts";
+import { ApiApplication, ApiError, type ApiStore } from "./index.ts";
 
 async function status(application: ApiApplication, path: string, init?: RequestInit): Promise<number> {
   return (await application.handle(new Request(`http://localhost${path}`, init))).status;

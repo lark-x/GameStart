@@ -56,7 +56,7 @@ test("outbox repository publishes, retries, and validates SQL rows and limits", 
   };
   const statements: string[] = [];
   const client = {
-    async query(text: string, values: readonly unknown[] = []) {
+    async query(text: string, _values: readonly unknown[] = []) {
       statements.push(text);
       if (text.includes("WHERE id = $1")) return { rows: [row] };
       if (text.includes("WHERE published_at IS NULL")) return { rows: [row] };

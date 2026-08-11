@@ -3,8 +3,6 @@ import {
   MessageKind,
   createMessage,
   type Character,
-  type ConversationAggregate,
-  type EventExecution,
   type Message,
 } from "@living-network/domain";
 import type { ChatMessage, ChatProvider } from "@living-network/ai";
