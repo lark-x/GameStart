@@ -101,19 +101,36 @@ export async function startPersistentWorker(
       if (imageJobPump) await imageJobPump.runOnce();
     };
 
-    const timer = setInterval(
-      () =>
-        void tick().catch((error: unknown) => {
+    let stopping = false;
+    let nextTimer: ReturnType<typeof setTimeout> | undefined;
+    let currentTick: Promise<void> | undefined;
+
+    const scheduleNext = (): void => {
+      if (stopping) return;
+      nextTimer = setTimeout(() => {
+        currentTick = tick().catch((error: unknown) => {
           console.error("worker tick failed", error);
-        }),
-      tickMs,
-    );
-    timer.unref();
-    await tick();
+        }).finally(() => {
+          currentTick = undefined;
+          scheduleNext();
+        });
+      }, tickMs);
+      nextTimer.unref();
+    };
+
+    // Initial tick, then schedule subsequent ticks
+    currentTick = tick().catch((error: unknown) => {
+      console.error("worker tick failed", error);
+    }).finally(() => {
+      currentTick = undefined;
+      scheduleNext();
+    });
 
     return {
       async stop(): Promise<void> {
-        clearInterval(timer);
+        stopping = true;
+        if (nextTimer !== undefined) clearTimeout(nextTimer);
+        if (currentTick !== undefined) await currentTick.catch(() => undefined);
         await bestEffortLog(logger, { event: "worker.lifecycle", phase: "stop", outcome: "BEGIN", correlationId: "worker:" + workerId, workerId });
         await occurrenceWorker.close();
         await dispatchPump.heartbeat("STOPPED");
