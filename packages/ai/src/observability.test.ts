@@ -66,7 +66,7 @@ test("malicious observation values cannot make the hook throw", async () => {
 });
 
 import { ActiveProfileChatProvider } from "./profile-resolver.ts";
-import { LlmProviderProtocol, type LlmProviderProfile } from "../../domain/src/index.ts";
+import { LlmProviderProtocol, type LlmProviderProfile } from "@living-network/domain";
 const profile: LlmProviderProfile={id:"p1",name:"profile-name",protocol:LlmProviderProtocol.OPENAI_COMPATIBLE,baseUrl:"https://x.test",model:"model-name",timeoutMs:1000,maxTokens:10,temperature:0,encryptedApiKey:"bad",encryptionIv:"bad",isActive:true,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
 const repo=(active?: LlmProviderProfile)=>({list:async()=>[],getById:async()=>undefined,getActive:async()=>active,save:async()=>{},delete:async()=>{}});
 const fake={complete:async()=>({id:"f",model:"fallback",content:"fallback"}),stream:async function*(){yield {content:"fallback"};}};

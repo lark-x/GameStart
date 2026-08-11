@@ -13,7 +13,7 @@ import {
   createStoryWorld,
   createWorldEventDefinition,
   transitionOccurrence,
-} from "../../domain/src/index.ts";
+} from "@living-network/domain";
 import { createInMemoryRepositories } from "./index.ts";
 
 const world = createStoryWorld({

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { ChatProvider } from "../../../packages/ai/src/index.ts";
+import type { ChatProvider } from "@living-network/ai";
 import {
   CharacterRole,
   EventExecutionStatus,
@@ -14,8 +14,8 @@ import {
   createScheduledOccurrence,
   createStoryWorld,
   createWorldEventDefinition,
-} from "../../../packages/domain/src/index.ts";
-import { createInMemoryRepositories } from "../../../packages/database/src/index.ts";
+} from "@living-network/domain";
+import { createInMemoryRepositories } from "@living-network/database";
 import { ProactiveMessageCoordinator } from "./proactive.ts";
 
 test("proactive coordinator persists idempotent replies and exposes image intent", async () => {

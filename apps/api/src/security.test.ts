@@ -7,7 +7,7 @@ import {
   createActorSession,
   createCharacter,
   createStoryWorld,
-} from "../../../packages/domain/src/index.ts";
+} from "@living-network/domain";
 import { ApiApplication, createApiStore } from "./index.ts";
 
 test("trusted actor mode rejects missing and mismatched identity headers", async () => {

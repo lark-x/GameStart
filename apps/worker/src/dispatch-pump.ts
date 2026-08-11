@@ -1,7 +1,7 @@
 import type {
   DispatchRequestRepository,
   WorkerHeartbeat,
-} from "../../../packages/database/src/dispatch.ts";
+} from "@living-network/database";
 import type { TaskQueue } from "./queue.ts";
 import type { WorkerOccurrenceTask } from "./runtime.ts";
 import { bestEffortLog, type WorkerLogger } from "./interaction-log.ts";

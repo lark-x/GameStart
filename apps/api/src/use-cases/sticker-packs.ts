@@ -1,7 +1,7 @@
 import {
   createSticker as createStickerDomain,
   createStickerPack as createStickerPackDomain,
-} from "../../../../packages/domain/src/index.ts";
+} from "@living-network/domain";
 import type { ApiStore } from "../context.ts";
 import { ApiError } from "../helpers.ts";
 import { toStickerPackDto, toStickerDto, toStickerPackImportResult } from "../mappers.ts";
@@ -11,7 +11,7 @@ import type {
   StickerPackDto,
   StickerDto,
   StickerPackImportResultDto,
-} from "../../../../packages/contracts/src/index.ts";
+} from "@living-network/contracts";
 
 export async function listStickerPacks(store: ApiStore, storyWorldId: string): Promise<StickerPackDto[]> {
   const stickerStore = requireStickerStore(store);

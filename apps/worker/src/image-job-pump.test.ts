@@ -19,8 +19,8 @@ import {
   createStoryWorld,
   createWorldEventDefinition,
   ConversationType,
-} from "../../../packages/domain/src/index.ts";
-import { createInMemoryRepositories, InMemoryInteractionLogRepository } from "../../../packages/database/src/index.ts";
+} from "@living-network/domain";
+import { createInMemoryRepositories, InMemoryInteractionLogRepository } from "@living-network/database";
 import { ComfyUiError, type ComfyUiProgressClient, type ComfyUiSubmitRequest } from "./media.ts";
 import { createImageJobPump } from "./image-job-pump.ts";
 

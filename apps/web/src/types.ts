@@ -21,7 +21,7 @@ import type {
   WorldEventDefinitionDto,
   InteractionLogDto, InteractionLogPageDto, ProviderConnectionTestResultDto,
   WorldLoreEntryDto,
-} from "../../../packages/contracts/src/index.ts";
+} from "@living-network/contracts";
 
 export type ApiWorld = StoryWorldDto;
 export type ApiAppearanceSettings = AppearanceSettingsDto;

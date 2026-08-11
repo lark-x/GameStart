@@ -1,4 +1,4 @@
-import { LlmProviderProtocol, type LlmProviderProfile } from "../../domain/src/index.ts";
+import { LlmProviderProtocol, type LlmProviderProfile } from "@living-network/domain";
 import { AnthropicProvider } from "./anthropic.ts";
 import { OpenAICompatibleProvider, type ChatProvider, type FetchImplementation } from "./provider.ts";
 

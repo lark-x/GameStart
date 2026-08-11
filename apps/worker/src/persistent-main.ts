@@ -5,8 +5,8 @@ import {
   createSqlInteractionLogRepository,
   createPostgresSqlClient,
   createSqlRepositories,
-} from "../../../packages/database/src/index.ts";
-import { loadAppConfig, type EnvironmentInput } from "../../../packages/config/src/index.ts";
+} from "@living-network/database";
+import { loadAppConfig, type EnvironmentInput } from "@living-network/config";
 import { BullMqTaskQueue, BullMqTaskWorker } from "./queue.ts";
 import { createDispatchPump } from "./dispatch-pump.ts";
 import { OutboxPublisher, type OutboxQueueTask } from "./outbox-publisher.ts";

@@ -14,8 +14,8 @@ import {
   createStoryWorld,
   createWorldEventDefinition,
   type EventExecution,
-} from "../../../packages/domain/src/index.ts";
-import { createInMemoryRepositories } from "../../../packages/database/src/index.ts";
+} from "@living-network/domain";
+import { createInMemoryRepositories } from "@living-network/database";
 import { createWorkerRuntime, processWorkerOccurrence } from "./runtime.ts";
 
 const createdAt = "2026-08-09T00:00:00.000Z";

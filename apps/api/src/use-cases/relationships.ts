@@ -1,6 +1,6 @@
 import {
   createRelationshipEdge as createRelationshipEdgeDomain,
-} from "../../../../packages/domain/src/index.ts";
+} from "@living-network/domain";
 import type { ApiStore } from "../context.ts";
 import { ApiError } from "../helpers.ts";
 import { toRelationshipEdgeDto } from "../mappers.ts";
@@ -8,7 +8,7 @@ import type {
   CreateRelationshipEdgeRequest,
   UpdateRelationshipEdgeRequest,
   RelationshipEdgeDto,
-} from "../../../../packages/contracts/src/index.ts";
+} from "@living-network/contracts";
 
 export async function listRelationships(store: ApiStore, storyWorldId: string): Promise<RelationshipEdgeDto[]> {
   if (!(await store.storyWorlds.getById(storyWorldId))) throw new ApiError(404, "NOT_FOUND", "Story world not found");

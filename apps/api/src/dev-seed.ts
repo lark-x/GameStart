@@ -18,11 +18,11 @@ import {
   createStickerPack,
   createStoryWorld,
   type JsonObject,
-} from "../../../packages/domain/src/index.ts";
+} from "@living-network/domain";
 import {
   createInMemoryRepositories,
   type DomainRepositories,
-} from "../../../packages/database/src/index.ts";
+} from "@living-network/database";
 
 const createdAt = "2026-08-05T00:00:00.000Z";
 

@@ -1,7 +1,7 @@
 import {
   createStoryWorld as createStoryWorldDomain,
   createWorldLoreEntry as createWorldLoreEntryDomain,
-} from "../../../../packages/domain/src/index.ts";
+} from "@living-network/domain";
 import type { ApiStore } from "../context.ts";
 import { ApiError } from "../helpers.ts";
 import {
@@ -23,7 +23,7 @@ import type {
   WorldLoreEntryDto,
   CreateWorldLoreEntryRequest,
   UpdateWorldLoreEntryRequest,
-} from "../../../../packages/contracts/src/index.ts";
+} from "@living-network/contracts";
 
 export async function listWorlds(store: ApiStore): Promise<StoryWorldDto[]> {
   return (await store.storyWorlds.list()).map(toWorldDto);

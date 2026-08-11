@@ -1,7 +1,7 @@
 import {
   ProviderError,
   type ChatDelta,
-} from "../../../packages/ai/src/index.ts";
+} from "@living-network/ai";
 
 export type ApiErrorCode =
   | "UNAUTHORIZED"

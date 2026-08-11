@@ -17,8 +17,8 @@ import {
   type ImageJob,
   type JsonObject,
   type MomentDraft,
-} from "../../../packages/domain/src/index.ts";
-import { assertIsoTimestamp } from "../../../packages/domain/src/validation.ts";
+} from "@living-network/domain";
+import { assertIsoTimestamp } from "@living-network/domain";
 import type {
   BehaviorActionRepository,
   DomainRepositories,
@@ -27,7 +27,7 @@ import type {
   MomentDraftRepository,
   CharacterVisualIdentityRepository,
   ImageWorkflowTemplateRepository,
-} from "../../../packages/database/src/index.ts";
+} from "@living-network/database";
 
 export interface ComfyUiSubmitRequest {
   jobId: string;
@@ -86,7 +86,7 @@ export interface ImageWorkflowResolver {
 export type RepositoryImageWorkflowResolverRepositories = {
   readonly characterVisualIdentities: CharacterVisualIdentityRepository;
   readonly imageWorkflowTemplates: ImageWorkflowTemplateRepository;
-  readonly behaviorActions?: import("../../../packages/database/src/index.ts").BehaviorActionRepository;
+  readonly behaviorActions?: import("@living-network/database").BehaviorActionRepository;
 };
 
 function splitWorkflowVersion(value: string): { id: string; version: string } {

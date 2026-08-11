@@ -48,14 +48,14 @@ import {
   type StoryWorld,
   CharacterRole,
   MessageKind,
-} from "../../../packages/domain/src/index.ts";
+} from "@living-network/domain";
 import {
   ProviderError,
   SecretCipher,
   type ChatDelta,
   type ChatProvider,
-} from "../../../packages/ai/src/index.ts";
-import { ImageAssetCategory } from "../../../packages/contracts/src/index.ts";
+} from "@living-network/ai";
+import { ImageAssetCategory } from "@living-network/contracts";
 import type {
   ActorSessionDto,
   ActorSessionSwitchRequest,
@@ -118,18 +118,18 @@ import type {
   InteractionLogQuery,
   ProviderConnectionTestResultDto,
   ChatTraceContext,
-} from "../../../packages/contracts/src/index.ts";
+} from "@living-network/contracts";
 import { ApiMediaStore, type StoredMedia } from "./media-store.ts";
 import {
   createInMemoryRepositories,
   type DomainRepositories,
   type InMemoryRepositorySeed,
   type ExecutionDispatchRequest,
-} from "../../../packages/database/src/index.ts";
-import { InMemoryInteractionLogRepository, previewMessage, type InteractionLogRepository } from "../../../packages/database/src/interaction-log.ts";
-import { createProviderFromProfile } from "../../../packages/ai/src/profile-provider.ts";
+} from "@living-network/database";
+import { InMemoryInteractionLogRepository, previewMessage, type InteractionLogRepository } from "@living-network/database";
+import { createProviderFromProfile } from "@living-network/ai";
 import { InteractionLogging } from "./interaction-logging.ts";
-import { encodeInteractionLogCursor } from "../../../packages/database/src/interaction-log.ts";
+import { encodeInteractionLogCursor } from "@living-network/database";
 import { ConversationOrchestrator } from "./conversation-orchestrator.ts";
 import type { ConversationOrchestratorOptions, ConversationReply, ConversationReplyContext, ResolvedMessageMedia } from "./conversation-orchestrator.ts";
 import { assistantReplyId, automaticReplyFlightKey, findEligibleAi, isEligibleSource, type AutomaticReplyState, type AutomaticReplyTrace, type RetryAutomaticReplyState } from "./auto-reply.ts";
@@ -237,7 +237,7 @@ function toMomentInteractionDto(interaction: MomentInteraction): MomentInteracti
 }
 
 function toCharacterVisualIdentityDto(
-  identity: import("../../../packages/domain/src/index.ts").CharacterVisualIdentity,
+  identity: import("@living-network/domain").CharacterVisualIdentity,
 ): CharacterVisualIdentityDto {
   return {
     ...identity,
@@ -247,7 +247,7 @@ function toCharacterVisualIdentityDto(
 }
 
 function toImageWorkflowTemplateDto(
-  template: import("../../../packages/domain/src/index.ts").ImageWorkflowTemplate,
+  template: import("@living-network/domain").ImageWorkflowTemplate,
 ): ImageWorkflowTemplateDto {
   return {
     id: template.id,
@@ -262,14 +262,14 @@ function toImageWorkflowTemplateDto(
 }
 
 function toImageJobDto(
-  job: import("../../../packages/domain/src/index.ts").ImageJob,
+  job: import("@living-network/domain").ImageJob,
 ): ImageJobDto {
   return { ...job };
 }
 
 function toImageAssetDto(
-  job: import("../../../packages/domain/src/index.ts").ImageJob,
-  action: import("../../../packages/domain/src/index.ts").BehaviorAction,
+  job: import("@living-network/domain").ImageJob,
+  action: import("@living-network/domain").BehaviorAction,
 ): ImageAssetDto {
   if (job.mediaRef === undefined) {
     throw new ApiError(500, "INTERNAL_ERROR", "Completed image job is missing media");
@@ -304,20 +304,20 @@ function toImageAssetDto(
 }
 
 function toStickerPackDto(
-  pack: import("../../../packages/domain/src/index.ts").StickerPack,
+  pack: import("@living-network/domain").StickerPack,
 ): StickerPackDto {
   return { ...pack };
 }
 
 function toStickerDto(
-  sticker: import("../../../packages/domain/src/index.ts").Sticker,
+  sticker: import("@living-network/domain").Sticker,
 ): StickerDto {
   return { ...sticker, tags: [...sticker.tags] };
 }
 
 function toStickerPackImportResult(
-pack: import("../../../packages/domain/src/index.ts").StickerPack,
-stickers: readonly import("../../../packages/domain/src/index.ts").Sticker[],
+pack: import("@living-network/domain").StickerPack,
+stickers: readonly import("@living-network/domain").Sticker[],
 ): StickerPackImportResultDto {
 return { pack: toStickerPackDto(pack), stickers: stickers.map(toStickerDto) };
 }

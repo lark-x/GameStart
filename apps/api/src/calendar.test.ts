@@ -11,7 +11,7 @@ import {
   createScheduledOccurrence,
   createStoryWorld,
   createWorldEventDefinition,
-} from "../../../packages/domain/src/index.ts";
+} from "@living-network/domain";
 import { ApiApplication, createApiStore } from "./index.ts";
 
 const world = createStoryWorld({

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { ChatProvider } from "../../../packages/ai/src/index.ts";
+import type { ChatProvider } from "@living-network/ai";
 import { createDevelopmentRepositories } from "./dev-seed.ts";
 import { ApiApplication, ApiError, createApiStore, type ApiStore } from "./index.ts";
 

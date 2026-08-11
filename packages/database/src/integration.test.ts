@@ -5,7 +5,7 @@ import {
   LlmProviderProtocol,
   createComfyUiSettings,
   createLlmProviderProfile,
-} from "../../domain/src/index.ts";
+} from "@living-network/domain";
 import { createInMemoryRepositories } from "./index.ts";
 
 const timestamp = "2026-08-09T00:00:00.000Z";

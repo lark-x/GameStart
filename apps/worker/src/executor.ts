@@ -12,8 +12,8 @@ import {
   type JsonObject,
   type ProactiveMessageBudget,
   type ScheduledOccurrence,
-} from "../../../packages/domain/src/index.ts";
-import { assertIsoTimestamp } from "../../../packages/domain/src/validation.ts";
+} from "@living-network/domain";
+import { assertIsoTimestamp } from "@living-network/domain";
 import type {
   CharacterPlanRepository,
   DomainRepositories,
@@ -21,7 +21,7 @@ import type {
   ProactiveMessageBudgetRepository,
   ScheduledOccurrenceRepository,
   WorldEventDefinitionRepository,
-} from "../../../packages/database/src/index.ts";
+} from "@living-network/database";
 
 export type ExecutionCoordinatorRepositories = DomainRepositories & {
   readonly worldEventDefinitions: WorldEventDefinitionRepository;

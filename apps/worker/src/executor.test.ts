@@ -17,8 +17,8 @@ import {
   createScheduledOccurrence,
   createStoryWorld,
   createWorldEventDefinition,
-} from "../../../packages/domain/src/index.ts";
-import { createInMemoryRepositories } from "../../../packages/database/src/index.ts";
+} from "@living-network/domain";
+import { createInMemoryRepositories } from "@living-network/database";
 import {
   ExecutionStartResultKind,
   createEventExecutionCoordinator,

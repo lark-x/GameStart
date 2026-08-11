@@ -1,4 +1,4 @@
-import { DEFAULT_APPEARANCE_OWNER_KEY } from "../../../../packages/domain/src/index.ts";
+import { DEFAULT_APPEARANCE_OWNER_KEY } from "@living-network/domain";
 import type { HandlerContext } from "../context.ts";
 import { ApiError, jsonResponse } from "../helpers.ts";
 import {

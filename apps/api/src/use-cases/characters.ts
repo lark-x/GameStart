@@ -1,6 +1,6 @@
 import {
   createCharacter as createCharacterDomain,
-} from "../../../../packages/domain/src/index.ts";
+} from "@living-network/domain";
 import type { ApiStore } from "../context.ts";
 import { ApiError } from "../helpers.ts";
 import { toCharacterDto, toCharacterVisualIdentityDto } from "../mappers.ts";
@@ -10,7 +10,7 @@ import type {
   UpdateCharacterRequest,
   CharacterDto,
   CharacterVisualIdentityDto,
-} from "../../../../packages/contracts/src/index.ts";
+} from "@living-network/contracts";
 
 export async function listCharacters(store: ApiStore, storyWorldId?: string): Promise<CharacterDto[]> {
   return (await store.characters.listByStoryWorld(storyWorldId ?? undefined)).map(toCharacterDto);

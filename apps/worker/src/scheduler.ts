@@ -4,13 +4,13 @@ import {
   EventRecurrenceKind,
   type ScheduledOccurrence,
   type WorldEventDefinition,
-} from "../../../packages/domain/src/index.ts";
-import { assertIsoTimestamp, assertTimezone } from "../../../packages/domain/src/validation.ts";
+} from "@living-network/domain";
+import { assertIsoTimestamp, assertTimezone } from "@living-network/domain";
 import type {
   DomainRepositories,
   ScheduledOccurrenceRepository,
   WorldEventDefinitionRepository,
-} from "../../../packages/database/src/index.ts";
+} from "@living-network/database";
 
 export interface ScheduleWindow {
   from: string;

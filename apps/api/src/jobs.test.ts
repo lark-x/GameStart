@@ -17,8 +17,8 @@ import {
   createWorldEventDefinition,
   submitImageJob,
   completeImageJob,
-} from "../../../packages/domain/src/index.ts";
-import { ImageAssetCategory } from "../../../packages/contracts/src/index.ts";
+} from "@living-network/domain";
+import { ImageAssetCategory } from "@living-network/contracts";
 import { ApiApplication, createApiStore } from "./index.ts";
 
 const world = createStoryWorld({

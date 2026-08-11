@@ -1,4 +1,4 @@
-import type { LlmProviderProfileRepository } from "../../database/src/repositories.ts";
+import type { LlmProviderProfileRepository } from "@living-network/database";
 import { type ChatCompletionRequest, type ChatCompletionResult, type ChatDelta, type ChatProvider, ProviderError } from "./provider.ts";
 import { createProviderFromProfile } from "./profile-provider.ts";
 import { SecretCipher } from "./secrets.ts";
