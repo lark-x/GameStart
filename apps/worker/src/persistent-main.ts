@@ -1,7 +1,7 @@
 import { pathToFileURL } from "node:url";
 
 import {
-  applyMigrations,
+  checkSchemaCurrent,
   createSqlInteractionLogRepository,
   createPostgresSqlClient,
   createSqlRepositories,
@@ -51,7 +51,7 @@ export async function startPersistentWorker(
   });
 
   try {
-    await applyMigrations(database);
+    await checkSchemaCurrent(database);
     const repositories = createSqlRepositories(database);
     logger ??= createSqlInteractionLogRepository(database);
     const runtime = createWorkerRuntime(repositories, { logger });

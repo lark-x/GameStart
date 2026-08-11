@@ -1,5 +1,5 @@
 import {
-  applyMigrations,
+  checkSchemaCurrent,
   createPostgresSqlClient,
   createSqlRepositories,
   type PostgresSqlClient,
@@ -30,7 +30,7 @@ export async function startPersistentApi(
   }
   const database = await createPostgresSqlClient({ connectionString: config.database.url });
   try {
-    await applyMigrations(database);
+    await checkSchemaCurrent(database);
     const repositories = createSqlRepositories(database);
     const cipher = environment.INTEGRATION_SECRET_KEY === undefined
       ? undefined
