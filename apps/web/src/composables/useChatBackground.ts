@@ -67,6 +67,7 @@ export function useChatBackground() {
 
   return {
     chatBackground,
+    setChatBackground,
     backgroundStatus,
     backgroundPickerOpen,
     pickBackgroundImage,

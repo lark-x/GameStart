@@ -8,7 +8,7 @@ import Textarea from "../components/ui/Textarea.vue";
 import { useAppStore } from "../stores/app.js";
 import { errorMessage, type ApiCharacter, type ApiConversation, type ApiMessage, type ApiStickerPack } from "../types";
 import { splitChatMessage } from "../lib/chat-message";
-import { deterministicReplyId, findPendingSource } from "../lib/auto-reply";
+import { deterministicReplyId, findPendingSource, normalizeAutoReply } from "../lib/auto-reply";
 import { MAX_CHAT_BACKGROUND_ITEMS } from "../lib/theme";
 
 import { useConversations } from "../composables/useConversations";
@@ -57,6 +57,7 @@ const {
 // --- Background ---
 const {
   chatBackground, backgroundStatus, backgroundPickerOpen,
+  setChatBackground,
   pickBackgroundImage, onBackgroundFileChange, selectBackgroundItem, removeBackgroundItem,
   toggleBackgroundPicker, cleanup: cleanupBackground,
 } = useChatBackground();
@@ -302,7 +303,7 @@ async function retryAutoReply() {
     const result = await store.api.retryAutoReply(currentConversationId.value, {
       readerCharacterId: store.currentCharacterId, sourceMessageId: sourceId,
     });
-    applyAutoReply(result.data && typeof result.data === "object" && "status" in result.data ? result.data : null, sourceId);
+    applyAutoReply(normalizeAutoReply(result.data), sourceId);
   } catch (error: unknown) { replyError.value = errorMessage(error); }
 }
 
