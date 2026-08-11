@@ -254,6 +254,8 @@ function resizeComposer(event?: Event) {
 }
 
 function openImagePicker() {
+  stickerPanelOpen.value = false;
+  backgroundPickerOpen.value = false;
   imageInput.value?.click();
 }
 
@@ -746,7 +748,8 @@ onUnmounted(() => {
 
       <div class="chat-status-strip">
         <span class="thought-status">{{ isGenerating ? `${characterName} 正在回复…` : chatStatus }}</span>
-        <span v-if="imageStatus || backgroundStatus" class="background-status">{{ imageStatus || backgroundStatus }}</span>
+        <span v-if="imageStatus" class="chat-status-message">{{ imageStatus }}</span>
+        <span v-if="backgroundStatus" class="chat-status-message">{{ backgroundStatus }}</span>
       </div>
 
       <div v-if="replyError || autoReply?.status === 'FAILED'" class="reply-error" role="alert">
@@ -1069,6 +1072,256 @@ onUnmounted(() => {
   background: color-mix(in srgb, var(--surface) 96%, transparent);
   box-shadow: var(--shadow-sm);
   overflow: hidden;
+}
+
+/* Keep the message list as the only flexible primary scroll region. */
+.chat-header,
+.chat-status-strip,
+.reply-error,
+.composer {
+  position: relative;
+  z-index: 1;
+}
+.chat-header {
+  min-height: 72px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0 var(--space-6);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  max-height: none;
+}
+.header-profile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.header-profile h1 {
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: var(--text-lg);
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.header-profile p {
+  margin-top: 4px;
+  color: var(--primary);
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+.thought-status {
+  max-width: 300px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: var(--text-xs);
+  font-style: italic;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-status-strip {
+  min-height: 32px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0 var(--space-6);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  max-height: none;
+}
+.chat-status-message {
+  min-width: 0;
+  max-width: min(42%, 260px);
+  overflow: hidden;
+  color: var(--primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.reply-error {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 9px var(--space-6);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  color: var(--danger);
+  background: var(--surface-soft);
+  box-shadow: none;
+  max-height: none;
+}
+.reply-error code,
+.reply-error a {
+  overflow-wrap: anywhere;
+}
+.message-stream {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0;
+  padding: var(--space-6) max(6%, var(--space-6));
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  max-height: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.day-separator {
+  align-self: center;
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  font-size: var(--text-xs);
+}
+.message-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  max-width: min(76%, 720px);
+}
+.message-row.system {
+  align-self: center;
+  max-width: min(86%, 720px);
+}
+.message-row.system .message-wrap {
+  justify-items: center;
+}
+.message-row.system .message-bubble {
+  padding: 7px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  box-shadow: none;
+  font-size: var(--text-sm);
+}
+.message-row.mine {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+.message-wrap {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.message-row.mine .message-wrap {
+  justify-items: end;
+}
+.message-name,
+.message-time {
+  padding: 0 4px;
+  color: var(--faint);
+  font-size: var(--text-xs);
+}
+.message-row.mine .message-time {
+  text-align: right;
+}
+.message-bubble {
+  max-width: 620px;
+  padding: 12px 15px;
+  border-radius: 6px 16px 16px 16px;
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  font-size: var(--text-md);
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.message-row.mine .message-bubble {
+  border-radius: 16px 6px 16px 16px;
+  color: var(--on-primary);
+  background: var(--primary);
+}
+.message-bubble p {
+  white-space: pre-wrap;
+}
+.message-bubble img {
+  display: block;
+  width: 100%;
+  max-width: 520px;
+  max-height: 430px;
+  border-radius: var(--radius-md);
+  object-fit: cover;
+}
+.sticker-message {
+  width: min(180px, 100%) !important;
+  max-height: 180px !important;
+  object-fit: contain !important;
+}
+.message-empty,
+.image-unavailable {
+  color: var(--muted);
+}
+.avatar {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  font-size: var(--text-base);
+  font-weight: 700;
+}
+.avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.character-avatar {
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+.user-avatar {
+  color: var(--on-primary);
+  background: var(--primary);
+}
+.compact {
+  width: 36px;
+  height: 36px;
+}
+.empty-chat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.composer {
+  flex: 0 0 auto;
+  display: grid;
+  gap: 8px;
+  max-height: min(44vh, 360px);
+  margin: 0 var(--space-6) var(--space-5);
+  padding: 8px 10px 10px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  box-shadow: var(--shadow-sm);
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 .composer-toolbar {
   min-width: 0;
