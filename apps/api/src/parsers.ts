@@ -93,9 +93,48 @@ export function parseCreateStickerPackRequest(value: unknown): CreateStickerPack
   return result;
 }
 
+export function parseChatBackgroundItems(value: unknown): NonNullable<ChatBackgroundSettingsDto["items"]> | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) throw new ApiError(400, "BAD_REQUEST", "chatBackground.items must be an array");
+  if (value.length > 12) throw new ApiError(400, "BAD_REQUEST", "chatBackground.items cannot contain more than 12 items");
+  return value.map((item, index) => {
+    if (!isRecord(item)) throw new ApiError(400, "BAD_REQUEST", `chatBackground.items[${index}] must be an object`);
+    assertAllowedBodyKeys(item, ["id", "label", "kind", "imageRef", "createdAt"]);
+    const kind = bodyString(item.kind, `chatBackground.items[${index}].kind`);
+    if (kind !== ChatBackgroundKind.CUSTOM) throw new ApiError(400, "BAD_REQUEST", `chatBackground.items[${index}].kind must be custom`);
+    return {
+      id: bodyString(item.id, `chatBackground.items[${index}].id`),
+      label: bodyString(item.label, `chatBackground.items[${index}].label`),
+      kind,
+      imageRef: bodyString(item.imageRef, `chatBackground.items[${index}].imageRef`),
+      createdAt: bodyString(item.createdAt, `chatBackground.items[${index}].createdAt`),
+    };
+  });
+}
+
+export function parseAppendStickersRequest(value: unknown): import("../../../packages/contracts/src/index.ts").CreateStickerInput[] {
+  if (!isRecord(value)) throw new ApiError(400, "BAD_REQUEST", "Request body must be an object");
+  assertAllowedBodyKeys(value, ["stickers"]);
+  if (!Array.isArray(value.stickers)) throw new ApiError(400, "BAD_REQUEST", "stickers must be an array");
+  return value.stickers.map((item, index) => {
+    if (!isRecord(item)) throw new ApiError(400, "BAD_REQUEST", `stickers[${index}] must be an object`);
+    assertAllowedBodyKeys(item, ["id", "label", "mediaRef", "tags"]);
+    const parsed: { id: string; label: string; mediaRef: string; tags?: string[] } = {
+      id: bodyString(item.id, `stickers[${index}].id`),
+      label: bodyString(item.label, `stickers[${index}].label`),
+      mediaRef: bodyString(item.mediaRef, `stickers[${index}].mediaRef`),
+    };
+    if (item.tags !== undefined) {
+      if (!Array.isArray(item.tags)) throw new ApiError(400, "BAD_REQUEST", `stickers[${index}].tags must be an array`);
+      parsed.tags = item.tags.map((tag, tagIndex) => bodyString(tag, `stickers[${index}].tags[${tagIndex}]`));
+    }
+    return parsed;
+  });
+}
+
 export function parseChatBackgroundSettings(value: unknown): ChatBackgroundSettingsDto {
   if (!isRecord(value)) throw new ApiError(400, "BAD_REQUEST", "chatBackground must be an object");
-  assertAllowedBodyKeys(value, ["kind", "imageRef", "opacity", "blur"]);
+  assertAllowedBodyKeys(value, ["kind", "imageRef", "opacity", "blur", "items"]);
   const kind = bodyString(value.kind, "chatBackground.kind");
   if (kind !== ChatBackgroundKind.THEME && kind !== ChatBackgroundKind.CUSTOM) {
     throw new ApiError(400, "BAD_REQUEST", "chatBackground.kind must be theme or custom");
@@ -108,6 +147,8 @@ export function parseChatBackgroundSettings(value: unknown): ChatBackgroundSetti
   if (value.imageRef !== undefined) {
     background.imageRef = bodyString(value.imageRef, "chatBackground.imageRef");
   }
+  const items = parseChatBackgroundItems(value.items);
+  if (items !== undefined) background.items = items;
   return background;
 }
 
@@ -211,7 +252,7 @@ export function parseCreateConversationRequest(value: unknown): CreateConversati
 
 export function parseSendMessageRequest(value: unknown): SendMessageRequest {
   if (!isRecord(value)) throw new ApiError(400, "BAD_REQUEST", "Request body must be an object");
-  assertAllowedBodyKeys(value, ["id", "authorCharacterId", "kind", "text", "mediaRef", "stickerId", "createdAt", "idempotencyKey"]);
+  assertAllowedBodyKeys(value, ["id", "authorCharacterId", "kind", "text", "mediaRef", "stickerId", "suppressAutoReply", "createdAt", "idempotencyKey"]);
   if (value.kind !== "TEXT" && value.kind !== "IMAGE" && value.kind !== "STICKER" && value.kind !== "SYSTEM") {
     throw new ApiError(400, "BAD_REQUEST", "kind must be TEXT, IMAGE, STICKER, or SYSTEM");
   }
@@ -227,6 +268,10 @@ export function parseSendMessageRequest(value: unknown): SendMessageRequest {
   if (value.text !== undefined) result.text = bodyString(value.text, "text");
   if (value.mediaRef !== undefined) result.mediaRef = bodyString(value.mediaRef, "mediaRef");
   if (value.stickerId !== undefined) result.stickerId = bodyString(value.stickerId, "stickerId");
+  if (value.suppressAutoReply !== undefined) {
+    if (typeof value.suppressAutoReply !== "boolean") throw new ApiError(400, "BAD_REQUEST", "suppressAutoReply must be a boolean");
+    result.suppressAutoReply = value.suppressAutoReply;
+  }
   return result;
 }
 

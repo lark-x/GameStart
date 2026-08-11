@@ -41,6 +41,27 @@ export async function importStickerPack(store: ApiStore, input: CreateStickerPac
   }
 }
 
+export async function appendStickersToPack(store: ApiStore, packId: string, inputs: readonly import("../../../../packages/contracts/src/index.ts").CreateStickerInput[]): Promise<StickerPackImportResultDto> {
+  const stickerStore = requireStickerStore(store);
+  const pack = await stickerStore.stickerPacks.getById(packId);
+  if (!pack) throw new ApiError(404, "NOT_FOUND", "Sticker pack not found");
+  try {
+    const stickers = inputs.map((sticker) => createStickerDomain({
+      id: sticker.id,
+      pack,
+      label: sticker.label,
+      mediaRef: sticker.mediaRef,
+      ...(sticker.tags === undefined ? {} : { tags: sticker.tags }),
+      createdAt: new Date().toISOString(),
+    }));
+    for (const sticker of stickers) await stickerStore.stickers.save(sticker);
+    return toStickerPackImportResult(pack, stickers);
+  } catch (error) {
+    if (error instanceof TypeError || error instanceof RangeError) throw new ApiError(400, "BAD_REQUEST", error.message);
+    throw error;
+  }
+}
+
 export async function listStickers(store: ApiStore, packId: string): Promise<StickerDto[]> {
   const stickerStore = requireStickerStore(store);
   if (!(await stickerStore.stickerPacks.getById(packId))) throw new ApiError(404, "NOT_FOUND", "Sticker pack not found");
