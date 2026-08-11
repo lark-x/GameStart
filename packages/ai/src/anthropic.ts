@@ -191,10 +191,56 @@ export class AnthropicProvider implements ChatProvider {
     const started = Date.now(); let firstToken = false; let terminal = false; let responsePreview = "";
     const context = { ...(request.trace ? { trace: request.trace } : {}), ...this.profileContext, model, requestMessages: request.messages };
     await emitObservation(this.observationHook, { name: "request_started", ...context });
+    const streamController = new AbortController();
+    let idleTimer: ReturnType<typeof setTimeout> | undefined;
+    const resetIdle = (): void => {
+      if (idleTimer !== undefined) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => streamController.abort(), this.timeoutMs);
+    };
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
     try {
       const response = await this.request(request, model, true);
       if (!response.body) throw new ProviderError("STREAM_ERROR", "Anthropic response has no stream body");
-      for await (const event of readEvents(response.body)) {
+      reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      resetIdle();
+      const readEvent = async (): Promise<{ done: boolean; event?: { event: string; data: string } }> => {
+        const result = await reader!.read();
+        if (result.done) {
+          if (buffer.trim().length > 0) {
+            let ev = "message"; const data: string[] = [];
+            for (const line of buffer.split(/\r?\n/)) {
+              if (line.startsWith("event:")) ev = line.slice(6).trim();
+              if (line.startsWith("data:")) data.push(line.slice(5).trimStart());
+            }
+            buffer = "";
+            if (data.length > 0) return { done: false, event: { event: ev, data: data.join("\n") } };
+          }
+          return { done: true };
+        }
+        buffer += decoder.decode(result.value, { stream: true });
+        const sep = buffer.search(/\r?\n\r?\n/);
+        if (sep < 0) return { done: false };
+        const block = buffer.slice(0, sep);
+        buffer = buffer.slice(sep).replace(/^\r?\n\r?\n/, "");
+        let ev = "message"; const data: string[] = [];
+        for (const line of block.split(/\r?\n/)) {
+          if (line.startsWith("event:")) ev = line.slice(6).trim();
+          if (line.startsWith("data:")) data.push(line.slice(5).trimStart());
+        }
+        return data.length > 0 ? { done: false, event: { event: ev, data: data.join("\n") } } : { done: false };
+      };
+      while (true) {
+        let chunk;
+        try { chunk = await readEvent(); } catch (e) {
+          if (streamController.signal.aborted) throw new ProviderError("TIMEOUT", "Anthropic stream idle timeout", { retryable: true });
+          throw e;
+        }
+        if (chunk.done) break;
+        if (chunk.event === undefined) continue;
+        resetIdle();
+        const event = chunk.event;
         if (event.event === "ping") continue;
         let payload: unknown;
         try { payload = JSON.parse(event.data); } catch { throw new ProviderError("STREAM_ERROR", "Anthropic stream event is not valid JSON"); }
@@ -218,6 +264,8 @@ export class AnthropicProvider implements ChatProvider {
       await emitObservation(this.observationHook, { name: "error", ...context, durationMs: Date.now() - started, error: { code: normalized.code, ...(normalized.status === undefined ? {} : { status: normalized.status }), retryable: normalized.retryable, message: normalized.message } });
       throw error instanceof ProviderError ? error : normalized;
     } finally {
+      if (idleTimer !== undefined) clearTimeout(idleTimer);
+      if (reader) { try { reader.releaseLock(); } catch { /* already released */ } }
       if (!terminal) await emitObservation(this.observationHook, { name: "completed", ...context, durationMs: Date.now() - started, outcome: "cancelled" });
     }
   }
