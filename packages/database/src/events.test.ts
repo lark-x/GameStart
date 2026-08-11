@@ -237,3 +237,35 @@ test("in-memory seed rejects multiple active LLM profiles and non-default ComfyU
     /must be default/,
   );
 });
+
+test("in-memory listForCreatorScan sorts by id when scheduledFor is equal", async () => {
+  const def = definition();
+  const occ1 = {
+    ...createScheduledOccurrence({
+      id: "occ-sort-a",
+      definition: def,
+      scheduledFor: "2026-08-09T01:00:00.000Z",
+      occurrenceKey: "key-a",
+      createdAt,
+    }),
+    status: ScheduledOccurrenceStatus.PENDING,
+  };
+  const occ2 = {
+    ...createScheduledOccurrence({
+      id: "occ-sort-b",
+      definition: def,
+      scheduledFor: "2026-08-09T01:00:00.000Z",
+      occurrenceKey: "key-b",
+      createdAt,
+    }),
+    status: ScheduledOccurrenceStatus.PENDING,
+  };
+  const repos = createInMemoryRepositories({
+    worlds: [world],
+    characters: [character],
+    worldEventDefinitions: [def],
+    scheduledOccurrences: [occ2, occ1],
+  });
+  const result = await repos.scheduledOccurrences!.listForCreatorScan(world.id, "2026-08-10T00:00:00.000Z", 10);
+  assert.deepEqual(result.map((r) => r.id), ["occ-sort-a", "occ-sort-b"]);
+});
