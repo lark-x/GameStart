@@ -63,3 +63,19 @@ test("in-memory world lore supports CRUD, isolation, and enabled full-text searc
     /unknown story world/,
   );
 });
+
+test("createWorldLoreEntry rejects non-boolean isEnabled", () => {
+  assert.throws(
+    () => createWorldLoreEntry({
+      id: "lore-bad",
+      storyWorldId: world.id,
+      category: "location",
+      title: "Test",
+      content: "Content",
+      isEnabled: "yes" as unknown as boolean,
+      createdAt: "2026-08-09T00:00:00.000Z",
+      updatedAt: "2026-08-09T00:00:00.000Z",
+    }),
+    { name: "TypeError", message: /isEnabled must be a boolean/ },
+  );
+});

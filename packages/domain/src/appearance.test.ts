@@ -226,3 +226,46 @@ test("rejects malformed timestamps and non-object backgrounds", () => {
     { name: "TypeError", message: /chatBackground/ },
   );
 });
+
+test("rejects duplicate item ids in chat background items", () => {
+  assert.throws(
+    () =>
+      createAppearanceSettings({
+        ...VALID_INPUT,
+        chatBackground: {
+          ...VALID_INPUT.chatBackground,
+          items: [
+            {
+              id: "bg-1",
+              label: "First",
+              kind: ChatBackgroundKind.CUSTOM,
+              imageRef: "data:image/png;base64,aGVsbG8=",
+              createdAt: "2026-08-08T10:01:00.000Z",
+            },
+            {
+              id: "bg-1",
+              label: "Duplicate",
+              kind: ChatBackgroundKind.CUSTOM,
+              imageRef: "data:image/png;base64,aGVsbG8=",
+              createdAt: "2026-08-08T10:02:00.000Z",
+            },
+          ],
+        },
+      }),
+    { name: "TypeError", message: /duplicate item ids/ },
+  );
+});
+
+test("rejects non-array items field", () => {
+  assert.throws(
+    () =>
+      createAppearanceSettings({
+        ...VALID_INPUT,
+        chatBackground: {
+          ...VALID_INPUT.chatBackground,
+          items: "not-an-array" as never,
+        },
+      }),
+    { name: "TypeError", message: /must be an array/ },
+  );
+});
