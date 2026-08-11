@@ -26,7 +26,7 @@ export function useChatMessages(
     activeController = new AbortController();
 
     try {
-      const result = await store.api.getMessages(conversationId, characterId);
+      const result = await store.api.getMessages(conversationId, characterId, activeController.signal);
       // Only apply if still current
       if (token !== requestToken.value || currentConversationId.value !== conversationId) return;
       messages.value = result.data ?? [];

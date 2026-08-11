@@ -19,6 +19,7 @@
 
         ...(options.headers ?? {}),
       },
+      ...(options.signal !== undefined ? { signal: options.signal } : {}),
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -189,8 +190,8 @@
     return this.request(`/v1/conversations?characterId=${encodeURIComponent(characterId)}`);
   }
 
-  getMessages(conversationId, characterId) {
-    return this.request(`/v1/conversations/${encodeURIComponent(conversationId)}/messages?characterId=${encodeURIComponent(characterId)}`);
+  getMessages(conversationId, characterId, signal) {
+    return this.request(`/v1/conversations/${encodeURIComponent(conversationId)}/messages?characterId=${encodeURIComponent(characterId)}`, { signal });
   }
 
   importWorkflow(input) {
@@ -204,14 +205,15 @@
     });
   }
 
-  getImageJob(jobId) {
-    return this.request(`/v1/image-jobs/${encodeURIComponent(jobId)}`);
+  getImageJob(jobId, signal) {
+    return this.request(`/v1/image-jobs/${encodeURIComponent(jobId)}`, { signal });
   }
 
-  sendMessage(conversationId, input) {
+  sendMessage(conversationId, input, signal) {
     return this.request(`/v1/conversations/${encodeURIComponent(conversationId)}/messages`, {
       method: "POST",
       body: JSON.stringify(input),
+      signal,
     });
   }
 
