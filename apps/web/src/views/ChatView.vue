@@ -6,7 +6,7 @@ import EmptyState from "../components/ui/EmptyState.vue";
 import Input from "../components/ui/Input.vue";
 import Textarea from "../components/ui/Textarea.vue";
 import { useAppStore } from "../stores/app.js";
-import { createChatBackgroundItem, importChatBackgroundFile, MAX_CHAT_BACKGROUND_ITEMS, useTheme } from "../lib/theme";
+import { createChatBackgroundItem, compressChatBackgroundImage, MAX_CHAT_BACKGROUND_ITEMS, useTheme } from "../lib/theme";
 import {
   deterministicReplyId,
   findPendingSource,
@@ -95,7 +95,9 @@ async function onBackgroundFileChange(event: Event) {
   }
   backgroundStatus.value = "正在导入背景…";
   try {
-    const imageRef = await importChatBackgroundFile(file);
+    const compressed = await compressChatBackgroundImage(file);
+    const uploaded = await store.api.uploadImage(compressed);
+    const imageRef: string = uploaded.data.mediaRef;
     const item = createChatBackgroundItem(file.name, imageRef);
     setChatBackground({
       kind: "custom",

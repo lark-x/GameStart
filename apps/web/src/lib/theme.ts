@@ -296,6 +296,26 @@ export function createChatBackgroundItem(label: string, imageRef: string): ChatB
 
 /** 读取本地图片文件，压缩为适合做聊天背景的 data URL。 */
 export async function importChatBackgroundFile(file: File): Promise<string> {
+  // SSR fallback — return data URL when canvas is unavailable
+  if (typeof document === "undefined") {
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(new Error("读取图片失败，请重试"));
+      reader.readAsDataURL(file);
+    });
+  }
+  const compressed = await compressChatBackgroundImage(file);
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error("读取图片失败，请重试"));
+    reader.readAsDataURL(compressed);
+  });
+}
+
+/** 压缩图片为适合上传的 JPEG File。 */
+export async function compressChatBackgroundImage(file: File): Promise<File> {
   if (!file.type.startsWith("image/")) {
     throw new Error("请选择图片文件作为聊天背景");
   }
@@ -305,7 +325,6 @@ export async function importChatBackgroundFile(file: File): Promise<string> {
     reader.onerror = () => reject(new Error("读取图片失败，请重试"));
     reader.readAsDataURL(file);
   });
-  if (typeof document === "undefined") return dataUrl;
   const image = await new Promise<HTMLImageElement>((resolve, reject) => {
     const element = new Image();
     element.onload = () => resolve(element);
@@ -319,11 +338,13 @@ export async function importChatBackgroundFile(file: File): Promise<string> {
   canvas.width = width;
   canvas.height = height;
   const context = canvas.getContext("2d");
-  if (!context) return dataUrl;
+  if (!context) return file;
   context.drawImage(image, 0, 0, width, height);
   for (const quality of BACKGROUND_QUALITIES) {
-    const compressed = canvas.toDataURL("image/jpeg", quality);
-    if (compressed.length <= BACKGROUND_MAX_LENGTH) return compressed;
+    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/jpeg", quality));
+    if (blob && blob.size <= BACKGROUND_MAX_LENGTH) {
+      return new File([blob], file.name.replace(/\.[^.]+$/, ".jpg"), { type: "image/jpeg" });
+    }
   }
   throw new Error("图片体积过大，请选择更小的图片");
 }
