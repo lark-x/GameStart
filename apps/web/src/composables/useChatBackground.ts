@@ -1,9 +1,7 @@
 import { ref } from "vue";
-import { useAppStore } from "../stores/app";
 import { useTheme, createChatBackgroundItem, importChatBackgroundFile, MAX_CHAT_BACKGROUND_ITEMS } from "../lib/theme";
 
 export function useChatBackground() {
-  const store = useAppStore();
   const { chatBackground, setChatBackground } = useTheme();
   const backgroundStatus = ref("");
   const backgroundPickerOpen = ref(false);

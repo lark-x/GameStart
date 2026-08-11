@@ -10,7 +10,6 @@ export function useImageJobPolling(
   const store = useAppStore();
   const imageJob = ref<ApiImageJob | null>(null);
   const imageStatus = ref("");
-  let polling = false;
   let cancelled = false;
 
   function wait(ms: number): Promise<void> {

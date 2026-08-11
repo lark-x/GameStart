@@ -8,7 +8,7 @@ import Textarea from "../components/ui/Textarea.vue";
 import { useAppStore } from "../stores/app.js";
 import { errorMessage, type ApiCharacter, type ApiConversation, type ApiMessage, type ApiStickerPack } from "../types";
 import { splitChatMessage } from "../lib/chat-message";
-import { deterministicReplyId, findPendingSource, normalizeAutoReply } from "../lib/auto-reply";
+import { findPendingSource, normalizeAutoReply } from "../lib/auto-reply";
 import { MAX_CHAT_BACKGROUND_ITEMS } from "../lib/theme";
 
 import { useConversations } from "../composables/useConversations";
@@ -26,11 +26,9 @@ const store = useAppStore();
 const {
   conversations, currentConversationId, currentConversation,
   status, primaryPeer, characterName, characterInitial, characterSubtitle,
-  peerCharacters: peerCharactersFn, conversationLabel, conversationMeta,
+  conversationLabel, conversationMeta,
   loadConversations,
 } = useConversations();
-
-function peerCharacters(conv?: ApiConversation) { return peerCharactersFn(conv); }
 
 // --- Scroll helper ---
 const messagesContainer = ref<HTMLElement | null>(null);
@@ -50,7 +48,7 @@ const { imageJob, imageStatus, pollImageJob, cancelPolling: cancelImagePolling, 
 // --- Composer ---
 const {
   messageInput, selectedImages, composerStatus, isSendingMessage, enterSends, canSend,
-  setEnterSends, addImageFiles, clearSelectedImages, removeSelectedImage, updateSelectedImage,
+  setEnterSends, addImageFiles, removeSelectedImage,
   sendSticker, sendMessage: sendComposerMessage, cleanup: cleanupComposer,
 } = useChatComposer(currentConversationId, loadMessages, applyAutoReply);
 
@@ -58,7 +56,7 @@ const {
 const {
   chatBackground, backgroundStatus, backgroundPickerOpen,
   setChatBackground,
-  pickBackgroundImage, onBackgroundFileChange, selectBackgroundItem, removeBackgroundItem,
+  pickBackgroundImage, onBackgroundFileChange, removeBackgroundItem,
   toggleBackgroundPicker, cleanup: cleanupBackground,
 } = useChatBackground();
 
