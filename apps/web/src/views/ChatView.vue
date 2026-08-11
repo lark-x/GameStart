@@ -6,158 +6,76 @@ import EmptyState from "../components/ui/EmptyState.vue";
 import Input from "../components/ui/Input.vue";
 import Textarea from "../components/ui/Textarea.vue";
 import { useAppStore } from "../stores/app.js";
-import { createChatBackgroundItem, importChatBackgroundFile, MAX_CHAT_BACKGROUND_ITEMS, useTheme } from "../lib/theme";
-import {
-  deterministicReplyId,
-  findPendingSource,
-  normalizeAutoReply,
-  type AutoReplyResult,
-} from "../lib/auto-reply";
-import { errorMessage, type ApiCharacter, type ApiConversation, type ApiImageJob, type ApiMessage, type ApiStickerPack } from "../types";
+import { errorMessage, type ApiCharacter, type ApiConversation, type ApiMessage, type ApiStickerPack } from "../types";
 import { splitChatMessage } from "../lib/chat-message";
-import {
-  COMPOSER_IMAGE_LIMIT,
-  buildComposerMessageDrafts,
-  createComposerImageAttachment,
-  validateComposerImage,
-  type ComposerImageAttachment,
-} from "../lib/chat-composer";
+import { deterministicReplyId, findPendingSource } from "../lib/auto-reply";
+import { MAX_CHAT_BACKGROUND_ITEMS } from "../lib/theme";
+
+import { useConversations } from "../composables/useConversations";
+import { useChatMessages } from "../composables/useChatMessages";
+import { useAutoReply } from "../composables/useAutoReply";
+import { useImageJobPolling } from "../composables/useImageJobPolling";
+import { useChatComposer } from "../composables/useChatComposer";
+import { useChatBackground } from "../composables/useChatBackground";
 
 type StickerOption = NonNullable<ApiStickerPack["_stickers"]>[number];
 
 const store = useAppStore();
-const { chatBackground, setChatBackground } = useTheme();
-const messages = ref<ApiMessage[]>([]);
-const conversations = ref<ApiConversation[]>([]);
-const currentConversationId = ref("");
-const messageInput = ref("");
-const selectedImages = ref<ComposerImageAttachment<File>[]>([]);
-const composerStatus = ref("");
-const isSendingMessage = ref(false);
+
+// --- Conversations ---
+const {
+  conversations, currentConversationId, currentConversation,
+  status, primaryPeer, characterName, characterInitial, characterSubtitle,
+  peerCharacters: peerCharactersFn, conversationLabel, conversationMeta,
+  loadConversations,
+} = useConversations();
+
+function peerCharacters(conv?: ApiConversation) { return peerCharactersFn(conv); }
+
+// --- Scroll helper ---
+const messagesContainer = ref<HTMLElement | null>(null);
+function scrollToBottom() {
+  nextTick(() => { if (messagesContainer.value) messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight; });
+}
+
+// --- Messages ---
+const { messages, loadMessages, cancelPending: cancelMessages, cleanup: cleanupMessages } = useChatMessages(currentConversationId, scrollToBottom);
+
+// --- Auto-reply ---
+const { autoReply, replyError, isGenerating, applyAutoReply, stopReplyPolling, cleanup: cleanupAutoReply } = useAutoReply(currentConversationId, messages, loadMessages);
+
+// --- Image job polling ---
+const { imageJob, imageStatus, pollImageJob, cancelPolling: cancelImagePolling, cleanup: cleanupImagePolling } = useImageJobPolling(currentConversationId, loadMessages);
+
+// --- Composer ---
+const {
+  messageInput, selectedImages, composerStatus, isSendingMessage, enterSends, canSend,
+  setEnterSends, addImageFiles, clearSelectedImages, removeSelectedImage, updateSelectedImage,
+  sendSticker, sendMessage: sendComposerMessage, cleanup: cleanupComposer,
+} = useChatComposer(currentConversationId, loadMessages, applyAutoReply);
+
+// --- Background ---
+const {
+  chatBackground, backgroundStatus, backgroundPickerOpen,
+  pickBackgroundImage, onBackgroundFileChange, selectBackgroundItem, removeBackgroundItem,
+  toggleBackgroundPicker, cleanup: cleanupBackground,
+} = useChatBackground();
+
+// --- UI state ---
 const unavailableImageIds = ref(new Set<string>());
 const imageInput = ref<HTMLInputElement | null>(null);
 const composerInput = ref<ComponentPublicInstance | null>(null);
-const enterSends = ref(localStorage.getItem("living-network.chat.enter-sends") !== "false");
-const status = ref("准备加载会话……");
-const messagesContainer = ref<HTMLElement | null>(null);
-const isGenerating = ref(false);
-const autoReply = ref<AutoReplyResult | null>(null);
-const replyError = ref("");
-let replyTimer: number | undefined;
 const backgroundInput = ref<HTMLInputElement | null>(null);
-const backgroundStatus = ref("");
-const backgroundPickerOpen = ref(false);
 const imageRequestOpen = ref(false);
 const imagePrompt = ref("");
 const imageWorkflowVersion = ref("");
-const imageJob = ref<ApiImageJob | null>(null);
-const imageStatus = ref("");
 const isRequestingImage = ref(false);
 const stickerPacks = ref<ApiStickerPack[]>([]);
 const activeStickerPackId = ref("");
 const stickerPanelOpen = ref(false);
 const stickerStatus = ref("");
 
-/** 聊天背景层样式：自定义图片或跟随主题的默认纹理 */
-const backdropStyle = computed(() => {
-  if (chatBackground.kind === "custom" && chatBackground.imageRef) {
-    return {
-      backgroundImage: `url("${chatBackground.imageRef}")`,
-      backgroundSize: "cover",
-      backgroundPosition: "center",
-      opacity: chatBackground.opacity,
-      filter: chatBackground.blur > 0 ? `blur(${chatBackground.blur}px)` : undefined,
-    };
-  }
-  return {
-    backgroundImage: "var(--chat-texture)",
-    backgroundSize: "var(--chat-texture-size)",
-    opacity: chatBackground.opacity,
-  };
-});
-
-function pickBackgroundImage() {
-  if (chatBackground.items.length >= MAX_CHAT_BACKGROUND_ITEMS) {
-    backgroundStatus.value = `最多保存 ${MAX_CHAT_BACKGROUND_ITEMS} 个聊天背景，请先删除旧背景`;
-    return;
-  }
-  backgroundInput.value?.click();
-}
-
-async function onBackgroundFileChange(event: Event) {
-  const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
-  input.value = "";
-  if (!file) return;
-  if (chatBackground.items.length >= MAX_CHAT_BACKGROUND_ITEMS) {
-    backgroundStatus.value = `最多保存 ${MAX_CHAT_BACKGROUND_ITEMS} 个聊天背景，请先删除旧背景`;
-    return;
-  }
-  backgroundStatus.value = "正在导入背景…";
-  try {
-    const imageRef = await importChatBackgroundFile(file);
-    const item = createChatBackgroundItem(file.name, imageRef);
-    setChatBackground({
-      kind: "custom",
-      imageRef,
-      items: [...chatBackground.items, item],
-    });
-    backgroundPickerOpen.value = true;
-    backgroundStatus.value = "聊天背景已导入";
-  } catch (e: unknown) {
-    backgroundStatus.value = errorMessage(e);
-  }
-}
-
-function selectThemeBackground() {
-  setChatBackground({ kind: "theme" });
-  backgroundStatus.value = "已切换为主题默认背景";
-}
-
-function selectCustomBackground(imageRef: string) {
-  setChatBackground({ kind: "custom", imageRef });
-  backgroundStatus.value = "聊天背景已切换";
-}
-
-function removeBackgroundItem(id: string) {
-  const item = chatBackground.items.find((candidate) => candidate.id === id);
-  if (!item) return;
-  const items = chatBackground.items.filter((candidate) => candidate.id !== id);
-  const removingActive = chatBackground.kind === "custom" && chatBackground.imageRef === item.imageRef;
-  setChatBackground(
-    removingActive
-      ? { kind: "theme", items }
-      : { kind: chatBackground.kind, ...(chatBackground.imageRef ? { imageRef: chatBackground.imageRef } : {}), items },
-  );
-  backgroundStatus.value = removingActive ? "已删除背景，并切回主题默认" : "背景已删除";
-}
-
-const currentConversation = computed(() =>
-  conversations.value.find(
-    (item) => item.conversation.id === currentConversationId.value,
-  ),
-);
-function conversationCharacters(item: ApiConversation | undefined) {
-  if (!item) return [];
-  const memberIds = item.members
-    .filter((member) => !member.leftAt && member.characterId !== store.currentCharacterId)
-    .map((member) => member.characterId);
-  return memberIds
-    .map((id) => store.characters.find((character) => character.id === id))
-    .filter((character): character is ApiCharacter => character !== undefined);
-}
-const peerCharacters = computed(() => conversationCharacters(currentConversation.value));
-const primaryPeer = computed(() => peerCharacters.value[0]);
-const characterName = computed(() =>
-  currentConversation.value?.conversation.title ||
-  peerCharacters.value.map((character) => character.displayName).join("、") ||
-  "未命名会话",
-);
-const characterInitial = computed(() => characterName.value.slice(0, 1));
-const characterSubtitle = computed(() => {
-  if (currentConversation.value?.conversation.type === "GROUP") return `${peerCharacters.value.length + 1} 人群聊`;
-  return `${primaryPeer.value?.role === "AI" ? "AI 角色" : "角色"} · 私聊`;
-});
+// --- Computed views ---
 const chatStatus = computed(() => currentConversation.value ? "对话已同步" : status.value);
 const messageViews = computed(() => messages.value.map((message, index) => {
   const previous = messages.value[index - 1];
@@ -171,23 +89,12 @@ const messageViews = computed(() => messages.value.map((message, index) => {
   };
 }));
 const pendingSource = computed(() =>
-  findPendingSource(
-    currentConversationId.value,
-    currentConversation.value?.conversation,
-    store.currentCharacter,
-    store.currentCharacterId,
-    messages.value,
-  ),
+  findPendingSource(currentConversationId.value, currentConversation.value?.conversation, store.currentCharacter, store.currentCharacterId, messages.value),
 );
 const imageRecipientId = computed(() => {
-  const current = conversations.value.find(
-    (item) => item.conversation.id === currentConversationId.value,
-  );
-  return current?.members.find(
-    (member) => member.characterId !== store.currentCharacterId && !member.leftAt,
-  )?.characterId;
+  const current = conversations.value.find((item) => item.conversation.id === currentConversationId.value);
+  return current?.members.find((member) => member.characterId !== store.currentCharacterId && !member.leftAt)?.characterId;
 });
-const canSend = computed(() => messageInput.value.trim().length > 0 || selectedImages.value.length > 0);
 const activeStickerPack = computed(() =>
   stickerPacks.value.find((pack) => pack.id === activeStickerPackId.value) ?? stickerPacks.value[0],
 );
@@ -205,17 +112,32 @@ const composerHint = computed(() => {
 });
 const enterModeLabel = computed(() => enterSends.value ? "Enter 发送" : "Enter 换行");
 
-function conversationLabel(item: ApiConversation) {
-  return (
-    item.conversation.title ||
-    conversationCharacters(item).map((character) => character.displayName).join("、") ||
-    (item.conversation.type === "PRIVATE" ? "私聊" : "小组聊天")
-  );
-}
+const backdropStyle = computed(() => {
+  if (chatBackground.kind === "custom" && chatBackground.imageRef) {
+    return {
+      backgroundImage: `url("${chatBackground.imageRef}")`,
+      backgroundSize: "cover",
+      backgroundPosition: "center",
+      opacity: chatBackground.opacity,
+      filter: chatBackground.blur > 0 ? `blur(${chatBackground.blur}px)` : undefined,
+    };
+  }
+  return {
+    backgroundImage: "var(--chat-texture)",
+    backgroundSize: "var(--chat-texture-size)",
+    opacity: chatBackground.opacity,
+  };
+});
 
-function conversationMeta(item: ApiConversation) {
-  const count = item.members.filter((member) => !member.leftAt).length;
-  return item.conversation.type === "PRIVATE" ? "私聊" : `${count} 人群聊`;
+// --- Helper functions ---
+function conversationCharacters(item: ApiConversation | undefined) {
+  if (!item) return [];
+  const memberIds = item.members
+    .filter((member) => !member.leftAt && member.characterId !== store.currentCharacterId)
+    .map((member) => member.characterId);
+  return memberIds
+    .map((id) => store.characters.find((character) => character.id === id))
+    .filter((character): character is ApiCharacter => character !== undefined);
 }
 
 function characterImage(character: ApiCharacter | undefined) {
@@ -235,11 +157,6 @@ function isMine(message: ApiMessage) {
   return message.authorCharacterId === store.currentCharacterId;
 }
 
-function setEnterSends(value: boolean) {
-  enterSends.value = value;
-  localStorage.setItem("living-network.chat.enter-sends", String(value));
-}
-
 function resizeComposer(event?: Event) {
   const emittedTarget = event?.target;
   const componentElement = composerInput.value?.$el;
@@ -253,15 +170,12 @@ function resizeComposer(event?: Event) {
   element.style.height = `${Math.min(element.scrollHeight, 180)}px`;
 }
 
+function sendMessage() { return sendComposerMessage(resizeComposer); }
+
 function openImagePicker() {
   stickerPanelOpen.value = false;
   backgroundPickerOpen.value = false;
   imageInput.value?.click();
-}
-
-function toggleBackgroundPicker() {
-  backgroundPickerOpen.value = !backgroundPickerOpen.value;
-  if (backgroundPickerOpen.value) stickerPanelOpen.value = false;
 }
 
 function toggleStickerPanel() {
@@ -270,44 +184,6 @@ function toggleStickerPanel() {
     backgroundPickerOpen.value = false;
     if (stickerPacks.value.length === 0) void loadStickerPacks();
   }
-}
-
-function updateSelectedImage(id: string, patch: Partial<ComposerImageAttachment<File>>) {
-  selectedImages.value = selectedImages.value.map((image) => image.id === id ? { ...image, ...patch } : image);
-}
-
-function addImageFiles(files: readonly File[]) {
-  const remaining = COMPOSER_IMAGE_LIMIT - selectedImages.value.length;
-  if (remaining <= 0) {
-    composerStatus.value = `一次最多发送 ${COMPOSER_IMAGE_LIMIT} 张图片`;
-    return;
-  }
-  const accepted: ComposerImageAttachment<File>[] = [];
-  const rejected: string[] = [];
-  for (const file of files.slice(0, remaining)) {
-    const error = validateComposerImage(file);
-    if (error) {
-      rejected.push(`${file.name}: ${error}`);
-      continue;
-    }
-    accepted.push(createComposerImageAttachment(file, URL.createObjectURL(file), crypto.randomUUID()));
-  }
-  if (files.length > remaining) rejected.push(`已达到 ${COMPOSER_IMAGE_LIMIT} 张上限`);
-  selectedImages.value = [...selectedImages.value, ...accepted];
-  composerStatus.value = rejected[0] ?? (accepted.length ? `${selectedImages.value.length} 张图片待发送` : "");
-}
-
-function clearSelectedImages() {
-  for (const image of selectedImages.value) URL.revokeObjectURL(image.previewUrl);
-  selectedImages.value = [];
-  composerStatus.value = "";
-}
-
-function removeSelectedImage(id: string) {
-  const image = selectedImages.value.find((item) => item.id === id);
-  if (image) URL.revokeObjectURL(image.previewUrl);
-  selectedImages.value = selectedImages.value.filter((item) => item.id !== id);
-  composerStatus.value = selectedImages.value.length ? `${selectedImages.value.length} 张图片待发送` : "";
 }
 
 function markImageUnavailable(messageId: string) {
@@ -350,54 +226,15 @@ function onComposerKeydown(event: KeyboardEvent) {
   event.preventDefault();
   void sendMessage();
 }
+
 function authorName(message: ApiMessage) {
   if (message.kind === "SYSTEM" || !message.authorCharacterId) return "系统";
-  return isMine(message)
-    ? "我"
-    : store.characters.find((c) => c.id === message.authorCharacterId)
-        ?.displayName || characterName.value;
+  return isMine(message) ? "我" : store.characters.find((c) => c.id === message.authorCharacterId)?.displayName || characterName.value;
 }
 
-async function loadConversations() {
-  if (!store.currentCharacterId) return;
-  try {
-    status.value = "正在读取会话……";
-    const result = await store.api.getConversations(store.currentCharacterId);
-    conversations.value = result.data ?? [];
-    if (!currentConversationId.value && conversations.value[0])
-      currentConversationId.value = conversations.value[0].conversation.id;
-    await loadMessages();
-    status.value = conversations.value.length
-      ? `${conversations.value.length} 个会话`
-      : "还没有会话";
-  } catch (e: unknown) {
-    status.value = errorMessage(e);
-  }
-}
-
-async function loadMessages() {
-  if (!currentConversationId.value || !store.currentCharacterId) {
-    messages.value = [];
-    return;
-  }
-  try {
-    const result = await store.api.getMessages(
-      currentConversationId.value,
-      store.currentCharacterId,
-    );
-    messages.value = result.data ?? [];
-    scrollToBottom();
-  } catch (e: unknown) {
-    status.value = errorMessage(e);
-  }
-}
-
+// --- Sticker packs ---
 async function loadStickerPacks() {
-  if (!store.currentWorldId) {
-    stickerPacks.value = [];
-    activeStickerPackId.value = "";
-    return;
-  }
+  if (!store.currentWorldId) { stickerPacks.value = []; activeStickerPackId.value = ""; return; }
   try {
     const result = await store.api.getStickerPacks(store.currentWorldId);
     const packs = (result.data ?? []) as ApiStickerPack[];
@@ -409,278 +246,103 @@ async function loadStickerPacks() {
     if (!packs.some((pack) => pack.id === activeStickerPackId.value)) activeStickerPackId.value = packs[0]?.id ?? "";
     stickerStatus.value = "";
   } catch (error: unknown) {
-    stickerPacks.value = [];
-    activeStickerPackId.value = "";
-    stickerStatus.value = errorMessage(error);
+    stickerPacks.value = []; activeStickerPackId.value = ""; stickerStatus.value = errorMessage(error);
   }
 }
 
-async function sendSticker(sticker: StickerOption) {
-  if (!currentConversationId.value || !store.currentCharacterId || isSendingMessage.value) return;
-  const id = crypto.randomUUID();
-  isSendingMessage.value = true;
-  composerStatus.value = "正在发送表情…";
-  try {
-    const result = await store.api.sendMessage(currentConversationId.value, {
-      id,
-      authorCharacterId: store.currentCharacterId,
-      kind: "STICKER",
-      stickerId: sticker.id,
-      createdAt: new Date().toISOString(),
-      idempotencyKey: id,
-    });
-    stickerPanelOpen.value = false;
-    composerStatus.value = "";
-    await loadMessages();
-    applyAutoReply(normalizeAutoReply(result.data?.autoReply), id);
-  } catch (e: unknown) {
-    const message = errorMessage(e);
-    composerStatus.value = message;
-    status.value = message;
-  } finally {
-    isSendingMessage.value = false;
-  }
-}
-
-async function sendMessage() {
-  const value = messageInput.value.trim();
-  if (!canSend.value || !currentConversationId.value || !store.currentCharacterId || isSendingMessage.value)
-    return;
-  const batchId = crypto.randomUUID();
-  const imageFiles = [...selectedImages.value];
-  isSendingMessage.value = true;
-  composerStatus.value = imageFiles.length ? "正在上传图片…" : "正在发送…";
-  try {
-    const mediaRefs: string[] = [];
-    for (const image of imageFiles) {
-      updateSelectedImage(image.id, { status: "uploading" });
-      const uploaded = await store.api.uploadChatImage(image.file);
-      mediaRefs.push(uploaded.data.mediaRef);
-      updateSelectedImage(image.id, { status: "sent" });
-    }
-    const drafts = buildComposerMessageDrafts({ batchId, text: value, mediaRefs });
-    let autoReplyResult: AutoReplyResult | null = null;
-    for (const [index, draft] of drafts.entries()) {
-      const result = await store.api.sendMessage(currentConversationId.value, {
-        id: draft.id,
-        authorCharacterId: store.currentCharacterId,
-        kind: draft.kind,
-        ...(draft.text === undefined ? {} : { text: draft.text }),
-        ...(draft.mediaRef === undefined ? {} : { mediaRef: draft.mediaRef }),
-        ...(draft.suppressAutoReply ? { suppressAutoReply: true } : {}),
-        createdAt: new Date(Date.now() + index).toISOString(),
-        idempotencyKey: draft.idempotencyKey,
-      });
-      if (!draft.suppressAutoReply) autoReplyResult = normalizeAutoReply(result.data?.autoReply);
-    }
-    messageInput.value = "";
-    clearSelectedImages();
-    resizeComposer();
-    await loadMessages();
-    applyAutoReply(autoReplyResult, batchId);
-  } catch (e: unknown) {
-    const message = errorMessage(e);
-    composerStatus.value = message;
-    status.value = message;
-    for (const image of imageFiles) {
-      if (selectedImages.value.some((item) => item.id === image.id && item.status === "uploading")) {
-        updateSelectedImage(image.id, { status: "failed", error: message });
-      }
-    }
-  } finally {
-    isSendingMessage.value = false;
-  }
-}
-
-function stopReplyPolling() {
-  if (replyTimer !== undefined) {
-    window.clearTimeout(replyTimer);
-    replyTimer = undefined;
-  }
-  isGenerating.value = false;
-}
-
-function pollReply(sourceMessageId: string) {
-  stopReplyPolling();
-  isGenerating.value = true;
-  const conversationId = currentConversationId.value;
-  const expectedId = deterministicReplyId(conversationId, sourceMessageId);
-  let attempts = 0;
-  const check = async () => {
-    if (currentConversationId.value !== conversationId) return;
-    attempts += 1;
-    try {
-      await loadMessages();
-      if (messages.value.some((message) => message.id === expectedId)) {
-        stopReplyPolling();
-        replyError.value = "";
-        status.value = "回复已送达";
-        return;
-      }
-      if (attempts >= 30) {
-        stopReplyPolling();
-        replyError.value = "回复等待超时，请重试";
-        status.value = "回复需要重试";
-        return;
-      }
-      replyTimer = window.setTimeout(check, 1_500);
-    } catch (error: unknown) {
-      stopReplyPolling();
-      replyError.value = errorMessage(error);
-    }
-  };
-  replyTimer = window.setTimeout(check, 500);
-}
-
-function applyAutoReply(result: AutoReplyResult | null, fallbackSourceId: string) {
-  autoReply.value = result;
-  replyError.value = "";
-  if (!result || result.status === "NOT_APPLICABLE") {
-    stopReplyPolling();
-    return;
-  }
-  if (result.status === "QUEUED") {
-    status.value = "正在生成回复……";
-    pollReply(result.sourceMessageId ?? fallbackSourceId);
-    return;
-  }
-  if (result.status === "COMPLETED" || result.status === "ALREADY_EXISTS") {
-    stopReplyPolling();
-    status.value = "回复已送达";
-    void loadMessages();
-    return;
-  }
-  stopReplyPolling();
-  replyError.value = "回复生成失败，请重试";
-}
-
-async function triggerGenerateReply() {
-  const source = pendingSource.value;
-  if (
-    !source ||
-    !currentConversationId.value ||
-    !store.currentCharacterId ||
-    isGenerating.value
-  ) return;
-
-  isGenerating.value = true;
-  replyError.value = "";
-  status.value = "正在重试回复……";
-  try {
-    const result = await store.api.retryAutoReply(currentConversationId.value, {
-      readerCharacterId: store.currentCharacterId,
-      sourceMessageId: source.id,
-    });
-    applyAutoReply(normalizeAutoReply(result.data), source.id);
-  } catch (e: unknown) {
-    stopReplyPolling();
-    replyError.value = errorMessage(e);
-    const correlationId = (e as { correlationId?: string }).correlationId;
-    autoReply.value = {
-      status: "FAILED",
-      ...(correlationId ? { correlationId } : {}),
-    };
-  }
-}
-
-function wait(milliseconds: number) {
-  return new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
-}
-
-async function pollImageJob(jobId: string) {
-  for (let attempt = 0; attempt < 120; attempt += 1) {
-    try {
-      const result = await store.api.getImageJob(jobId);
-      imageJob.value = result.data ?? null;
-      if (imageJob.value?.status === "SUCCEEDED") {
-        imageStatus.value = "图片已生成";
-        await loadMessages();
-        return;
-      }
-      if (imageJob.value?.status === "FAILED" || imageJob.value?.status === "CANCELLED") {
-        imageStatus.value = imageJob.value.failureReason || "Image generation stopped";
-        return;
-      }
-      imageStatus.value = imageJob.value?.status === "SUBMITTED" ? "正在生成图片…" : "图片请求已排队";
-    } catch (error: unknown) {
-      imageStatus.value = errorMessage(error);
-      return;
-    }
-    await wait(2_000);
-  }
-  imageStatus.value = "图片仍在排队，请稍后刷新查看。";
-}
-
+// --- Image request ---
 async function requestConversationImage() {
   const prompt = imagePrompt.value.trim();
   if (!prompt || !currentConversationId.value || !store.currentCharacterId || !imageRecipientId.value) {
-    imageStatus.value = "请选择私聊会话，并填写配图描述。";
-    return;
+    imageStatus.value = "请选择私聊会话，并填写配图描述。"; return;
   }
   isRequestingImage.value = true;
   imageStatus.value = "正在创建图片请求…";
   try {
     const idempotencyKey = crypto.randomUUID();
     const result = await store.api.requestConversationImage(currentConversationId.value, {
-      actorCharacterId: store.currentCharacterId,
-      recipientCharacterId: imageRecipientId.value,
-      prompt,
-      workflowVersion: imageWorkflowVersion.value.trim() || "comfy-anima@v1",
-      createdAt: new Date().toISOString(),
-      idempotencyKey,
+      actorCharacterId: store.currentCharacterId, recipientCharacterId: imageRecipientId.value,
+      prompt, workflowVersion: imageWorkflowVersion.value.trim() || "comfy-anima@v1",
+      createdAt: new Date().toISOString(), idempotencyKey,
     });
     imageJob.value = result.data ?? null;
     imagePrompt.value = "";
     imageRequestOpen.value = false;
     imageStatus.value = "已请求对方生成图片，完成后会出现在聊天里。";
     if (imageJob.value) void pollImageJob(imageJob.value.id);
-  } catch (error: unknown) {
-    imageStatus.value = errorMessage(error);
-  } finally {
-    isRequestingImage.value = false;
-  }
+  } catch (error: unknown) { imageStatus.value = errorMessage(error); }
+  finally { isRequestingImage.value = false; }
 }
 
 async function loadImageDefaults() {
   try {
     const result = await store.api.getComfyUiSettings();
     imageWorkflowVersion.value = result.data.defaultWorkflowVersion ?? "comfy-anima@v1";
-  } catch {
-    imageWorkflowVersion.value = "comfy-anima@v1";
-  }
+  } catch { imageWorkflowVersion.value = "comfy-anima@v1"; }
 }
 
-function scrollToBottom() {
-  nextTick(() => {
-    if (messagesContainer.value)
-      messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
-  });
+// --- Background helpers ---
+function selectThemeBackground() {
+  setChatBackground({ ...chatBackground, kind: "theme" });
 }
 
+function selectCustomBackground(imageRef: string) {
+  setChatBackground({ ...chatBackground, kind: "custom", imageRef });
+}
+
+// --- Retry auto reply ---
+const triggerGenerateReply = retryAutoReply;
+async function retryAutoReply() {
+  if (!currentConversationId.value || !store.currentCharacterId) return;
+  const sourceId = pendingSource.value?.id ?? autoReply.value?.sourceMessageId;
+  if (!sourceId) return;
+  replyError.value = "";
+  autoReply.value = { status: "QUEUED", sourceMessageId: sourceId };
+  try {
+    const result = await store.api.retryAutoReply(currentConversationId.value, {
+      readerCharacterId: store.currentCharacterId, sourceMessageId: sourceId,
+    });
+    applyAutoReply(result.data && typeof result.data === "object" && "status" in result.data ? result.data : null, sourceId);
+  } catch (error: unknown) { replyError.value = errorMessage(error); }
+}
+
+// --- Watchers ---
 watch(
   () => store.currentCharacterId,
   () => {
     stopReplyPolling();
+    cancelMessages();
+    cancelImagePolling();
     autoReply.value = null;
     replyError.value = "";
-    void loadConversations();
+    void loadConversations().then(() => loadMessages());
   },
   { immediate: true },
 );
+
 watch(currentConversationId, () => {
   stopReplyPolling();
+  cancelMessages();
+  cancelImagePolling();
   autoReply.value = null;
   replyError.value = "";
   stickerPanelOpen.value = false;
   backgroundPickerOpen.value = false;
   void loadMessages();
 });
+
 watch(() => store.currentWorldId, () => void loadStickerPacks(), { immediate: true });
+
 void loadImageDefaults();
+
 onUnmounted(() => {
-  stopReplyPolling();
-  clearSelectedImages();
+  cleanupAutoReply();
+  cleanupMessages();
+  cleanupImagePolling();
+  cleanupComposer();
+  cleanupBackground();
 });
+</script>
 </script>
 
 <template>
