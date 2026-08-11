@@ -1,8 +1,8 @@
 import type { HandlerContext } from "../context.ts";
 import { trustedActor } from "../context.ts";
 import { ApiError, jsonResponse, withHeaders } from "../helpers.ts";
-import type { InteractionLogDto, InteractionLogQuery } from "@living-network/contracts";
-import { encodeInteractionLogCursor } from "@living-network/database";
+import type { InteractionLogDto, InteractionLogQuery } from "../../../../packages/contracts/src/index.ts";
+import { encodeInteractionLogCursor } from "../../../../packages/database/src/interaction-log.ts";
 
 export async function handleMedia(
   ctx: HandlerContext,
@@ -10,21 +10,20 @@ export async function handleMedia(
   url: URL,
   correlationId: string,
 ): Promise<Response | undefined> {
-  // --- Upload Chat Image ---
-  if (url.pathname === "/v1/media/chat-images" || url.pathname === "/v1/media/images") {
+  // --- Upload Image (primary: /v1/media/images, alias: /v1/media/chat-images) ---
+  if (url.pathname === "/v1/media/images" || url.pathname === "/v1/media/chat-images") {
     if (request.method !== "POST") throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
     trustedActor(ctx, request);
     const contentType = ((request.headers.get("content-type") ?? "").split(";", 1)[0] ?? "").trim().toLowerCase();
     const length = Number(request.headers.get("content-length") ?? "0");
     if (Number.isFinite(length) && length > 12 * 1024 * 1024) throw new ApiError(413, "PAYLOAD_TOO_LARGE", "Image must be 12MB or smaller");
     if (!contentType.startsWith("image/")) throw new ApiError(415, "UNSUPPORTED_MEDIA_TYPE", "Upload must be a PNG, JPEG, WebP, or GIF image");
+    const bytes = new Uint8Array(await request.arrayBuffer());
+    if (bytes.byteLength > 12 * 1024 * 1024) throw new ApiError(413, "PAYLOAD_TOO_LARGE", "Image must be 12MB or smaller");
     try {
-      const bytes = new Uint8Array(await request.arrayBuffer());
-        if (bytes.byteLength > 12 * 1024 * 1024) throw new ApiError(413, "PAYLOAD_TOO_LARGE", "Image must be 12MB or smaller");
-      const result = await ctx.media.put(bytes, contentType);
-      return jsonResponse({ data: result }, 201);
+      return jsonResponse({ data: await ctx.media.put(bytes, contentType) }, 201);
     } catch (error) {
-        if (error instanceof TypeError) throw new ApiError(400, "BAD_REQUEST", error.message);
+      if (error instanceof TypeError) throw new ApiError(400, "BAD_REQUEST", error.message);
       throw error;
     }
   }
