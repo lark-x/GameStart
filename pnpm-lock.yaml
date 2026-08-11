@@ -104,11 +104,29 @@ importers:
 
   packages/database:
     dependencies:
+      '@living-network/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@living-network/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@living-network/ports':
+        specifier: workspace:*
+        version: link:../ports
       pg:
         specifier: 8.13.1
         version: 8.13.1
 
   packages/domain: {}
+
+  packages/ports:
+    dependencies:
+      '@living-network/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@living-network/domain':
+        specifier: workspace:*
+        version: link:../domain
 
 packages:
 

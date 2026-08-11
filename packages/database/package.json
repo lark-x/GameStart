@@ -10,6 +10,9 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "pg": "8.13.1"
+    "pg": "8.13.1",
+    "@living-network/ports": "workspace:*",
+    "@living-network/domain": "workspace:*",
+    "@living-network/contracts": "workspace:*"
   }
 }
