@@ -94,13 +94,13 @@ export class ApiClient {
   public importStickerPack(input: CreateStickerPackRequest): Promise<ApiResponse<StickerPackImportResultDto>>;
   public importStickersToPack(packId: string, stickers: readonly CreateStickerInput[]): Promise<ApiResponse<StickerPackImportResultDto>>;
   public getConversations(characterId: string): Promise<ApiResponse<ConversationDetailDto[]>>;
-  public getMessages(conversationId: string, characterId: string): Promise<ApiResponse<MessageDto[]>>;
+  public getMessages(conversationId: string, characterId: string, signal?: AbortSignal): Promise<ApiResponse<MessageDto[]>>;
   public uploadImage(file: Blob): Promise<ApiResponse<UploadedMediaDto>>;
   public uploadChatImage(file: Blob): Promise<ApiResponse<UploadedMediaDto>>;
   public mediaUrl(mediaRef: string): string;
   public requestConversationImage(conversationId: string, input: RequestConversationImageRequest): Promise<ApiResponse<ImageJobDto>>;
-  public getImageJob(jobId: string): Promise<ApiResponse<ImageJobDto>>;
-  public sendMessage(conversationId: string, input: SendMessageRequest): Promise<ApiResponse<{ autoReply?: AutoReplyState }>>;
+  public getImageJob(jobId: string, signal?: AbortSignal): Promise<ApiResponse<ImageJobDto>>;
+  public sendMessage(conversationId: string, input: SendMessageRequest, signal?: AbortSignal): Promise<ApiResponse<{ autoReply?: AutoReplyState }>>;
   public retryAutoReply(conversationId: string, input: { readerCharacterId: string; sourceMessageId?: string }): Promise<ApiResponse<unknown>>;
   public getInteractionLogs(query?: Record<string, string | number>): Promise<ApiResponse<unknown>>;
   public subscribeInteractionLogs(handlers?: { onOpen?: () => void; onEvent?: (event: SseEvent) => void; onError?: (error: unknown) => void; onClose?: () => void }, options?: { cursor?: string; lastEventId?: string }): () => void;
