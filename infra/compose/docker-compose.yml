@@ -62,7 +62,7 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-living_network}:${POSTGRES_PASSWORD:-living_network_dev_only}@postgres:5432/${POSTGRES_DB:-living_network}
       REDIS_URL: redis://redis:6379
       MEDIA_ROOT: /app/data/media
-    command: ["pnpm", "--filter", "@living-network/api", "seed:postgres"]
+    command: ["pnpm", "--filter", "@living-network/api", "bootstrap:postgres"]
     depends_on:
       postgres:
         condition: service_healthy

@@ -83,24 +83,64 @@ async function applyMigration(
   );
 }
 
-/** Apply missing migrations in order. It never executes down migrations. */
+/** Advisory lock ID for migration coordination. */
+const MIGRATION_LOCK_ID = "7328492036451872934";
+
+/** Apply missing migrations in order. Uses pg_advisory_xact_lock when available. */
 export async function applyMigrations(
   database: MigrationDatabase,
   migrations: readonly MigrationFile[] = listMigrationFiles(),
 ): Promise<MigrationRunResult> {
+  if (database.transaction) {
+    return database.transaction(async (client) => {
+      await client.query(`SELECT pg_advisory_xact_lock(${MIGRATION_LOCK_ID})`);
+      await client.query(MIGRATION_TABLE_SQL);
+      const result = await client.query<AppliedMigrationRow>(
+        "SELECT version, name FROM living_network_schema_migrations ORDER BY version",
+      );
+      const appliedVersions = new Set(result.rows.map((row) => Number(row.version)));
+      const pending = migrations.filter((m) => !appliedVersions.has(m.version));
+      for (const migration of pending) {
+        const sql = await readMigration(migration);
+        const executable = sql.replace(/^\s*BEGIN\s*;\s*/i, "").replace(/\s*COMMIT\s*;\s*$/i, "");
+        await client.query(executable);
+        await client.query(
+          "INSERT INTO living_network_schema_migrations (version, name) VALUES ($1, $2)",
+          [migration.version, migration.name],
+        );
+      }
+      const current = [...appliedVersions, ...pending.map((m) => m.version)].sort((a, b) => a - b);
+      return { applied: pending.map((m) => m.version), current };
+    });
+  }
+  // In-memory: no locking needed
   await database.query(MIGRATION_TABLE_SQL);
   const result = await database.query<AppliedMigrationRow>(
     "SELECT version, name FROM living_network_schema_migrations ORDER BY version",
   );
   const appliedVersions = new Set(result.rows.map((row) => Number(row.version)));
-  const pending = migrations.filter((migration) => !appliedVersions.has(migration.version));
+  const pending = migrations.filter((m) => !appliedVersions.has(m.version));
   for (const migration of pending) {
-    if (database.transaction) {
-      await database.transaction((client) => applyMigration(client, migration));
-    } else {
-      await applyMigration(database, migration);
-    }
+    await applyMigration(database, migration);
   }
-  const current = [...appliedVersions, ...pending.map((migration) => migration.version)].sort((a, b) => a - b);
-  return { applied: pending.map((migration) => migration.version), current };
+  const current = [...appliedVersions, ...pending.map((m) => m.version)].sort((a, b) => a - b);
+  return { applied: pending.map((m) => m.version), current };
+}
+
+/** Verify that all known migrations have been applied. Throws if schema is behind. */
+export async function checkSchemaCurrent(
+  database: SqlClient,
+  migrations: readonly MigrationFile[] = listMigrationFiles(),
+): Promise<void> {
+  await database.query(MIGRATION_TABLE_SQL);
+  const result = await database.query<AppliedMigrationRow>(
+    "SELECT version FROM living_network_schema_migrations ORDER BY version",
+  );
+  const applied = new Set(result.rows.map((row) => Number(row.version)));
+  const missing = migrations.filter((m) => !applied.has(m.version));
+  if (missing.length > 0) {
+    throw new Error(
+      `Schema is behind: missing migrations ${missing.map((m) => m.version).join(", ")}. Run 'migrate:postgres' first.`,
+    );
+  }
 }
