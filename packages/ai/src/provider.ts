@@ -302,13 +302,54 @@ export class OpenAICompatibleProvider implements ChatProvider {
     const started = Date.now(); let firstToken = false; let terminal = false; let responsePreview = "";
     const context = { ...(request.trace ? { trace: request.trace } : {}), ...this.profileContext, model, requestMessages: request.messages };
     await emitObservation(this.observationHook, { name: "request_started", ...context });
+    const streamController = new AbortController();
+    let idleTimer: ReturnType<typeof setTimeout> | undefined;
+    const resetIdle = (): void => {
+      if (idleTimer !== undefined) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => streamController.abort(), this.timeoutMs);
+    };
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
     try {
       const response = await this.request(request, model, true);
       if (response.body === null) throw new ProviderError("STREAM_ERROR", "LLM response has no stream body");
-      for await (const data of readSseData(response.body)) {
-        if (data === "[DONE]") { terminal = true; await emitObservation(this.observationHook, { name: "completed", ...context, durationMs: Date.now() - started, preview: responsePreview, outcome: "success" }); return; }
+      reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      resetIdle();
+      const extractData = (block: string): string => {
+        const data = block.split(/\r?\n/).filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trimStart()).join("\n");
+        return data;
+      };
+      const readChunk = async (): Promise<{ done: boolean; value?: string }> => {
+        const result = await reader!.read();
+        if (result.done) {
+          if (buffer.trim().length > 0) {
+            const data = extractData(buffer);
+            buffer = "";
+            if (data.length > 0) return { done: false, value: data };
+          }
+          return { done: true };
+        }
+        buffer += decoder.decode(result.value, { stream: true });
+        const sep = buffer.indexOf("\n\n");
+        if (sep < 0) return { done: false };
+        const event = buffer.slice(0, sep);
+        buffer = buffer.slice(sep + 2);
+        const data = extractData(event);
+        return data.length > 0 ? { done: false, value: data } : { done: false };
+      };
+      while (true) {
+        let chunk;
+        try { chunk = await readChunk(); } catch (e) {
+          if (streamController.signal.aborted) throw new ProviderError("TIMEOUT", "LLM stream idle timeout", { retryable: true });
+          throw e;
+        }
+        if (chunk.done) break;
+        if (chunk.value === undefined) continue;
+        resetIdle();
+        if (chunk.value === "[DONE]") { terminal = true; await emitObservation(this.observationHook, { name: "completed", ...context, durationMs: Date.now() - started, preview: responsePreview, outcome: "success" }); return; }
         let payload: unknown;
-        try { payload = JSON.parse(data); } catch { throw new ProviderError("STREAM_ERROR", "LLM stream event is not valid JSON"); }
+        try { payload = JSON.parse(chunk.value); } catch { throw new ProviderError("STREAM_ERROR", "LLM stream event is not valid JSON"); }
         const delta = parseStreamPayload(payload);
         if (delta.content) responsePreview = `${responsePreview}${delta.content}`.slice(0, 500);
         if (delta.content && !firstToken) { firstToken = true; await emitObservation(this.observationHook, { name: "first_token", ...context, durationMs: Date.now() - started, preview: delta.content }); }
@@ -322,6 +363,8 @@ export class OpenAICompatibleProvider implements ChatProvider {
       await emitObservation(this.observationHook, { name: "error", ...context, durationMs: Date.now() - started, error: { code: normalized.code, ...(normalized.status === undefined ? {} : { status: normalized.status }), retryable: normalized.retryable, message: normalized.message } });
       throw error instanceof ProviderError ? error : normalized;
     } finally {
+      if (idleTimer !== undefined) clearTimeout(idleTimer);
+      if (reader) { try { reader.releaseLock(); } catch { /* already released */ } }
       if (!terminal) await emitObservation(this.observationHook, { name: "completed", ...context, durationMs: Date.now() - started, outcome: "cancelled" });
     }
   }
