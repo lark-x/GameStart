@@ -7,7 +7,7 @@ import Input from "../components/ui/Input.vue";
 import PageHeader from "../components/layout/PageHeader.vue";
 import Modal from "../components/ui/Modal.vue";
 import { useAppStore } from "../stores/app.js";
-import { importChatBackgroundFile, useTheme } from "../lib/theme";
+import { compressChatBackgroundImage, useTheme } from "../lib/theme";
 import { errorMessage, type ApiComfyUiSettings, type ApiLlmProviderProfile, type ApiWorkflow } from "../types";
 
 const store = useAppStore();
@@ -101,7 +101,9 @@ async function onBackgroundFileChange(event: Event) {
   if (!file) return;
   backgroundStatus.value = "正在导入背景...";
   try {
-    const imageRef = await importChatBackgroundFile(file);
+    const compressed = await compressChatBackgroundImage(file);
+    const uploaded = await store.api.uploadImage(compressed);
+    const imageRef: string = uploaded.data.mediaRef;
     setChatBackground({ kind: "custom", imageRef });
     backgroundStatus.value = "聊天背景已更新";
   } catch (error: unknown) {

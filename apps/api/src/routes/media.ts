@@ -10,8 +10,8 @@ export async function handleMedia(
   url: URL,
   correlationId: string,
 ): Promise<Response | undefined> {
-  // --- Upload Chat Image ---
-  if (url.pathname === "/v1/media/chat-images") {
+  // --- Upload Image (primary: /v1/media/images, alias: /v1/media/chat-images) ---
+  if (url.pathname === "/v1/media/images" || url.pathname === "/v1/media/chat-images") {
     if (request.method !== "POST") throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
     trustedActor(ctx, request);
     const contentType = ((request.headers.get("content-type") ?? "").split(";", 1)[0] ?? "").trim().toLowerCase();
