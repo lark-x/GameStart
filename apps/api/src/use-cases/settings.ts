@@ -37,16 +37,18 @@ export async function saveAppearanceSettings(store: ApiStore, ownerKey: string, 
   const appStore = requireAppearanceStore(store);
   try {
     const existing = await appStore.appearanceSettings.getByOwnerKey(ownerKey);
+    const chatBackground: import("../../../../packages/contracts/src/index.ts").ChatBackgroundSettingsDto = {
+      kind: input.chatBackground.kind === ChatBackgroundKind.CUSTOM ? ChatBackgroundKind.CUSTOM : ChatBackgroundKind.THEME,
+      opacity: input.chatBackground.opacity,
+      blur: input.chatBackground.blur,
+      ...(input.chatBackground.imageRef === undefined ? {} : { imageRef: input.chatBackground.imageRef }),
+    };
+    if (input.chatBackground.items !== undefined) chatBackground.items = input.chatBackground.items;
     const settings = createAppearanceSettings({
       id: existing?.id ?? `appearance-${ownerKey}`,
       ownerKey,
       themeId: input.themeId,
-      chatBackground: {
-        kind: input.chatBackground.kind === ChatBackgroundKind.CUSTOM ? ChatBackgroundKind.CUSTOM : ChatBackgroundKind.THEME,
-        opacity: input.chatBackground.opacity,
-        blur: input.chatBackground.blur,
-        ...(input.chatBackground.imageRef === undefined ? {} : { imageRef: input.chatBackground.imageRef }),
-      },
+      chatBackground,
       updatedAt: new Date().toISOString(),
     });
     await appStore.appearanceSettings.save(settings);

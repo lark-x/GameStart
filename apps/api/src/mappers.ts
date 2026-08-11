@@ -189,7 +189,11 @@ export function toStickerPackImportResult(
 export function toAppearanceSettingsDto(
   settings: AppearanceSettings,
 ): AppearanceSettingsDto {
-  return { ...settings, chatBackground: { ...settings.chatBackground } };
+  const chatBackground = { ...settings.chatBackground };
+  if (settings.chatBackground.items !== undefined) {
+    chatBackground.items = settings.chatBackground.items.map((item) => ({ ...item }));
+  }
+  return { ...settings, chatBackground };
 }
 
 export function toWorldLoreEntryDto(entry: WorldLoreEntry): WorldLoreEntryDto {
