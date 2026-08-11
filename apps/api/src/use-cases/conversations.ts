@@ -201,7 +201,9 @@ export async function sendMessage(
       entityType: "message", entityId: result.message.id,
       ...(previewMessage(result.message.text) === undefined ? {} : { message: previewMessage(result.message.text)! }),
     });
-    const scheduled = await scheduleAutomaticReply(ctx, conversationId, authorCharacterId ?? "", result.message.id, trace, false);
+    const scheduled = input.suppressAutoReply === true
+      ? { state: automaticReplyState(ctx, "NOT_APPLICABLE", trace, result.message.id) }
+      : await scheduleAutomaticReply(ctx, conversationId, authorCharacterId ?? "", result.message.id, trace, false);
     return { message: toMessageDto(result.message), inserted: result.inserted, autoReply: scheduled.state };
   } catch (error) {
     if (error instanceof TypeError && error.message.includes("idempotency")) throw new ApiError(409, "CONFLICT", error.message);

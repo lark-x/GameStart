@@ -702,3 +702,133 @@ test("returns 405 for unsupported methods on otherwise known routes", async () =
   const payload = (await json(response)) as { error: { code: string } };
   assert.equal(payload.error.code, "METHOD_NOT_ALLOWED");
 });
+
+test("rejects non-boolean suppressAutoReply with 400", async () => {
+  const provider = {
+    calls: [] as unknown[],
+    async complete(request: unknown) { (this.calls as unknown[]).push(request); return { id: "r", model: "m", content: "ok" }; },
+    async *stream() { yield { content: "unused" }; },
+  };
+  const app = new ApiApplication(
+    createApiStore({ worlds: [world], characters: [firstUser, aiCharacter] }),
+    provider as any,
+  );
+  // Create a conversation first
+  await app.handle(new Request("http://localhost/v1/conversations", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-actor-character-id": firstUser.id },
+    body: JSON.stringify({
+      id: "conv-suppress", storyWorldId: world.id, type: "PRIVATE",
+      createdAt: new Date().toISOString(), memberCharacterIds: [firstUser.id, aiCharacter.id],
+    }),
+  }));
+  const response = await app.handle(
+    new Request("http://localhost/v1/conversations/conv-suppress/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-actor-character-id": firstUser.id },
+      body: JSON.stringify({
+        id: "msg-bad-suppress", authorCharacterId: firstUser.id, kind: "TEXT", text: "hi",
+        suppressAutoReply: "yes",
+        createdAt: new Date().toISOString(), idempotencyKey: "key-bad-suppress",
+      }),
+    }),
+  );
+  assert.equal(response.status, 400);
+  const body = (await json(response)) as { error: { message: string } };
+  assert.match(body.error.message, /suppressAutoReply must be a boolean/);
+  app.stop();
+});
+
+test("rejects chatBackground.items exceeding 12 items", async () => {
+  const application = createApplication();
+  const items = Array.from({ length: 13 }, (_, i) => ({
+    id: `bg-${i}`, label: `BG ${i}`, kind: "custom", imageRef: "data:image/png;base64,aGk=", createdAt: "2026-08-08T10:00:00.000Z",
+  }));
+  const response = await application.handle(
+    new Request("http://localhost/v1/appearance-settings", {
+      method: "PUT",
+      body: JSON.stringify({
+        themeId: "dawn",
+        chatBackground: { kind: "custom", imageRef: "data:image/png;base64,aGk=", opacity: 0.4, blur: 0, items },
+      }),
+    }),
+  );
+  assert.equal(response.status, 400);
+  const body = (await json(response)) as { error: { message: string } };
+  assert.match(body.error.message, /cannot contain more than 12/);
+});
+
+test("rejects chatBackground.items with invalid kind", async () => {
+  const application = createApplication();
+  const response = await application.handle(
+    new Request("http://localhost/v1/appearance-settings", {
+      method: "PUT",
+      body: JSON.stringify({
+        themeId: "dawn",
+        chatBackground: {
+          kind: "custom", imageRef: "data:image/png;base64,aGk=", opacity: 0.4, blur: 0,
+          items: [{ id: "bg-1", label: "BG", kind: "theme", imageRef: "data:image/png;base64,aGk=", createdAt: "2026-08-08T10:00:00.000Z" }],
+        },
+      }),
+    }),
+  );
+  assert.equal(response.status, 400);
+  const body = (await json(response)) as { error: { message: string } };
+  assert.match(body.error.message, /kind must be custom/);
+});
+
+test("rejects chatBackground.items with invalid imageRef", async () => {
+  const application = createApplication();
+  const response = await application.handle(
+    new Request("http://localhost/v1/appearance-settings", {
+      method: "PUT",
+      body: JSON.stringify({
+        themeId: "dawn",
+        chatBackground: {
+          kind: "custom", imageRef: "data:image/png;base64,aGk=", opacity: 0.4, blur: 0,
+          items: [{ id: "bg-1", label: "BG", kind: "custom", imageRef: "", createdAt: "2026-08-08T10:00:00.000Z" }],
+        },
+      }),
+    }),
+  );
+  assert.equal(response.status, 400);
+});
+
+test("all responses carry x-request-id and x-correlation-id headers", async () => {
+  const application = createApplication();
+  const response = await application.handle(
+    new Request("http://localhost/health", {
+      headers: { "x-request-id": "req-123", "x-correlation-id": "corr-456" },
+    }),
+  );
+  assert.equal(response.headers.get("x-request-id"), "req-123");
+  assert.equal(response.headers.get("x-correlation-id"), "corr-456");
+});
+
+test("generated x-request-id and x-correlation-id are returned when not supplied", async () => {
+  const application = createApplication();
+  const response = await application.handle(new Request("http://localhost/health"));
+  assert.ok(response.headers.get("x-request-id"));
+  assert.ok(response.headers.get("x-correlation-id"));
+});
+
+test("recent feature endpoints are accessible: interaction logs, image upload, creator dispatch, LLM test", async () => {
+  const cipher = new SecretCipher(Buffer.alloc(32, 7).toString("base64"));
+  const application = new ApiApplication(createApiStore({ worlds: [world] }), undefined, {}, {}, { secretCipher: cipher, creatorDispatchEnabled: true });
+
+  // Interaction logs
+  const logs = await application.handle(new Request("http://localhost/v1/interaction-logs?limit=10"));
+  assert.equal(logs.status, 200);
+
+  // LLM profiles list
+  const profiles = await application.handle(new Request("http://localhost/v1/llm-provider-profiles"));
+  assert.equal(profiles.status, 200);
+
+  // Creator candidates (should work even with empty data)
+  const candidates = await application.handle(
+    new Request(`http://localhost/v1/creator/worlds/${world.id}/event-candidates`),
+  );
+  assert.equal(candidates.status, 200);
+
+  application.stop();
+});

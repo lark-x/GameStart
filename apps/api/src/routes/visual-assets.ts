@@ -7,6 +7,7 @@ import {
   parseImportImageWorkflowRequest,
   parseRequestConversationImageRequest,
   parseCreateStickerPackRequest,
+  parseAppendStickersRequest,
 } from "../parsers.ts";
 import * as characters from "../use-cases/characters.ts";
 import * as workflowUc from "../use-cases/workflows.ts";
@@ -72,8 +73,19 @@ export async function handleVisualAssets(
 
   const stickerPath = /^\/v1\/sticker-packs\/([^/]+)\/stickers$/.exec(url.pathname);
   if (stickerPath) {
+    const packId = decodeURIComponent(stickerPath[1] ?? "");
+    if (request.method === "POST") {
+      const actor = trustedActor(ctx, request);
+      if (ctx.requireTrustedActor && actor !== undefined) {
+        const pack = await ctx.store.stickerPacks?.getById(packId);
+        if (!pack) throw new ApiError(404, "NOT_FOUND", "Sticker pack not found");
+        const character = await ctx.store.characters.getById(actor);
+        if (!character || character.storyWorldId !== pack.storyWorldId) throw new ApiError(403, "FORBIDDEN", "Trusted actor cannot import into this sticker pack");
+      }
+      return jsonResponse({ data: await stickerPacks.appendStickersToPack(ctx.store, packId, parseAppendStickersRequest(await parseBody(request))) });
+    }
     if (request.method !== "GET") throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
-    return jsonResponse({ data: await stickerPacks.listStickers(ctx.store, decodeURIComponent(stickerPath[1] ?? "")) });
+    return jsonResponse({ data: await stickerPacks.listStickers(ctx.store, packId) });
   }
 
   // --- ComfyUI Workflows Import ---
