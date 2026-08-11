@@ -105,3 +105,18 @@ test("dispatch pump rejects invalid payload shape", async () => {
   assert.equal(stored?.attempts, 1);
   assert.ok(stored?.lastError?.includes("WorkerOccurrenceTask"));
 });
+
+test("dispatch pump heartbeat sends status to repository", async () => {
+  const repository = createInMemoryDispatchRequestRepository<WorkerOccurrenceTask>([]);
+  const queue = { enqueue: async () => {}, close: async () => {} };
+  const pump = createDispatchPump(repository, queue, {
+    workerId: "worker-hb",
+    now: () => "2026-08-09T00:02:00.000Z",
+  });
+  await pump.heartbeat("STOPPED");
+  const hb = await repository.getHeartbeat("worker-hb");
+  assert.ok(hb);
+  assert.equal(hb.status, "STOPPED");
+  assert.equal(hb.heartbeatAt, "2026-08-09T00:02:00.000Z");
+  assert.deepEqual(hb.metadata, {});
+});

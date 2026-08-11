@@ -1671,3 +1671,11 @@ test("SQL jsonArray parses string values and rejects non-arrays", async () => {
   const badRepos = createSqlRepositories(badClient);
   await assert.rejects(badRepos.appearanceSettings.getByOwnerKey("user"), /JSON array/);
 });
+
+test("SQL scheduledOccurrences.listForCreatorScan executes query with valid parameters", async () => {
+  const client = new RecordingSqlClient([[]]);
+  const repos = createSqlRepositories(client);
+  const result = await repos.scheduledOccurrences.listForCreatorScan(world.id, "2026-08-10T00:00:00.000Z", 10);
+  assert.deepEqual(result, []);
+  assert.match(client.calls[0]?.text ?? "", /scheduled_for <= \$2/);
+});
