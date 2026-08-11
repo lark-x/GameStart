@@ -1,7 +1,7 @@
 import type { ChatContent, ChatMessage, ProviderErrorCode } from "./provider.ts";
-import type { ChatTraceContext } from "../../contracts/src/interaction-log.ts";
-import { previewMessage, redactSensitive } from "../../database/src/interaction-log.ts";
-export type { ChatTraceContext } from "../../contracts/src/interaction-log.ts";
+import type { ChatTraceContext } from "@living-network/contracts";
+import { previewMessage, redactSensitive } from "@living-network/database";
+export type { ChatTraceContext } from "@living-network/contracts";
 export type ChatObservationName = "resolution" | "request_started" | "first_token" | "completed" | "error";
 export interface ChatObservation { name: ChatObservationName; trace?: ChatTraceContext; profileId?: string; profileName?: string; protocol?: string; model?: string; durationMs?: number; error?: { code?: ProviderErrorCode | string; status?: number; retryable?: boolean; message?: string }; requestMessages?: readonly ChatMessage[]; preview?: string; outcome?: string; }
 export type ChatObservationHook = (observation: ChatObservation) => void | Promise<void>;

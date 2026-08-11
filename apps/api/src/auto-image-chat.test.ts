@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { ChatProvider } from "../../../packages/ai/src/index.ts";
+import type { ChatProvider } from "@living-network/ai";
 import {
   CharacterRole,
   ConversationType,
@@ -12,8 +12,8 @@ import {
   createConversation,
   createMessage,
   createStoryWorld,
-} from "../../../packages/domain/src/index.ts";
-import { createInMemoryRepositories, type DomainRepositories } from "../../../packages/database/src/index.ts";
+} from "@living-network/domain";
+import { createInMemoryRepositories, type DomainRepositories } from "@living-network/database";
 import { ApiApplication } from "./app.ts";
 
 const createdAt = "2026-08-09T10:00:00.000Z";

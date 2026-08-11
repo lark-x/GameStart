@@ -4,7 +4,7 @@ import {
   createLlmProviderProfile as createLlmProviderProfileDomain,
   createComfyUiSettings as createComfyUiSettingsDomain,
   ChatBackgroundKind,
-} from "../../../../packages/domain/src/index.ts";
+} from "@living-network/domain";
 import type { HandlerContext, ApiStore } from "../context.ts";
 import { ApiError } from "../helpers.ts";
 import {
@@ -24,7 +24,7 @@ import type {
   LlmProviderProfileDto,
   UpdateComfyUiSettingsRequest,
   ComfyUiSettingsDto,
-} from "../../../../packages/contracts/src/index.ts";
+} from "@living-network/contracts";
 
 export async function getAppearanceSettings(store: ApiStore, ownerKey: string): Promise<AppearanceSettingsDto> {
   const appStore = requireAppearanceStore(store);
@@ -62,7 +62,7 @@ export async function listLlmProviderProfiles(store: ApiStore): Promise<LlmProvi
   return (await llmStore.llmProviderProfiles.list()).map((p) => toLlmProviderProfileDto(p));
 }
 
-export async function saveLlmProviderProfile(store: ApiStore, input: SaveLlmProviderProfileRequest, secretCipher?: import("../../../../packages/ai/src/index.ts").SecretCipher): Promise<LlmProviderProfileDto> {
+export async function saveLlmProviderProfile(store: ApiStore, input: SaveLlmProviderProfileRequest, secretCipher?: import("@living-network/ai").SecretCipher): Promise<LlmProviderProfileDto> {
   const llmStore = requireLlmProviderProfileStore(store);
   const existing = await llmStore.llmProviderProfiles.getById(input.id);
   const profiles = await llmStore.llmProviderProfiles.list();
@@ -148,7 +148,7 @@ export async function testLlmProviderProfile(
   if (!profile) throw new ApiError(404, "NOT_FOUND", "LLM provider profile not found");
   const started = Date.now();
   try {
-    const { createProviderFromProfile } = await import("../../../../packages/ai/src/profile-provider.ts");
+    const { createProviderFromProfile } = await import("@living-network/ai");
     const key = profile.encryptedApiKey && profile.encryptionIv && ctx.secretCipher
       ? ctx.secretCipher.decrypt({ ciphertext: profile.encryptedApiKey, iv: profile.encryptionIv })
       : undefined;

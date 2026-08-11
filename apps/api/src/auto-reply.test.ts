@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { ProviderError, type ChatCompletionRequest, type ChatProvider } from "../../../packages/ai/src/index.ts";
-import { CharacterRole, StoryMode, createCharacter, createStoryWorld } from "../../../packages/domain/src/index.ts";
-import type { InteractionLogRepository } from "../../../packages/database/src/interaction-log.ts";
+import { ProviderError, type ChatCompletionRequest, type ChatProvider } from "@living-network/ai";
+import { CharacterRole, StoryMode, createCharacter, createStoryWorld } from "@living-network/domain";
+import type { InteractionLogRepository } from "@living-network/database";
 import { ApiApplication, createApiStore } from "./index.ts";
 
 const world = createStoryWorld({ id: "auto-world", name: "Auto", timezone: "UTC", storyMode: StoryMode.STATIC, relationshipDynamicsEnabled: false });

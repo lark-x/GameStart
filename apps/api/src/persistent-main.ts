@@ -3,9 +3,9 @@ import {
   createPostgresSqlClient,
   createSqlRepositories,
   type PostgresSqlClient,
-} from "../../../packages/database/src/index.ts";
-import { loadAppConfig, type EnvironmentInput } from "../../../packages/config/src/index.ts";
-import { ActiveProfileChatProvider, createProviderFromConfig, SecretCipher } from "../../../packages/ai/src/index.ts";
+} from "@living-network/database";
+import { loadAppConfig, type EnvironmentInput } from "@living-network/config";
+import { ActiveProfileChatProvider, createProviderFromConfig, SecretCipher } from "@living-network/ai";
 import {
   closeApiRuntime,
   createApiRuntime,
@@ -13,7 +13,7 @@ import {
   type ApiRuntime,
 } from "./runtime.ts";
 import { pathToFileURL } from "node:url";
-import { createSqlInteractionLogRepository } from "../../../packages/database/src/interaction-log.ts";
+import { createSqlInteractionLogRepository } from "@living-network/database";
 import { createChatObservationLogHook, InteractionLogging } from "./interaction-logging.ts";
 
 export interface PersistentApiRuntime {

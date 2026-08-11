@@ -15,9 +15,9 @@ import {
   type JsonObject,
   type ScheduledOccurrence,
   type WorldEventDefinition,
-} from "../../../packages/domain/src/index.ts";
-import type { ChatProvider } from "../../../packages/ai/src/index.ts";
-import type { DomainRepositories } from "../../../packages/database/src/index.ts";
+} from "@living-network/domain";
+import type { ChatProvider } from "@living-network/ai";
+import type { DomainRepositories } from "@living-network/database";
 import { BehaviorMediaCoordinator, type ComfyUiClient } from "./media.ts";
 import { MomentPublicationCoordinator } from "./publication.ts";
 import { ProactiveMessageCoordinator } from "./proactive.ts";

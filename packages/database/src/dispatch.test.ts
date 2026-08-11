@@ -11,7 +11,7 @@ import {
   createScheduledOccurrence,
   createStoryWorld,
   createWorldEventDefinition,
-} from "../../domain/src/index.ts";
+} from "@living-network/domain";
 import {
   createInMemoryRepositories,
   createSqlRepositories,

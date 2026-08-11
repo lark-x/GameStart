@@ -53,7 +53,7 @@ import {
   type StoryWorld,
   type WorldEventDefinition,
   type WorldLoreEntry,
-} from "../../domain/src/index.ts";
+} from "@living-network/domain";
 import type {
   ActorSessionRepository,
   BehaviorActionRepository,

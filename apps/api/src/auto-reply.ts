@@ -1,5 +1,5 @@
-import { CharacterRole, MessageKind, type Character, type ConversationAggregate, type Message } from "../../../packages/domain/src/index.ts";
-import type { ChatTraceContext } from "../../../packages/contracts/src/index.ts";
+import { CharacterRole, MessageKind, type Character, type ConversationAggregate, type Message } from "@living-network/domain";
+import type { ChatTraceContext } from "@living-network/contracts";
 
 export type AutomaticReplyStatus = "QUEUED" | "NOT_APPLICABLE" | "ALREADY_EXISTS";
 export type RetryAutomaticReplyStatus = "QUEUED" | "COMPLETED" | "FAILED" | "ALREADY_EXISTS" | "NOT_APPLICABLE";

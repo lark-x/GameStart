@@ -5,7 +5,7 @@ import { requireImageJobStore, requireImageAssetStore } from "../store-helpers.t
 import type {
   ImageJobDto,
   ImageAssetDto,
-} from "../../../../packages/contracts/src/index.ts";
+} from "@living-network/contracts";
 
 export async function getImageJob(store: ApiStore, jobId: string): Promise<ImageJobDto> {
   const jobStore = requireImageJobStore(store);

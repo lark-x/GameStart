@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { InMemoryInteractionLogRepository } from "../../../packages/database/src/interaction-log.ts";
+import { InMemoryInteractionLogRepository } from "@living-network/database";
 import { createChatObservationLogHook, InteractionLogging } from "./interaction-logging.ts";
 
 const entry = (action: string, createdAt = "2026-08-09T00:00:00.000Z") => ({ level: "INFO" as const, source: "API" as const, category: "HTTP" as const, action, outcome: "SUCCESS", createdAt });

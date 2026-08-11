@@ -7,14 +7,14 @@ import {
   type ImageJob,
   type Moment,
   type MomentDraft,
-} from "../../../packages/domain/src/index.ts";
+} from "@living-network/domain";
 import type {
   CharacterRepository,
   DomainRepositories,
   ImageJobRepository,
   MomentDraftRepository,
   MomentRepository,
-} from "../../../packages/database/src/index.ts";
+} from "@living-network/database";
 
 export type MomentPublicationRepositories = DomainRepositories & {
   readonly characters: CharacterRepository;

@@ -44,7 +44,7 @@ import type {
   WorldCalendarDto,
   LlmProviderProfileDto,
   SaveLlmProviderProfileRequest,
-} from "../../../packages/contracts/src/index.ts";
+} from "@living-network/contracts";
 
 export interface AutoReplyState { status: "QUEUED" | "NOT_APPLICABLE" | "ALREADY_EXISTS" | "COMPLETED" | "FAILED"; correlationId?: string; sourceMessageId?: string; messageId?: string; }
 export interface SseEvent<T = unknown> { event: string; id?: string; done: boolean; data?: T; }

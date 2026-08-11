@@ -4,7 +4,7 @@ import {
   EventRecurrenceKind,
   TriggerSource,
   type JsonObject,
-} from "../../../packages/domain/src/index.ts";
+} from "@living-network/domain";
 import type {
   ActorSessionSwitchRequest,
   CharacterId,
@@ -31,7 +31,7 @@ import type {
   UpdateWorldEventDefinitionRequest,
   UpdateWorldLoreEntryRequest,
   ValidateImageWorkflowRequest,
-} from "../../../packages/contracts/src/index.ts";
+} from "@living-network/contracts";
 import {
   ApiError,
   isRecord,

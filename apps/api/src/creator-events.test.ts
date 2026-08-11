@@ -6,13 +6,13 @@ import {
   EventRecurrenceKind,
   ScheduledOccurrenceStatus,
   TriggerSource,
-} from "../../../packages/contracts/src/index.ts";
+} from "@living-network/contracts";
 import type {
   EventExecutionDto,
   EventRecurrenceDto,
   ScheduledOccurrenceDto,
   WorldEventDefinitionDto,
-} from "../../../packages/contracts/src/index.ts";
+} from "@living-network/contracts";
 import {
   previewCreatorEventDispatch,
   scanCreatorEventCandidates,

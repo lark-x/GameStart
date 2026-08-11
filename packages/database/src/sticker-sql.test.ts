@@ -6,7 +6,7 @@ import {
   createSticker,
   createStickerPack,
   createStoryWorld,
-} from "../../domain/src/index.ts";
+} from "@living-network/domain";
 import {
   createSqlRepositories,
   type SqlClient,

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { StoryMode, createStoryWorld, createWorldLoreEntry } from "../../domain/src/index.ts";
+import { StoryMode, createStoryWorld, createWorldLoreEntry } from "@living-network/domain";
 import { createInMemoryRepositories } from "./index.ts";
 
 const world = createStoryWorld({

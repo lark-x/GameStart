@@ -21,10 +21,32 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
-  apps/api: {}
+  apps/api:
+    dependencies:
+      '@living-network/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
+      '@living-network/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@living-network/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@living-network/database':
+        specifier: workspace:*
+        version: link:../../packages/database
+      '@living-network/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
+      '@living-network/ports':
+        specifier: workspace:*
+        version: link:../../packages/ports
 
   apps/web:
     dependencies:
+      '@living-network/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@lucide/vue':
         specifier: ^1.29.0
         version: 1.29.0(vue@3.5.40(typescript@5.9.3))
@@ -92,11 +114,39 @@ importers:
 
   apps/worker:
     dependencies:
+      '@living-network/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
+      '@living-network/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@living-network/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@living-network/database':
+        specifier: workspace:*
+        version: link:../../packages/database
+      '@living-network/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
+      '@living-network/ports':
+        specifier: workspace:*
+        version: link:../../packages/ports
       bullmq:
         specifier: 5.56.2
         version: 5.56.2
 
-  packages/ai: {}
+  packages/ai:
+    dependencies:
+      '@living-network/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@living-network/database':
+        specifier: workspace:*
+        version: link:../database
+      '@living-network/domain':
+        specifier: workspace:*
+        version: link:../domain
 
   packages/config: {}
 

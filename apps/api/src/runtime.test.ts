@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { loadAppConfig } from "../../../packages/config/src/index.ts";
-import { createInMemoryRepositories } from "../../../packages/database/src/index.ts";
+import { loadAppConfig } from "@living-network/config";
+import { createInMemoryRepositories } from "@living-network/database";
 import {
   closeApiRuntime,
   createApiRuntime,

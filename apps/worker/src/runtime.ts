@@ -16,9 +16,9 @@ import {
   type EventOutputExecutor,
   type EventOutputExecutorClock,
 } from "./event-outputs.ts";
-import type { ChatProvider } from "../../../packages/ai/src/index.ts";
+import type { ChatProvider } from "@living-network/ai";
 import type { TaskQueue } from "./queue.ts";
-import type { DomainRepositories } from "../../../packages/database/src/index.ts";
+import type { DomainRepositories } from "@living-network/database";
 import { bestEffortLog, type WorkerLogger } from "./interaction-log.ts";
 
 export interface WorkerCycleInput {

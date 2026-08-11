@@ -6,9 +6,9 @@ import {
   type ConversationAggregate,
   type EventExecution,
   type Message,
-} from "../../../packages/domain/src/index.ts";
-import type { ChatMessage, ChatProvider } from "../../../packages/ai/src/index.ts";
-import type { DomainRepositories } from "../../../packages/database/src/index.ts";
+} from "@living-network/domain";
+import type { ChatMessage, ChatProvider } from "@living-network/ai";
+import type { DomainRepositories } from "@living-network/database";
 
 export interface ProactiveMessageInput {
   readonly executionId: string;

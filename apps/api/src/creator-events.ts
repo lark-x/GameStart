@@ -2,11 +2,11 @@ import type {
   CreatorEventCandidateCategory, CreatorEventCandidateDto, EventDispatchAction,
   EventDispatchPreviewDto, EventDispatchPreviewItemDto, EventExecutionDto,
   ScheduledOccurrenceDto, StoryWorldId, WorldEventDefinitionDto,
-} from "../../../packages/contracts/src/index.ts";
+} from "@living-network/contracts";
 import {
   CreatorEventCandidateCategory as Category, EventDispatchAction as Action,
   EventExecutionStatus, ScheduledOccurrenceStatus, TriggerSource,
-} from "../../../packages/contracts/src/index.ts";
+} from "@living-network/contracts";
 
 export interface CreatorEventScanInput {
   worldId: StoryWorldId;

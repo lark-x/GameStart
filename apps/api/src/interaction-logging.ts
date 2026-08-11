@@ -1,6 +1,6 @@
-﻿import type { InteractionLogDto, InteractionLogQuery } from "../../../packages/contracts/src/index.ts";
-import { previewMessage, type InteractionLogInput, type InteractionLogRepository } from "../../../packages/database/src/interaction-log.ts";
-import type { ChatContent, ChatObservationHook } from "../../../packages/ai/src/index.ts";
+﻿import type { InteractionLogDto, InteractionLogQuery } from "@living-network/contracts";
+import { previewMessage, type InteractionLogInput, type InteractionLogRepository } from "@living-network/database";
+import type { ChatContent, ChatObservationHook } from "@living-network/ai";
 
 export type LogSubscriber = (log: InteractionLogDto) => void;
 

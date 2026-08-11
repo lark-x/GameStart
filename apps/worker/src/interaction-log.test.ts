@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { InMemoryInteractionLogRepository } from "../../../packages/database/src/interaction-log.ts";
+import { InMemoryInteractionLogRepository } from "@living-network/database";
 import { bestEffortLog } from "./interaction-log.ts";
 
 test("worker adapter emits database-compatible structured entries", async () => {

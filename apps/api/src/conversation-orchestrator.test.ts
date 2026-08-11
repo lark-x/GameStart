@@ -1,7 +1,7 @@
 ﻿import assert from "node:assert/strict";
 import test from "node:test";
 
-import { ProviderError, type ChatMessage, type ChatProvider } from "../../../packages/ai/src/index.ts";
+import { ProviderError, type ChatMessage, type ChatProvider } from "@living-network/ai";
 import {
   CharacterRole,
   MessageKind,
@@ -14,8 +14,8 @@ import {
   createMemoryItem,
   createMessage,
   createStoryWorld,
-} from "../../../packages/domain/src/index.ts";
-import { createInMemoryRepositories } from "../../../packages/database/src/index.ts";
+} from "@living-network/domain";
+import { createInMemoryRepositories } from "@living-network/database";
 import { ConversationOrchestrator } from "./conversation-orchestrator.ts";
 
 test("conversation orchestrator persists a deterministic AI reply", async () => {

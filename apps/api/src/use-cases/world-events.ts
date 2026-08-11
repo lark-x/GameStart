@@ -1,7 +1,7 @@
 import {
   createWorldEventDefinition as createWorldEventDefinitionDomain,
   type Character,
-} from "../../../../packages/domain/src/index.ts";
+} from "@living-network/domain";
 import type { ApiStore } from "../context.ts";
 import { ApiError } from "../helpers.ts";
 import { toWorldEventDefinitionDto } from "../mappers.ts";
@@ -10,7 +10,7 @@ import type {
   CreateWorldEventDefinitionRequest,
   UpdateWorldEventDefinitionRequest,
   WorldEventDefinitionDto,
-} from "../../../../packages/contracts/src/index.ts";
+} from "@living-network/contracts";
 
 export async function listWorldEvents(store: ApiStore, storyWorldId: string): Promise<WorldEventDefinitionDto[]> {
   const eventStore = requireEventCalendarStore(store);

@@ -4,14 +4,14 @@ import {
   loadAppConfig,
   type AppConfig,
   type EnvironmentInput,
-} from "../../../packages/config/src/index.ts";
-import type { DomainRepositories } from "../../../packages/database/src/index.ts";
-import { createProviderFromConfig, type ChatProvider } from "../../../packages/ai/src/index.ts";
-import type { SecretCipher } from "../../../packages/ai/src/index.ts";
+} from "@living-network/config";
+import type { DomainRepositories } from "@living-network/database";
+import { createProviderFromConfig, type ChatProvider } from "@living-network/ai";
+import type { SecretCipher } from "@living-network/ai";
 import { ApiApplication } from "./app.ts";
 import { createApiServer } from "./server.ts";
 import type { ConversationOrchestratorOptions } from "./conversation-orchestrator.ts";
-import type { InteractionLogRepository } from "../../../packages/database/src/interaction-log.ts";
+import type { InteractionLogRepository } from "@living-network/database";
 import type { InteractionLogging } from "./interaction-logging.ts";
 
 export interface ApiListenOptions {

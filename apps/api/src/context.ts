@@ -2,12 +2,12 @@ import type {
   ConversationOrchestratorOptions,
   ConversationReply,
 } from "./conversation-orchestrator.ts";
-import type { ChatProvider } from "../../../packages/ai/src/index.ts";
-import type { SecretCipher } from "../../../packages/ai/src/index.ts";
-import type { InteractionLogRepository } from "../../../packages/database/src/interaction-log.ts";
+import type { ChatProvider } from "@living-network/ai";
+import type { SecretCipher } from "@living-network/ai";
+import type { InteractionLogRepository } from "@living-network/database";
 import type { InteractionLogging } from "./interaction-logging.ts";
 import type { ApiMediaStore } from "./media-store.ts";
-import type { DomainRepositories } from "../../../packages/database/src/index.ts";
+import type { DomainRepositories } from "@living-network/database";
 
 export type ApiStore = DomainRepositories;
 

@@ -7,13 +7,13 @@ import {
   type ChatDelta,
   type ChatProvider,
   type ChatMessage,
-} from "../../../packages/ai/src/index.ts";
+} from "@living-network/ai";
 import {
   CharacterRole,
   StoryMode,
   createCharacter,
   createStoryWorld,
-} from "../../../packages/domain/src/index.ts";
+} from "@living-network/domain";
 import { ApiApplication, createApiStore } from "./index.ts";
 
 const world = createStoryWorld({

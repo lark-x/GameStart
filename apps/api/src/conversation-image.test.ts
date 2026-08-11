@@ -8,7 +8,7 @@ import {
   createCharacter,
   createConversation,
   createStoryWorld,
-} from "../../../packages/domain/src/index.ts";
+} from "@living-network/domain";
 import { ApiApplication, createApiStore } from "./index.ts";
 
 const createdAt = "2026-08-09T08:00:00.000Z";

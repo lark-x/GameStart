@@ -13,6 +13,7 @@
                     "lint":  "eslint --config eslint.config.js src"
                 },
     "dependencies":  {
+                         "@living-network/contracts": "workspace:*",
                          "@lucide/vue":  "^1.29.0",
                          "class-variance-authority":  "^0.7.1",
                          "clsx":  "^2.1.1",
