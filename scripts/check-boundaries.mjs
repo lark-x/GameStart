@@ -33,7 +33,7 @@ function walkTs(dir) {
     if (stat.isDirectory()) {
       if (entry === "node_modules" || entry === ".git" || entry === "dist") continue;
       results.push(...walkTs(full));
-    } else if (entry.endsWith(".ts") && !entry.endsWith(".d.ts")) {
+    } else if ((entry.endsWith(".ts") || entry.endsWith(".tsx") || entry.endsWith(".js") || entry.endsWith(".mjs") || entry.endsWith(".vue")) && !entry.endsWith(".d.ts")) {
       results.push(full);
     }
   }

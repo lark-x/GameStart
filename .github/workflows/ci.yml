@@ -26,6 +26,8 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Check architecture boundaries
+        run: pnpm check:boundaries
       - name: Run strict type checks
         run: pnpm typecheck
       - name: Run unit tests
