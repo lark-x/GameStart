@@ -9,8 +9,8 @@ import {
   createCharacterVisualIdentity,
   createImageWorkflowTemplate,
   createStoryWorld,
-} from "../../../packages/domain/src/index.ts";
-import { SecretCipher } from "../../../packages/ai/src/index.ts";
+} from "@living-network/domain";
+import { SecretCipher } from "@living-network/ai";
 import { ApiApplication, createApiStore } from "./index.ts";
 import type { ApiStore } from "./index.ts";
 

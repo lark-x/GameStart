@@ -3,7 +3,7 @@ import {
   createMessage as createMessageDomain,
   switchActorCharacter as applyActorCharacterSwitch,
   CharacterRole,
-} from "../../../../packages/domain/src/index.ts";
+} from "@living-network/domain";
 import type { HandlerContext, ApiStore } from "../context.ts";
 import { ApiError } from "../helpers.ts";
 import { toConversationDto, toMessageDto, toSessionDto } from "../mappers.ts";
@@ -18,7 +18,7 @@ import {
   type AutomaticReplyState,
   type AutomaticReplyTrace,
 } from "../auto-reply.ts";
-import { previewMessage } from "../../../../packages/database/src/interaction-log.ts";
+import { previewMessage } from "@living-network/database";
 import type {
   CreateConversationRequest,
   SendMessageRequest,
@@ -26,7 +26,7 @@ import type {
   ConversationDetailDto,
   MessageDto,
   ActorSessionDto,
-} from "../../../../packages/contracts/src/index.ts";
+} from "@living-network/contracts";
 
 // --- Shared auto-reply scheduling ---
 
@@ -44,7 +44,7 @@ function automaticReplyState(
   return { status, correlationId: trace.correlationId, sourceMessageId };
 }
 
-async function appendLog(ctx: HandlerContext, input: Omit<import("../../../../packages/contracts/src/index.ts").InteractionLogDto, "id" | "createdAt">): Promise<void> {
+async function appendLog(ctx: HandlerContext, input: Omit<import("@living-network/contracts").InteractionLogDto, "id" | "createdAt">): Promise<void> {
   try { await ctx.logging.append(input); } catch { /* logging is best effort */ }
 }
 

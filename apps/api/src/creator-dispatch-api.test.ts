@@ -18,13 +18,13 @@ import {
   createStoryWorld,
   createWorldEventDefinition,
   transitionOccurrence,
-} from "../../../packages/domain/src/index.ts";
-import type { DomainRepositories, InMemoryRepositorySeed } from "../../../packages/database/src/index.ts";
+} from "@living-network/domain";
+import type { DomainRepositories, InMemoryRepositorySeed } from "@living-network/database";
 import type {
   CreatorEventCandidateDto,
   EventDispatchBatchDto,
   EventDispatchPreviewDto,
-} from "../../../packages/contracts/src/index.ts";
+} from "@living-network/contracts";
 import { ApiApplication, createApiStore } from "./index.ts";
 import type { CreatorEventCandidatesResponse } from "./index.ts";
 

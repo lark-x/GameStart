@@ -58,7 +58,7 @@ import {
   type ImageWorkflowTemplate,
   type LlmProviderProfile,
   type ComfyUiSettings,
-} from "../../domain/src/index.ts";
+} from "@living-network/domain";
 import {
   createSqlRepositories,
   type SqlClient,

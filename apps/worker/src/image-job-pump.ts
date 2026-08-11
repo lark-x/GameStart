@@ -4,8 +4,8 @@ import {
   ImageJobStatus,
   type ComfyUiSettings,
   type ImageJob,
-} from "../../../packages/domain/src/index.ts";
-import type { DomainRepositories } from "../../../packages/database/src/index.ts";
+} from "@living-network/domain";
+import type { DomainRepositories } from "@living-network/database";
 import {
   BehaviorMediaCoordinator,
   ComfyUiError,

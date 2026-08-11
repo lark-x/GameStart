@@ -9,10 +9,10 @@ import {
   ScheduledOccurrenceStatus,
   TriggerSource,
   type ImageJob,
-} from "../../../../packages/domain/src/index.ts";
+} from "@living-network/domain";
 import type { ApiStore } from "../context.ts";
 import { ApiError } from "../helpers.ts";
-import type { RequestConversationImageRequest } from "../../../../packages/contracts/src/index.ts";
+import type { RequestConversationImageRequest } from "@living-network/contracts";
 
 export interface ConversationImageStore {
   conversations: NonNullable<ApiStore["conversations"]>;

@@ -20,8 +20,8 @@ import {
   type WorldLoreEntry,
   type BehaviorAction,
   type ActorSession,
-} from "../../../packages/domain/src/index.ts";
-import { ImageAssetCategory } from "../../../packages/contracts/src/index.ts";
+} from "@living-network/domain";
+import { ImageAssetCategory } from "@living-network/contracts";
 import type {
   ActorSessionDto,
   AppearanceSettingsDto,
@@ -44,7 +44,7 @@ import type {
   StoryWorldDto,
   WorldEventDefinitionDto,
   WorldLoreEntryDto,
-} from "../../../packages/contracts/src/index.ts";
+} from "@living-network/contracts";
 import { ApiError } from "./helpers.ts";
 
 const SECRET_MASK = "********";

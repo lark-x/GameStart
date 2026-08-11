@@ -1,7 +1,7 @@
 import {
   createSticker as createStickerDomain,
   createStickerPack as createStickerPackDomain,
-} from "../../../../packages/domain/src/index.ts";
+} from "@living-network/domain";
 import type { ApiStore } from "../context.ts";
 import { ApiError } from "../helpers.ts";
 import { toStickerPackDto, toStickerDto, toStickerPackImportResult } from "../mappers.ts";
@@ -11,7 +11,7 @@ import type {
   StickerPackDto,
   StickerDto,
   StickerPackImportResultDto,
-} from "../../../../packages/contracts/src/index.ts";
+} from "@living-network/contracts";
 
 export async function listStickerPacks(store: ApiStore, storyWorldId: string): Promise<StickerPackDto[]> {
   const stickerStore = requireStickerStore(store);
@@ -41,7 +41,7 @@ export async function importStickerPack(store: ApiStore, input: CreateStickerPac
   }
 }
 
-export async function appendStickersToPack(store: ApiStore, packId: string, inputs: readonly import("../../../../packages/contracts/src/index.ts").CreateStickerInput[]): Promise<StickerPackImportResultDto> {
+export async function appendStickersToPack(store: ApiStore, packId: string, inputs: readonly import("@living-network/contracts").CreateStickerInput[]): Promise<StickerPackImportResultDto> {
   const stickerStore = requireStickerStore(store);
   const pack = await stickerStore.stickerPacks.getById(packId);
   if (!pack) throw new ApiError(404, "NOT_FOUND", "Sticker pack not found");

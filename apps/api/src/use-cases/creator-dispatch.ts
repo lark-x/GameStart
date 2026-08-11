@@ -3,7 +3,7 @@ import {
   createScheduledOccurrence,
   ScheduledOccurrenceStatus,
   type ConversationAggregate,
-} from "../../../../packages/domain/src/index.ts";
+} from "@living-network/domain";
 import type { HandlerContext, ApiStore } from "../context.ts";
 import { ApiError } from "../helpers.ts";
 import { toWorldEventDefinitionDto, toScheduledOccurrenceDto } from "../mappers.ts";
@@ -20,8 +20,8 @@ import type {
   EventDispatchItemStatus,
   EventDispatchSelectionDto,
   CreateEventDispatchBatchRequest,
-} from "../../../../packages/contracts/src/index.ts";
-import type { ExecutionDispatchRequest } from "../../../../packages/database/src/index.ts";
+} from "@living-network/contracts";
+import type { ExecutionDispatchRequest } from "@living-network/database";
 
 // --- Store types ---
 

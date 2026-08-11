@@ -10,7 +10,7 @@ import Modal from "../components/ui/Modal.vue";
 import PageHeader from "../components/layout/PageHeader.vue";
 import { useAppStore } from "../stores/app.js";
 import { errorMessage, type ApiCharacter, type ApiEvent, type ApiRelationship, type ApiWorld, type ApiWorldLore } from "../types";
-import type { CharacterRole, StoryMode, TriggerSource } from "../../../../packages/contracts/src/index.ts";
+import type { CharacterRole, StoryMode, TriggerSource } from "@living-network/contracts";
 
 type ModalKind = "world" | "character" | "relationship" | "event" | "lore" | null;
 type RecurrenceKind = "ONCE" | "ANNUAL";

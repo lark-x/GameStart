@@ -57,7 +57,7 @@ import {
   type WorldEventDefinition,
   type WorldLoreEntry,
   type ChatBackgroundKind,
-} from "../../domain/src/index.ts";
+} from "@living-network/domain";
 import type {
   ActorSessionRepository,
   AppearanceSettingsRepository,

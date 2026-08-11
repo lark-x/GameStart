@@ -13,6 +13,12 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "bullmq": "5.56.2"
+    "bullmq": "5.56.2",
+    "@living-network/ai": "workspace:*",
+    "@living-network/config": "workspace:*",
+    "@living-network/contracts": "workspace:*",
+    "@living-network/database": "workspace:*",
+    "@living-network/domain": "workspace:*",
+    "@living-network/ports": "workspace:*"
   }
 }

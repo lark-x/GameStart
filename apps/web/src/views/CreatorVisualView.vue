@@ -8,7 +8,7 @@ import Textarea from "../components/ui/Textarea.vue";
 import PageHeader from "../components/layout/PageHeader.vue";
 import { useAppStore } from "../stores/app.js";
 import { errorMessage, type ApiWorkflow } from "../types";
-import type { CharacterVisualIdentityDto } from "../../../../packages/contracts/src/index.ts";
+import type { CharacterVisualIdentityDto } from "@living-network/contracts";
 
 const store = useAppStore();
 const identity = ref<CharacterVisualIdentityDto | null>(null);

@@ -1,6 +1,6 @@
 import { pathToFileURL } from "node:url";
 
-import { createInMemoryRepositories } from "../../../packages/database/src/index.ts";
+import { createInMemoryRepositories } from "@living-network/database";
 import { createWorkerRuntime } from "./runtime.ts";
 
 export interface WorkerProcess {

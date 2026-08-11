@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createInMemoryDispatchRequestRepository } from "../../../packages/database/src/dispatch.ts";
+import { createInMemoryDispatchRequestRepository } from "@living-network/database";
 import { createDispatchPump } from "./dispatch-pump.ts";
 import type { WorkerOccurrenceTask } from "./runtime.ts";
 

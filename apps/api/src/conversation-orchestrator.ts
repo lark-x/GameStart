@@ -8,15 +8,15 @@ import {
   type Message,
   type MemoryItem,
   type MemoryVisibility,
-} from "../../../packages/domain/src/index.ts";
+} from "@living-network/domain";
 import {
   ProviderError,
   type ChatDelta,
   type ChatMessage,
   type ChatProvider,
-} from "../../../packages/ai/src/index.ts";
-import type { DomainRepositories } from "../../../packages/database/src/index.ts";
-import type { ChatTraceContext } from "../../../packages/contracts/src/index.ts";
+} from "@living-network/ai";
+import type { DomainRepositories } from "@living-network/database";
+import type { ChatTraceContext } from "@living-network/contracts";
 
 export interface ResolvedMessageMedia {
   readonly mediaType: string;

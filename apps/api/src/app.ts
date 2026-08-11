@@ -1,15 +1,15 @@
-import type { ChatProvider } from "../../../packages/ai/src/index.ts";
-import { SecretCipher } from "../../../packages/ai/src/index.ts";
-import type { InteractionLogDto } from "../../../packages/contracts/src/index.ts";
+import type { ChatProvider } from "@living-network/ai";
+import { SecretCipher } from "@living-network/ai";
+import type { InteractionLogDto } from "@living-network/contracts";
 import {
   createInMemoryRepositories,
   type DomainRepositories,
   type InMemoryRepositorySeed,
-} from "../../../packages/database/src/index.ts";
+} from "@living-network/database";
 import {
   InMemoryInteractionLogRepository,
   type InteractionLogRepository,
-} from "../../../packages/database/src/interaction-log.ts";
+} from "@living-network/database";
 import type {
   ConversationOrchestratorOptions,
   ConversationReply,
@@ -66,7 +66,7 @@ import type {
   CreateMomentInteractionRequest,
   MomentInteractionWriteResultDto,
   CreateStickerInput,
-} from "../../../packages/contracts/src/index.ts";
+} from "@living-network/contracts";
 import type { AutomaticReplyTrace } from "./auto-reply.ts";
 import { createSseResponse } from "./helpers.ts";
 import * as conversationsUc from "./use-cases/conversations.ts";
@@ -94,13 +94,13 @@ export type { ApiStore } from "./context.ts";
 export type ApiSeed = InMemoryRepositorySeed;
 
 export interface SendMessageWithAutoReplyResult {
-  readonly message: import("../../../packages/contracts/src/index.ts").MessageDto;
+  readonly message: import("@living-network/contracts").MessageDto;
   readonly inserted: boolean;
   readonly autoReply: AutomaticReplyState;
 }
 
 export interface CreatorEventCandidatesResponse {
-  candidates: readonly import("../../../packages/contracts/src/index.ts").CreatorEventCandidateDto[];
+  candidates: readonly import("@living-network/contracts").CreatorEventCandidateDto[];
   dispatchAvailable: boolean;
   workerStatus: { available: boolean; idle: boolean; busy: boolean };
 }
@@ -160,8 +160,8 @@ export class ApiApplication {
     };
   }
 
-  private async resolveMessageMedia(message: import("../../../packages/domain/src/index.ts").Message): Promise<ResolvedMessageMedia | undefined> {
-    const { MessageKind } = await import("../../../packages/domain/src/index.ts");
+  private async resolveMessageMedia(message: import("@living-network/domain").Message): Promise<ResolvedMessageMedia | undefined> {
+    const { MessageKind } = await import("@living-network/domain");
     let mediaRef: string | undefined;
     let label: string | undefined;
     if (message.kind === MessageKind.IMAGE) {
@@ -258,17 +258,17 @@ export class ApiApplication {
     return stickerPacksUc.importStickerPack(this.store, input);
   }
 
-  public async listMomentInteractions(momentId: string, readerCharacterId: string): Promise<import("../../../packages/contracts/src/index.ts").MomentInteractionDto[]> {
+  public async listMomentInteractions(momentId: string, readerCharacterId: string): Promise<import("@living-network/contracts").MomentInteractionDto[]> {
     return momentsUc.listMomentInteractions(this.store, momentId, readerCharacterId);
   }
 
-  public async createMomentInteraction(momentId: string, input: import("../../../packages/contracts/src/index.ts").CreateMomentInteractionRequest): Promise<import("../../../packages/contracts/src/index.ts").MomentInteractionWriteResultDto> {
+  public async createMomentInteraction(momentId: string, input: import("@living-network/contracts").CreateMomentInteractionRequest): Promise<import("@living-network/contracts").MomentInteractionWriteResultDto> {
     return momentsUc.createMomentInteraction(this.store, momentId, input);
   }
 
   public validateImageWorkflow(
-    input: import("../../../packages/contracts/src/index.ts").ValidateImageWorkflowRequest,
-  ): import("../../../packages/contracts/src/index.ts").ValidateImageWorkflowResultDto {
+    input: import("@living-network/contracts").ValidateImageWorkflowRequest,
+  ): import("@living-network/contracts").ValidateImageWorkflowResultDto {
     return workflowUc.validateImageWorkflow(input);
   }
 
@@ -376,11 +376,11 @@ export class ApiApplication {
     return imageJobsUc.listImageAssets(this.store, storyWorldId);
   }
 
-  public async importImageWorkflow(input: { id: string; version: string; workflow: import("../../../packages/domain/src/index.ts").JsonObject; positivePromptPath?: string[]; negativePromptPath?: string[]; seedPath?: string[] }): Promise<ImageWorkflowTemplateDto> {
+  public async importImageWorkflow(input: { id: string; version: string; workflow: import("@living-network/domain").JsonObject; positivePromptPath?: string[]; negativePromptPath?: string[]; seedPath?: string[] }): Promise<ImageWorkflowTemplateDto> {
     return workflowUc.importImageWorkflow(this.store, input);
   }
 
-  public async requestConversationImage(conversationId: string, input: import("../../../packages/contracts/src/index.ts").RequestConversationImageRequest): Promise<ImageJobDto> {
+  public async requestConversationImage(conversationId: string, input: import("@living-network/contracts").RequestConversationImageRequest): Promise<ImageJobDto> {
     return requestConversationImageUseCase(requireConversationImageStore(this.store), conversationId, input);
   }
 

@@ -1,7 +1,7 @@
 import {
   createMomentInteraction as createMomentInteractionDomain,
   isMomentVisibleTo,
-} from "../../../../packages/domain/src/index.ts";
+} from "@living-network/domain";
 import type { ApiStore } from "../context.ts";
 import { ApiError } from "../helpers.ts";
 import { toMomentDto, toMomentInteractionDto } from "../mappers.ts";
@@ -10,7 +10,7 @@ import type {
   CreateMomentInteractionRequest,
   MomentDto,
   MomentInteractionDto,
-} from "../../../../packages/contracts/src/index.ts";
+} from "@living-network/contracts";
 
 export async function listMoments(store: ApiStore, storyWorldId: string, readerCharacterId: string, limit: number): Promise<MomentDto[]> {
   if (!Number.isSafeInteger(limit) || limit < 1) {

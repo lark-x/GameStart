@@ -19,7 +19,7 @@ import EmptyState from "../components/ui/EmptyState.vue";
 import PageHeader from "../components/layout/PageHeader.vue";
 import { useAppStore } from "../stores/app.js";
 import { errorMessage, type ApiImageAsset, type ApiStickerPack } from "../types";
-import type { ImageAssetCategory } from "../../../../packages/contracts/src/index.ts";
+import type { ImageAssetCategory } from "@living-network/contracts";
 
 type CollectionTab = "IMAGES" | "STICKERS";
 type CategoryFilter = "ALL" | ImageAssetCategory;

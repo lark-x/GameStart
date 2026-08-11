@@ -1,14 +1,14 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { applyMigrations, createPostgresSqlClient, createSqlRepositories } from "../../../packages/database/src/index.ts";
-import { loadAppConfig } from "../../../packages/config/src/index.ts";
+import { applyMigrations, createPostgresSqlClient, createSqlRepositories } from "@living-network/database";
+import { loadAppConfig } from "@living-network/config";
 import {
   createComfyUiSettings,
   createImageWorkflowTemplate,
   importImageWorkflow,
   type JsonObject,
-} from "../../../packages/domain/src/index.ts";
+} from "@living-network/domain";
 
 export async function seedPersistentDatabase(
   environment: Readonly<Record<string, string | undefined>> = process.env,

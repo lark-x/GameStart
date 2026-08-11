@@ -4,7 +4,7 @@ import {
   EventRecurrenceKind,
   TriggerSource,
   type JsonObject,
-} from "../../../packages/domain/src/index.ts";
+} from "@living-network/domain";
 import type {
   ActorSessionSwitchRequest,
   CharacterId,
@@ -31,7 +31,7 @@ import type {
   UpdateWorldEventDefinitionRequest,
   UpdateWorldLoreEntryRequest,
   ValidateImageWorkflowRequest,
-} from "../../../packages/contracts/src/index.ts";
+} from "@living-network/contracts";
 import {
   ApiError,
   isRecord,
@@ -112,7 +112,7 @@ export function parseChatBackgroundItems(value: unknown): NonNullable<ChatBackgr
   });
 }
 
-export function parseAppendStickersRequest(value: unknown): import("../../../packages/contracts/src/index.ts").CreateStickerInput[] {
+export function parseAppendStickersRequest(value: unknown): import("@living-network/contracts").CreateStickerInput[] {
   if (!isRecord(value)) throw new ApiError(400, "BAD_REQUEST", "Request body must be an object");
   assertAllowedBodyKeys(value, ["stickers"]);
   if (!Array.isArray(value.stickers)) throw new ApiError(400, "BAD_REQUEST", "stickers must be an array");
