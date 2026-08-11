@@ -758,3 +758,23 @@ test("watchImageJobProgress passes maxCompletionAttempts option", async () => {
   })) events.push(event);
   assert.equal(events.length, 1);
 });
+
+test("defaultWebSocketFactory throws when WebSocket is unavailable", async () => {
+  const original = (globalThis as Record<string, unknown>).WebSocket;
+  try {
+    delete (globalThis as Record<string, unknown>).WebSocket;
+    const { ComfyUiHttpClient } = await import("./media.ts");
+    const client = new ComfyUiHttpClient({
+      baseUrl: "https://comfy.example/",
+      clientId: "no-ws-test",
+    });
+    await assert.rejects(
+      (async () => { for await (const _ of client.watchProgress("p1")) {} })(),
+      (error: unknown) => error instanceof ComfyUiError && error.code === "CONFIGURATION",
+    );
+  } finally {
+    if (original !== undefined) {
+      (globalThis as Record<string, unknown>).WebSocket = original;
+    }
+  }
+});
