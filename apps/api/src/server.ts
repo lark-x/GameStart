@@ -26,27 +26,41 @@ function bodySizeLimit(pathname: string): number {
   return 1 * 1024 * 1024;
 }
 
+class PayloadTooLargeError extends Error {
+  public readonly statusCode: number;
+  public readonly code: string;
+  public constructor(limit: number) {
+    super(`Request body must be ${limit / (1024 * 1024)}MiB or smaller`);
+    this.name = "PayloadTooLargeError";
+    this.statusCode = 413;
+    this.code = "PAYLOAD_TOO_LARGE";
+  }
+}
+
 function readBody(request: IncomingMessage, pathname: string): Promise<Buffer> {
   const limit = bodySizeLimit(pathname);
   const contentLength = Number(request.headers["content-length"] ?? "0");
   if (Number.isFinite(contentLength) && contentLength > limit) {
-    return Promise.reject({ statusCode: 413, code: "PAYLOAD_TOO_LARGE", message: `Request body must be ${limit / (1024 * 1024)}MiB or smaller` });
+    return Promise.reject(new PayloadTooLargeError(limit));
   }
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let total = 0;
+    let rejected = false;
     request.on("data", (chunk: Buffer | string) => {
+      if (rejected) return;
       const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
       total += buf.byteLength;
       if (total > limit) {
-        request.destroy();
-        reject({ statusCode: 413, code: "PAYLOAD_TOO_LARGE", message: `Request body must be ${limit / (1024 * 1024)}MiB or smaller` });
+        rejected = true;
+        request.pause();
+        reject(new PayloadTooLargeError(limit));
         return;
       }
       chunks.push(buf);
     });
     request.on("end", () => resolve(Buffer.concat(chunks)));
-    request.on("error", reject);
+    request.on("error", (err: Error) => { if (!rejected) reject(err); });
   });
 }
 
@@ -125,12 +139,11 @@ export function createApiServer(
       } finally { converted.abort(); }
     } catch (error: unknown) {
       if (!reply.headersSent) {
-        const err = error as Record<string, unknown> | null;
-        const isBodyLimit = err !== null && typeof err === "object" && typeof err.statusCode === "number";
-        reply.statusCode = isBodyLimit ? (err!.statusCode as number) : 500;
+        const isBodyLimit = error instanceof PayloadTooLargeError;
+        reply.statusCode = isBodyLimit ? error.statusCode : 500;
         reply.setHeader("content-type", "application/json; charset=utf-8");
         if (isBodyLimit) {
-          reply.end(JSON.stringify({ error: { code: String(err!.code ?? "PAYLOAD_TOO_LARGE"), message: String(err!.message ?? "Request body too large") } }));
+          reply.end(JSON.stringify({ error: { code: error.code, message: error.message } }));
           return;
         }
       }
