@@ -4,11 +4,13 @@ import test from "node:test";
 import {
   CharacterRole,
   EventRecurrenceKind,
+  LlmProviderProtocol,
   ScheduledOccurrenceStatus,
   StoryMode,
   TriggerSource,
   annualOccurrenceKey,
   createCharacter,
+  createLlmProviderProfile,
   createScheduledOccurrence,
   createStoryWorld,
   createWorldEventDefinition,
@@ -199,5 +201,39 @@ test("in-memory listForCreatorScan rejects invalid limit and horizonEnd", async 
   await assert.rejects(
     repos.scheduledOccurrences!.listForCreatorScan(world.id, "not-a-date", 10),
     /valid ISO timestamp/,
+  );
+});
+
+test("in-memory seed rejects multiple active LLM profiles and non-default ComfyUI id", () => {
+  const profile1 = createLlmProviderProfile({
+    id: "p1", name: "One", protocol: LlmProviderProtocol.OPENAI_COMPATIBLE,
+    baseUrl: "https://api.test.com", model: "gpt-4", isActive: true,
+    createdAt: "2026-08-09T00:00:00.000Z", updatedAt: "2026-08-09T00:00:00.000Z",
+  });
+  const profile2 = createLlmProviderProfile({
+    id: "p2", name: "Two", protocol: LlmProviderProtocol.OPENAI_COMPATIBLE,
+    baseUrl: "https://api.test.com", model: "gpt-4", isActive: true,
+    createdAt: "2026-08-09T00:00:00.000Z", updatedAt: "2026-08-09T00:00:00.000Z",
+  });
+  assert.throws(
+    () => createInMemoryRepositories({
+      worlds: [world],
+      characters: [character],
+      llmProviderProfiles: [profile1, profile2],
+    }),
+    /Only one LLM provider profile can be active/,
+  );
+  assert.throws(
+    () => createInMemoryRepositories({
+      worlds: [world],
+      comfyUiSettings: {
+        id: "wrong",
+        baseUrl: "http://localhost:8188",
+        timeoutMs: 30_000,
+        autoImageIntentEnabled: false,
+        updatedAt: "2026-08-09T00:00:00.000Z",
+      },
+    }),
+    /must be default/,
   );
 });
