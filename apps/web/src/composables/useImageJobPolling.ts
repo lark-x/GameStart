@@ -10,6 +10,8 @@ export function useImageJobPolling(
   const store = useAppStore();
   const imageJob = ref<ApiImageJob | null>(null);
   const imageStatus = ref("");
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- write-only guard
+  let polling = false;
   let cancelled = false;
 
   function wait(ms: number): Promise<void> {
