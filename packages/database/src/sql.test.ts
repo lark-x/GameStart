@@ -1645,3 +1645,29 @@ test("SQL scheduledOccurrences.listForCreatorScan validates limit and horizonEnd
     /valid ISO timestamp/,
   );
 });
+
+test("SQL jsonArray parses string values and rejects non-arrays", async () => {
+  const itemsRow: SqlRow = {
+    id: "appearance-string-items",
+    owner_key: "user",
+    theme_id: "blossom",
+    chat_background_kind: "custom",
+    chat_background_image_ref: "data:image/png;base64,aGVsbG8=",
+    chat_background_opacity: 0.5,
+    chat_background_blur: 0,
+    chat_background_items: JSON.stringify([{ id: "bg-1", label: "Str", kind: "custom", imageRef: "data:image/png;base64,aGVsbG8=", createdAt: "2026-08-08T10:00:00.000Z" }]),
+    updated_at: "2026-08-08T10:00:00.000Z",
+  };
+  const client = new RecordingSqlClient([[itemsRow]]);
+  const repos = createSqlRepositories(client);
+  const settings = await repos.appearanceSettings.getByOwnerKey("user");
+  assert.ok(settings);
+  assert.equal(settings.chatBackground.items?.length, 1);
+  assert.equal(settings.chatBackground.items?.[0]?.id, "bg-1");
+
+  // Test non-array JSON rejection (valid JSON but not an array)
+  const badRow: SqlRow = { ...itemsRow, chat_background_items: JSON.stringify({ not: "array" }) };
+  const badClient = new RecordingSqlClient([[badRow]]);
+  const badRepos = createSqlRepositories(badClient);
+  await assert.rejects(badRepos.appearanceSettings.getByOwnerKey("user"), /JSON array/);
+});
