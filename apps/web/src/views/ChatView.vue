@@ -296,6 +296,7 @@ async function retryAutoReply() {
   const sourceId = pendingSource.value?.id ?? autoReply.value?.sourceMessageId;
   if (!sourceId) return;
   replyError.value = "";
+    prevConversationId = currentConversationId.value;
   autoReply.value = { status: "QUEUED", sourceMessageId: sourceId };
   try {
     const result = await store.api.retryAutoReply(currentConversationId.value, {
@@ -306,6 +307,7 @@ async function retryAutoReply() {
 }
 
 // --- Watchers ---
+let prevConversationId = currentConversationId.value;
 watch(
   () => store.currentCharacterId,
   () => {
@@ -314,7 +316,18 @@ watch(
     cancelImagePolling();
     autoReply.value = null;
     replyError.value = "";
-    void loadConversations().then(() => loadMessages());
+    prevConversationId = currentConversationId.value;
+    void loadConversations().then(() => {
+      // loadConversations may or may not change currentConversationId.
+      // If it DID change, the currentConversationId watcher handles loadMessages.
+      // If it did NOT change, we need to refresh messages explicitly.
+      // We defer to next microtask so the watcher has a chance to fire first.
+      void nextTick(() => {
+        if (currentConversationId.value && currentConversationId.value === prevConversationId) {
+          void loadMessages();
+        }
+      });
+    });
   },
   { immediate: true },
 );
@@ -325,6 +338,7 @@ watch(currentConversationId, () => {
   cancelImagePolling();
   autoReply.value = null;
   replyError.value = "";
+    prevConversationId = currentConversationId.value;
   stickerPanelOpen.value = false;
   backgroundPickerOpen.value = false;
   void loadMessages();

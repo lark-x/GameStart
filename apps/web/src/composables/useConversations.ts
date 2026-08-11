@@ -55,8 +55,13 @@ export function useConversations() {
       status.value = "正在读取会话……";
       const result = await store.api.getConversations(store.currentCharacterId);
       conversations.value = result.data ?? [];
-      if (!currentConversationId.value && conversations.value[0])
-        currentConversationId.value = conversations.value[0].conversation.id;
+      // Ensure currentConversationId is valid for the loaded character.
+      const stillExists = conversations.value.some(
+        (item) => item.conversation.id === currentConversationId.value,
+      );
+      if (!stillExists) {
+        currentConversationId.value = conversations.value[0]?.conversation.id ?? "";
+      }
       status.value = conversations.value.length ? `${conversations.value.length} 个会话` : "还没有会话";
     } catch (e: unknown) {
       status.value = errorMessage(e);
