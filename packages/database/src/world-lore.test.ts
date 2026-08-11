@@ -79,3 +79,28 @@ test("createWorldLoreEntry rejects non-boolean isEnabled", () => {
     { name: "TypeError", message: /isEnabled must be a boolean/ },
   );
 });
+
+test("in-memory world lore search sorts by updatedAt and id when match counts are equal", async () => {
+  const repositories = createInMemoryRepositories({ worlds: [world] });
+  const store = repositories.worldLoreEntries!;
+  const entry1 = lore("lore-sort-a", {
+    title: "Moon Harbor Alpha",
+    content: "A harbor with moonlight",
+    updatedAt: "2026-08-09T02:00:00.000Z",
+  });
+  const entry2 = lore("lore-sort-b", {
+    title: "Moon Harbor Beta",
+    content: "A harbor with moonlight",
+    updatedAt: "2026-08-09T01:00:00.000Z",
+  });
+  const entry3 = lore("lore-sort-c", {
+    title: "Moon Harbor Gamma",
+    content: "A harbor with moonlight",
+    updatedAt: "2026-08-09T01:00:00.000Z",
+  });
+  await store.save(entry1);
+  await store.save(entry2);
+  await store.save(entry3);
+  const results = await store.search(world.id, "moon harbor");
+  assert.deepEqual(results.map((r) => r.id), ["lore-sort-a", "lore-sort-b", "lore-sort-c"]);
+});
