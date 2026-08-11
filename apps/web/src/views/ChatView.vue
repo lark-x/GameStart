@@ -364,10 +364,7 @@ onUnmounted(() => {
           variant="ghost"
           class="conversation-item"
           :class="{ active: item.conversation.id === currentConversationId }"
-          @click="
-            currentConversationId = item.conversation.id;
-            loadMessages();
-          "
+          @click="currentConversationId = item.conversation.id"
         >
           <span class="avatar character-avatar"
             ><img
