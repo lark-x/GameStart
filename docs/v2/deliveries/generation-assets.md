@@ -1,6 +1,6 @@
 # AI-2 Generation Assets Delivery
 
-Status: in progress
+Status: Slice B/C complete; Slice D deferred pending maintainer decision
 
 Branch: `codex/v2-generation-assets`
 
