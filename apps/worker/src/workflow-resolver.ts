@@ -3,7 +3,7 @@ import type {
   DomainRepositories,
   CharacterVisualIdentityRepository,
   ImageWorkflowTemplateRepository,
-} from "@living-network/database";
+} from "@living-network/ports";
 import type { ComfyUiClient } from "./comfyui-types.ts";
 import { ComfyUiError } from "./comfyui-client.ts";
 

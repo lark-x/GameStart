@@ -21,7 +21,7 @@ import type {
   ProactiveMessageBudgetRepository,
   ScheduledOccurrenceRepository,
   WorldEventDefinitionRepository,
-} from "@living-network/database";
+} from "@living-network/ports";
 
 export type ExecutionCoordinatorRepositories = DomainRepositories & {
   readonly worldEventDefinitions: WorldEventDefinitionRepository;

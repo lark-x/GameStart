@@ -10,7 +10,7 @@ import type {
   DomainRepositories,
   ScheduledOccurrenceRepository,
   WorldEventDefinitionRepository,
-} from "@living-network/database";
+} from "@living-network/ports";
 
 export interface ScheduleWindow {
   from: string;

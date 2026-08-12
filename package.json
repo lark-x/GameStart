@@ -13,7 +13,8 @@
     "test:e2e": "playwright test",
     "test:all": "pnpm test && pnpm test:integration",
     "build": "pnpm -r --if-present build",
-    "check:boundaries": "node scripts/check-boundaries.mjs"
+    "check:boundaries": "node scripts/check-boundaries.mjs",
+    "verify": "pnpm check:boundaries && pnpm typecheck && pnpm test && pnpm --filter @living-network/web lint && pnpm build"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",

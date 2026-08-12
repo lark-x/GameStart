@@ -18,7 +18,7 @@ import {
   type AutomaticReplyState,
   type AutomaticReplyTrace,
 } from "../auto-reply.ts";
-import { previewMessage } from "@living-network/database";
+import { previewMessage } from "@living-network/ports";
 import type {
   CreateConversationRequest,
   SendMessageRequest,

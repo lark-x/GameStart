@@ -18,3 +18,6 @@ export * from "./world-lore.ts";
 export * from "./story-graph.ts";
 export * from "./sticker.ts";
 export * from "./validation.ts";
+export * from "./story-generation.ts";
+export * from "./relationship-feedback.ts";
+export * from "./social-feed.ts";

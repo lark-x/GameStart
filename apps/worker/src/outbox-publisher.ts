@@ -1,7 +1,7 @@
 import type {
   OutboxEvent,
   OutboxEventRepository,
-} from "@living-network/database";
+} from "@living-network/ports";
 import type { TaskQueue } from "./queue.ts";
 
 export interface OutboxQueueTask extends Record<string, unknown> {

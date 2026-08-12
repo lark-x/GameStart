@@ -12,3 +12,4 @@ export * from "./proactive.ts";
 export * from "./event-outputs.ts";
 
 export * from "./interaction-log.ts";
+export * from "./comment-auto-reply.ts";

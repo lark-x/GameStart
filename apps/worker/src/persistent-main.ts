@@ -18,6 +18,8 @@ import {
   type WorkerOccurrenceTask,
 } from "./runtime.ts";
 import { bestEffortLog, type WorkerLogger } from "./interaction-log.ts";
+import { createProviderFromConfig } from "@living-network/ai";
+import { processCommentAutoReply } from "./comment-auto-reply.ts";
 
 export interface PersistentWorkerProcess {
   readonly stop: () => Promise<void>;
@@ -78,6 +80,27 @@ export async function startPersistentWorker(
       repositories.outboxEvents,
       outboxQueue,
     );
+
+    // Create LLM provider for comment auto-reply
+    const llmProvider = createProviderFromConfig(config.llm);
+
+    // Create outbox consumer for comment auto-reply
+    const outboxConsumer = llmProvider
+      ? new BullMqTaskWorker<OutboxQueueTask, void>(
+          "living-network-outbox",
+          { url: config.redis.url, prefix: "living-network" },
+          async (task) => {
+            if (task.eventType !== "moment.comment.created") return;
+            await processCommentAutoReply({
+              task,
+              repositories,
+              provider: llmProvider,
+              ...(logger === undefined ? {} : { logger }),
+            });
+          },
+          { concurrency: 1, logger },
+        )
+      : undefined;
     const tickMs = Number(environment.WORKER_TICK_MS ?? "30000");
     if (!Number.isSafeInteger(tickMs) || tickMs < 1000) {
       throw new RangeError("WORKER_TICK_MS must be at least 1000");
@@ -133,6 +156,7 @@ export async function startPersistentWorker(
         if (currentTick !== undefined) await currentTick.catch(() => undefined);
         await bestEffortLog(logger, { event: "worker.lifecycle", phase: "stop", outcome: "BEGIN", correlationId: "worker:" + workerId, workerId });
         await occurrenceWorker.close();
+        if (outboxConsumer) await outboxConsumer.close();
         await dispatchPump.heartbeat("STOPPED");
         await occurrenceQueue.close();
         await outboxQueue.close();

@@ -59,515 +59,61 @@ import {
   type LlmProviderProfile,
   type ComfyUiSettings,
 } from "@living-network/domain";
+
 import {
+  RecordingSqlClient,
+  world,
+  user,
+  ai,
+  edge,
+  session,
+  worldRow,
+  characterRow,
+  edgeRow,
+  sessionRow,
+  conversationRows,
+  messageRow,
+  memory,
+  memoryRow,
+  eventDefinition,
+  eventOccurrence,
+  eventDefinitionRow,
+  occurrenceRow,
+  plan,
+  planRow,
+  budget,
+  budgetRow,
+  execution,
+  executionRow,
+  action,
+  actionRow,
+  draft,
+  draftRow,
+  draft as momentDraft,
+  draftRow as momentDraftRow,
+  imageJob,
+  imageJobRow,
+  visualIdentity,
+  visualIdentityRow,
+  workflowTemplate,
+  workflowTemplateRow,
+  moment,
+  momentRow,
+  interaction,
+  interactionRow,
+  interaction as momentInteraction,
+  interactionRow as momentInteractionRow,
+  llmProfile,
+  llmProfileRow,
+  comfySettings,
+  comfySettingsRow,
+  loreEntry,
+  loreEntryRow,
   createSqlRepositories,
   type SqlClient,
   type SqlQueryResult,
   type SqlRow,
-} from "./index.ts";
-
-class RecordingSqlClient implements SqlClient {
-  public readonly calls: Array<{ text: string; values: readonly unknown[] }> = [];
-  private readonly responses: SqlRow[][];
-
-  public constructor(responses: SqlRow[][] = []) {
-    this.responses = responses;
-  }
-
-  public async query<Row extends SqlRow = SqlRow>(
-    text: string,
-    values: readonly unknown[] = [],
-  ): Promise<SqlQueryResult<Row>> {
-    this.calls.push({ text, values: [...values] });
-    return { rows: (this.responses.shift() ?? []) as readonly Row[] };
-  }
-}
-
-const world = createStoryWorld({
-  id: "world-sql",
-  name: "SQL Story",
-  timezone: "Asia/Shanghai",
-  storyMode: StoryMode.STATIC,
-  relationshipDynamicsEnabled: false,
-});
-const user = createCharacter({
-  id: "user-sql",
-  displayName: "SQL User",
-  role: CharacterRole.USER,
-  storyWorldId: world.id,
-  timezone: world.timezone,
-  birthDate: "2000-01-01",
-});
-const ai = createCharacter({
-  id: "ai-sql",
-  displayName: "SQL AI",
-  role: CharacterRole.AI,
-  storyWorldId: world.id,
-  timezone: world.timezone,
-});
-const edge = createRelationshipEdge({
-  id: "edge-sql",
-  source: user,
-  target: ai,
-  storyWorld: world,
-  relationshipType: "friend",
-  initialState: { affinity: 10, trust: 20, conflict: 0, dependency: -5 },
-  isPublic: true,
-  isBidirectional: false,
-});
-const session = createActorSession({
-  id: "session-sql",
-  storyWorld: world,
-  userCharacter: user,
-  startedAt: "2026-08-05T11:00:00.000Z",
-});
-
-function worldRow(value: StoryWorld): SqlRow {
-  return {
-    id: value.id,
-    name: value.name,
-    timezone: value.timezone,
-    story_mode: value.storyMode,
-    relationship_dynamics_enabled: value.relationshipDynamicsEnabled,
-  };
-}
-
-function characterRow(value: Character, prefix = ""): SqlRow {
-  return {
-    [`${prefix}id`]: value.id,
-    [`${prefix}display_name`]: value.displayName,
-    [`${prefix}role`]: value.role,
-    [`${prefix}story_world_id`]: value.storyWorldId,
-    [`${prefix}timezone`]: value.timezone,
-    [`${prefix}birth_date`]: value.birthDate ?? null,
-    [`${prefix}persona_prompt_ref`]: value.personaPromptRef ?? null,
-    [`${prefix}visual_prompt_ref`]: value.visualPromptRef ?? null,
-  };
-}
-
-function edgeRow(value: RelationshipEdge): SqlRow {
-  return {
-    id: value.id,
-    relationship_type: value.relationshipType,
-    affinity: value.initialState.affinity,
-    trust: value.initialState.trust,
-    conflict: value.initialState.conflict,
-    dependency: value.initialState.dependency,
-    is_public: value.isPublic,
-    is_bidirectional: value.isBidirectional,
-    world_id: world.id,
-    world_name: world.name,
-    world_timezone: world.timezone,
-    world_story_mode: world.storyMode,
-    world_relationship_dynamics_enabled: world.relationshipDynamicsEnabled,
-    ...characterRow(user, "source_"),
-    ...characterRow(ai, "target_"),
-  };
-}
-
-function sessionRow(): SqlRow {
-  return {
-    id: session.id,
-    started_at: session.startedAt,
-    ended_at: null,
-    world_id: world.id,
-    world_name: world.name,
-    world_timezone: world.timezone,
-    world_story_mode: world.storyMode,
-    world_relationship_dynamics_enabled: world.relationshipDynamicsEnabled,
-    ...characterRow(user, "user_"),
-  };
-}
-
-function conversationRows(): SqlRow[] {
-  const base = {
-    conversation_id: "conversation-sql",
-    conversation_story_world_id: world.id,
-    conversation_type: "PRIVATE",
-    conversation_title: null,
-    conversation_created_at: "2026-08-05T12:30:00.000Z",
-    world_id: world.id,
-    world_name: world.name,
-    world_timezone: world.timezone,
-    world_story_mode: world.storyMode,
-    world_relationship_dynamics_enabled: world.relationshipDynamicsEnabled,
-  };
-  return [
-    {
-      ...base,
-      member_character_id: user.id,
-      member_joined_at: "2026-08-05T12:30:00.000Z",
-      member_left_at: null,
-      ...characterRow(user, "member_"),
-    },
-    {
-      ...base,
-      member_character_id: ai.id,
-      member_joined_at: "2026-08-05T12:30:00.000Z",
-      member_left_at: null,
-      ...characterRow(ai, "member_"),
-    },
-  ];
-}
-
-function messageRow(value = "message-sql"): SqlRow {
-  return {
-    id: value,
-    conversation_id: "conversation-sql",
-    author_character_id: user.id,
-    kind: "TEXT",
-    text: "SQL message",
-    media_ref: null,
-    sticker_id: null,
-    created_at: "2026-08-05T12:31:00.000Z",
-    idempotency_key: "message-sql-key",
-  };
-}
-
-const memory = createMemoryItem({
-  id: "memory-sql",
-  storyWorld: world,
-  kind: MemoryKind.EVENT_FACT,
-  visibility: MemoryVisibility.PUBLIC,
-  source: MemorySource.SYSTEM_EVENT,
-  content: "The SQL lantern festival is tomorrow.",
-  confidence: 0.9,
-  createdAt: "2026-08-05T12:40:00.000Z",
-  sourceRef: "event:sql-lantern",
-});
-
-function memoryRow(value: MemoryItem = memory): SqlRow {
-  return {
-    id: value.id,
-    story_world_id: value.storyWorldId,
-    kind: value.kind,
-    visibility: value.visibility,
-    source: value.source,
-    content: value.content,
-    confidence: value.confidence,
-    created_at: value.createdAt,
-    occurred_at: null,
-    subject_character_id: null,
-    audience_character_ids: [...value.audienceCharacterIds],
-    source_ref: value.sourceRef ?? null,
-    score: 1.15,
-  };
-}
-
-const eventDefinition = createWorldEventDefinition({
-  id: "event-sql-festival",
-  storyWorld: world,
-  eventKey: "world:sql-festival",
-  name: "SQL festival",
-  triggerSource: TriggerSource.WORLD_HOLIDAY,
-  recurrence: {
-    kind: EventRecurrenceKind.ANNUAL,
-    month: 8,
-    day: 15,
-    localTime: "18:00",
-  },
-  targetCharacters: [ai],
-  priority: 10,
-  cooldownSeconds: 3600,
-  createdAt: "2026-08-05T12:45:00.000Z",
-});
-
-const eventOccurrence = createScheduledOccurrence({
-  id: "occurrence-sql-festival",
-  definition: eventDefinition,
-  scheduledFor: "2026-08-15T10:00:00.000Z",
-  occurrenceKey: annualOccurrenceKey(eventDefinition, 2026),
-  createdAt: "2026-08-05T12:45:00.000Z",
-});
-
-function eventDefinitionRow(value: WorldEventDefinition = eventDefinition): SqlRow {
-  return {
-    id: value.id,
-    story_world_id: value.storyWorldId,
-    event_key: value.eventKey,
-    name: value.name,
-    trigger_source: value.triggerSource,
-    timezone: value.timezone,
-    recurrence_kind: value.recurrence.kind,
-    run_at: null,
-    recurrence_month: value.recurrence.kind === EventRecurrenceKind.ANNUAL
-      ? value.recurrence.month
-      : null,
-    recurrence_day: value.recurrence.kind === EventRecurrenceKind.ANNUAL
-      ? value.recurrence.day
-      : null,
-    recurrence_local_time: value.recurrence.kind === EventRecurrenceKind.ANNUAL
-      ? `${value.recurrence.localTime}:00`
-      : null,
-    target_character_ids: [...value.targetCharacterIds],
-    recipient_character_ids: [...value.recipientCharacterIds],
-    output_send_message: value.outputs.sendMessage,
-    output_publish_moment: value.outputs.publishMoment,
-    output_generate_image: value.outputs.generateImage,
-    priority: value.priority,
-    cooldown_seconds: value.cooldownSeconds ?? null,
-    enabled: value.enabled,
-    created_at: value.createdAt,
-  };
-}
-
-function occurrenceRow(value: ScheduledOccurrence = eventOccurrence): SqlRow {
-  return {
-    id: value.id,
-    definition_id: value.definitionId,
-    story_world_id: value.storyWorldId,
-    event_key: value.eventKey,
-    scheduled_for: value.scheduledFor,
-    timezone: value.timezone,
-    occurrence_key: value.occurrenceKey,
-    status: value.status,
-    created_at: value.createdAt,
-  };
-}
-
-const plan = createCharacterPlan({
-  id: "plan-sql",
-  storyWorld: world,
-  character: ai,
-  startsAt: "2026-08-15T09:00:00.000Z",
-  endsAt: "2026-08-15T11:00:00.000Z",
-  location: "SQL Observatory",
-  activity: "Prepare SQL festival",
-  interruptibility: PlanInterruptibility.LIMITED,
-  createdAt: "2026-08-05T12:50:00.000Z",
-});
-
-const budget = createProactiveMessageBudget({
-  id: "budget-sql",
-  storyWorld: world,
-  character: ai,
-  windowStartsAt: "2026-08-15T00:00:00.000Z",
-  windowEndsAt: "2026-08-16T00:00:00.000Z",
-  limit: 5,
-  consumed: 2,
-  updatedAt: "2026-08-05T12:50:00.000Z",
-});
-
-const execution = createEventExecution({
-  id: "execution-sql",
-  occurrence: eventOccurrence,
-  definition: eventDefinition,
-  ruleVersion: "rules-v1",
-  inputSnapshot: { planId: plan.id, source: "WORLD_HOLIDAY" },
-  startedAt: "2026-08-15T10:00:01.000Z",
-});
-
-const action = createBehaviorAction({
-  id: "action-sql",
-  execution,
-  actorCharacterId: ai.id,
-  kind: ActionKind.CREATE_MOMENT,
-  payload: {
-    body: "SQL moment draft",
-    imagePrompt: "anime festival",
-    workflowVersion: "wf-v1",
-  },
-  createdAt: "2026-08-05T12:55:00.000Z",
-});
-const momentDraft = createMomentDraft({
-  id: "moment-draft-sql",
-  action,
-  visibility: MomentVisibility.PUBLIC,
-  createdAt: "2026-08-05T12:55:00.000Z",
-});
-const imageJob = createImageJob({
-  id: "image-job-sql",
-  action,
-  momentDraftId: momentDraft.id,
-  createdAt: "2026-08-05T12:55:00.000Z",
-});
-const readyMomentDraft = transitionMomentDraft(momentDraft, MomentDraftStatus.READY, "2026-08-05T12:56:00.000Z");
-const moment = createMoment({
-  id: "moment-sql",
-  draft: readyMomentDraft,
-  publishedAt: "2026-08-15T10:05:00.000Z",
-  imageMediaRef: "media://fake/moment-sql.png",
-});
-const momentInteraction = createMomentInteraction({
-  id: "moment-interaction-sql",
-  moment,
-  actor: ai,
-  kind: MomentInteractionKind.LIKE,
-  createdAt: "2026-08-05T12:57:00.000Z",
-  idempotencyKey: "moment-interaction-sql-key",
-});
-
-const visualIdentity = createCharacterVisualIdentity({
-  id: "visual-identity-sql",
-  characterId: ai.id,
-  storyWorldId: world.id,
-  positivePrompt: "silver-haired alchemist",
-  negativePrompt: "blurry",
-  styleTags: ["anime illustration"],
-  referenceImageRefs: ["media://sql/reference.png"],
-  updatedAt: "2026-08-05T13:00:00.000Z",
-});
-
-const workflowTemplate = createImageWorkflowTemplate({
-  id: "workflow-template-sql",
-  version: "v1",
-  workflow: { node: { inputs: { text: "placeholder" } } },
-  positivePromptPath: ["node", "inputs", "text"],
-  negativePromptPath: ["node", "inputs", "negative"],
-});
-
-function planRow(value: CharacterPlan = plan): SqlRow {
-  return {
-    id: value.id,
-    story_world_id: value.storyWorldId,
-    character_id: value.characterId,
-    starts_at: value.startsAt,
-    ends_at: value.endsAt,
-    timezone: value.timezone,
-    location: value.location ?? null,
-    activity: value.activity,
-    interruptibility: value.interruptibility,
-    created_at: value.createdAt,
-  };
-}
-
-function budgetRow(value: ProactiveMessageBudget = budget): SqlRow {
-  return {
-    id: value.id,
-    story_world_id: value.storyWorldId,
-    character_id: value.characterId,
-    window_starts_at: value.windowStartsAt,
-    window_ends_at: value.windowEndsAt,
-    limit_count: value.limit,
-    consumed: value.consumed,
-    updated_at: value.updatedAt,
-  };
-}
-
-function executionRow(value: EventExecution = execution): SqlRow {
-  return {
-    id: value.id,
-    occurrence_id: value.occurrenceId,
-    definition_id: value.definitionId,
-    story_world_id: value.storyWorldId,
-    event_key: value.eventKey,
-    target_character_ids: [...value.targetCharacterIds],
-    attempt: value.attempt,
-    rule_version: value.ruleVersion,
-    input_snapshot: value.inputSnapshot,
-    status: value.status,
-    started_at: value.startedAt,
-    finished_at: value.finishedAt ?? null,
-    output_snapshot: value.outputSnapshot ?? null,
-    failure_reason: value.failureReason ?? null,
-  };
-}
-
-function actionRow(value: BehaviorAction = action): SqlRow {
-  return {
-    id: value.id,
-    execution_id: value.executionId,
-    story_world_id: value.storyWorldId,
-    actor_character_id: value.actorCharacterId,
-    kind: value.kind,
-    status: value.status,
-    priority: value.priority,
-    payload: value.payload,
-    created_at: value.createdAt,
-  };
-}
-
-function momentDraftRow(value: MomentDraft = momentDraft): SqlRow {
-  return {
-    id: value.id,
-    action_id: value.actionId,
-    execution_id: value.executionId,
-    story_world_id: value.storyWorldId,
-    author_character_id: value.authorCharacterId,
-    visibility: value.visibility,
-    body: value.body,
-    status: value.status,
-    image_job_id: value.imageJobId ?? null,
-    created_at: value.createdAt,
-    updated_at: value.updatedAt,
-  };
-}
-
-function imageJobRow(value: ImageJob = imageJob): SqlRow {
-  return {
-    id: value.id,
-    kind: value.kind,
-    action_id: value.actionId,
-    execution_id: value.executionId,
-    story_world_id: value.storyWorldId,
-    owner_character_id: value.ownerCharacterId,
-    moment_draft_id: value.momentDraftId ?? null,
-    workflow_version: value.workflowVersion,
-    prompt: value.prompt,
-    attempt: value.attempt,
-    negative_prompt: value.negativePrompt ?? null,
-    seed: value.seed ?? null,
-    status: value.status,
-    external_job_id: value.externalJobId ?? null,
-    media_ref: value.mediaRef ?? null,
-    failure_reason: value.failureReason ?? null,
-    created_at: value.createdAt,
-    updated_at: value.updatedAt,
-  };
-}
-
-function visualIdentityRow(value: CharacterVisualIdentity = visualIdentity): SqlRow {
-  return {
-    id: value.id,
-    character_id: value.characterId,
-    story_world_id: value.storyWorldId,
-    positive_prompt: value.positivePrompt,
-    negative_prompt: value.negativePrompt ?? null,
-    style_tags: [...value.styleTags],
-    reference_image_refs: [...value.referenceImageRefs],
-    revision: value.revision,
-    updated_at: value.updatedAt,
-  };
-}
-
-function workflowTemplateRow(value: ImageWorkflowTemplate = workflowTemplate): SqlRow {
-  return {
-    id: value.id,
-    version: value.version,
-    workflow: value.workflow,
-    positive_prompt_path: [...value.positivePromptPath],
-    negative_prompt_path: value.negativePromptPath === undefined ? null : [...value.negativePromptPath],
-    seed_path: value.seedPath === undefined ? null : [...value.seedPath],
-  };
-}
-
-function momentRow(value: Moment = moment): SqlRow {
-  return {
-    id: value.id,
-    draft_id: value.draftId,
-    story_world_id: value.storyWorldId,
-    author_character_id: value.authorCharacterId,
-    visibility: value.visibility,
-    audience_character_ids: [...value.audienceCharacterIds],
-    body: value.body,
-    image_media_ref: value.imageMediaRef ?? null,
-    published_at: value.publishedAt,
-    created_at: value.createdAt,
-  };
-}
-
-function momentInteractionRow(value: MomentInteraction = momentInteraction): SqlRow {
-  return {
-    id: value.id,
-    moment_id: value.momentId,
-    story_world_id: value.storyWorldId,
-    actor_character_id: value.actorCharacterId,
-    kind: value.kind,
-    text: value.text ?? null,
-    created_at: value.createdAt,
-    idempotency_key: value.idempotencyKey,
-  };
-}
+} from "./sql-test-helpers.ts";
 
 test("maps world and character rows while keeping lookup values parameterized", async () => {
   const client = new RecordingSqlClient([[worldRow(world)], [characterRow(user)]]);
@@ -936,7 +482,7 @@ test("maps and upserts character plans and active message budgets", async () => 
     plan.startsAt,
     plan.endsAt,
     plan.timezone,
-    plan.location,
+    plan.location ?? null,
     plan.activity,
     plan.interruptibility,
     plan.createdAt,
@@ -1142,7 +688,7 @@ test("maps and upserts visual identities and versioned workflow templates", asyn
     workflowTemplate.version,
     JSON.stringify(workflowTemplate.workflow),
     [...workflowTemplate.positivePromptPath],
-    [...workflowTemplate.negativePromptPath!],
+    workflowTemplate.negativePromptPath ? [...workflowTemplate.negativePromptPath] : null,
     null,
   ]);
 });
@@ -1175,7 +721,7 @@ test("maps and upserts social moments with visibility-aware feed queries", async
     MomentVisibility.PUBLIC,
     [],
     moment.body,
-    moment.imageMediaRef,
+    moment.imageMediaRef ?? null,
     moment.publishedAt,
     moment.createdAt,
   ]);

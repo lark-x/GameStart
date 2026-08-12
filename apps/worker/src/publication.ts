@@ -14,7 +14,7 @@ import type {
   ImageJobRepository,
   MomentDraftRepository,
   MomentRepository,
-} from "@living-network/database";
+} from "@living-network/ports";
 
 export type MomentPublicationRepositories = DomainRepositories & {
   readonly characters: CharacterRepository;

@@ -21,7 +21,7 @@ import type {
   EventDispatchSelectionDto,
   CreateEventDispatchBatchRequest,
 } from "@living-network/contracts";
-import type { ExecutionDispatchRequest } from "@living-network/database";
+import type { ExecutionDispatchRequest } from "@living-network/ports";
 
 // --- Store types ---
 

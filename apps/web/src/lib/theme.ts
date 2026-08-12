@@ -1,5 +1,5 @@
 import { computed, reactive, ref } from "vue";
-import type { ApiClient } from "../api.js";
+import type { ApiClient } from "../api";
 
 /**
  * 界面外观管理：皮肤主题 + 主题装饰 + 聊天背景。

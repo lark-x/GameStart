@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { ApiClient, parseSseBlock } from "./api.js";
+import { ApiClient, parseSseBlock } from "./api.ts";
 
 test("parses chat delta, error, and DONE SSE blocks", () => {
   assert.deepEqual(parseSseBlock('data: {"content":"hello"}'), {

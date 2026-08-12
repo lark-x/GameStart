@@ -1,6 +1,6 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
-import { ApiClient } from "../api.js";
+import { ApiClient } from "../api";
 import type { ApiCharacter, ApiWorld } from "../types";
 
 export const useAppStore = defineStore("app", () => {

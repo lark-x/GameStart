@@ -1,5 +1,5 @@
 import { InteractionLogCategory, InteractionLogLevel, InteractionLogSource } from "@living-network/contracts";
-import { previewMessage, redactSensitive, type InteractionLogInput, type InteractionLogRepository } from "@living-network/database";
+import { previewMessage, redactSensitive, type InteractionLogInput, type InteractionLogRepository } from "@living-network/ports";
 export type WorkerLogger = InteractionLogRepository;
 export interface WorkerLogEvent { readonly action?: string; readonly event?: string; readonly phase?: string; readonly outcome?: string; readonly correlationId: string; readonly category?: InteractionLogInput["category"]; readonly level?: InteractionLogInput["level"]; readonly entityType?: string; readonly entityId?: string; readonly occurrenceId?: string; readonly worldId?: string; readonly jobId?: string; readonly requestId?: string; readonly message?: unknown; readonly details?: unknown; readonly [key: string]: unknown; }
 function logDetails(event: WorkerLogEvent): Record<string, unknown> {

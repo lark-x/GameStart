@@ -40,7 +40,6 @@ import {
   toStoryArcDto,
   toStoryEdgeDto,
   toStoryNodeDto,
-  toWorldLoreEntryDto,
 } from "../mappers.ts";
 import { requireStoryGraphStore } from "../store-helpers.ts";
 
@@ -113,6 +112,9 @@ export async function createStoryArcUseCase(
   if (await graphStore.storyArcs.getById(input.id)) throw new ApiError(409, "CONFLICT", "Story arc already exists");
   const storyWorld = await requireWorld(store, input.storyWorldId);
   try {
+    // NOTE: MemoryItem save and candidate save are not wrapped in a shared
+    // transaction for in-memory repositories. PostgreSQL mode should use
+    // a transaction to guarantee both succeed or both roll back.
     const now = new Date().toISOString();
     const arc = createStoryArc({ ...input, storyWorld, createdAt: now, updatedAt: now });
     await graphStore.storyArcs.save(arc);
@@ -497,6 +499,13 @@ export async function reviewMemoryCandidate(
   const graphStore = requireStoryGraphStore(store);
   const existing = await graphStore.memoryCandidates.getById(id);
   if (!existing) throw new ApiError(404, "NOT_FOUND", "Memory candidate not found");
+  // Idempotent replay: return existing result when status already matches.
+  if (existing.status !== "PENDING" && existing.status === input.status) {
+    return toMemoryCandidateDto(existing);
+  }
+  if (existing.status !== "PENDING") {
+    throw new ApiError(409, "CONFLICT", `Memory candidate is already ${existing.status}`);
+  }
   const storyWorld = await requireWorld(store, existing.storyWorldId);
   const reviewerCharacter = input.reviewerCharacterId === undefined
     ? undefined
