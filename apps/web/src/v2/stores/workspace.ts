@@ -41,6 +41,10 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
   const playerMessage = ref<string | null>(null);
   const exportFormat = ref<"json" | "markdown">("json");
   const exportMessage = ref<string | null>(null);
+  const assetPrompt = ref<string>("");
+  const assetReviewReason = ref<string>("Approved for the local asset library.");
+  const assetMessage = ref<string | null>(null);
+  const assetReviewMessage = ref<string | null>(null);
 
   const mode = computed(() => adapter.value.mode);
   const hasSnapshot = computed(() => snapshot.value !== null);
@@ -53,6 +57,9 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
   const canReviewCandidate = computed(() => snapshot.value?.candidate.status === "pending");
   const releaseReady = computed(() => snapshot.value?.release.valid === true);
   const currentSceneTitle = computed(() => snapshot.value?.player.title ?? "No scene loaded");
+  const assetCandidateStatus = computed(() => snapshot.value?.assets.candidate.status ?? "pending");
+  const canReviewAssetCandidate = computed(() => snapshot.value?.assets.candidate.status === "pending");
+  const assetLibraryCount = computed(() => snapshot.value?.assets.library.length ?? 0);
   const hasDraftChanges = computed(
     () =>
       snapshot.value !== null &&
@@ -88,11 +95,14 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       expectedRevision.value = snapshot.value.world.revision;
       generationPrompt.value = snapshot.value.generation.job.promptPreview;
       saveLabel.value = snapshot.value.save.label;
+      assetPrompt.value = snapshot.value.assets.prompt;
       generationMessage.value = null;
       reviewMessage.value = null;
       releaseMessage.value = null;
       playerMessage.value = null;
       exportMessage.value = null;
+      assetMessage.value = null;
+      assetReviewMessage.value = null;
     } catch (err) {
       if (err instanceof V2AdapterError) {
         error.value = `${err.code}: ${err.message}`;
@@ -350,6 +360,77 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     }
   }
 
+  async function createAssetJob() {
+    if (!snapshot.value) return;
+    loading.value = true;
+    error.value = null;
+    assetMessage.value = null;
+    try {
+      const job = await adapter.value.createAssetJob(assetPrompt.value);
+      snapshot.value = {
+        ...snapshot.value,
+        assets: {
+          ...snapshot.value.assets,
+          prompt: assetPrompt.value,
+          job,
+        },
+      };
+      assetMessage.value = `Asset job ${job.jobId} is ${job.status}.`;
+    } catch (err) {
+      if (err instanceof V2AdapterError) {
+        error.value = `${err.code}: ${err.message}`;
+      } else if (err instanceof Error) {
+        error.value = err.message;
+      } else {
+        error.value = "Unknown V2 asset job error";
+      }
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  async function reviewAssetCandidate(action: V2CandidateReviewAction) {
+    if (!snapshot.value) return;
+    loading.value = true;
+    error.value = null;
+    assetReviewMessage.value = null;
+    try {
+      const result = await adapter.value.reviewAssetCandidate({
+        candidateId: snapshot.value.assets.candidate.candidateId,
+        action,
+        reviewer: reviewer.value,
+        reason: assetReviewReason.value,
+      });
+      snapshot.value = {
+        ...snapshot.value,
+        assets: {
+          ...snapshot.value.assets,
+          candidate: {
+            ...snapshot.value.assets.candidate,
+            status: result.status,
+            reviewedAt: result.reviewedAt as V2IsoDateTime,
+            reviewer: reviewer.value,
+            reviewReason: result.reviewReason,
+          },
+          library: result.approvedAsset
+            ? [...snapshot.value.assets.library, result.approvedAsset]
+            : snapshot.value.assets.library,
+        },
+      };
+      assetReviewMessage.value = `Asset candidate marked ${result.status}.`;
+    } catch (err) {
+      if (err instanceof V2AdapterError) {
+        error.value = `${err.code}: ${err.message}`;
+      } else if (err instanceof Error) {
+        error.value = err.message;
+      } else {
+        error.value = "Unknown V2 asset review error";
+      }
+    } finally {
+      loading.value = false;
+    }
+  }
+
   return {
     snapshot,
     loading,
@@ -368,6 +449,10 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     playerMessage,
     exportFormat,
     exportMessage,
+    assetPrompt,
+    assetReviewReason,
+    assetMessage,
+    assetReviewMessage,
     mode,
     hasSnapshot,
     revisionLabel,
@@ -377,6 +462,9 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     canReviewCandidate,
     releaseReady,
     currentSceneTitle,
+    assetCandidateStatus,
+    canReviewAssetCandidate,
+    assetLibraryCount,
     hasDraftChanges,
     setAdapter,
     setMode,
@@ -390,5 +478,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     saveRun,
     restoreSave,
     exportRelease,
+    createAssetJob,
+    reviewAssetCandidate,
   };
 });

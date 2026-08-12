@@ -107,6 +107,7 @@ export interface V2WorkspaceSnapshot {
   readonly player: V2PlayerRuntimeSummary;
   readonly save: V2SaveSummary;
   readonly exportBundle: V2ExportBundleSummary;
+  readonly assets: V2AssetWorkbenchSummary;
 }
 
 export interface V2GenerationSummary {
@@ -192,6 +193,60 @@ export interface V2ExportBundleSummary {
   readonly preview: string;
 }
 
+export interface V2AssetWorkbenchSummary {
+  readonly workflowName: string;
+  readonly prompt: string;
+  readonly job: V2AssetJobSummary;
+  readonly candidate: V2AssetCandidateSummary;
+  readonly library: readonly V2ApprovedAssetSummary[];
+}
+
+export interface V2AssetJobSummary extends V2JobRef {
+  readonly workflowVersion: string;
+  readonly seed: number;
+  readonly promptPreview: string;
+  readonly terminalMessage?: string;
+}
+
+export interface V2AssetCandidateSummary {
+  readonly candidateId: string;
+  readonly status: V2CandidateStatus;
+  readonly title: string;
+  readonly mediaRef: string;
+  readonly thumbnailRef: string;
+  readonly sourceJobId: string;
+  readonly provenanceSummary: string;
+  readonly validationNotes: readonly string[];
+  readonly reviewedAt?: string;
+  readonly reviewer?: string;
+  readonly reviewReason?: string;
+}
+
+export interface V2ApprovedAssetSummary {
+  readonly assetId: string;
+  readonly title: string;
+  readonly kind: "character_sprite" | "scene_background" | "prop";
+  readonly mediaRef: string;
+  readonly thumbnailRef: string;
+  readonly workflowVersion: string;
+  readonly seed: number;
+  readonly approved: boolean;
+}
+
+export interface V2AssetReviewRequest {
+  readonly candidateId: string;
+  readonly action: V2CandidateReviewAction;
+  readonly reviewer: string;
+  readonly reason: string;
+}
+
+export interface V2AssetReviewResult {
+  readonly status: V2CandidateStatus;
+  readonly reviewedAt: string;
+  readonly reviewReason: string;
+  readonly approvedAsset?: V2ApprovedAssetSummary;
+}
+
 export interface V2WorkspaceAdapter {
   readonly mode: V2WorkspaceMode;
   getSnapshot(): Promise<V2WorkspaceSnapshot>;
@@ -204,6 +259,8 @@ export interface V2WorkspaceAdapter {
   saveRun(label: string): Promise<V2SaveSummary>;
   restoreSave(saveId: string): Promise<V2PlayerRuntimeSummary>;
   exportRelease(format: "json" | "markdown"): Promise<V2ExportBundleSummary>;
+  createAssetJob(prompt: string): Promise<V2AssetJobSummary>;
+  reviewAssetCandidate(request: V2AssetReviewRequest): Promise<V2AssetReviewResult>;
 }
 
 export class V2AdapterError extends Error {

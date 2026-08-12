@@ -1,18 +1,19 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { Boxes, FileCheck2, GitFork, PlayCircle, Radio, Sparkles } from "@lucide/vue";
+import { Boxes, FileCheck2, GitFork, Image as ImageIcon, PlayCircle, Radio, Sparkles } from "@lucide/vue";
 
 import Button from "../components/ui/Button.vue";
 import { useV2WorkspaceStore } from "./stores/workspace";
 import V2StatusRail from "./components/V2StatusRail.vue";
 import V2WorkspacePanel from "./components/V2WorkspacePanel.vue";
 
-type V2Area = "canon" | "graph" | "review" | "release" | "player" | "operations";
+type V2Area = "canon" | "graph" | "review" | "assets" | "release" | "player" | "operations";
 
 const areas: readonly { value: V2Area; label: string; icon: typeof Boxes }[] = [
   { value: "canon", label: "Canon", icon: Boxes },
   { value: "graph", label: "Graph", icon: GitFork },
   { value: "review", label: "Review", icon: Sparkles },
+  { value: "assets", label: "Assets", icon: ImageIcon },
   { value: "release", label: "Release", icon: FileCheck2 },
   { value: "player", label: "Player", icon: PlayCircle },
   { value: "operations", label: "Ops", icon: Radio },
@@ -85,6 +86,11 @@ onMounted(() => {
             :generation-message="store.generationMessage"
             :review-message="store.reviewMessage"
             :can-review-candidate="store.canReviewCandidate"
+            v-model:asset-prompt="store.assetPrompt"
+            v-model:asset-review-reason="store.assetReviewReason"
+            :asset-message="store.assetMessage"
+            :asset-review-message="store.assetReviewMessage"
+            :can-review-asset-candidate="store.canReviewAssetCandidate"
             v-model:save-label="store.saveLabel"
             v-model:export-format="store.exportFormat"
             :release-message="store.releaseMessage"
@@ -95,6 +101,8 @@ onMounted(() => {
             @reset-canon-draft="store.resetCanonDraft"
             @create-generation-job="store.createGenerationJob"
             @review-candidate="store.reviewCandidate"
+            @create-asset-job="store.createAssetJob"
+            @review-asset-candidate="store.reviewAssetCandidate"
             @create-release="store.createRelease"
             @submit-choice="store.submitChoice"
             @save-run="store.saveRun"
@@ -112,6 +120,8 @@ onMounted(() => {
         :graph-issue-count="store.graphIssueCount"
         :typed-state-preview-count="store.typedStatePreviewCount"
         :candidate-status="store.candidateStatus"
+        :asset-candidate-status="store.assetCandidateStatus"
+        :asset-library-count="store.assetLibraryCount"
         :current-scene-title="store.currentSceneTitle"
         @refresh="store.loadSnapshot"
         @switch-mode="store.setMode"

@@ -9,6 +9,9 @@ import type {
 import { createV2MockAdapter } from "./mock.ts";
 import {
   V2AdapterError,
+  type V2AssetJobSummary,
+  type V2AssetReviewRequest,
+  type V2AssetReviewResult,
   type V2CandidateReviewRequest,
   type V2CandidateReviewResult,
   type V2ExportBundleSummary,
@@ -124,6 +127,24 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
       return parseJson<V2ExportBundleSummary>(
         await fetcher(`${baseUrl}/api/v2/releases/export?format=${encodeURIComponent(format)}`, {
           headers: { Accept: "application/json" },
+        }),
+      );
+    },
+    async createAssetJob(prompt: string): Promise<V2AssetJobSummary> {
+      return parseJson<V2AssetJobSummary>(
+        await fetcher(`${baseUrl}/api/v2/assets/jobs`, {
+          method: "POST",
+          headers: { Accept: "application/json", "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt }),
+        }),
+      );
+    },
+    async reviewAssetCandidate(request: V2AssetReviewRequest): Promise<V2AssetReviewResult> {
+      return parseJson<V2AssetReviewResult>(
+        await fetcher(`${baseUrl}/api/v2/assets/candidates/${request.candidateId}/review`, {
+          method: "POST",
+          headers: { Accept: "application/json", "Content-Type": "application/json" },
+          body: JSON.stringify(request),
         }),
       );
     },

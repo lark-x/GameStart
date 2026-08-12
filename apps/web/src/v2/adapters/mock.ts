@@ -6,6 +6,7 @@ import {
 } from "@living-network/contracts";
 
 import {
+  v2WebFixtureAssets,
   v2WebFixtureCandidate,
   v2WebFixtureExportBundle,
   v2WebFixtureRelease,
@@ -19,6 +20,9 @@ import {
   v2WebFixtureWorld,
 } from "../fixtures/mock-data.ts";
 import type {
+  V2AssetJobSummary,
+  V2AssetReviewRequest,
+  V2AssetReviewResult,
   V2CandidateReviewRequest,
   V2CandidateReviewResult,
   V2WorkspaceAdapter,
@@ -41,6 +45,7 @@ export function createV2MockSnapshot(): V2WorkspaceSnapshot {
     player: v2WebFixturePlayer,
     save: v2WebFixtureSave,
     exportBundle: v2WebFixtureExportBundle,
+    assets: v2WebFixtureAssets,
   };
 }
 
@@ -104,6 +109,38 @@ export function createV2MockAdapter(): V2WorkspaceAdapter {
         };
       }
       return v2WebFixtureExportBundle;
+    },
+    async createAssetJob(prompt: string): Promise<V2AssetJobSummary> {
+      return {
+        ...v2WebFixtureAssets.job,
+        status: "queued",
+        promptPreview: prompt.trim() || v2WebFixtureAssets.prompt,
+        terminalMessage: "Asset job queued for ComfyUI adapter.",
+        updatedAt: now,
+      };
+    },
+    async reviewAssetCandidate(request: V2AssetReviewRequest): Promise<V2AssetReviewResult> {
+      const status =
+        request.action === "request_changes" ? "changes_requested" : request.action === "approve" ? "approved" : "rejected";
+      return {
+        status,
+        reviewedAt: now,
+        reviewReason: request.reason.trim() || `${request.reviewer} marked ${request.candidateId} as ${status}.`,
+        ...(status === "approved"
+          ? {
+              approvedAsset: {
+                assetId: "asset_station_bg",
+                title: v2WebFixtureAssets.candidate.title,
+                kind: "scene_background",
+                mediaRef: v2WebFixtureAssets.candidate.mediaRef,
+                thumbnailRef: v2WebFixtureAssets.candidate.thumbnailRef,
+                workflowVersion: v2WebFixtureAssets.job.workflowVersion,
+                seed: v2WebFixtureAssets.job.seed,
+                approved: true,
+              },
+            }
+          : {}),
+      };
     },
   };
 }

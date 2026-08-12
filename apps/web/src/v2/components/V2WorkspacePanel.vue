@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { Boxes, FileCheck2, GitFork, PlayCircle, Sparkles } from "@lucide/vue";
+import { Boxes, FileCheck2, GitFork, Image as ImageIcon, PlayCircle, Sparkles } from "@lucide/vue";
 
 import Badge from "../../components/ui/Badge.vue";
 import Button from "../../components/ui/Button.vue";
@@ -11,6 +11,8 @@ import Select from "../../components/ui/Select.vue";
 import Textarea from "../../components/ui/Textarea.vue";
 import type { V2WorkspaceSnapshot } from "../adapters";
 import type { V2CandidateReviewAction } from "../adapters/types";
+
+type BadgeTone = "neutral" | "info" | "success" | "warning" | "danger";
 
 const props = defineProps<{
   area: string;
@@ -27,6 +29,11 @@ const props = defineProps<{
   reviewReason: string;
   reviewMessage: string | null;
   canReviewCandidate: boolean;
+  assetPrompt: string;
+  assetReviewReason: string;
+  assetMessage: string | null;
+  assetReviewMessage: string | null;
+  canReviewAssetCandidate: boolean;
   saveLabel: string;
   exportFormat: "json" | "markdown";
   releaseMessage: string | null;
@@ -42,12 +49,16 @@ const emit = defineEmits<{
   "update:generationPrompt": [value: string];
   "update:reviewer": [value: string];
   "update:reviewReason": [value: string];
+  "update:assetPrompt": [value: string];
+  "update:assetReviewReason": [value: string];
   "update:saveLabel": [value: string];
   "update:exportFormat": [value: "json" | "markdown"];
   previewCanonDraft: [];
   resetCanonDraft: [];
   createGenerationJob: [];
   reviewCandidate: [action: V2CandidateReviewAction];
+  createAssetJob: [];
+  reviewAssetCandidate: [action: V2CandidateReviewAction];
   createRelease: [];
   submitChoice: [choiceId: string];
   saveRun: [];
@@ -63,6 +74,8 @@ const areaMeta = computed(() => {
       return { icon: GitFork, title: "Narrative Graph", badge: "scene graph" };
     case "review":
       return { icon: Sparkles, title: "Candidate Review", badge: "pending candidate" };
+    case "assets":
+      return { icon: ImageIcon, title: "Asset Workbench", badge: "candidate media" };
     case "release":
       return { icon: FileCheck2, title: "Release Desk", badge: "preflight" };
     case "player":
@@ -80,6 +93,13 @@ const statusTone = {
 
 function formatValue(value: boolean | number | string) {
   return typeof value === "boolean" ? (value ? "true" : "false") : String(value);
+}
+
+function candidateTone(status: string): BadgeTone {
+  if (status === "approved") return "success";
+  if (status === "rejected") return "danger";
+  if (status === "changes_requested") return "warning";
+  return "warning";
 }
 </script>
 
@@ -302,6 +322,113 @@ function formatValue(value: boolean | number | string) {
             {{ snapshot.candidate.reviewer }}: {{ snapshot.candidate.reviewReason }}
           </p>
         </form>
+      </template>
+
+      <template v-else-if="area === 'assets'">
+        <form class="v2-canon-form" aria-label="Asset job controls" @submit.prevent="emit('createAssetJob')">
+          <Field label="Asset prompt" hint="Mock adapter queues a local asset job without writing release assets.">
+            <Textarea
+              :model-value="assetPrompt"
+              :disabled="loading"
+              id="v2-asset-prompt"
+              aria-label="Asset prompt"
+              :rows="3"
+              @update:model-value="emit('update:assetPrompt', $event)"
+            />
+          </Field>
+          <div class="v2-form-actions">
+            <Button variant="primary" size="md" type="submit" :loading="loading">
+              Create Asset Job
+            </Button>
+            <Badge tone="info">{{ snapshot.assets.workflowName }}</Badge>
+            <Badge :tone="candidateTone(snapshot.assets.job.status)">{{ snapshot.assets.job.status }}</Badge>
+          </div>
+          <p v-if="assetMessage" class="v2-feedback">{{ assetMessage }}</p>
+        </form>
+
+        <article class="v2-record" aria-label="Asset candidate">
+          <div class="v2-record-head">
+            <strong>{{ snapshot.assets.candidate.title }}</strong>
+            <Badge :tone="candidateTone(snapshot.assets.candidate.status)">
+              {{ snapshot.assets.candidate.status }}
+            </Badge>
+          </div>
+          <dl class="v2-detail-list">
+            <div>
+              <dt>Workflow</dt>
+              <dd>{{ snapshot.assets.job.workflowVersion }}</dd>
+            </div>
+            <div>
+              <dt>Seed</dt>
+              <dd>{{ snapshot.assets.job.seed }}</dd>
+            </div>
+            <div>
+              <dt>Media</dt>
+              <dd>{{ snapshot.assets.candidate.mediaRef }}</dd>
+            </div>
+            <div>
+              <dt>Thumbnail</dt>
+              <dd>{{ snapshot.assets.candidate.thumbnailRef }}</dd>
+            </div>
+          </dl>
+          <p>{{ snapshot.assets.candidate.provenanceSummary }}</p>
+          <ul class="v2-plain-list">
+            <li v-for="note in snapshot.assets.candidate.validationNotes" :key="note">{{ note }}</li>
+          </ul>
+          <p v-if="snapshot.assets.candidate.reviewReason" class="v2-feedback">
+            {{ snapshot.assets.candidate.reviewer }}: {{ snapshot.assets.candidate.reviewReason }}
+          </p>
+        </article>
+
+        <form
+          class="v2-canon-form"
+          aria-label="Asset review actions"
+          @submit.prevent="emit('reviewAssetCandidate', 'approve')"
+        >
+          <Field label="Asset review reason">
+            <Textarea
+              :model-value="assetReviewReason"
+              :disabled="loading || !canReviewAssetCandidate"
+              id="v2-asset-review-reason"
+              aria-label="Asset review reason"
+              :rows="3"
+              @update:model-value="emit('update:assetReviewReason', $event)"
+            />
+          </Field>
+          <div class="v2-form-actions">
+            <Button variant="primary" size="md" type="submit" :disabled="!canReviewAssetCandidate" :loading="loading">
+              Approve Asset
+            </Button>
+            <Button
+              variant="secondary"
+              size="md"
+              :disabled="!canReviewAssetCandidate || loading"
+              @click="emit('reviewAssetCandidate', 'request_changes')"
+            >
+              Request Asset Changes
+            </Button>
+            <Button
+              variant="danger"
+              size="md"
+              :disabled="!canReviewAssetCandidate || loading"
+              @click="emit('reviewAssetCandidate', 'reject')"
+            >
+              Reject Asset
+            </Button>
+          </div>
+          <p v-if="assetReviewMessage" class="v2-feedback">{{ assetReviewMessage }}</p>
+        </form>
+
+        <div class="v2-list-grid" aria-label="Approved asset library">
+          <article v-for="asset in snapshot.assets.library" :key="asset.assetId" class="v2-record">
+            <div class="v2-record-head">
+              <strong>{{ asset.title }}</strong>
+              <Badge :tone="asset.approved ? 'success' : 'warning'">{{ asset.kind }}</Badge>
+            </div>
+            <p>{{ asset.mediaRef }}</p>
+            <small>{{ asset.workflowVersion }} - seed {{ asset.seed }}</small>
+          </article>
+        </div>
       </template>
 
       <template v-else-if="area === 'release'">
@@ -545,6 +672,12 @@ function formatValue(value: boolean | number | string) {
   line-height: 1.5;
 }
 
+.v2-record small {
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
 .v2-record-head {
   display: flex;
   align-items: center;
@@ -561,6 +694,34 @@ function formatValue(value: boolean | number | string) {
 .v2-diagnostics {
   display: grid;
   gap: var(--space-3);
+}
+
+.v2-detail-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.v2-detail-list div {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.v2-detail-list dt {
+  color: var(--muted);
+  font-size: var(--text-xs);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.v2-detail-list dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-strong);
+  font-size: var(--text-sm);
+  font-weight: 700;
 }
 
 .v2-feedback {

@@ -97,3 +97,25 @@ Validation:
 - `pnpm --filter @living-network/web build` -> exit 0
 - `pnpm check:boundaries` -> exit 0
 - Playwright `/v2` desktop 1280px and mobile 360px checks -> no horizontal overflow, Release and Player tabs reachable by role, export format and save label accessible, create release/export/choice/save/restore flows complete in Mock mode.
+
+## Checkpoint 5: Assets
+
+Scope:
+
+- Added an Assets area to the `/v2` workspace shell for local asset generation jobs, candidate review, and approved asset library inspection.
+- Extended Web-local asset DTOs, fixtures, Mock Adapter, Http Adapter proposal methods, and Pinia store actions under `apps/web/src/v2/**`.
+- Added asset prompt submission, candidate metadata, workflow version, seed, media refs, validation notes, and approve/reject/request-changes controls.
+- Extended adapter/store tests for asset job creation and asset candidate approval without changing shared contracts, domain, API, database, worker, root entry, or lockfile.
+
+Interface requests:
+
+- Added `IR-WEB-005` for asset job, asset candidate review, and approved asset library endpoints.
+
+Validation:
+
+- `pnpm --filter @living-network/web typecheck` -> exit 0
+- `pnpm --filter @living-network/web test` -> exit 0
+- `pnpm --filter @living-network/web lint` -> exit 0
+- `pnpm --filter @living-network/web build` -> exit 0
+- `pnpm check:boundaries` -> exit 0
+- Playwright `/v2` desktop 1280px and mobile 360px checks -> no horizontal overflow, Assets tab reachable by role, asset prompt/review reason accessible by label, Create Asset Job and Approve Asset mock flows complete, approved asset library updates.

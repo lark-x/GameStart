@@ -25,12 +25,10 @@ test("V2 workspace store exposes adapter failures", async () => {
   setActivePinia(createPinia());
   const store = useV2WorkspaceStore();
   const adapter: V2WorkspaceAdapter = {
+    ...createV2MockAdapter(),
     mode: "mock",
     async getSnapshot() {
       throw new Error("fixture failed");
-    },
-    async createSceneGenerationJob() {
-      throw new Error("not used");
     },
   };
 
@@ -131,4 +129,25 @@ test("V2 workspace store handles player choice save and restore", async () => {
   assert.equal(store.snapshot?.save.label, "Archive checkpoint");
   assert.equal(store.snapshot?.player.sceneId, "scene_opening");
   assert.equal(store.currentSceneTitle, "Opening Scene");
+});
+
+test("V2 workspace store creates an asset job and approves the asset candidate", async () => {
+  setActivePinia(createPinia());
+  const store = useV2WorkspaceStore();
+  store.setAdapter(createV2MockAdapter());
+  await store.loadSnapshot();
+
+  store.assetPrompt = "Generate a Rain Station background.";
+  await store.createAssetJob();
+  store.assetReviewReason = "Approved for the local asset library.";
+  await store.reviewAssetCandidate("approve");
+
+  assert.match(store.assetMessage ?? "", /Asset job/);
+  assert.equal(store.snapshot?.assets.job.status, "queued");
+  assert.equal(store.snapshot?.assets.job.promptPreview, "Generate a Rain Station background.");
+  assert.equal(store.assetReviewMessage, "Asset candidate marked approved.");
+  assert.equal(store.snapshot?.assets.candidate.status, "approved");
+  assert.equal(store.snapshot?.assets.library.length, 2);
+  assert.equal(store.assetLibraryCount, 2);
+  assert.equal(store.canReviewAssetCandidate, false);
 });

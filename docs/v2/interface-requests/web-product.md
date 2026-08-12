@@ -93,3 +93,26 @@ Requested integration surface:
 Reason:
 
 - The Web can exercise the core local play loop with Mock mode, but Slice A integration needs authoritative release immutability, save-version binding, and export semantics.
+
+## IR-WEB-005: Asset Job, Candidate Review, and Library Contracts
+
+Severity: `integration`
+
+Checkpoint: Assets
+
+Current Web proposal:
+
+- `POST /api/v2/assets/jobs` is called by the Http adapter with `{ prompt }` and expects a typed asset job summary.
+- `POST /api/v2/assets/candidates/:candidateId/review` is proposed for approve/reject/request-changes on generated asset candidates.
+- Mock snapshot includes asset workflow name, prompt, job status, workflow version, seed, candidate media refs, validation notes, and approved asset library entries.
+
+Requested integration surface:
+
+- Read endpoint or snapshot fields for asset workbench state, including workflow name, prompt, current job, current candidate, and approved asset library.
+- Asset job creation endpoint returning job ID, status, timestamps, workflow version, seed, prompt preview, and terminal message when available.
+- Asset candidate review endpoint supporting `approve`, `reject`, and `request_changes`, returning final status, reviewer, reviewed time, reason, and optional approved asset record.
+- Approved asset record shape with asset ID, title, kind, media ref, thumbnail ref, workflow version, seed, and approval flag.
+
+Reason:
+
+- The Web can demonstrate the creator-controlled asset workflow with fixtures, but integration needs authoritative job state, media references, and approval semantics before replacing Mock mode.

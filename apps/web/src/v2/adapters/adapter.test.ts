@@ -19,6 +19,9 @@ test("V2 mock adapter returns typed Gate 0 snapshot data", async () => {
   assert.equal(snapshot.candidate.kind, "scene");
   assert.equal(snapshot.release.valid, true);
   assert.equal(snapshot.run.releaseVersion, "0.1.0");
+  assert.equal(snapshot.assets.workflowName, "scene-background-v1");
+  assert.equal(snapshot.assets.candidate.status, "pending");
+  assert.equal(snapshot.assets.library.length, 1);
 });
 
 test("V2 mock adapter reviews a candidate without writing canon rules", async () => {
@@ -46,6 +49,24 @@ test("V2 mock adapter supports release, runtime, save, restore, and export", asy
   assert.equal(save.label, "Archive save");
   assert.equal(restored.sceneId, "scene_opening");
   assert.equal(exportBundle.format, "markdown");
+});
+
+test("V2 mock adapter supports asset jobs and asset candidate review", async () => {
+  const adapter = createV2MockAdapter();
+  const job = await adapter.createAssetJob("Generate a station background.");
+  const result = await adapter.reviewAssetCandidate({
+    candidateId: "asset_candidate_station_bg",
+    action: "approve",
+    reviewer: "local-creator",
+    reason: "Ready for asset library.",
+  });
+
+  assert.equal(job.status, "queued");
+  assert.equal(job.promptPreview, "Generate a station background.");
+  assert.equal(result.status, "approved");
+  assert.equal(result.reviewReason, "Ready for asset library.");
+  assert.equal(result.approvedAsset?.approved, true);
+  assert.equal(result.approvedAsset?.kind, "scene_background");
 });
 
 test("V2 http adapter maps error envelopes", async () => {
