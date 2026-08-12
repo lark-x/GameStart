@@ -99,3 +99,36 @@ test("V2 workspace store applies candidate review result to mock state", async (
   assert.equal(store.snapshot?.candidate.reviewReason, "Approved for mock review.");
   assert.equal(store.canReviewCandidate, false);
 });
+
+test("V2 workspace store handles release creation and export", async () => {
+  setActivePinia(createPinia());
+  const store = useV2WorkspaceStore();
+  store.setAdapter(createV2MockAdapter());
+  await store.loadSnapshot();
+
+  await store.createRelease();
+  store.exportFormat = "markdown";
+  await store.exportRelease();
+
+  assert.equal(store.releaseMessage, "Release 0.1.0 is immutable.");
+  assert.equal(store.snapshot?.releasePackage.immutable, true);
+  assert.equal(store.snapshot?.exportBundle.format, "markdown");
+  assert.match(store.exportMessage ?? "", /Prepared/);
+});
+
+test("V2 workspace store handles player choice save and restore", async () => {
+  setActivePinia(createPinia());
+  const store = useV2WorkspaceStore();
+  store.setAdapter(createV2MockAdapter());
+  await store.loadSnapshot();
+
+  await store.submitChoice("choice_archive");
+  store.saveLabel = "Archive checkpoint";
+  await store.saveRun();
+  await store.restoreSave();
+
+  assert.equal(store.playerMessage, "Restored Archive checkpoint.");
+  assert.equal(store.snapshot?.save.label, "Archive checkpoint");
+  assert.equal(store.snapshot?.player.sceneId, "scene_opening");
+  assert.equal(store.currentSceneTitle, "Opening Scene");
+});

@@ -68,3 +68,28 @@ Requested integration surface:
 Reason:
 
 - The Review page can stay adapter-driven, but integration needs authoritative job/candidate state and backend review semantics before replacing Mock mode.
+
+## IR-WEB-004: Release, Runtime, Save, Restore, and Export Contracts
+
+Severity: `integration`
+
+Checkpoint: Release + Player + Save/Restore + Export
+
+Current Web proposal:
+
+- `POST /api/v2/releases` creates or returns immutable release package metadata.
+- `GET /api/v2/releases/export?format=json|markdown` returns an export bundle preview.
+- `POST /api/v2/runtime/choices` submits a choice and returns the next player scene.
+- `POST /api/v2/runtime/saves` saves the current run.
+- `GET /api/v2/runtime/saves/:saveId` restores a save and returns player runtime state.
+
+Requested integration surface:
+
+- Release preflight and create responses with release ID, version, manifest hash, immutability, created time, and supported export formats.
+- Runtime scene response with scene ID, title, body, choices, disabled choice state, and choice history.
+- Save response with save ID, label, run ID, release version, current scene ID, and saved time.
+- Export response with filename, format, and either a preview string or download reference.
+
+Reason:
+
+- The Web can exercise the core local play loop with Mock mode, but Slice A integration needs authoritative release immutability, save-version binding, and export semantics.

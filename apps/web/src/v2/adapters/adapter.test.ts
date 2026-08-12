@@ -18,7 +18,7 @@ test("V2 mock adapter returns typed Gate 0 snapshot data", async () => {
   assert.equal(snapshot.generation.context.sources.length, 4);
   assert.equal(snapshot.candidate.kind, "scene");
   assert.equal(snapshot.release.valid, true);
-  assert.equal(snapshot.run.releaseVersion, "0.0.1");
+  assert.equal(snapshot.run.releaseVersion, "0.1.0");
 });
 
 test("V2 mock adapter reviews a candidate without writing canon rules", async () => {
@@ -31,6 +31,21 @@ test("V2 mock adapter reviews a candidate without writing canon rules", async ()
 
   assert.equal(result.status, "changes_requested");
   assert.equal(result.reviewReason, "Needs a clearer gate.");
+});
+
+test("V2 mock adapter supports release, runtime, save, restore, and export", async () => {
+  const adapter = createV2MockAdapter();
+  const releasePackage = await adapter.createRelease();
+  const player = await adapter.submitChoice("choice_archive");
+  const save = await adapter.saveRun("Archive save");
+  const restored = await adapter.restoreSave(save.saveId);
+  const exportBundle = await adapter.exportRelease("markdown");
+
+  assert.equal(releasePackage.immutable, true);
+  assert.equal(player.sceneId, "scene_archive");
+  assert.equal(save.label, "Archive save");
+  assert.equal(restored.sceneId, "scene_opening");
+  assert.equal(exportBundle.format, "markdown");
 });
 
 test("V2 http adapter maps error envelopes", async () => {

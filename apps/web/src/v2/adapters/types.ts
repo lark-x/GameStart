@@ -102,7 +102,11 @@ export interface V2WorkspaceSnapshot {
   readonly generation: V2GenerationSummary;
   readonly candidate: V2CandidateEnvelope<V2SceneCandidatePayload>;
   readonly release: V2ReleasePreflightResponse;
+  readonly releasePackage: V2ReleasePackageSummary;
   readonly run: V2RunSummary;
+  readonly player: V2PlayerRuntimeSummary;
+  readonly save: V2SaveSummary;
+  readonly exportBundle: V2ExportBundleSummary;
 }
 
 export interface V2GenerationSummary {
@@ -149,6 +153,45 @@ export interface V2CandidateReviewResult {
   readonly reviewReason: string;
 }
 
+export interface V2ReleasePackageSummary {
+  readonly releaseId: string;
+  readonly version: string;
+  readonly manifestHash: string;
+  readonly immutable: boolean;
+  readonly createdAt: string;
+  readonly exportFormats: readonly ("json" | "markdown")[];
+}
+
+export interface V2PlayerChoiceSummary {
+  readonly choiceId: string;
+  readonly label: string;
+  readonly targetSceneId: string;
+  readonly disabled: boolean;
+}
+
+export interface V2PlayerRuntimeSummary {
+  readonly sceneId: string;
+  readonly title: string;
+  readonly body: string;
+  readonly choices: readonly V2PlayerChoiceSummary[];
+  readonly choiceHistory: readonly string[];
+}
+
+export interface V2SaveSummary {
+  readonly saveId: string;
+  readonly label: string;
+  readonly runId: string;
+  readonly releaseVersion: string;
+  readonly currentSceneId: string;
+  readonly savedAt: string;
+}
+
+export interface V2ExportBundleSummary {
+  readonly filename: string;
+  readonly format: "json" | "markdown";
+  readonly preview: string;
+}
+
 export interface V2WorkspaceAdapter {
   readonly mode: V2WorkspaceMode;
   getSnapshot(): Promise<V2WorkspaceSnapshot>;
@@ -156,6 +199,11 @@ export interface V2WorkspaceAdapter {
     request: V2CreateSceneGenerationJobRequest,
   ): Promise<V2CreateSceneGenerationJobResponse>;
   reviewCandidate(request: V2CandidateReviewRequest): Promise<V2CandidateReviewResult>;
+  createRelease(): Promise<V2ReleasePackageSummary>;
+  submitChoice(choiceId: string): Promise<V2PlayerRuntimeSummary>;
+  saveRun(label: string): Promise<V2SaveSummary>;
+  restoreSave(saveId: string): Promise<V2PlayerRuntimeSummary>;
+  exportRelease(format: "json" | "markdown"): Promise<V2ExportBundleSummary>;
 }
 
 export class V2AdapterError extends Error {

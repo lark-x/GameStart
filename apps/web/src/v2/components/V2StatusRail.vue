@@ -13,6 +13,7 @@ defineProps<{
   graphIssueCount: number;
   typedStatePreviewCount: number;
   candidateStatus: string;
+  currentSceneTitle: string;
 }>();
 
 const emit = defineEmits<{
@@ -100,6 +101,10 @@ const emit = defineEmits<{
       <div>
         <dt>State preview</dt>
         <dd>{{ typedStatePreviewCount }}</dd>
+      </div>
+      <div>
+        <dt>Current scene</dt>
+        <dd>{{ currentSceneTitle }}</dd>
       </div>
     </dl>
   </aside>

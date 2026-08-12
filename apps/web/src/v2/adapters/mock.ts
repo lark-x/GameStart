@@ -7,9 +7,13 @@ import {
 
 import {
   v2WebFixtureCandidate,
+  v2WebFixtureExportBundle,
   v2WebFixtureRelease,
+  v2WebFixtureReleasePackage,
   v2WebFixtureRun,
   v2WebFixtureGeneration,
+  v2WebFixturePlayer,
+  v2WebFixtureSave,
   v2WebFixtureSceneGraph,
   v2WebFixtureTypedState,
   v2WebFixtureWorld,
@@ -32,7 +36,11 @@ export function createV2MockSnapshot(): V2WorkspaceSnapshot {
     generation: v2WebFixtureGeneration,
     candidate: v2WebFixtureCandidate,
     release: v2WebFixtureRelease,
+    releasePackage: v2WebFixtureReleasePackage,
     run: v2WebFixtureRun,
+    player: v2WebFixturePlayer,
+    save: v2WebFixtureSave,
+    exportBundle: v2WebFixtureExportBundle,
   };
 }
 
@@ -61,6 +69,41 @@ export function createV2MockAdapter(): V2WorkspaceAdapter {
         reviewedAt: now,
         reviewReason: request.reason.trim() || `${request.reviewer} marked ${request.candidateId} as ${status}.`,
       };
+    },
+    async createRelease() {
+      return v2WebFixtureReleasePackage;
+    },
+    async submitChoice(choiceId: string) {
+      const archive = choiceId === "choice_archive";
+      return {
+        ...v2WebFixturePlayer,
+        sceneId: archive ? "scene_archive" : "scene_opening",
+        title: archive ? "Archive Door" : v2WebFixturePlayer.title,
+        body: archive
+          ? "The archive door wakes under the ticket's ink, waiting for a reviewed state delta."
+          : v2WebFixturePlayer.body,
+        choiceHistory: [...v2WebFixturePlayer.choiceHistory, choiceId],
+      };
+    },
+    async saveRun(label: string) {
+      return {
+        ...v2WebFixtureSave,
+        label: label.trim() || v2WebFixtureSave.label,
+        savedAt: now,
+      };
+    },
+    async restoreSave() {
+      return v2WebFixturePlayer;
+    },
+    async exportRelease(format: "json" | "markdown") {
+      if (format === "markdown") {
+        return {
+          filename: "gate-0-demo-world-0.1.0.md",
+          format,
+          preview: "# Gate 0 Demo World\n\nEntry scene: Opening Scene\nRelease: 0.1.0",
+        };
+      }
+      return v2WebFixtureExportBundle;
     },
   };
 }

@@ -36,6 +36,11 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
   const reviewReason = ref<string>("Looks consistent with the current mock canon.");
   const reviewer = ref<string>("local-creator");
   const reviewMessage = ref<string | null>(null);
+  const saveLabel = ref<string>("Station checkpoint");
+  const releaseMessage = ref<string | null>(null);
+  const playerMessage = ref<string | null>(null);
+  const exportFormat = ref<"json" | "markdown">("json");
+  const exportMessage = ref<string | null>(null);
 
   const mode = computed(() => adapter.value.mode);
   const hasSnapshot = computed(() => snapshot.value !== null);
@@ -46,6 +51,8 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
   const typedStatePreviewCount = computed(() => snapshot.value?.typedState.preview.length ?? 0);
   const candidateStatus = computed(() => snapshot.value?.candidate.status ?? "pending");
   const canReviewCandidate = computed(() => snapshot.value?.candidate.status === "pending");
+  const releaseReady = computed(() => snapshot.value?.release.valid === true);
+  const currentSceneTitle = computed(() => snapshot.value?.player.title ?? "No scene loaded");
   const hasDraftChanges = computed(
     () =>
       snapshot.value !== null &&
@@ -80,8 +87,12 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       draftPremise.value = snapshot.value.world.premise;
       expectedRevision.value = snapshot.value.world.revision;
       generationPrompt.value = snapshot.value.generation.job.promptPreview;
+      saveLabel.value = snapshot.value.save.label;
       generationMessage.value = null;
       reviewMessage.value = null;
+      releaseMessage.value = null;
+      playerMessage.value = null;
+      exportMessage.value = null;
     } catch (err) {
       if (err instanceof V2AdapterError) {
         error.value = `${err.code}: ${err.message}`;
@@ -200,6 +211,145 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     }
   }
 
+  async function createRelease() {
+    if (!snapshot.value) return;
+    loading.value = true;
+    error.value = null;
+    releaseMessage.value = null;
+    try {
+      const releasePackage = await adapter.value.createRelease();
+      snapshot.value = {
+        ...snapshot.value,
+        releasePackage,
+        run: {
+          ...snapshot.value.run,
+          releaseVersion: releasePackage.version,
+        },
+        save: {
+          ...snapshot.value.save,
+          releaseVersion: releasePackage.version,
+        },
+      };
+      releaseMessage.value = `Release ${releasePackage.version} is immutable.`;
+    } catch (err) {
+      if (err instanceof V2AdapterError) {
+        error.value = `${err.code}: ${err.message}`;
+      } else if (err instanceof Error) {
+        error.value = err.message;
+      } else {
+        error.value = "Unknown V2 release error";
+      }
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  async function submitChoice(choiceId: string) {
+    if (!snapshot.value) return;
+    loading.value = true;
+    error.value = null;
+    playerMessage.value = null;
+    try {
+      const player = await adapter.value.submitChoice(choiceId);
+      snapshot.value = {
+        ...snapshot.value,
+        player,
+        run: {
+          ...snapshot.value.run,
+          currentSceneId: player.sceneId,
+        },
+        save: {
+          ...snapshot.value.save,
+          currentSceneId: player.sceneId,
+        },
+      };
+      playerMessage.value = `Loaded scene ${player.sceneId}.`;
+    } catch (err) {
+      if (err instanceof V2AdapterError) {
+        error.value = `${err.code}: ${err.message}`;
+      } else if (err instanceof Error) {
+        error.value = err.message;
+      } else {
+        error.value = "Unknown V2 runtime error";
+      }
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  async function saveRun() {
+    if (!snapshot.value) return;
+    loading.value = true;
+    error.value = null;
+    playerMessage.value = null;
+    try {
+      const save = await adapter.value.saveRun(saveLabel.value);
+      snapshot.value = { ...snapshot.value, save };
+      playerMessage.value = `Saved ${save.label}.`;
+    } catch (err) {
+      if (err instanceof V2AdapterError) {
+        error.value = `${err.code}: ${err.message}`;
+      } else if (err instanceof Error) {
+        error.value = err.message;
+      } else {
+        error.value = "Unknown V2 save error";
+      }
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  async function restoreSave() {
+    if (!snapshot.value) return;
+    loading.value = true;
+    error.value = null;
+    playerMessage.value = null;
+    try {
+      const player = await adapter.value.restoreSave(snapshot.value.save.saveId);
+      snapshot.value = {
+        ...snapshot.value,
+        player,
+        run: {
+          ...snapshot.value.run,
+          currentSceneId: player.sceneId,
+        },
+      };
+      playerMessage.value = `Restored ${snapshot.value.save.label}.`;
+    } catch (err) {
+      if (err instanceof V2AdapterError) {
+        error.value = `${err.code}: ${err.message}`;
+      } else if (err instanceof Error) {
+        error.value = err.message;
+      } else {
+        error.value = "Unknown V2 restore error";
+      }
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  async function exportRelease() {
+    if (!snapshot.value) return;
+    loading.value = true;
+    error.value = null;
+    exportMessage.value = null;
+    try {
+      const exportBundle = await adapter.value.exportRelease(exportFormat.value);
+      snapshot.value = { ...snapshot.value, exportBundle };
+      exportMessage.value = `Prepared ${exportBundle.filename}.`;
+    } catch (err) {
+      if (err instanceof V2AdapterError) {
+        error.value = `${err.code}: ${err.message}`;
+      } else if (err instanceof Error) {
+        error.value = err.message;
+      } else {
+        error.value = "Unknown V2 export error";
+      }
+    } finally {
+      loading.value = false;
+    }
+  }
+
   return {
     snapshot,
     loading,
@@ -213,6 +363,11 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     reviewReason,
     reviewer,
     reviewMessage,
+    saveLabel,
+    releaseMessage,
+    playerMessage,
+    exportFormat,
+    exportMessage,
     mode,
     hasSnapshot,
     revisionLabel,
@@ -220,6 +375,8 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     typedStatePreviewCount,
     candidateStatus,
     canReviewCandidate,
+    releaseReady,
+    currentSceneTitle,
     hasDraftChanges,
     setAdapter,
     setMode,
@@ -228,5 +385,10 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     previewCanonDraft,
     createGenerationJob,
     reviewCandidate,
+    createRelease,
+    submitChoice,
+    saveRun,
+    restoreSave,
+    exportRelease,
   };
 });

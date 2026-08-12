@@ -7,6 +7,7 @@ import Button from "../../components/ui/Button.vue";
 import EmptyState from "../../components/ui/EmptyState.vue";
 import Field from "../../components/ui/Field.vue";
 import Input from "../../components/ui/Input.vue";
+import Select from "../../components/ui/Select.vue";
 import Textarea from "../../components/ui/Textarea.vue";
 import type { V2WorkspaceSnapshot } from "../adapters";
 import type { V2CandidateReviewAction } from "../adapters/types";
@@ -26,6 +27,12 @@ const props = defineProps<{
   reviewReason: string;
   reviewMessage: string | null;
   canReviewCandidate: boolean;
+  saveLabel: string;
+  exportFormat: "json" | "markdown";
+  releaseMessage: string | null;
+  playerMessage: string | null;
+  exportMessage: string | null;
+  releaseReady: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -35,10 +42,17 @@ const emit = defineEmits<{
   "update:generationPrompt": [value: string];
   "update:reviewer": [value: string];
   "update:reviewReason": [value: string];
+  "update:saveLabel": [value: string];
+  "update:exportFormat": [value: "json" | "markdown"];
   previewCanonDraft: [];
   resetCanonDraft: [];
   createGenerationJob: [];
   reviewCandidate: [action: V2CandidateReviewAction];
+  createRelease: [];
+  submitChoice: [choiceId: string];
+  saveRun: [];
+  restoreSave: [];
+  exportRelease: [];
 }>();
 
 const areaMeta = computed(() => {
@@ -179,7 +193,7 @@ function formatValue(value: boolean | number | string) {
                 {{ scene.reachable ? "reachable" : "unreachable" }}
               </Badge>
             </div>
-            <p>{{ scene.choiceCount }} choices · {{ scene.stateDeltaPreview.length }} state previews</p>
+            <p>{{ scene.choiceCount }} choices - {{ scene.stateDeltaPreview.length }} state previews</p>
           </article>
         </div>
 
@@ -233,7 +247,7 @@ function formatValue(value: boolean | number | string) {
               {{ snapshot.candidate.status }}
             </Badge>
           </div>
-          <p>Base revision {{ snapshot.candidate.baseCanonRevision }} · {{ snapshot.generation.context.contextHash }}</p>
+          <p>Base revision {{ snapshot.candidate.baseCanonRevision }} - {{ snapshot.generation.context.contextHash }}</p>
           <ul class="v2-plain-list">
             <li v-for="addition in snapshot.generation.diff.additions" :key="addition">{{ addition }}</li>
           </ul>
@@ -288,6 +302,112 @@ function formatValue(value: boolean | number | string) {
             {{ snapshot.candidate.reviewer }}: {{ snapshot.candidate.reviewReason }}
           </p>
         </form>
+      </template>
+
+      <template v-else-if="area === 'release'">
+        <div class="v2-list-grid" aria-label="Release preflight">
+          <article class="v2-metric">
+            <span>Preflight</span>
+            <strong>{{ snapshot.release.valid ? "Valid" : "Blocked" }}</strong>
+            <small>revision {{ snapshot.release.revision }}</small>
+          </article>
+          <article class="v2-metric">
+            <span>Release</span>
+            <strong>{{ snapshot.releasePackage.version }}</strong>
+            <small>{{ snapshot.releasePackage.manifestHash }}</small>
+          </article>
+          <article class="v2-metric">
+            <span>Immutability</span>
+            <strong>{{ snapshot.releasePackage.immutable ? "locked" : "draft" }}</strong>
+            <small>{{ snapshot.releasePackage.releaseId }}</small>
+          </article>
+        </div>
+
+        <div class="v2-form-actions">
+          <Button variant="primary" size="md" :disabled="!releaseReady || loading" :loading="loading" @click="emit('createRelease')">
+            Create Release
+          </Button>
+          <Badge :tone="releaseReady ? 'success' : 'warning'">{{ releaseReady ? "ready" : "blocked" }}</Badge>
+        </div>
+        <p v-if="releaseMessage" class="v2-feedback">{{ releaseMessage }}</p>
+
+        <form class="v2-canon-form" aria-label="Release export controls" @submit.prevent="emit('exportRelease')">
+          <Field label="Export format">
+            <Select
+              :model-value="exportFormat"
+              aria-label="Export format"
+              id="v2-export-format"
+              @update:model-value="emit('update:exportFormat', $event === 'markdown' ? 'markdown' : 'json')"
+            >
+              <option value="json">JSON</option>
+              <option value="markdown">Markdown</option>
+            </Select>
+          </Field>
+          <div class="v2-form-actions">
+            <Button variant="secondary" size="md" type="submit" :loading="loading">
+              Export
+            </Button>
+            <Badge tone="info">{{ snapshot.exportBundle.format }}</Badge>
+          </div>
+          <p v-if="exportMessage" class="v2-feedback">{{ exportMessage }}</p>
+          <pre class="v2-export-preview">{{ snapshot.exportBundle.preview }}</pre>
+        </form>
+      </template>
+
+      <template v-else-if="area === 'player'">
+        <article class="v2-record" aria-label="Player scene">
+          <div class="v2-record-head">
+            <strong>{{ snapshot.player.title }}</strong>
+            <Badge tone="info">{{ snapshot.run.releaseVersion }}</Badge>
+          </div>
+          <p>{{ snapshot.player.body }}</p>
+          <div class="v2-form-actions">
+            <Button
+              v-for="choice in snapshot.player.choices"
+              :key="choice.choiceId"
+              variant="secondary"
+              size="md"
+              :disabled="choice.disabled || loading"
+              @click="emit('submitChoice', choice.choiceId)"
+            >
+              {{ choice.label }}
+            </Button>
+          </div>
+        </article>
+
+        <form class="v2-canon-form" aria-label="Save and restore controls" @submit.prevent="emit('saveRun')">
+          <Field label="Save label">
+            <Input
+              :model-value="saveLabel"
+              :disabled="loading"
+              id="v2-save-label"
+              aria-label="Save label"
+              @update:model-value="emit('update:saveLabel', $event)"
+            />
+          </Field>
+          <div class="v2-form-actions">
+            <Button variant="primary" size="md" type="submit" :loading="loading">
+              Save Run
+            </Button>
+            <Button variant="secondary" size="md" :disabled="loading" @click="emit('restoreSave')">
+              Restore Save
+            </Button>
+          </div>
+          <p v-if="playerMessage" class="v2-feedback">{{ playerMessage }}</p>
+        </form>
+
+        <div class="v2-list-grid" aria-label="Save details">
+          <article class="v2-metric">
+            <span>Save</span>
+            <strong>{{ snapshot.save.label }}</strong>
+            <small>{{ snapshot.save.saveId }}</small>
+          </article>
+          <article class="v2-metric">
+            <span>Scene</span>
+            <strong>{{ snapshot.save.currentSceneId }}</strong>
+            <small>{{ snapshot.save.savedAt }}</small>
+          </article>
+        </div>
       </template>
 
       <template v-else-if="area === 'operations'">
@@ -461,6 +581,21 @@ function formatValue(value: boolean | number | string) {
 
 .v2-warning-list {
   color: var(--warning);
+}
+
+.v2-export-preview {
+  overflow: auto;
+  max-width: 100%;
+  margin: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  color: var(--text);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .v2-metric span {

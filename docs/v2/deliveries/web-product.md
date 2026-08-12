@@ -74,3 +74,26 @@ Validation:
 - `pnpm --filter @living-network/web build` -> exit 0
 - `pnpm check:boundaries` -> exit 0
 - Playwright `/v2` desktop 1280px and mobile 360px checks -> no horizontal overflow, Review tab reachable by role, generation prompt/reviewer/reason accessible by label, approve action updates candidate status.
+
+## Checkpoint 4: Release + Player + Save/Restore + Export
+
+Scope:
+
+- Added Release desk preflight summary, immutable release package details, and export preview controls.
+- Added Player runtime scene view, choice submission, save label, save/restore controls, and save detail summary.
+- Extended Mock Adapter and Http Adapter boundaries for release creation, runtime choice submission, save/restore, and export.
+- Extended Web store actions and tests for release, player, save, restore, and export.
+- Kept all implementation inside `apps/web/src/v2/**` plus this Web delivery/interface documentation.
+
+Interface requests:
+
+- Added `IR-WEB-004` for release/runtime/save/export endpoints and response shapes.
+
+Validation:
+
+- `pnpm --filter @living-network/web typecheck` -> exit 0
+- `pnpm --filter @living-network/web test` -> exit 0
+- `pnpm --filter @living-network/web lint` -> exit 0
+- `pnpm --filter @living-network/web build` -> exit 0
+- `pnpm check:boundaries` -> exit 0
+- Playwright `/v2` desktop 1280px and mobile 360px checks -> no horizontal overflow, Release and Player tabs reachable by role, export format and save label accessible, create release/export/choice/save/restore flows complete in Mock mode.

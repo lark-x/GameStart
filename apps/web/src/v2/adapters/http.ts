@@ -11,6 +11,10 @@ import {
   V2AdapterError,
   type V2CandidateReviewRequest,
   type V2CandidateReviewResult,
+  type V2ExportBundleSummary,
+  type V2PlayerRuntimeSummary,
+  type V2ReleasePackageSummary,
+  type V2SaveSummary,
   type V2WorkspaceAdapter,
   type V2WorkspaceSnapshot,
 } from "./types.ts";
@@ -81,6 +85,47 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
         reviewedAt: new Date().toISOString(),
         reviewReason: request.reason,
       };
+    },
+    async createRelease(): Promise<V2ReleasePackageSummary> {
+      return parseJson<V2ReleasePackageSummary>(
+        await fetcher(`${baseUrl}/api/v2/releases`, {
+          method: "POST",
+          headers: { Accept: "application/json", "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        }),
+      );
+    },
+    async submitChoice(choiceId: string): Promise<V2PlayerRuntimeSummary> {
+      return parseJson<V2PlayerRuntimeSummary>(
+        await fetcher(`${baseUrl}/api/v2/runtime/choices`, {
+          method: "POST",
+          headers: { Accept: "application/json", "Content-Type": "application/json" },
+          body: JSON.stringify({ choiceId }),
+        }),
+      );
+    },
+    async saveRun(label: string): Promise<V2SaveSummary> {
+      return parseJson<V2SaveSummary>(
+        await fetcher(`${baseUrl}/api/v2/runtime/saves`, {
+          method: "POST",
+          headers: { Accept: "application/json", "Content-Type": "application/json" },
+          body: JSON.stringify({ label }),
+        }),
+      );
+    },
+    async restoreSave(saveId: string): Promise<V2PlayerRuntimeSummary> {
+      return parseJson<V2PlayerRuntimeSummary>(
+        await fetcher(`${baseUrl}/api/v2/runtime/saves/${saveId}`, {
+          headers: { Accept: "application/json" },
+        }),
+      );
+    },
+    async exportRelease(format: "json" | "markdown"): Promise<V2ExportBundleSummary> {
+      return parseJson<V2ExportBundleSummary>(
+        await fetcher(`${baseUrl}/api/v2/releases/export?format=${encodeURIComponent(format)}`, {
+          headers: { Accept: "application/json" },
+        }),
+      );
     },
   };
 }

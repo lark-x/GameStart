@@ -226,13 +226,58 @@ export const v2WebFixtureCandidate = {
 
 export const v2WebFixtureRelease = {
   storyWorldId: v2WebFixtureWorld.storyWorldId,
-  revision: 1 as V2Revision,
+  revision: 2 as V2Revision,
   valid: true,
   issues: [],
 } as const satisfies V2ReleasePreflightResponse;
 
+export const v2WebFixtureReleasePackage = {
+  releaseId: "release_demo_001",
+  version: "0.1.0",
+  manifestHash: "sha256:release-demo-001",
+  immutable: true,
+  createdAt: "2026-08-12T00:02:00.000Z",
+  exportFormats: ["json", "markdown"],
+} as const;
+
 export const v2WebFixtureRun = {
   runId: "run_demo" as V2RunId,
-  releaseVersion: "0.0.1",
+  releaseVersion: "0.1.0",
   currentSceneId: "scene_opening",
+} as const;
+
+export const v2WebFixturePlayer = {
+  sceneId: "scene_opening",
+  title: "Opening Scene",
+  body: "Rain taps the glass roof of the station while Mira studies the ticket's impossible scene ID.",
+  choices: [
+    {
+      choiceId: "choice_archive",
+      label: "Follow the stamped route to the Civic Archive",
+      targetSceneId: "scene_archive",
+      disabled: false,
+    },
+    {
+      choiceId: "choice_wait",
+      label: "Wait for the Archivist",
+      targetSceneId: "scene_opening",
+      disabled: false,
+    },
+  ],
+  choiceHistory: [],
+} as const;
+
+export const v2WebFixtureSave = {
+  saveId: "save_demo_001",
+  label: "Station checkpoint",
+  runId: v2WebFixtureRun.runId,
+  releaseVersion: v2WebFixtureRun.releaseVersion,
+  currentSceneId: v2WebFixturePlayer.sceneId,
+  savedAt: "2026-08-12T00:03:00.000Z",
+} as const;
+
+export const v2WebFixtureExportBundle = {
+  filename: "gate-0-demo-world-0.1.0.json",
+  format: "json",
+  preview: "{\n  \"releaseVersion\": \"0.1.0\",\n  \"entrySceneId\": \"scene_opening\"\n}",
 } as const;

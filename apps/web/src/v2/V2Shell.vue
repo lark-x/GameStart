@@ -85,10 +85,21 @@ onMounted(() => {
             :generation-message="store.generationMessage"
             :review-message="store.reviewMessage"
             :can-review-candidate="store.canReviewCandidate"
+            v-model:save-label="store.saveLabel"
+            v-model:export-format="store.exportFormat"
+            :release-message="store.releaseMessage"
+            :player-message="store.playerMessage"
+            :export-message="store.exportMessage"
+            :release-ready="store.releaseReady"
             @preview-canon-draft="store.previewCanonDraft"
             @reset-canon-draft="store.resetCanonDraft"
             @create-generation-job="store.createGenerationJob"
             @review-candidate="store.reviewCandidate"
+            @create-release="store.createRelease"
+            @submit-choice="store.submitChoice"
+            @save-run="store.saveRun"
+            @restore-save="store.restoreSave"
+            @export-release="store.exportRelease"
           />
         </div>
       </main>
@@ -101,6 +112,7 @@ onMounted(() => {
         :graph-issue-count="store.graphIssueCount"
         :typed-state-preview-count="store.typedStatePreviewCount"
         :candidate-status="store.candidateStatus"
+        :current-scene-title="store.currentSceneTitle"
         @refresh="store.loadSnapshot"
         @switch-mode="store.setMode"
       />
