@@ -2,8 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type {
+  V2ApprovedAssetRecord,
+  V2AssetCandidateRecord,
+  V2AssetCandidateReviewRecord,
+  V2AssetGenerationJobRecord,
+  V2AssetId,
   V2CharacterId,
   V2CandidateId,
+  V2CreateAssetGenerationJobInput,
   V2CreateSceneGenerationJobInput,
   V2GenerationContextSnapshot,
   V2GenerationDispatchRecord,
@@ -12,15 +18,23 @@ import type {
   V2IsoDateTime,
   V2JobId,
   V2JobStatus,
+  V2ReleaseId,
   V2Revision,
+  V2ReviewAssetCandidateInput,
   V2SceneGenerationJobRecord,
   V2StoryWorldId,
 } from "@living-network/contracts";
 import type {
   CanonSnapshotReaderPort,
+  V2AssetCandidateReviewResult,
+  V2AssetCandidateRepository,
+  V2AssetGenerationJobCreateResult,
+  V2AssetGenerationJobRepository,
+  V2AssetReviewRepository,
   V2CanonSnapshot,
   V2GenerationJobCreateResult,
   V2GenerationJobRepository,
+  V2ApprovedAssetRef,
 } from "@living-network/ports";
 import { createV2FastifyApp } from "../platform/index.ts";
 import { createV2GenerationPlugin } from "./plugin.ts";
@@ -174,7 +188,286 @@ class FakeGenerationJobs implements V2GenerationJobRepository {
   }
 }
 
+function makeAssetJob(input: V2CreateAssetGenerationJobInput): V2AssetGenerationJobRecord {
+  return {
+    jobId: input.jobId,
+    storyWorldId: input.storyWorldId,
+    status: "queued",
+    idempotencyKey: input.idempotencyKey,
+    prompt: input.prompt,
+    workflowVersion: input.workflowVersion,
+    workflow: input.workflow,
+    attempts: 0,
+    maxAttempts: input.maxAttempts ?? 3,
+    createdAt: input.createdAt,
+    updatedAt: input.createdAt,
+    ...(input.negativePrompt === undefined ? {} : { negativePrompt: input.negativePrompt }),
+    ...(input.seed === undefined ? {} : { seed: input.seed }),
+  };
+}
+
+function sameAssetInput(left: V2AssetGenerationJobRecord, right: V2CreateAssetGenerationJobInput): boolean {
+  return left.storyWorldId === right.storyWorldId &&
+    left.idempotencyKey === right.idempotencyKey &&
+    left.prompt === right.prompt &&
+    left.workflowVersion === right.workflowVersion &&
+    JSON.stringify(left.workflow) === JSON.stringify(right.workflow) &&
+    left.negativePrompt === right.negativePrompt &&
+    left.seed === right.seed &&
+    left.maxAttempts === (right.maxAttempts ?? 3);
+}
+
+class FakeAssetStore implements V2AssetGenerationJobRepository, V2AssetCandidateRepository, V2AssetReviewRepository {
+  public readonly created: V2CreateAssetGenerationJobInput[] = [];
+  private readonly jobs = new Map<string, V2AssetGenerationJobRecord>();
+  private readonly jobIdempotency = new Map<string, V2JobId>();
+  private readonly candidates = new Map<string, V2AssetCandidateRecord>();
+  private readonly reviews = new Map<string, V2AssetCandidateReviewRecord>();
+  private readonly approvedAssets = new Map<string, V2ApprovedAssetRecord>();
+
+  public async createAssetJob(input: V2CreateAssetGenerationJobInput): Promise<V2AssetGenerationJobCreateResult> {
+    this.created.push(input);
+    const key = `${input.storyWorldId}:${input.idempotencyKey}`;
+    const existingId = this.jobIdempotency.get(key);
+    if (existingId !== undefined) {
+      const existing = this.jobs.get(existingId);
+      if (existing === undefined) throw new Error("asset idempotency row cannot be resolved");
+      if (!sameAssetInput(existing, input)) throw new Error("asset idempotency key conflict");
+      return { job: existing, inserted: false };
+    }
+    const job = makeAssetJob(input);
+    this.jobs.set(job.jobId, job);
+    this.jobIdempotency.set(key, job.jobId);
+    return { job, inserted: true };
+  }
+
+  public async getAssetJob(jobId: V2JobId): Promise<V2AssetGenerationJobRecord | undefined> {
+    return this.jobs.get(jobId);
+  }
+
+  public async listAssetJobsByStatus(status: V2JobStatus, limit: number): Promise<readonly V2AssetGenerationJobRecord[]> {
+    return [...this.jobs.values()].filter((job) => job.status === status).slice(0, limit);
+  }
+
+  public async markAssetJobClaimed(input: { readonly jobId: V2JobId; readonly claimedAt: string; readonly leaseExpiresAt: string }): Promise<V2AssetGenerationJobRecord> {
+    const job = this.requireAssetJob(input.jobId);
+    const updated = {
+      ...job,
+      status: "claimed" as const,
+      claimedAt: input.claimedAt as V2IsoDateTime,
+      leaseExpiresAt: input.leaseExpiresAt as V2IsoDateTime,
+      updatedAt: input.claimedAt as V2IsoDateTime,
+    };
+    this.jobs.set(input.jobId, updated);
+    return updated;
+  }
+
+  public async markAssetJobRunning(input: { readonly jobId: V2JobId; readonly updatedAt: string }): Promise<V2AssetGenerationJobRecord> {
+    const job = this.requireAssetJob(input.jobId);
+    const updated = { ...job, status: "running" as const, updatedAt: input.updatedAt as V2IsoDateTime };
+    this.jobs.set(input.jobId, updated);
+    return updated;
+  }
+
+  public async markAssetJobSubmitted(input: { readonly jobId: V2JobId; readonly submittedAt: string; readonly externalJobId: string }): Promise<V2AssetGenerationJobRecord> {
+    const job = this.requireAssetJob(input.jobId);
+    const updated = {
+      ...job,
+      submittedAt: input.submittedAt as V2IsoDateTime,
+      updatedAt: input.submittedAt as V2IsoDateTime,
+      externalJobId: input.externalJobId,
+    };
+    this.jobs.set(input.jobId, updated);
+    return updated;
+  }
+
+  public async recoverExpiredAssetJobLease(input: { readonly jobId: V2JobId; readonly recoveredAt: string }): Promise<V2AssetGenerationJobRecord> {
+    const job = this.requireAssetJob(input.jobId);
+    const updated = { ...job, status: "queued" as const, updatedAt: input.recoveredAt as V2IsoDateTime };
+    this.jobs.set(input.jobId, updated);
+    return updated;
+  }
+
+  public async markAssetJobSucceeded(input: { readonly jobId: V2JobId; readonly completedAt: string; readonly mediaRef: string; readonly candidateId: string }): Promise<V2AssetGenerationJobRecord> {
+    const job = this.requireAssetJob(input.jobId);
+    const updated = {
+      ...job,
+      status: "succeeded" as const,
+      completedAt: input.completedAt as V2IsoDateTime,
+      updatedAt: input.completedAt as V2IsoDateTime,
+      mediaRef: input.mediaRef,
+      candidateId: input.candidateId as V2CandidateId,
+    };
+    this.jobs.set(input.jobId, updated);
+    return updated;
+  }
+
+  public async markAssetJobFailed(input: { readonly jobId: V2JobId; readonly failedAt: string; readonly reason: string; readonly retryable: boolean }): Promise<V2AssetGenerationJobRecord> {
+    const job = this.requireAssetJob(input.jobId);
+    const updated = {
+      ...job,
+      status: input.retryable ? "queued" as const : "failed" as const,
+      attempts: job.attempts + 1,
+      updatedAt: input.failedAt as V2IsoDateTime,
+      failureReason: input.reason,
+    };
+    this.jobs.set(input.jobId, updated);
+    return updated;
+  }
+
+  public async cancelAssetJob(input: { readonly jobId: V2JobId; readonly cancelledAt: string; readonly reason?: string }): Promise<V2AssetGenerationJobRecord> {
+    const job = this.requireAssetJob(input.jobId);
+    const updated = {
+      ...job,
+      status: "cancelled" as const,
+      cancelledAt: input.cancelledAt as V2IsoDateTime,
+      updatedAt: input.cancelledAt as V2IsoDateTime,
+      ...(input.reason === undefined ? {} : { failureReason: input.reason }),
+    };
+    this.jobs.set(input.jobId, updated);
+    return updated;
+  }
+
+  public async createAssetCandidate(input: V2AssetCandidateRecord): Promise<{ readonly candidate: V2AssetCandidateRecord; readonly inserted: boolean }> {
+    const existing = this.candidates.get(input.candidateId);
+    if (existing !== undefined) return { candidate: existing, inserted: false };
+    this.candidates.set(input.candidateId, input);
+    return { candidate: input, inserted: true };
+  }
+
+  public async getAssetCandidate(candidateId: V2CandidateId): Promise<V2AssetCandidateRecord | undefined> {
+    return this.candidates.get(candidateId);
+  }
+
+  public async reviewAssetCandidate(input: V2ReviewAssetCandidateInput): Promise<V2AssetCandidateReviewResult> {
+    const candidate = this.candidates.get(input.candidateId);
+    if (candidate === undefined) throw new Error("asset candidate not found");
+    const key = `${input.candidateId}:${input.idempotencyKey}`;
+    const existing = this.reviews.get(key);
+    if (existing !== undefined) {
+      return {
+        candidate,
+        review: existing,
+        inserted: false,
+        ...(existing.resultingStatus === "approved" ? { approvedAsset: this.requireApprovedAsset(candidate.payload.asset.assetId) } : {}),
+      };
+    }
+    const status = input.action === "approve"
+      ? "approved"
+      : input.action === "reject" ? "rejected" : "changes_requested";
+    const updated: V2AssetCandidateRecord = {
+      ...candidate,
+      status,
+      reviewedAt: input.reviewedAt,
+      ...(input.reviewer === undefined ? {} : { reviewer: input.reviewer }),
+      ...(input.reason === undefined ? {} : { reviewReason: input.reason }),
+    };
+    this.candidates.set(updated.candidateId, updated);
+    const review: V2AssetCandidateReviewRecord = {
+      reviewId: `asset-review:${input.candidateId}:${input.idempotencyKey}`,
+      candidateId: input.candidateId,
+      action: input.action,
+      resultingStatus: status,
+      reviewedAt: input.reviewedAt,
+      idempotencyKey: input.idempotencyKey,
+      ...(input.reviewer === undefined ? {} : { reviewer: input.reviewer }),
+      ...(input.reason === undefined ? {} : { reason: input.reason }),
+    };
+    this.reviews.set(key, review);
+    let approvedAsset: V2ApprovedAssetRecord | undefined;
+    if (status === "approved") {
+      approvedAsset = {
+        assetId: updated.payload.asset.assetId,
+        storyWorldId: updated.storyWorldId,
+        candidateId: updated.candidateId,
+        mediaRef: updated.payload.asset.mediaRef,
+        contentHash: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        approvedAt: input.reviewedAt,
+        ...(input.reviewer === undefined ? {} : { reviewer: input.reviewer }),
+        ...(input.reason === undefined ? {} : { reviewReason: input.reason }),
+      };
+      this.approvedAssets.set(approvedAsset.assetId, approvedAsset);
+    }
+    return {
+      candidate: updated,
+      review,
+      inserted: true,
+      ...(approvedAsset === undefined ? {} : { approvedAsset }),
+    };
+  }
+
+  public async getApprovedAsset(input: { readonly storyWorldId: V2StoryWorldId; readonly assetId: V2AssetId }): Promise<V2ApprovedAssetRef | undefined> {
+    const asset = this.approvedAssets.get(input.assetId);
+    return asset === undefined || asset.storyWorldId !== input.storyWorldId
+      ? undefined
+      : {
+        assetId: asset.assetId,
+        storyWorldId: asset.storyWorldId,
+        mediaRef: asset.mediaRef,
+        contentHash: asset.contentHash,
+      };
+  }
+
+  public async listReleaseAssets(_input: { readonly storyWorldId: V2StoryWorldId; readonly releaseId: V2ReleaseId }): Promise<readonly V2ApprovedAssetRef[]> {
+    return [];
+  }
+
+  public seedPendingCandidate(job: V2AssetGenerationJobRecord): V2AssetCandidateRecord {
+    const candidate: V2AssetCandidateRecord = {
+      candidateId: `candidate:asset:${job.jobId}` as V2CandidateId,
+      jobId: job.jobId,
+      storyWorldId: job.storyWorldId,
+      status: "pending",
+      payload: {
+        asset: {
+          assetId: `asset:${job.jobId}` as V2AssetId,
+          mediaKind: "image",
+          mediaRef: "media://local/v2/assets/bridge.png",
+          prompt: job.prompt,
+          workflowVersion: job.workflowVersion,
+          sourceJobId: job.jobId,
+          ...(job.seed === undefined ? {} : { seed: job.seed }),
+        },
+        validationNotes: ["Seeded candidate for API review."],
+      },
+      createdAt: now,
+    };
+    this.candidates.set(candidate.candidateId, candidate);
+    return candidate;
+  }
+
+  private requireAssetJob(jobId: V2JobId): V2AssetGenerationJobRecord {
+    const job = this.jobs.get(jobId);
+    if (job === undefined) throw new Error(`missing asset job ${jobId}`);
+    return job;
+  }
+
+  private requireApprovedAsset(assetId: V2AssetId): V2ApprovedAssetRecord {
+    const asset = this.approvedAssets.get(assetId);
+    if (asset === undefined) throw new Error(`missing approved asset ${assetId}`);
+    return asset;
+  }
+}
+
 function createApp() {
+  const canonSnapshots = new FakeCanonSnapshots();
+  const jobs = new FakeGenerationJobs();
+  const assets = new FakeAssetStore();
+  const app = createV2FastifyApp({
+    generationPlugin: createV2GenerationPlugin({
+      canonSnapshots,
+      jobs,
+      assetJobs: assets,
+      assetCandidates: assets,
+      assetReviews: assets,
+      now: () => new Date(now),
+      defaultTokenBudget: 900,
+    }),
+  });
+  return { app, canonSnapshots, jobs, assets };
+}
+
+function createAppWithoutAssets() {
   const canonSnapshots = new FakeCanonSnapshots();
   const jobs = new FakeGenerationJobs();
   const app = createV2FastifyApp({
@@ -185,7 +478,7 @@ function createApp() {
       defaultTokenBudget: 900,
     }),
   });
-  return { app, canonSnapshots, jobs };
+  return { app };
 }
 
 test("V2 generation context preview reads canon snapshot for the requested revision", async () => {
@@ -295,6 +588,195 @@ test("V2 generation API reports validation and missing job errors", async () => 
     assert.equal(missing.statusCode, 404);
   } finally {
     await app.close();
+  }
+});
+
+test("V2 asset API creates, replays, reads, and cancels asset jobs", async () => {
+  const { app, assets } = createApp();
+  await app.ready();
+  try {
+    const payload = {
+      storyWorldId: "world_generation",
+      idempotencyKey: "idem-asset-bridge",
+      prompt: "Generate bridge key art.",
+      workflowVersion: "workflow-v1",
+      workflow: { "1": { class_type: "KSampler" } },
+      negativePrompt: "low quality",
+      seed: 42,
+      maxAttempts: 2,
+    };
+
+    const create = await app.inject({
+      method: "POST",
+      url: "/api/v2/generation/assets/jobs",
+      payload,
+    });
+    assert.equal(create.statusCode, 201);
+    const created = create.json() as { job: V2AssetGenerationJobRecord; inserted: boolean };
+    assert.equal(created.inserted, true);
+    assert.equal(created.job.status, "queued");
+    assert.equal(created.job.workflowVersion, "workflow-v1");
+    assert.equal(created.job.seed, 42);
+    assert.equal(created.job.maxAttempts, 2);
+    assert.equal(assets.created.length, 1);
+
+    const replay = await app.inject({
+      method: "POST",
+      url: "/api/v2/generation/assets/jobs",
+      payload,
+    });
+    assert.equal(replay.statusCode, 200);
+    assert.equal((replay.json() as { inserted: boolean }).inserted, false);
+
+    const read = await app.inject({
+      method: "GET",
+      url: `/api/v2/generation/assets/jobs/${encodeURIComponent(created.job.jobId)}`,
+    });
+    assert.equal(read.statusCode, 200);
+    assert.equal((read.json() as { job: V2AssetGenerationJobRecord }).job.jobId, created.job.jobId);
+
+    const cancel = await app.inject({
+      method: "POST",
+      url: `/api/v2/generation/assets/jobs/${encodeURIComponent(created.job.jobId)}/cancel`,
+      payload: { reason: "creator cancelled" },
+    });
+    assert.equal(cancel.statusCode, 200);
+    const cancelled = cancel.json() as { job: V2AssetGenerationJobRecord };
+    assert.equal(cancelled.job.status, "cancelled");
+    assert.equal(cancelled.job.failureReason, "creator cancelled");
+  } finally {
+    await app.close();
+  }
+});
+
+test("V2 asset API reads and reviews asset candidates", async () => {
+  const { app, assets } = createApp();
+  await app.ready();
+  try {
+    const create = await app.inject({
+      method: "POST",
+      url: "/api/v2/generation/assets/jobs",
+      payload: {
+        storyWorldId: "world_generation",
+        idempotencyKey: "idem-asset-review",
+        prompt: "Generate bridge key art.",
+        workflowVersion: "workflow-v1",
+        workflow: { "1": { class_type: "KSampler" } },
+        seed: 42,
+      },
+    });
+    assert.equal(create.statusCode, 201);
+    const created = create.json() as { job: V2AssetGenerationJobRecord };
+    const candidate = assets.seedPendingCandidate(created.job);
+
+    const read = await app.inject({
+      method: "GET",
+      url: `/api/v2/generation/assets/candidates/${encodeURIComponent(candidate.candidateId)}`,
+    });
+    assert.equal(read.statusCode, 200);
+    assert.equal((read.json() as { candidate: V2AssetCandidateRecord }).candidate.status, "pending");
+
+    const reviewPayload = {
+      action: "approve",
+      idempotencyKey: "idem-review-asset",
+      reviewer: "creator",
+      reason: "approved for release preflight",
+    };
+    const review = await app.inject({
+      method: "POST",
+      url: `/api/v2/generation/assets/candidates/${encodeURIComponent(candidate.candidateId)}/review`,
+      payload: reviewPayload,
+    });
+    assert.equal(review.statusCode, 201);
+    const reviewed = review.json() as {
+      candidate: V2AssetCandidateRecord;
+      review: V2AssetCandidateReviewRecord;
+      inserted: boolean;
+      approvedAsset?: V2ApprovedAssetRecord;
+    };
+    assert.equal(reviewed.inserted, true);
+    assert.equal(reviewed.candidate.status, "approved");
+    assert.equal(reviewed.review.resultingStatus, "approved");
+    assert.equal(reviewed.approvedAsset?.mediaRef, "media://local/v2/assets/bridge.png");
+
+    const replay = await app.inject({
+      method: "POST",
+      url: `/api/v2/generation/assets/candidates/${encodeURIComponent(candidate.candidateId)}/review`,
+      payload: reviewPayload,
+    });
+    assert.equal(replay.statusCode, 200);
+    const replayed = replay.json() as { candidate: V2AssetCandidateRecord; inserted: boolean; approvedAsset?: V2ApprovedAssetRecord };
+    assert.equal(replayed.inserted, false);
+    assert.equal(replayed.candidate.status, "approved");
+    assert.equal(replayed.approvedAsset?.assetId, candidate.payload.asset.assetId);
+  } finally {
+    await app.close();
+  }
+});
+
+test("V2 asset API reports validation, missing record, and missing dependency errors", async () => {
+  const { app } = createApp();
+  await app.ready();
+  try {
+    const invalidSeed = await app.inject({
+      method: "POST",
+      url: "/api/v2/generation/assets/jobs",
+      payload: {
+        storyWorldId: "world_generation",
+        idempotencyKey: "idem-invalid-asset",
+        prompt: "Generate bridge key art.",
+        workflowVersion: "workflow-v1",
+        workflow: { "1": { class_type: "KSampler" } },
+        seed: -1,
+      },
+    });
+    assert.equal(invalidSeed.statusCode, 422);
+    assert.match((invalidSeed.json() as { error: { message: string } }).error.message, /seed/);
+
+    const missingJob = await app.inject({
+      method: "GET",
+      url: "/api/v2/generation/assets/jobs/job%3Aasset%3Amissing",
+    });
+    assert.equal(missingJob.statusCode, 404);
+
+    const missingCandidate = await app.inject({
+      method: "GET",
+      url: "/api/v2/generation/assets/candidates/candidate%3Aasset%3Amissing",
+    });
+    assert.equal(missingCandidate.statusCode, 404);
+
+    const invalidReview = await app.inject({
+      method: "POST",
+      url: "/api/v2/generation/assets/candidates/candidate%3Aasset%3Amissing/review",
+      payload: {
+        action: "hold",
+        idempotencyKey: "idem-invalid-review",
+      },
+    });
+    assert.equal(invalidReview.statusCode, 422);
+    assert.match((invalidReview.json() as { error: { message: string } }).error.message, /action/);
+  } finally {
+    await app.close();
+  }
+
+  const { app: missingDepsApp } = createAppWithoutAssets();
+  await missingDepsApp.ready();
+  try {
+    const missingDependency = await missingDepsApp.inject({
+      method: "POST",
+      url: "/api/v2/generation/assets/jobs",
+      payload: {
+        storyWorldId: "world_generation",
+        idempotencyKey: "idem-asset-missing-deps",
+        prompt: "Generate bridge key art.",
+        workflowVersion: "workflow-v1",
+        workflow: { "1": { class_type: "KSampler" } },
+      },
+    });
+    assert.equal(missingDependency.statusCode, 501);
+    assert.match((missingDependency.json() as { error: { message: string } }).error.message, /asset generation repository/);
+  } finally {
+    await missingDepsApp.close();
   }
 });
 

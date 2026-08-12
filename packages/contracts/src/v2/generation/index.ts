@@ -140,6 +140,26 @@ export interface V2CreateAssetGenerationJobInput {
   readonly maxAttempts?: number;
 }
 
+export interface V2CreateAssetGenerationJobApiRequest {
+  readonly storyWorldId: V2StoryWorldId;
+  readonly idempotencyKey: V2IdempotencyKey;
+  readonly prompt: string;
+  readonly workflowVersion: string;
+  readonly workflow: Record<string, unknown>;
+  readonly negativePrompt?: string;
+  readonly seed?: number;
+  readonly maxAttempts?: number;
+}
+
+export interface V2CreateAssetGenerationJobApiResponse {
+  readonly job: V2AssetGenerationJobRecord;
+  readonly inserted: boolean;
+}
+
+export interface V2AssetGenerationJobApiResponse {
+  readonly job: V2AssetGenerationJobRecord;
+}
+
 export interface V2AssetCandidateRecord {
   readonly candidateId: V2CandidateId;
   readonly jobId: V2JobId;
@@ -181,6 +201,24 @@ export interface V2ReviewAssetCandidateInput {
   readonly idempotencyKey: V2IdempotencyKey;
   readonly reviewer?: string;
   readonly reason?: string;
+}
+
+export interface V2AssetCandidateApiResponse {
+  readonly candidate: V2AssetCandidateRecord;
+}
+
+export interface V2ReviewAssetCandidateApiRequest {
+  readonly action: V2AssetReviewAction;
+  readonly idempotencyKey: V2IdempotencyKey;
+  readonly reviewer?: string;
+  readonly reason?: string;
+}
+
+export interface V2ReviewAssetCandidateApiResponse {
+  readonly candidate: V2AssetCandidateRecord;
+  readonly review: V2AssetCandidateReviewRecord;
+  readonly inserted: boolean;
+  readonly approvedAsset?: V2ApprovedAssetRecord;
 }
 
 export interface V2CreateSceneGenerationJobInput {

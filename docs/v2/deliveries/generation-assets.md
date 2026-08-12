@@ -502,3 +502,88 @@ External Services:
 - Real LLM: not executed; asset media storage does not call LLM.
 - Real ComfyUI: not executed; tests inject fake fetch and fake ComfyUI clients.
 - Qdrant: not executed; Slice D optional scope.
+
+## Checkpoint 8: Asset Generation API
+
+Scope:
+
+- Added injectable V2 asset generation routes under `apps/api/src/v2/generation`.
+- Asset job creation derives a stable job id from story world, idempotency key, and workflow version, then writes through the injected `V2AssetGenerationJobRepository`.
+- Asset job read and cancel routes use the same repository boundary as the worker and SQLite adapter.
+- Asset candidate read and review routes use injected asset candidate/review repositories.
+- Asset candidate approval returns approved asset facts from the AI-2 asset review transaction and does not write canon, release, or save state.
+- Missing asset repository capabilities return 501 instead of silently pretending that asset APIs are wired in the shared composition root.
+- Added asset API request/response DTOs under `packages/contracts/src/v2/generation`.
+
+Routes:
+
+- `POST /api/v2/generation/assets/jobs`
+- `GET /api/v2/generation/assets/jobs/:jobId`
+- `POST /api/v2/generation/assets/jobs/:jobId/cancel`
+- `GET /api/v2/generation/assets/candidates/:candidateId`
+- `POST /api/v2/generation/assets/candidates/:candidateId/review`
+
+Non-scope:
+
+- No shared Fastify composition root wiring.
+- No real BullMQ dispatch pump or startup wiring.
+- No direct canon repository reads or writes.
+- No release/save writes.
+- No Web, Qdrant, Social Temp, lockfile, or root dependency changes.
+- No real Redis, LLM, or ComfyUI service calls.
+
+Contract:
+
+- `V2CreateAssetGenerationJobApiRequest`
+- `V2CreateAssetGenerationJobApiResponse`
+- `V2AssetGenerationJobApiResponse`
+- `V2AssetCandidateApiResponse`
+- `V2ReviewAssetCandidateApiRequest`
+- `V2ReviewAssetCandidateApiResponse`
+
+Migration:
+
+- None in this checkpoint.
+- Reuses `0101_asset_generation_jobs` for asset jobs/candidates and `0102_asset_candidate_review` for review and approved asset facts.
+
+State Machine:
+
+- API creates asset jobs in `queued`.
+- API cancel writes `cancelled` through `V2AssetGenerationJobRepository`.
+- Asset candidates remain `pending` until review.
+- Review reuses the shared asset candidate transitions:
+  - `pending -> approved|rejected|changes_requested`
+  - `changes_requested -> approved|rejected`
+  - `approved` and `rejected` are terminal
+- Approval writes approved asset facts through the AI-2 review repository only; it never modifies canon/release/save state.
+
+Verification:
+
+- `pnpm --filter @living-network/contracts typecheck`: exit 0
+- `pnpm --filter @living-network/ports typecheck`: exit 0
+- `pnpm --filter @living-network/api typecheck`: exit 0
+- `pnpm --filter @living-network/api test`: exit 0
+- `pnpm check:boundaries`: exit 0
+- `pnpm typecheck`: exit 0
+- `pnpm test`: exit 0
+- `pnpm build`: exit 0
+- `git diff --check`: exit 0
+
+Known validation note:
+
+- Initial direct `pnpm --filter @living-network/api test` run inside the sandbox failed with `spawn EPERM`; rerun with approved escalation passed.
+- `git diff --check` reported only Git line-ending normalization warnings for the Windows checkout; no whitespace errors.
+
+Fake Service Evidence:
+
+- API tests use fake asset job, candidate, and review repositories injected into the generation plugin.
+- Asset job create verifies idempotent replay, stable persisted job state, workflow version, seed, and cancel behavior.
+- Asset candidate review verifies pending candidate reads, approval, review replay, and approved asset facts.
+- Validation, missing job/candidate, and missing dependency responses are covered through Fastify injection.
+
+External Services:
+
+- Real Redis: not executed; API does not start a real queue or dispatch worker in this checkpoint.
+- Real LLM: not executed; asset API only creates and reviews persisted facts.
+- Real ComfyUI: not executed; API tests use fake repositories and no provider calls.
+- Qdrant: not executed; Slice D optional scope.
