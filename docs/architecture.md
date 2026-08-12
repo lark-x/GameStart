@@ -1,12 +1,14 @@
 # Living Network 当前系统架构
 
-最后核对：2026-08-12（`96130c5`）
+最后核对：2026-08-12（V2 集成分支）
 
 本文是当前实现架构的唯一文档事实来源。长期原则见 [DEVELOPMENT.md](./DEVELOPMENT.md)，能力完成状态见 [PROGRESS.md](./PROGRESS.md)，架构选择原因见 [decisions/](./decisions/)。
 
 ## 1. 系统概述
 
-Living Network 是 TypeScript monorepo 中的 AI 角色生活模拟与社交叙事系统。当前由以下部分组成：
+Living Network 是 TypeScript monorepo。当前 V1 与 V2 replacement 在同一仓库并存：V1 保留原有角色生活模拟与社交叙事能力，V2 提供本地优先的互动游戏创作、审核、发布与游玩闭环。
+
+V1 当前由以下部分组成：
 
 - Vue 3 + Vite 单页 Web 应用。
 - 基于 Node.js `node:http` 的模块化单体 API。
@@ -15,7 +17,7 @@ Living Network 是 TypeScript monorepo 中的 AI 角色生活模拟与社交叙�
 - OpenAI-compatible / Anthropic LLM 和 ComfyUI 外部适配器。
 - 无外部服务依赖的内存开发模式，以及 PostgreSQL + Redis 的持久模式。
 
-Fastify、Drizzle、TypeBox、pgvector、Turborepo 和完整 OpenTelemetry 均不是当前实现。
+V1 不使用 Fastify、Drizzle、TypeBox、pgvector、Turborepo 或完整 OpenTelemetry。V2 已按 ADR-0006 使用 Fastify 与 Node 24 内置 SQLite；这不改变 V1 的默认技术边界。
 
 ## 2. 运行时架构
 
@@ -44,6 +46,27 @@ flowchart TD
 ```
 
 API 不直接依赖 BullMQ。创作者正式派发先把请求写入 PostgreSQL，Worker 的派发泵读取请求并加入 BullMQ；队列消费后更新执行和批次状态。Redis 不承担业务事实的唯一存储。
+
+### 2.1 V2 replacement 运行时
+
+```mermaid
+flowchart TD
+    V2Web["Vue /v2 workspace"] -->|"/api/v2"| V2Api["Fastify V2 API :3002"]
+    V2Api --> Core["Core Use Cases"]
+    V2Api --> Generation["Generation / Asset API"]
+    Core --> Ports["V2 Ports"]
+    Generation --> Ports
+    Ports --> SQLite[("SQLite + FTS5")]
+    Pump["V2 dispatch pump"] --> Queue["Rebuildable queues"]
+    Queue --> Workers["Scene / Asset workers"]
+    Workers --> LLM2["LLM adapter"]
+    Workers --> Comfy2["ComfyUI adapter"]
+    Workers --> SQLite
+```
+
+V2 的正常本地入口为 `pnpm --filter @living-network/api dev:v2`，默认监听 `127.0.0.1:3002`，SQLite 文件默认位于 `.data/living-network-v2.sqlite`；Web 开发服务器把 `/api/v2` 代理到该入口。`V2_SQLITE_PATH=:memory:` 可用于一次性测试。启动时只执行向上的顺序 migration，并在同一事务中登记 migration。
+
+V2 composition root 同时装配 Core 与 Generation/Assets SQLite 仓储。Core 的运行时只读取不可变 release 与 save；生成上下文通过 `CanonSnapshotReaderPort` 读取明确 revision，Worker 只能通过 `CandidateSubmissionPort` 提交 pending scene candidate。V2 dispatch pump、场景 Worker 和资产 Worker 已实现为可注入单元，但真实 Redis、LLM 与 ComfyUI 的进程级启动和验收仍是显式部署工作；它们不可用时不影响离线编辑、发布和游玩。
 
 ## 3. 代码与依赖边界
 

@@ -2,7 +2,7 @@
 
 ## REQ-generation-assets-001: Make package AI V2 tests discoverable by package script
 
-- Status: proposed
+- Status: resolved on `codex/v2-integration`
 - Severity: integration
 - Needed by: AI-2 Slice B Provider + Generation Context and later provider extensions
 - Owner of affected contract/module: Gate 0 / shared package scripts
@@ -14,4 +14,4 @@
 - Fixture/test changes: Existing root-level AI tests should remain discovered; nested V2 provider tests should also be discovered.
 - Reason: Root package scripts and Gate 0 test scripts are frozen for business branches, so AI-2 should not modify this directly.
 - Compatibility and migration impact: Additive test discovery behavior; no runtime API impact.
-- Decision and integration commit:
+- Decision and integration commit: accepted; `@living-network/ai` now uses `scripts/run-tests.mjs`, and both root-level and V2 nested tests are discovered.

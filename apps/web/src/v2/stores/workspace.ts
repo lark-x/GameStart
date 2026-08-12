@@ -53,12 +53,18 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
   );
   const graphIssueCount = computed(() => snapshot.value?.sceneGraph.diagnostics.length ?? 0);
   const typedStatePreviewCount = computed(() => snapshot.value?.typedState.preview.length ?? 0);
-  const candidateStatus = computed(() => snapshot.value?.candidate.status ?? "pending");
-  const canReviewCandidate = computed(() => snapshot.value?.candidate.status === "pending");
+  const candidateStatus = computed(() => snapshot.value?.candidate?.status ?? "none");
+  const canReviewCandidate = computed(() => {
+    const status = snapshot.value?.candidate?.status;
+    return status === "pending" || status === "changes_requested";
+  });
   const releaseReady = computed(() => snapshot.value?.release.valid === true);
-  const currentSceneTitle = computed(() => snapshot.value?.player.title ?? "No scene loaded");
-  const assetCandidateStatus = computed(() => snapshot.value?.assets.candidate.status ?? "pending");
-  const canReviewAssetCandidate = computed(() => snapshot.value?.assets.candidate.status === "pending");
+  const currentSceneTitle = computed(() => snapshot.value?.player?.title ?? "No scene loaded");
+  const assetCandidateStatus = computed(() => snapshot.value?.assets.candidate?.status ?? "none");
+  const canReviewAssetCandidate = computed(() => {
+    const status = snapshot.value?.assets.candidate?.status;
+    return status === "pending" || status === "changes_requested";
+  });
   const assetLibraryCount = computed(() => snapshot.value?.assets.library.length ?? 0);
   const hasDraftChanges = computed(
     () =>
@@ -93,8 +99,8 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       draftWorldName.value = snapshot.value.world.name;
       draftPremise.value = snapshot.value.world.premise;
       expectedRevision.value = snapshot.value.world.revision;
-      generationPrompt.value = snapshot.value.generation.job.promptPreview;
-      saveLabel.value = snapshot.value.save.label;
+      generationPrompt.value = snapshot.value.generation.job?.promptPreview ?? generationPrompt.value;
+      saveLabel.value = snapshot.value.save?.label ?? saveLabel.value;
       assetPrompt.value = snapshot.value.assets.prompt;
       generationMessage.value = null;
       reviewMessage.value = null;
@@ -114,6 +120,22 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     } finally {
       loading.value = false;
     }
+  }
+
+  async function bootstrapWorkspace() {
+    loading.value = true;
+    error.value = null;
+    try {
+      await adapter.value.bootstrapWorkspace();
+    } catch (err) {
+      if (err instanceof V2AdapterError) error.value = `${err.code}: ${err.message}`;
+      else if (err instanceof Error) error.value = err.message;
+      else error.value = "Unknown V2 bootstrap error";
+      loading.value = false;
+      return;
+    }
+    loading.value = false;
+    await loadSnapshot();
   }
 
   function resetCanonDraft() {
@@ -158,13 +180,13 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       const terminalMessage =
         response.job.status === "queued"
           ? "Job queued for candidate generation."
-          : snapshot.value.generation.job.terminalMessage;
+          : snapshot.value.generation.job?.terminalMessage;
       snapshot.value = {
         ...snapshot.value,
         generation: {
           ...snapshot.value.generation,
           job: {
-            ...snapshot.value.generation.job,
+            ...(snapshot.value.generation.job ?? {}),
             ...response.job,
             promptPreview: generationPrompt.value,
             ...(terminalMessage ? { terminalMessage } : {}),
@@ -186,7 +208,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
   }
 
   async function reviewCandidate(action: V2CandidateReviewAction) {
-    if (!snapshot.value) return;
+    if (!snapshot.value?.candidate) return;
     loading.value = true;
     error.value = null;
     reviewMessage.value = null;
@@ -231,14 +253,6 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       snapshot.value = {
         ...snapshot.value,
         releasePackage,
-        run: {
-          ...snapshot.value.run,
-          releaseVersion: releasePackage.version,
-        },
-        save: {
-          ...snapshot.value.save,
-          releaseVersion: releasePackage.version,
-        },
       };
       releaseMessage.value = `Release ${releasePackage.version} is immutable.`;
     } catch (err) {
@@ -264,14 +278,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       snapshot.value = {
         ...snapshot.value,
         player,
-        run: {
-          ...snapshot.value.run,
-          currentSceneId: player.sceneId,
-        },
-        save: {
-          ...snapshot.value.save,
-          currentSceneId: player.sceneId,
-        },
+        run: snapshot.value.run === null ? null : { ...snapshot.value.run, currentSceneId: player.sceneId },
       };
       playerMessage.value = `Loaded scene ${player.sceneId}.`;
     } catch (err) {
@@ -282,6 +289,24 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       } else {
         error.value = "Unknown V2 runtime error";
       }
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  async function startRun() {
+    if (!snapshot.value?.releasePackage) return;
+    loading.value = true;
+    error.value = null;
+    playerMessage.value = null;
+    try {
+      const result = await adapter.value.startRun();
+      snapshot.value = { ...snapshot.value, run: result.run, player: result.player };
+      playerMessage.value = `Started run ${result.run.runId}.`;
+    } catch (err) {
+      if (err instanceof V2AdapterError) error.value = `${err.code}: ${err.message}`;
+      else if (err instanceof Error) error.value = err.message;
+      else error.value = "Unknown V2 runtime error";
     } finally {
       loading.value = false;
     }
@@ -310,21 +335,19 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
   }
 
   async function restoreSave() {
-    if (!snapshot.value) return;
+    if (!snapshot.value?.save) return;
     loading.value = true;
     error.value = null;
     playerMessage.value = null;
     try {
-      const player = await adapter.value.restoreSave(snapshot.value.save.saveId);
+      const save = snapshot.value.save;
+      const player = await adapter.value.restoreSave(save.saveId);
       snapshot.value = {
         ...snapshot.value,
         player,
-        run: {
-          ...snapshot.value.run,
-          currentSceneId: player.sceneId,
-        },
+        run: snapshot.value.run === null ? null : { ...snapshot.value.run, currentSceneId: player.sceneId },
       };
-      playerMessage.value = `Restored ${snapshot.value.save.label}.`;
+      playerMessage.value = `Restored ${save.label}.`;
     } catch (err) {
       if (err instanceof V2AdapterError) {
         error.value = `${err.code}: ${err.message}`;
@@ -390,13 +413,14 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
   }
 
   async function reviewAssetCandidate(action: V2CandidateReviewAction) {
-    if (!snapshot.value) return;
+    if (!snapshot.value?.assets.candidate) return;
     loading.value = true;
     error.value = null;
     assetReviewMessage.value = null;
     try {
+      const candidate = snapshot.value.assets.candidate;
       const result = await adapter.value.reviewAssetCandidate({
-        candidateId: snapshot.value.assets.candidate.candidateId,
+        candidateId: candidate.candidateId,
         action,
         reviewer: reviewer.value,
         reason: assetReviewReason.value,
@@ -406,7 +430,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
         assets: {
           ...snapshot.value.assets,
           candidate: {
-            ...snapshot.value.assets.candidate,
+            ...candidate,
             status: result.status,
             reviewedAt: result.reviewedAt as V2IsoDateTime,
             reviewer: reviewer.value,
@@ -469,11 +493,13 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     setAdapter,
     setMode,
     loadSnapshot,
+    bootstrapWorkspace,
     resetCanonDraft,
     previewCanonDraft,
     createGenerationJob,
     reviewCandidate,
     createRelease,
+    startRun,
     submitChoice,
     saveRun,
     restoreSave,

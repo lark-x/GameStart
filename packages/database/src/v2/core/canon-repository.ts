@@ -37,8 +37,9 @@ import type {
   V2TypedStateValueType,
   V2TypedStateVariable,
 } from "@living-network/domain";
-import { V2DomainError } from "@living-network/domain";
+import { createV2SceneCandidate, V2DomainError } from "@living-network/domain";
 import type {
+  CanonSnapshotReaderPort,
   V2CanonMutationRecord,
   V2CanonRepository,
   V2CanonUnitOfWork,
@@ -122,6 +123,9 @@ export class V2SqliteCandidateSubmissionPort implements CandidateSubmissionPort 
   }> {
     const unit = new V2SqliteCandidateReviewUnitOfWork(this.db);
     return unit.withCandidateReviewTransaction(async ({ canon, candidateReview }) => {
+      if (input.candidate.kind !== "scene" || input.candidate.status !== "pending") {
+        throw new V2DomainError("INVALID_INPUT", "Scene candidate submissions must be pending scene candidates");
+      }
       const payload = { candidate: input.candidate };
       const operation = "submitSceneCandidate";
       const existing = await canon.readMutation<{
@@ -135,7 +139,21 @@ export class V2SqliteCandidateSubmissionPort implements CandidateSubmissionPort 
         }
         return existing.result;
       }
-      await candidateReview.createSceneCandidate(input.candidate as unknown as V2CoreSceneCandidate);
+      const world = await canon.getWorld(input.candidate.storyWorldId);
+      if (!world) throw new V2DomainError("INVALID_INPUT", "Scene candidate story world does not exist");
+      if (world.revision !== input.candidate.baseCanonRevision) {
+        throw new V2DomainError(
+          "STALE_REVISION",
+          `Candidate is based on revision ${input.candidate.baseCanonRevision}, current revision is ${world.revision}`,
+        );
+      }
+      await candidateReview.createSceneCandidate(createV2SceneCandidate({
+        candidateId: input.candidate.candidateId,
+        storyWorldId: input.candidate.storyWorldId,
+        baseCanonRevision: input.candidate.baseCanonRevision,
+        payload: input.candidate.payload,
+        provenance: input.candidate.provenance,
+      }));
       const result = {
         candidateId: input.candidate.candidateId,
         status: input.candidate.status,
@@ -143,6 +161,47 @@ export class V2SqliteCandidateSubmissionPort implements CandidateSubmissionPort 
       await canon.saveMutation({ key: input.idempotencyKey, operation, payloadHash, result });
       return result;
     });
+  }
+}
+
+export class V2SqliteCanonSnapshotReader implements CanonSnapshotReaderPort {
+  private readonly db: DatabaseSync;
+
+  public constructor(db: DatabaseSync) {
+    this.db = db;
+  }
+
+  public async getCanonSnapshot(input: {
+    readonly storyWorldId: V2StoryWorldId;
+    readonly revision: V2Revision;
+  }) {
+    const canon = new V2SqliteCanonRepository(this.db);
+    const graph = new V2SqliteGraphStateRepository(this.db);
+    const world = await canon.getWorld(input.storyWorldId);
+    if (!world) throw new V2DomainError("INVALID_INPUT", "Canon snapshot story world does not exist");
+    if (world.revision !== input.revision) {
+      throw new V2DomainError(
+        "STALE_REVISION",
+        `Requested canon revision ${input.revision}, current revision is ${world.revision}`,
+      );
+    }
+    return {
+      storyWorldId: input.storyWorldId,
+      revision: input.revision,
+      facts: (await canon.listFacts(input.storyWorldId)).map((fact) => ({
+        id: fact.factId,
+        text: fact.text,
+        visibility: fact.visibility,
+      })),
+      characters: (await canon.listCharacters(input.storyWorldId)).map((character) => ({
+        characterId: character.characterId as V2CharacterId,
+        name: character.name,
+      })),
+      scenes: (await graph.listScenes(input.storyWorldId)).map((scene) => ({
+        sceneId: scene.sceneId,
+        title: scene.title,
+      })),
+    };
   }
 }
 

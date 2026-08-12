@@ -133,7 +133,7 @@ Approval semantics:
   - advance world revision.
   - update candidate review state.
   - write review audit.
-- `reject` and `request_changes` also advance revision, update review state, and write audit.
+- `reject` and `request_changes` preserve the current canon revision, update review state, and write audit. Only approval applies canon changes and advances revision, so a requested-changes candidate can later be approved against the same baseline.
 - Same idempotency key with the same review payload replays the original result; same key with a different payload returns `409 IDEMPOTENCY_CONFLICT` at API level.
 
 Reusable content added for later AI-1/AI-2 checkpoints:

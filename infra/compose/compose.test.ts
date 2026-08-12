@@ -23,7 +23,7 @@ test("compose keeps credentials configurable instead of hard-coding production s
 
 test("compose runs the persistent application stack after a one-shot database bootstrap", () => {
   assert.match(compose, /^  migrate:/m);
-  assert.match(compose, /seed:postgres/);
+  assert.match(compose, /bootstrap:postgres/);
   assert.match(compose, /^  api:/m);
   assert.match(compose, /^  worker:/m);
   assert.match(compose, /^  web:/m);

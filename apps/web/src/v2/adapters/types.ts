@@ -62,7 +62,7 @@ export interface V2SceneSummary {
 }
 
 export interface V2GraphDiagnostic {
-  readonly code: "missing_entry" | "unreachable_scene" | "dangling_choice" | "state_delta";
+  readonly code: string;
   readonly severity: "info" | "warning" | "danger";
   readonly message: string;
   readonly targetId?: string;
@@ -100,19 +100,19 @@ export interface V2WorkspaceSnapshot {
   readonly sceneGraph: V2SceneGraphSummary;
   readonly typedState: V2TypedStateSummary;
   readonly generation: V2GenerationSummary;
-  readonly candidate: V2CandidateEnvelope<V2SceneCandidatePayload>;
+  readonly candidate: V2CandidateEnvelope<V2SceneCandidatePayload> | null;
   readonly release: V2ReleasePreflightResponse;
-  readonly releasePackage: V2ReleasePackageSummary;
-  readonly run: V2RunSummary;
-  readonly player: V2PlayerRuntimeSummary;
-  readonly save: V2SaveSummary;
-  readonly exportBundle: V2ExportBundleSummary;
+  readonly releasePackage: V2ReleasePackageSummary | null;
+  readonly run: V2RunSummary | null;
+  readonly player: V2PlayerRuntimeSummary | null;
+  readonly save: V2SaveSummary | null;
+  readonly exportBundle: V2ExportBundleSummary | null;
   readonly assets: V2AssetWorkbenchSummary;
 }
 
 export interface V2GenerationSummary {
   readonly context: V2GenerationContextSummary;
-  readonly job: V2GenerationJobSummary;
+  readonly job: V2GenerationJobSummary | null;
   readonly diff: V2CandidateDiffSummary;
 }
 
@@ -196,8 +196,8 @@ export interface V2ExportBundleSummary {
 export interface V2AssetWorkbenchSummary {
   readonly workflowName: string;
   readonly prompt: string;
-  readonly job: V2AssetJobSummary;
-  readonly candidate: V2AssetCandidateSummary;
+  readonly job: V2AssetJobSummary | null;
+  readonly candidate: V2AssetCandidateSummary | null;
   readonly library: readonly V2ApprovedAssetSummary[];
 }
 
@@ -249,12 +249,14 @@ export interface V2AssetReviewResult {
 
 export interface V2WorkspaceAdapter {
   readonly mode: V2WorkspaceMode;
+  bootstrapWorkspace(): Promise<void>;
   getSnapshot(): Promise<V2WorkspaceSnapshot>;
   createSceneGenerationJob(
     request: V2CreateSceneGenerationJobRequest,
   ): Promise<V2CreateSceneGenerationJobResponse>;
   reviewCandidate(request: V2CandidateReviewRequest): Promise<V2CandidateReviewResult>;
   createRelease(): Promise<V2ReleasePackageSummary>;
+  startRun(): Promise<{ readonly run: V2RunSummary; readonly player: V2PlayerRuntimeSummary }>;
   submitChoice(choiceId: string): Promise<V2PlayerRuntimeSummary>;
   saveRun(label: string): Promise<V2SaveSummary>;
   restoreSave(saveId: string): Promise<V2PlayerRuntimeSummary>;

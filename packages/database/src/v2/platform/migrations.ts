@@ -1,6 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 
-import { v2CoreCanonMigrations } from "../core/index.ts";
+import { v2CoreCanonMigrations } from "../core/migrations.ts";
+import { v2GenerationJobMigrations } from "../generation/migrations.ts";
 
 export interface V2SqliteMigration {
   readonly id: string;
@@ -13,7 +14,7 @@ export interface V2MigrationRegistry {
 }
 
 export const v2CoreMigrations: V2MigrationRegistry = { migrations: v2CoreCanonMigrations };
-export const v2GenerationMigrations: V2MigrationRegistry = { migrations: [] };
+export const v2GenerationMigrations: V2MigrationRegistry = { migrations: v2GenerationJobMigrations };
 
 export function getV2Migrations(): readonly V2SqliteMigration[] {
   return [...v2CoreMigrations.migrations, ...v2GenerationMigrations.migrations]
@@ -30,8 +31,15 @@ export function applyV2Migrations(db: DatabaseSync, migrations: readonly V2Sqlit
   for (const migration of migrations) {
     const row = db.prepare("SELECT id FROM v2_schema_migrations WHERE id = ?").get(migration.id);
     if (row !== undefined) continue;
-    migration.up(db);
-    db.prepare("INSERT INTO v2_schema_migrations (id) VALUES (?)").run(migration.id);
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      migration.up(db);
+      db.prepare("INSERT INTO v2_schema_migrations (id) VALUES (?)").run(migration.id);
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
   }
 }
 

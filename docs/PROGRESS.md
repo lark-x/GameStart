@@ -1,6 +1,6 @@
 # Living Network 开发进度
 
-最后核对：2026-08-12（`96130c5`）
+最后核对：2026-08-12（V2 集成分支）
 
 本文是当前能力与验证状态的唯一进度视图。当前技术架构见 [architecture.md](./architecture.md)；[archive/](./archive/) 中的任务和报告只代表历史语境。
 
@@ -70,9 +70,13 @@
 - `pnpm verify` 未包含 coverage；`pnpm test:coverage` 必须独立报告。
 - 生产级认证、TLS、秘密管理、对象存储适配和完整监控部署尚未完成。
 
-## 5. V2 替换计划
+## 5. V2 replacement 集成状态
 
-V2 replacement 的公共边界已记录在 [V2 公共开发基线](./v2/common-baseline.md)，唯一实施入口为 [V2 AI 并行开发主文档](./v2/ai-parallel-master-plan.md)。该计划要求先完成 Gate 0 骨架，再从同一 `V2_BOOTSTRAP_SHA` 创建三个分支，并按 Slice A-D 分阶段集成。V2 目标允许 Fastify、SQLite + FTS5 和 Qdrant，但只适用于明确标记为 V2 replacement 的分支；当前 V1 维护任务不得把这些技术视为默认选型。
+V2 Gate 0、AI-1 Core、AI-2 Generation/Assets 和 AI-3 Web 分支已经合入 `codex/v2-integration`。当前集成具备 Fastify + SQLite composition root、Canon/Graph/Typed State、候选审核、不可变 Release、Runtime/Save/Export、Generation/Asset API、可注入 Worker/dispatch pump，以及 Mock/HTTP 双适配器的 `/v2` Web 产品面。
+
+空 SQLite 的真实 HTTP 核心路径已经覆盖：创建 starter world、发布、开始游玩、保存、恢复、导出和 360px 布局；Mock 路径覆盖场景候选审核和资产审核交互。Slice D（Qdrant 与 Social Temp）按主计划延期，不阻塞 Slice A-C 核心版本。
+
+仍需区分以下边界：V2 Worker/dispatch pump 已有 Fake 与 SQLite 行为测试，但真实 Redis 队列进程、真实 LLM、真实 ComfyUI 和 Qdrant 未完成运行环境验收；Web 的 HTTP generation/asset 操作目前能创建持久任务，任务推进依赖另行启动 Worker。V1 在正式切换决策前继续保留原有 PostgreSQL/Redis CI。
 
 ## 6. 后续优先顺序
 

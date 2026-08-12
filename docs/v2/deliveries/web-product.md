@@ -28,6 +28,12 @@ Notes:
 
 - The Http adapter calls `/api/v2/health` and maps error envelopes. Until Slice A backend endpoints exist, workspace snapshot body data remains fixture-backed and marked as a Web proposal.
 
+Integration resolution:
+
+- On `codex/v2-integration`, the Http adapter no longer overlays Mock fixtures. It reads the Core Canon/Graph/State/Candidate/Release endpoints and calls the actual Generation, Asset, Runtime, Save and Export routes.
+- Empty SQLite is represented explicitly and can be initialized with the Web `Create Starter World` action; Release and Player state remain absent until the corresponding server command succeeds.
+- The original checkpoint notes below remain branch-delivery history. Current integrated behavior is described by this resolution and `docs/architecture.md`.
+
 ## Checkpoint 2: Canon + Graph + Typed State
 
 Scope:

@@ -358,7 +358,9 @@ export function createV2CoreUseCases(
           }
           appliedChoiceIds = createdChoices.map((choice) => choice.choiceId);
         }
-        const revision = await canon.advanceRevision(storyWorldId, input.expectedRevision);
+        const revision = input.action === "approve"
+          ? await canon.advanceRevision(storyWorldId, input.expectedRevision)
+          : (await requireWorld(canon, storyWorldId)).revision as V2Revision;
         const updated = await candidateReview.updateSceneCandidateReview({
           candidate: reviewed,
           reviewedAt: new Date().toISOString(),
@@ -396,6 +398,7 @@ export function createV2CoreUseCases(
         world,
         scenes: await graphState.listScenes(storyWorldId),
         choices: await graphState.listChoices(storyWorldId),
+        stateSchema: await graphState.listStateVariables(storyWorldId),
       });
       return {
         valid: preflight.valid,
@@ -417,7 +420,8 @@ export function createV2CoreUseCases(
         const arcs = await graphState.listArcs(storyWorldId);
         const scenes = await graphState.listScenes(storyWorldId);
         const choices = await graphState.listChoices(storyWorldId);
-        const preflight = buildV2ReleasePreflight({ world, scenes, choices });
+        const stateSchema = await graphState.listStateVariables(storyWorldId);
+        const preflight = buildV2ReleasePreflight({ world, scenes, choices, stateSchema });
         if (!preflight.valid) {
           throw new V2HttpError(422, "VALIDATION_FAILED", "Release preflight failed");
         }
@@ -432,7 +436,7 @@ export function createV2CoreUseCases(
             scenes,
             choices,
           },
-          stateSchema: await graphState.listStateVariables(storyWorldId),
+          stateSchema,
         });
         return toReleaseManifestDto(await releaseRuntime.createRelease(manifest));
       }),

@@ -77,10 +77,11 @@ test("creator dispatch previews and completes a mocked batch", async ({ page }) 
 
 test("creator content management page loads without mutating seed data", async ({ page }) => {
   await page.goto("/creator/content");
-  await expect(page.getByRole("heading", { name: "故事世界" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "角色档案" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "关系设定" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "事件安排" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "内容管理" })).toBeVisible();
+  const sections = page.getByRole("navigation", { name: "内容管理分区" });
+  for (const label of ["概览", "角色", "关系", "故事脉络", "事件", "世界设定", "长期记忆", "提示词"]) {
+    await expect(sections.getByRole("button", { name: label, exact: true })).toBeVisible();
+  }
 });
 
 test("mobile creator navigation opens and closes without horizontal overflow", async ({ page }) => {
@@ -188,8 +189,8 @@ test("creator interaction logs support filters, details, and 360px layout", asyn
   await page.goto("/creator/logs?correlationId=corr-e2e-1");
   await expect(page.getByRole("heading", { name: "交互日志" })).toBeVisible();
   await expect(page.locator('input[placeholder="Correlation ID"]')).toHaveValue("corr-e2e-1");
-  await page.getByText("provider.complete", { exact: false }).click();
-  await expect(page.getByText("HTTP_ERROR", { exact: false })).toBeVisible();
+  await page.getByRole("button", { name: /Fake provider failure/ }).click();
+  await expect(page.locator(".details").first()).toContainText("HTTP_ERROR");
   const widths = await page.evaluate(() => ({
     scroll: document.documentElement.scrollWidth,
     client: document.documentElement.clientWidth,
@@ -236,8 +237,8 @@ test("model profile connection test uses a Fake Provider result", async ({ page 
   });
 
   await page.goto("/creator/integrations");
-  await page.getByRole("button", { name: "测试连接" }).click();
+  await page.getByRole("button", { name: "测试 Fake Provider" }).click();
   await expect(page.getByText("连接成功")).toBeVisible();
   await expect(page.getByText("42 ms")).toBeVisible();
-  await expect(page.getByRole("link", { name: "查看日志" })).toBeVisible();
+  await expect(page.getByText("profile-test-e2e", { exact: true })).toBeVisible();
 });

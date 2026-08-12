@@ -105,6 +105,52 @@ test("V2 candidate submission port replays identical idempotent submissions", as
     });
 
     assert.deepEqual(replay, first);
+    await unit.withCandidateReviewTransaction(async ({ canon }) => {
+      await canon.advanceRevision("world_submit" as never, 1 as never);
+    });
+    const replayAfterRevisionChange = await port.submitSceneCandidate({
+      candidate: candidate as never,
+      idempotencyKey: "key_candidate" as never,
+    });
+    assert.deepEqual(replayAfterRevisionChange, first);
+  } finally {
+    db.close();
+    cleanup();
+  }
+});
+
+test("V2 candidate submission port rejects reviewed or stale envelopes", async () => {
+  const { db, cleanup } = openV2TempSqliteConnection();
+  try {
+    applyV2Migrations(db);
+    const unit = new V2SqliteCandidateReviewUnitOfWork(db);
+    await unit.withCandidateReviewTransaction(async ({ canon }) => {
+      await canon.createWorld(createV2CanonWorld({ storyWorldId: "world_guard" as never, name: "Guard World" }));
+    });
+    const candidate = createV2SceneCandidate({
+      candidateId: "candidate_guard",
+      storyWorldId: "world_guard",
+      baseCanonRevision: 1,
+      provenance: { source: "llm" },
+      payload: {
+        scene: { sceneId: "scene_guard", title: "Guard", body: "Body", participantCharacterIds: [] },
+        choices: [],
+        validationNotes: [],
+      },
+    });
+    const port = new V2SqliteCandidateSubmissionPort(db);
+    await assert.rejects(() => port.submitSceneCandidate({
+      candidate: { ...candidate, status: "approved" } as never,
+      idempotencyKey: "key_reviewed" as never,
+    }), /pending scene candidates/);
+
+    await unit.withCandidateReviewTransaction(async ({ canon }) => {
+      await canon.advanceRevision("world_guard" as never, 1 as never);
+    });
+    await assert.rejects(() => port.submitSceneCandidate({
+      candidate: candidate as never,
+      idempotencyKey: "key_stale" as never,
+    }), /current revision is 2/);
   } finally {
     db.close();
     cleanup();

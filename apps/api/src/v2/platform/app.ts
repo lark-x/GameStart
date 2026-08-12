@@ -7,6 +7,7 @@ export interface CreateV2FastifyAppOptions {
   readonly corePlugin?: FastifyPluginAsync;
   readonly coreOptions?: Record<string, unknown>;
   readonly generationPlugin?: FastifyPluginAsync;
+  readonly generationOptions?: Record<string, unknown>;
 }
 
 export function createV2FastifyApp(options: CreateV2FastifyAppOptions = {}): FastifyInstance {
@@ -14,7 +15,10 @@ export function createV2FastifyApp(options: CreateV2FastifyAppOptions = {}): Fas
   void app.register(async (v2) => {
     v2.get("/health", async () => ({ ok: true, version: "v2" as const }));
     await v2.register(options.corePlugin ?? v2CorePlugin, { prefix: "/core", ...(options.coreOptions ?? {}) });
-    await v2.register(options.generationPlugin ?? v2GenerationPlugin, { prefix: "/generation" });
+    await v2.register(options.generationPlugin ?? v2GenerationPlugin, {
+      prefix: "/generation",
+      ...(options.generationOptions ?? {}),
+    });
   }, { prefix: "/api/v2" });
   return app;
 }

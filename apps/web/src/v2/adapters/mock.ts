@@ -52,6 +52,7 @@ export function createV2MockSnapshot(): V2WorkspaceSnapshot {
 export function createV2MockAdapter(): V2WorkspaceAdapter {
   return {
     mode: "mock",
+    async bootstrapWorkspace(): Promise<void> {},
     async getSnapshot(): Promise<V2WorkspaceSnapshot> {
       return createV2MockSnapshot();
     },
@@ -77,6 +78,9 @@ export function createV2MockAdapter(): V2WorkspaceAdapter {
     },
     async createRelease() {
       return v2WebFixtureReleasePackage;
+    },
+    async startRun() {
+      return { run: v2WebFixtureRun, player: v2WebFixturePlayer };
     },
     async submitChoice(choiceId: string) {
       const archive = choiceId === "choice_archive";

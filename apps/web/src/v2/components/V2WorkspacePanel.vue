@@ -60,6 +60,7 @@ const emit = defineEmits<{
   createAssetJob: [];
   reviewAssetCandidate: [action: V2CandidateReviewAction];
   createRelease: [];
+  startRun: [];
   submitChoice: [choiceId: string];
   saveRun: [];
   restoreSave: [];
@@ -245,7 +246,7 @@ function candidateTone(status: string): BadgeTone {
             <Button variant="primary" size="md" type="submit" :loading="loading">
               Create Job
             </Button>
-            <Badge tone="info">{{ snapshot.generation.job.status }}</Badge>
+            <Badge tone="info">{{ snapshot.generation.job?.status ?? "idle" }}</Badge>
           </div>
           <p v-if="generationMessage" class="v2-feedback">{{ generationMessage }}</p>
         </form>
@@ -260,7 +261,7 @@ function candidateTone(status: string): BadgeTone {
           </article>
         </div>
 
-        <article class="v2-record" aria-label="Candidate diff">
+        <article v-if="snapshot.candidate" class="v2-record" aria-label="Candidate diff">
           <div class="v2-record-head">
             <strong>{{ snapshot.generation.diff.title }}</strong>
             <Badge :tone="snapshot.candidate.status === 'pending' ? 'warning' : 'success'">
@@ -318,10 +319,15 @@ function candidateTone(status: string): BadgeTone {
             </Button>
           </div>
           <p v-if="reviewMessage" class="v2-feedback">{{ reviewMessage }}</p>
-          <p v-if="snapshot.candidate.reviewReason" class="v2-feedback">
+          <p v-if="snapshot.candidate?.reviewReason" class="v2-feedback">
             {{ snapshot.candidate.reviewer }}: {{ snapshot.candidate.reviewReason }}
           </p>
         </form>
+        <EmptyState
+          v-if="!snapshot.candidate"
+          title="No candidate awaiting review"
+          description="Create and process a generation job before reviewing canon changes."
+        />
       </template>
 
       <template v-else-if="area === 'assets'">
@@ -341,12 +347,12 @@ function candidateTone(status: string): BadgeTone {
               Create Asset Job
             </Button>
             <Badge tone="info">{{ snapshot.assets.workflowName }}</Badge>
-            <Badge :tone="candidateTone(snapshot.assets.job.status)">{{ snapshot.assets.job.status }}</Badge>
+            <Badge :tone="candidateTone(snapshot.assets.job?.status ?? 'idle')">{{ snapshot.assets.job?.status ?? "idle" }}</Badge>
           </div>
           <p v-if="assetMessage" class="v2-feedback">{{ assetMessage }}</p>
         </form>
 
-        <article class="v2-record" aria-label="Asset candidate">
+        <article v-if="snapshot.assets.candidate && snapshot.assets.job" class="v2-record" aria-label="Asset candidate">
           <div class="v2-record-head">
             <strong>{{ snapshot.assets.candidate.title }}</strong>
             <Badge :tone="candidateTone(snapshot.assets.candidate.status)">
@@ -379,6 +385,11 @@ function candidateTone(status: string): BadgeTone {
             {{ snapshot.assets.candidate.reviewer }}: {{ snapshot.assets.candidate.reviewReason }}
           </p>
         </article>
+        <EmptyState
+          v-else
+          title="No asset candidate"
+          description="Create and process an asset job before approving media."
+        />
 
         <form
           class="v2-canon-form"
@@ -440,19 +451,22 @@ function candidateTone(status: string): BadgeTone {
           </article>
           <article class="v2-metric">
             <span>Release</span>
-            <strong>{{ snapshot.releasePackage.version }}</strong>
-            <small>{{ snapshot.releasePackage.manifestHash }}</small>
+            <strong>{{ snapshot.releasePackage?.version ?? "not created" }}</strong>
+            <small>{{ snapshot.releasePackage?.manifestHash ?? "Run preflight first" }}</small>
           </article>
           <article class="v2-metric">
             <span>Immutability</span>
-            <strong>{{ snapshot.releasePackage.immutable ? "locked" : "draft" }}</strong>
-            <small>{{ snapshot.releasePackage.releaseId }}</small>
+            <strong>{{ snapshot.releasePackage?.immutable ? "locked" : "not released" }}</strong>
+            <small>{{ snapshot.releasePackage?.releaseId ?? snapshot.world.storyWorldId }}</small>
           </article>
         </div>
 
         <div class="v2-form-actions">
           <Button variant="primary" size="md" :disabled="!releaseReady || loading" :loading="loading" @click="emit('createRelease')">
             Create Release
+          </Button>
+          <Button variant="secondary" size="md" :disabled="!snapshot.releasePackage || loading" @click="emit('startRun')">
+            Start Player Run
           </Button>
           <Badge :tone="releaseReady ? 'success' : 'warning'">{{ releaseReady ? "ready" : "blocked" }}</Badge>
         </div>
@@ -474,15 +488,15 @@ function candidateTone(status: string): BadgeTone {
             <Button variant="secondary" size="md" type="submit" :loading="loading">
               Export
             </Button>
-            <Badge tone="info">{{ snapshot.exportBundle.format }}</Badge>
+            <Badge tone="info">{{ snapshot.exportBundle?.format ?? exportFormat }}</Badge>
           </div>
           <p v-if="exportMessage" class="v2-feedback">{{ exportMessage }}</p>
-          <pre class="v2-export-preview">{{ snapshot.exportBundle.preview }}</pre>
+          <pre v-if="snapshot.exportBundle" class="v2-export-preview">{{ snapshot.exportBundle.preview }}</pre>
         </form>
       </template>
 
       <template v-else-if="area === 'player'">
-        <article class="v2-record" aria-label="Player scene">
+        <article v-if="snapshot.player && snapshot.run" class="v2-record" aria-label="Player scene">
           <div class="v2-record-head">
             <strong>{{ snapshot.player.title }}</strong>
             <Badge tone="info">{{ snapshot.run.releaseVersion }}</Badge>
@@ -501,6 +515,11 @@ function candidateTone(status: string): BadgeTone {
             </Button>
           </div>
         </article>
+        <EmptyState
+          v-else
+          title="No run started"
+          description="Create a release, then start a player run from that immutable version."
+        />
 
         <form class="v2-canon-form" aria-label="Save and restore controls" @submit.prevent="emit('saveRun')">
           <Field label="Save label">
@@ -513,17 +532,17 @@ function candidateTone(status: string): BadgeTone {
             />
           </Field>
           <div class="v2-form-actions">
-            <Button variant="primary" size="md" type="submit" :loading="loading">
+            <Button variant="primary" size="md" type="submit" :disabled="!snapshot.run" :loading="loading">
               Save Run
             </Button>
-            <Button variant="secondary" size="md" :disabled="loading" @click="emit('restoreSave')">
+            <Button variant="secondary" size="md" :disabled="loading || !snapshot.save" @click="emit('restoreSave')">
               Restore Save
             </Button>
           </div>
           <p v-if="playerMessage" class="v2-feedback">{{ playerMessage }}</p>
         </form>
 
-        <div class="v2-list-grid" aria-label="Save details">
+        <div v-if="snapshot.save" class="v2-list-grid" aria-label="Save details">
           <article class="v2-metric">
             <span>Save</span>
             <strong>{{ snapshot.save.label }}</strong>
@@ -568,13 +587,13 @@ function candidateTone(status: string): BadgeTone {
         </article>
         <article class="v2-metric">
           <span>Candidate</span>
-          <strong>{{ snapshot.candidate.status }}</strong>
-          <small>{{ snapshot.candidate.provenance.source }} source</small>
+          <strong>{{ snapshot.candidate?.status ?? "none" }}</strong>
+          <small>{{ snapshot.candidate?.provenance.source ?? "no candidate" }} source</small>
         </article>
         <article class="v2-metric">
           <span>Runtime</span>
-          <strong>{{ snapshot.run.releaseVersion }}</strong>
-          <small>{{ snapshot.run.currentSceneId }}</small>
+          <strong>{{ snapshot.run?.releaseVersion ?? "not started" }}</strong>
+          <small>{{ snapshot.run?.currentSceneId ?? "no scene" }}</small>
         </article>
       </template>
     </div>

@@ -48,6 +48,15 @@ onMounted(() => {
       <Button variant="primary" size="md" :loading="store.loading" @click="store.loadSnapshot">
         Refresh Snapshot
       </Button>
+      <Button
+        v-if="store.mode === 'http' && !store.hasSnapshot"
+        variant="secondary"
+        size="md"
+        :loading="store.loading"
+        @click="store.bootstrapWorkspace"
+      >
+        Create Starter World
+      </Button>
     </header>
 
     <div class="v2-shell-layout">
@@ -104,6 +113,7 @@ onMounted(() => {
             @create-asset-job="store.createAssetJob"
             @review-asset-candidate="store.reviewAssetCandidate"
             @create-release="store.createRelease"
+            @start-run="store.startRun"
             @submit-choice="store.submitChoice"
             @save-run="store.saveRun"
             @restore-save="store.restoreSave"

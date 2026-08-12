@@ -40,7 +40,7 @@ test("V2 release domain preflights graph and creates stable content hashes", () 
     stateSchema: [],
   });
 
-  assert.equal(buildV2ReleasePreflight({ world, scenes: [entry], choices: [] }).valid, true);
+  assert.equal(buildV2ReleasePreflight({ world, scenes: [entry], choices: [], stateSchema: [] }).valid, true);
   assert.match(manifest.contentHash, /^[a-f0-9]{64}$/);
   assert.equal(createV2ReleaseManifest({
     releaseId: "release_b",
@@ -110,6 +110,28 @@ test("V2 runtime domain starts at entry scene and applies gated choice consequen
   });
   assert.equal(loaded.currentSceneId, "scene_next");
   assert.equal(loaded.stateValues.Trust, 3);
+});
+
+test("V2 release preflight rejects unknown or incompatible typed state references", () => {
+  const world = createV2CanonWorld({ storyWorldId: "world_state", name: "State World" });
+  const entry = createV2GraphScene({
+    storyWorldId: "world_state",
+    sceneId: "scene_entry",
+    title: "Entry",
+    isEntry: true,
+  });
+  const choice = createV2GraphChoice({
+    storyWorldId: "world_state",
+    choiceId: "choice_bad_state",
+    sourceScene: entry,
+    label: "Break state",
+    gates: [{ stateKey: "Missing", operator: "eq", value: true }],
+    consequences: [{ stateKey: "Missing", operation: "increment", value: 1 }],
+  });
+  const preflight = buildV2ReleasePreflight({ world, scenes: [entry], choices: [choice], stateSchema: [] });
+  assert.equal(preflight.valid, false);
+  assert.equal(preflight.diagnostics.some((diagnostic) => diagnostic.code === "UNKNOWN_GATE_STATE_KEY"), true);
+  assert.equal(preflight.diagnostics.some((diagnostic) => diagnostic.code === "UNKNOWN_STATE_KEY"), true);
 });
 
 test("V2 export domain renders release JSON and readable markdown", () => {

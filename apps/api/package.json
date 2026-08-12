@@ -6,7 +6,9 @@
   "exports": "./src/index.ts",
   "scripts": {
     "dev": "node src/main.ts",
+    "dev:v2": "node src/v2/main.ts",
     "start": "node src/main.ts",
+    "start:v2": "node src/v2/main.ts",
     "start:postgres": "node src/persistent-main.ts",
     "migrate:postgres": "node src/migrate.ts",
     "seed:postgres": "node src/seed.ts",

@@ -448,6 +448,64 @@ test("V2 core API rejects stale scene candidate approvals without applying graph
   }
 });
 
+test("V2 core API keeps request-changes review revision stable so a revised candidate can be approved", async () => {
+  const { db, cleanup } = openV2TempSqliteConnection();
+  applyV2Migrations(db);
+  const app = createV2FastifyApp({ coreOptions: { sqlite: db } });
+  await app.ready();
+  try {
+    await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds",
+      payload: { storyWorldId: "world_changes_api", name: "Changes API", idempotencyKey: "world_changes" },
+    });
+    await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds/world_changes_api/candidates/scenes",
+      payload: {
+        candidateId: "candidate_changes",
+        baseCanonRevision: 1,
+        provenance: { source: "human" },
+        payload: {
+          scene: { sceneId: "scene_changes", title: "Changed Scene", body: "Body", participantCharacterIds: [] },
+          choices: [],
+          validationNotes: [],
+        },
+        idempotencyKey: "submit_changes",
+      },
+    });
+    const changes = await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds/world_changes_api/candidates/scenes/candidate_changes/review",
+      payload: {
+        action: "request_changes",
+        reviewer: "creator",
+        expectedRevision: 1,
+        idempotencyKey: "request_changes",
+      },
+    });
+    assert.equal(changes.statusCode, 200);
+    assert.equal(changes.json().revision, 1);
+
+    const approved = await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds/world_changes_api/candidates/scenes/candidate_changes/review",
+      payload: {
+        action: "approve",
+        reviewer: "creator",
+        expectedRevision: 1,
+        idempotencyKey: "approve_changes",
+      },
+    });
+    assert.equal(approved.statusCode, 200);
+    assert.equal(approved.json().revision, 2);
+  } finally {
+    await app.close();
+    db.close();
+    cleanup();
+  }
+});
+
 test("V2 core API releases, runs, saves, and exports a playable graph", async () => {
   const { db, cleanup } = openV2TempSqliteConnection();
   applyV2Migrations(db);

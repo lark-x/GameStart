@@ -1,5 +1,7 @@
 # V2 Web Product Interface Requests
 
+Integration status: IR-WEB-001 through IR-WEB-005 were resolved on `codex/v2-integration` by adapting the Web Http adapter to the authoritative AI-1/AI-2 routes. The proposal paths below are retained as branch history and must not be treated as current endpoints.
+
 ## IR-WEB-001: Workspace Snapshot Endpoints
 
 Severity: `integration`
