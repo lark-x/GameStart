@@ -148,3 +148,65 @@ Explicit non-scope for this checkpoint:
 - Asset candidate approval. Asset review remains AI-2-owned and must not write canon.
 - Release preflight/manifest, runtime play sessions, save/load, and export.
 - LLM/ComfyUI/BullMQ/Qdrant/Web page implementation.
+
+## Checkpoint 4: Release + Runtime + Export
+
+Status: implemented on this branch
+
+Implemented scope:
+
+- Core-owned contracts for:
+  - release manifest, preflight, and create-release command.
+  - runtime run, current scene, choice submission, and save DTOs.
+  - workspace/release export bundle with JSON and Markdown output.
+- Pure domain rules for:
+  - release graph preflight via existing graph diagnostics.
+  - stable release content hash generation.
+  - release version validation.
+  - runtime start at the release entry scene.
+  - runtime available-choice filtering by gates.
+  - deterministic choice submission with typed-state consequences.
+  - export Markdown rendering.
+- SQLite migration `0004_v2_core_release_runtime` for:
+  - `v2_releases`
+  - `v2_runtime_runs`
+  - `v2_runtime_saves`
+- SQLite release/runtime repository and unit of work.
+- Fastify core API routes under `/api/v2/core`:
+  - `GET /worlds/:storyWorldId/releases`
+  - `GET /worlds/:storyWorldId/releases/preflight`
+  - `POST /worlds/:storyWorldId/releases`
+  - `POST /runtime/runs`
+  - `GET /runtime/runs/:runId/scene`
+  - `POST /runtime/runs/:runId/choices`
+  - `POST /runtime/runs/:runId/saves`
+  - `GET /runtime/saves/:saveId`
+  - `POST /runtime/saves/:saveId/load`
+  - `GET /worlds/:storyWorldId/export?revision=...`
+  - `GET /releases/:releaseId/export`
+
+Release semantics:
+
+- Release creation requires explicit `sourceRevision` and rejects stale workspace revisions.
+- Release preflight blocks graph errors and allows warnings.
+- Release manifest stores canon snapshot, full graph snapshot (`arcs`, `scenes`, `choices`), typed state schema, version, source revision, content hash, and creation time.
+- Releases are immutable at repository/API level: no update route and no update repository method.
+
+Runtime semantics:
+
+- Runtime reads only release manifest plus run/save tables; it does not query workspace graph/canon/candidate/job tables after release lookup.
+- Runtime start initializes typed state from release state schema and positions at the entry scene.
+- Choice submission checks source scene, gates, target scene, applies typed-state consequences, records choice history, and updates the run.
+- Save records release id/version, current scene, typed state, choice history, and created time.
+- Save load creates a new run from the saved release id/version, scene, typed state, and choice history.
+
+Export semantics:
+
+- Workspace export requires an explicit revision and rejects stale revision mismatch.
+- Release export reads immutable release manifest.
+- Both exports return machine-readable JSON and human-readable Markdown.
+
+Explicit non-scope for this checkpoint:
+
+- Web UI implementation.
+- Asset release validation against AI-2 approved asset facts.

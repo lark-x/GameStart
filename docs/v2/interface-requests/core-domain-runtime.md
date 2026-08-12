@@ -30,3 +30,11 @@ Candidate Review + SQLite Core did not require shared contract changes. It reuse
 The implementation adds a core-owned SQLite implementation of `CandidateSubmissionPort` so AI-2 can submit scene candidates through the frozen shared port without direct access to AI-1 repositories.
 
 No blocking interface requests are open for the Candidate Review + SQLite Core checkpoint.
+
+## Checkpoint 4 Notes
+
+Release + Runtime + Export did not require shared contract or shared platform changes beyond the previously listed `coreOptions` hook.
+
+The core release manifest now preserves the full graph snapshot (`arcs`, `scenes`, `choices`) in both stored manifests and public release DTOs. Runtime save loading is exposed as `POST /runtime/saves/:saveId/load`, creating a new run from the saved release state.
+
+No blocking interface requests are open for the Release + Runtime + Export checkpoint.

@@ -9,12 +9,15 @@ import type {
   V2ChoiceDto,
   V2CanonSnapshotDto,
   V2CanonWriteResponse,
+  V2CoreExportBundleDto,
   V2CreateArcRequest,
   V2CreateCharacterRequest,
   V2CreateChoiceRequest,
   V2CreateFactRequest,
   V2CreateLocationRequest,
+  V2CreateReleaseRequest,
   V2CreateRuleRequest,
+  V2CreateRuntimeSaveRequest,
   V2CreateSceneRequest,
   V2CreateStoryWorldRequest,
   V2CreateStateVariableRequest,
@@ -23,6 +26,7 @@ import type {
   V2GraphSnapshotDto,
   V2GraphValidationDto,
   V2LocationId,
+  V2LoadRuntimeSaveRequest,
   V2Revision,
   V2LocationDto,
   V2PreviewStateDeltaRequest,
@@ -33,8 +37,18 @@ import type {
   V2StateDeltaPreviewDto,
   V2StateSnapshotDto,
   V2StateVariableDto,
+  V2ReleaseId,
+  V2ReleaseManifestDto,
+  V2ReleasePreflightDto,
+  V2RuntimeRunDto,
+  V2RuntimeSaveDto,
+  V2RuntimeSceneDto,
+  V2RunId,
+  V2SaveId,
+  V2StartRuntimeRunRequest,
   V2StoryWorldDto,
   V2StoryWorldId,
+  V2SubmitRuntimeChoiceRequest,
   V2SubmitSceneCandidateRequest,
   V2TimelineEventDto,
   V2SceneCandidateDto,
@@ -43,8 +57,11 @@ import type {
   V2CoreSceneCandidatePayload,
 } from "@living-network/domain";
 import {
+  buildV2CoreExportMarkdown,
+  buildV2ReleaseExportJson,
   buildV2SceneCandidateApplyPlan,
   buildV2InitialTypedState,
+  buildV2ReleasePreflight,
   createV2SceneCandidate,
   createV2CanonCharacter,
   createV2CanonFact,
@@ -55,9 +72,14 @@ import {
   createV2GraphArc,
   createV2GraphChoice,
   createV2GraphScene,
+  createV2ReleaseManifest,
   createV2TypedStateVariable,
+  getV2RuntimeScene,
+  loadV2RuntimeSave,
   previewV2TypedStateDelta,
   reviewV2SceneCandidate,
+  startV2RuntimeRun,
+  submitV2RuntimeChoice,
   validateV2Graph,
 } from "@living-network/domain";
 import type {
@@ -69,6 +91,9 @@ import type {
   V2CandidateReviewUnitOfWork,
   V2GraphStateRepository,
   V2GraphStateUnitOfWork,
+  V2ReleaseRuntimeRepository,
+  V2ReleaseRuntimeUnitOfWork,
+  V2RuntimeSaveRecord,
 } from "@living-network/ports";
 
 import { V2HttpError } from "./errors.ts";
@@ -100,12 +125,24 @@ export interface V2CoreUseCases {
     input: V2ReviewCandidateRequest,
   ): Promise<V2CandidateReviewResponse>;
   listCandidateReviewAudits(storyWorldId: V2StoryWorldId, candidateId: V2CandidateId): Promise<readonly V2CandidateReviewAuditDto[]>;
+  listReleases(storyWorldId: V2StoryWorldId): Promise<readonly V2ReleaseManifestDto[]>;
+  preflightRelease(storyWorldId: V2StoryWorldId): Promise<V2ReleasePreflightDto>;
+  createRelease(storyWorldId: V2StoryWorldId, input: V2CreateReleaseRequest): Promise<V2ReleaseManifestDto>;
+  startRuntimeRun(input: V2StartRuntimeRunRequest): Promise<V2RuntimeSceneDto>;
+  getRuntimeScene(runId: V2RunId): Promise<V2RuntimeSceneDto>;
+  submitRuntimeChoice(runId: V2RunId, input: V2SubmitRuntimeChoiceRequest): Promise<V2RuntimeSceneDto>;
+  createRuntimeSave(runId: V2RunId, input: V2CreateRuntimeSaveRequest): Promise<V2RuntimeSaveDto>;
+  getRuntimeSave(saveId: V2SaveId): Promise<V2RuntimeSaveDto>;
+  loadRuntimeSave(saveId: V2SaveId, input: V2LoadRuntimeSaveRequest): Promise<V2RuntimeSceneDto>;
+  exportWorkspace(storyWorldId: V2StoryWorldId, revision: V2Revision): Promise<V2CoreExportBundleDto>;
+  exportRelease(releaseId: V2ReleaseId): Promise<V2CoreExportBundleDto>;
 }
 
 export function createV2CoreUseCases(
   unitOfWork: V2CanonUnitOfWork,
   graphStateUnitOfWork?: V2GraphStateUnitOfWork,
   candidateReviewUnitOfWork?: V2CandidateReviewUnitOfWork,
+  releaseRuntimeUnitOfWork?: V2ReleaseRuntimeUnitOfWork,
 ): V2CoreUseCases {
   const requireGraphState = () => {
     if (!graphStateUnitOfWork) {
@@ -118,6 +155,12 @@ export function createV2CoreUseCases(
       throw new V2HttpError(503, "SERVICE_UNAVAILABLE", "V2 candidate review dependencies are not configured");
     }
     return candidateReviewUnitOfWork;
+  };
+  const requireReleaseRuntime = () => {
+    if (!releaseRuntimeUnitOfWork) {
+      throw new V2HttpError(503, "SERVICE_UNAVAILABLE", "V2 release/runtime dependencies are not configured");
+    }
+    return releaseRuntimeUnitOfWork;
   };
   return {
     createWorld: (input) => unitOfWork.withCanonTransaction(async ({ canon }) =>
@@ -343,6 +386,159 @@ export function createV2CoreUseCases(
       await requireSceneCandidate(candidateReview, storyWorldId, candidateId);
       return (await candidateReview.listAudits({ storyWorldId, candidateId })).map(toCandidateReviewAuditDto);
     }),
+    listReleases: (storyWorldId) => requireReleaseRuntime().withReleaseRuntimeTransaction(async ({ canon, releaseRuntime }) => {
+      await requireWorld(canon, storyWorldId);
+      return (await releaseRuntime.listReleases(storyWorldId)).map(toReleaseManifestDto);
+    }),
+    preflightRelease: (storyWorldId) => requireReleaseRuntime().withReleaseRuntimeTransaction(async ({ canon, graphState }) => {
+      const world = await requireWorld(canon, storyWorldId);
+      const preflight = buildV2ReleasePreflight({
+        world,
+        scenes: await graphState.listScenes(storyWorldId),
+        choices: await graphState.listChoices(storyWorldId),
+      });
+      return {
+        valid: preflight.valid,
+        diagnostics: preflight.diagnostics.map((diagnostic) => ({
+          code: diagnostic.code,
+          severity: diagnostic.severity,
+          message: diagnostic.message,
+          ...(diagnostic.sceneId === undefined ? {} : { sceneId: diagnostic.sceneId as V2SceneDto["sceneId"] }),
+          ...(diagnostic.choiceId === undefined ? {} : { choiceId: diagnostic.choiceId as V2ChoiceDto["choiceId"] }),
+        })),
+      };
+    }),
+    createRelease: (storyWorldId, input) => requireReleaseRuntime().withReleaseRuntimeTransaction(async ({ canon, graphState, releaseRuntime }) =>
+      withIdempotency(canon, "createRelease", input.idempotencyKey, { storyWorldId, ...input }, async () => {
+        const world = await requireWorld(canon, storyWorldId);
+        if (world.revision !== input.sourceRevision) {
+          throw new V2HttpError(409, "STALE_REVISION", `Expected canon revision ${input.sourceRevision}, got ${world.revision}`);
+        }
+        const arcs = await graphState.listArcs(storyWorldId);
+        const scenes = await graphState.listScenes(storyWorldId);
+        const choices = await graphState.listChoices(storyWorldId);
+        const preflight = buildV2ReleasePreflight({ world, scenes, choices });
+        if (!preflight.valid) {
+          throw new V2HttpError(422, "VALIDATION_FAILED", "Release preflight failed");
+        }
+        const manifest = createV2ReleaseManifest({
+          releaseId: input.releaseId,
+          storyWorldId,
+          version: input.version,
+          sourceRevision: input.sourceRevision,
+          canon: await buildSnapshot(canon, storyWorldId),
+          graph: {
+            arcs,
+            scenes,
+            choices,
+          },
+          stateSchema: await graphState.listStateVariables(storyWorldId),
+        });
+        return toReleaseManifestDto(await releaseRuntime.createRelease(manifest));
+      }),
+    ),
+    startRuntimeRun: (input) => requireReleaseRuntime().withReleaseRuntimeTransaction(async ({ canon, releaseRuntime }) =>
+      withIdempotency(canon, "startRuntimeRun", input.idempotencyKey, input, async () => {
+        const release = await requireRelease(releaseRuntime, input.releaseId);
+        const run = await releaseRuntime.createRun(startV2RuntimeRun({
+          runId: input.runId,
+          releaseId: release.releaseId,
+          releaseVersion: release.version,
+          scenes: release.graph.scenes,
+          stateSchema: release.stateSchema,
+        }));
+        return toRuntimeSceneDto(run, release);
+      }),
+    ),
+    getRuntimeScene: (runId) => requireReleaseRuntime().withReleaseRuntimeTransaction(async ({ releaseRuntime }) => {
+      const run = await requireRun(releaseRuntime, runId);
+      return toRuntimeSceneDto(run, await requireRelease(releaseRuntime, run.releaseId as V2ReleaseId));
+    }),
+    submitRuntimeChoice: (runId, input) => requireReleaseRuntime().withReleaseRuntimeTransaction(async ({ canon, releaseRuntime }) =>
+      withIdempotency(canon, "submitRuntimeChoice", input.idempotencyKey, { runId, ...input }, async () => {
+        const run = await requireRun(releaseRuntime, runId);
+        const release = await requireRelease(releaseRuntime, run.releaseId as V2ReleaseId);
+        const choice = release.graph.choices.find((candidate) => candidate.choiceId === input.choiceId);
+        if (!choice) throw new V2HttpError(404, "NOT_FOUND", "Choice not found in release");
+        const updated = await releaseRuntime.updateRun(submitV2RuntimeChoice({
+          run,
+          choice,
+          scenes: release.graph.scenes,
+          stateSchema: release.stateSchema,
+        }));
+        return toRuntimeSceneDto(updated, release);
+      }),
+    ),
+    createRuntimeSave: (runId, input) => requireReleaseRuntime().withReleaseRuntimeTransaction(async ({ canon, releaseRuntime }) =>
+      withIdempotency(canon, "createRuntimeSave", input.idempotencyKey, { runId, ...input }, async () => {
+        const run = await requireRun(releaseRuntime, runId);
+        const save = await releaseRuntime.createSave({
+          saveId: input.saveId,
+          runId,
+          releaseId: run.releaseId as V2ReleaseId,
+          releaseVersion: run.releaseVersion,
+          currentSceneId: run.currentSceneId,
+          stateValues: run.stateValues,
+          choiceHistory: run.choiceHistory,
+        });
+        return toRuntimeSaveDto(save);
+      }),
+    ),
+    getRuntimeSave: (saveId) => requireReleaseRuntime().withReleaseRuntimeTransaction(async ({ releaseRuntime }) =>
+      toRuntimeSaveDto(await requireSave(releaseRuntime, saveId)),
+    ),
+    loadRuntimeSave: (saveId, input) => requireReleaseRuntime().withReleaseRuntimeTransaction(async ({ canon, releaseRuntime }) =>
+      withIdempotency(canon, "loadRuntimeSave", input.idempotencyKey, { saveId, ...input }, async () => {
+        const save = await requireSave(releaseRuntime, saveId);
+        const release = await requireRelease(releaseRuntime, save.releaseId as V2ReleaseId);
+        const run = await releaseRuntime.createRun(loadV2RuntimeSave({
+          runId: input.runId,
+          releaseId: save.releaseId,
+          releaseVersion: save.releaseVersion,
+          currentSceneId: save.currentSceneId,
+          stateValues: save.stateValues,
+          choiceHistory: save.choiceHistory,
+        }));
+        return toRuntimeSceneDto(run, release);
+      }),
+    ),
+    exportWorkspace: (storyWorldId, revision) => requireReleaseRuntime().withReleaseRuntimeTransaction(async ({ canon, graphState }) => {
+      const world = await requireWorld(canon, storyWorldId);
+      if (world.revision !== revision) {
+        throw new V2HttpError(409, "STALE_REVISION", `Expected canon revision ${revision}, got ${world.revision}`);
+      }
+      const graph = await buildGraphSnapshot(graphState, storyWorldId);
+      const snapshot = await buildSnapshot(canon, storyWorldId);
+      return {
+        source: { kind: "workspace", storyWorldId, revision },
+        json: { canon: snapshot, graph, stateSchema: (await graphState.listStateVariables(storyWorldId)).map(toStateVariableDto) },
+        markdown: buildV2CoreExportMarkdown({
+          title: snapshot.world.name,
+          sourceLabel: `workspace revision ${revision}`,
+          scenes: graph.scenes,
+          choices: graph.choices,
+        }),
+      };
+    }),
+    exportRelease: (releaseId) => requireReleaseRuntime().withReleaseRuntimeTransaction(async ({ releaseRuntime }) => {
+      const release = await requireRelease(releaseRuntime, releaseId);
+      const manifest = toReleaseManifestDto(release);
+      return {
+        source: {
+          kind: "release",
+          storyWorldId: manifest.storyWorldId,
+          releaseId,
+          releaseVersion: manifest.version,
+        },
+        json: buildV2ReleaseExportJson(release),
+        markdown: buildV2CoreExportMarkdown({
+          title: manifest.canon.world.name,
+          sourceLabel: `release ${manifest.version}`,
+          scenes: manifest.graph.scenes,
+          choices: manifest.graph.choices,
+        }),
+      };
+    }),
   };
 }
 
@@ -409,6 +605,24 @@ async function requireSceneCandidate(
   const candidate = await candidateReview.getSceneCandidate({ storyWorldId, candidateId: candidateId as never });
   if (!candidate) throw new V2HttpError(404, "NOT_FOUND", "Scene candidate not found");
   return candidate;
+}
+
+async function requireRelease(releaseRuntime: V2ReleaseRuntimeRepository, releaseId: V2ReleaseId) {
+  const release = await releaseRuntime.getRelease(releaseId);
+  if (!release) throw new V2HttpError(404, "NOT_FOUND", "Release not found");
+  return release;
+}
+
+async function requireRun(releaseRuntime: V2ReleaseRuntimeRepository, runId: V2RunId) {
+  const run = await releaseRuntime.getRun(runId);
+  if (!run) throw new V2HttpError(404, "NOT_FOUND", "Runtime run not found");
+  return run;
+}
+
+async function requireSave(releaseRuntime: V2ReleaseRuntimeRepository, saveId: V2SaveId) {
+  const save = await releaseRuntime.getSave(saveId);
+  if (!save) throw new V2HttpError(404, "NOT_FOUND", "Runtime save not found");
+  return save;
 }
 
 async function buildSnapshot(canon: V2CanonRepository, storyWorldId: V2StoryWorldId): Promise<V2CanonSnapshotDto> {
@@ -568,6 +782,75 @@ function toCandidateReviewAuditDto(audit: V2CandidateReviewAuditRecord): V2Candi
     ...(audit.reason === undefined ? {} : { reason: audit.reason }),
     resultingRevision: audit.resultingRevision as V2Revision,
     createdAt: audit.createdAt ?? "1970-01-01T00:00:00.000Z",
+  };
+}
+
+function toReleaseManifestDto(release: Awaited<ReturnType<V2ReleaseRuntimeRepository["getRelease"]>> & {}): V2ReleaseManifestDto {
+  const canon = release.canon as V2CanonSnapshotDto;
+  return {
+    releaseId: release.releaseId as V2ReleaseId,
+    storyWorldId: release.storyWorldId as V2StoryWorldId,
+    version: release.version,
+    sourceRevision: release.sourceRevision as V2Revision,
+    contentHash: release.contentHash,
+    canon,
+    graph: {
+      arcs: release.graph.arcs.map(toArcDto),
+      scenes: release.graph.scenes.map(toSceneDto),
+      choices: release.graph.choices.map(toChoiceDto),
+    },
+    stateSchema: release.stateSchema.map(toStateVariableDto),
+    createdAt: release.createdAt ?? "1970-01-01T00:00:00.000Z",
+  };
+}
+
+function toRuntimeRunDto(run: Awaited<ReturnType<V2ReleaseRuntimeRepository["getRun"]>> & {}): V2RuntimeRunDto {
+  return {
+    runId: run.runId as V2RunId,
+    releaseId: run.releaseId as V2ReleaseId,
+    releaseVersion: run.releaseVersion,
+    currentSceneId: run.currentSceneId as V2SceneDto["sceneId"],
+    stateValues: run.stateValues,
+    choiceHistory: run.choiceHistory.map((choiceId) => choiceId as V2ChoiceDto["choiceId"]),
+    createdAt: run.createdAt ?? "1970-01-01T00:00:00.000Z",
+    updatedAt: run.updatedAt ?? "1970-01-01T00:00:00.000Z",
+  };
+}
+
+function toRuntimeSceneDto(
+  run: Awaited<ReturnType<V2ReleaseRuntimeRepository["getRun"]>> & {},
+  release: Awaited<ReturnType<V2ReleaseRuntimeRepository["getRelease"]>> & {},
+): V2RuntimeSceneDto {
+  const runtimeScene = getV2RuntimeScene({
+    run,
+    scenes: release.graph.scenes,
+    choices: release.graph.choices,
+  });
+  return {
+    run: toRuntimeRunDto(run),
+    scene: {
+      sceneId: runtimeScene.scene.sceneId as V2SceneDto["sceneId"],
+      title: runtimeScene.scene.title,
+      ...(runtimeScene.scene.body === undefined ? {} : { body: runtimeScene.scene.body }),
+    },
+    availableChoices: runtimeScene.availableChoices.map((choice) => ({
+      choiceId: choice.choiceId as V2ChoiceDto["choiceId"],
+      label: choice.label,
+      ...(choice.targetSceneId === undefined ? {} : { targetSceneId: choice.targetSceneId as V2SceneDto["sceneId"] }),
+    })),
+  };
+}
+
+function toRuntimeSaveDto(save: V2RuntimeSaveRecord): V2RuntimeSaveDto {
+  return {
+    saveId: save.saveId as V2SaveId,
+    runId: save.runId as V2RunId,
+    releaseId: save.releaseId as V2ReleaseId,
+    releaseVersion: save.releaseVersion,
+    currentSceneId: save.currentSceneId as V2SceneDto["sceneId"],
+    stateValues: save.stateValues,
+    choiceHistory: save.choiceHistory.map((choiceId) => choiceId as V2ChoiceDto["choiceId"]),
+    createdAt: save.createdAt ?? "1970-01-01T00:00:00.000Z",
   };
 }
 

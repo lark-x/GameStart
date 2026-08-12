@@ -244,8 +244,63 @@ export const v2CoreCandidateReviewMigration: V2SqliteMigration = {
   },
 };
 
+export const v2CoreReleaseRuntimeMigration: V2SqliteMigration = {
+  id: "0004_v2_core_release_runtime",
+  up: (db) => {
+    db.exec(`
+      CREATE TABLE v2_releases (
+        release_id TEXT PRIMARY KEY,
+        story_world_id TEXT NOT NULL REFERENCES v2_worlds(story_world_id) ON DELETE RESTRICT,
+        version TEXT NOT NULL,
+        source_revision INTEGER NOT NULL CHECK (source_revision >= 1),
+        content_hash TEXT NOT NULL,
+        manifest_json TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        UNIQUE (story_world_id, version)
+      );
+
+      CREATE TABLE v2_runtime_runs (
+        run_id TEXT PRIMARY KEY,
+        release_id TEXT NOT NULL REFERENCES v2_releases(release_id) ON DELETE RESTRICT,
+        release_version TEXT NOT NULL,
+        current_scene_id TEXT NOT NULL,
+        state_json TEXT NOT NULL,
+        choice_history_json TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      );
+
+      CREATE TABLE v2_runtime_saves (
+        save_id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL REFERENCES v2_runtime_runs(run_id) ON DELETE CASCADE,
+        release_id TEXT NOT NULL REFERENCES v2_releases(release_id) ON DELETE RESTRICT,
+        release_version TEXT NOT NULL,
+        current_scene_id TEXT NOT NULL,
+        state_json TEXT NOT NULL,
+        choice_history_json TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      );
+
+      CREATE INDEX v2_releases_world_idx ON v2_releases(story_world_id, created_at);
+      CREATE INDEX v2_runtime_runs_release_idx ON v2_runtime_runs(release_id, updated_at);
+      CREATE INDEX v2_runtime_saves_run_idx ON v2_runtime_saves(run_id, created_at);
+    `);
+  },
+  down: (db) => {
+    db.exec(`
+      DROP INDEX IF EXISTS v2_runtime_saves_run_idx;
+      DROP INDEX IF EXISTS v2_runtime_runs_release_idx;
+      DROP INDEX IF EXISTS v2_releases_world_idx;
+      DROP TABLE IF EXISTS v2_runtime_saves;
+      DROP TABLE IF EXISTS v2_runtime_runs;
+      DROP TABLE IF EXISTS v2_releases;
+    `);
+  },
+};
+
 export const v2CoreCanonMigrations = [
   v2CoreCanonMigration,
   v2CoreGraphStateMigration,
   v2CoreCandidateReviewMigration,
+  v2CoreReleaseRuntimeMigration,
 ] as const;

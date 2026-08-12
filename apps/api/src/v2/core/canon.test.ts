@@ -447,3 +447,158 @@ test("V2 core API rejects stale scene candidate approvals without applying graph
     cleanup();
   }
 });
+
+test("V2 core API releases, runs, saves, and exports a playable graph", async () => {
+  const { db, cleanup } = openV2TempSqliteConnection();
+  applyV2Migrations(db);
+  const app = createV2FastifyApp({ coreOptions: { sqlite: db } });
+  await app.ready();
+  try {
+    await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds",
+      payload: {
+        storyWorldId: "world_release_api",
+        name: "Release API World",
+        idempotencyKey: "key_release_world",
+      },
+    });
+    await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds/world_release_api/state/variables",
+      payload: {
+        key: "Trust",
+        valueType: "number",
+        defaultValue: 1,
+        expectedRevision: 1,
+        idempotencyKey: "key_release_state",
+      },
+    });
+    await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds/world_release_api/scenes",
+      payload: {
+        sceneId: "scene_entry",
+        title: "Entry",
+        body: "Entry body",
+        isEntry: true,
+        expectedRevision: 2,
+        idempotencyKey: "key_release_entry",
+      },
+    });
+    await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds/world_release_api/scenes",
+      payload: {
+        sceneId: "scene_next",
+        title: "Next",
+        body: "Next body",
+        expectedRevision: 3,
+        idempotencyKey: "key_release_next",
+      },
+    });
+    await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds/world_release_api/choices",
+      payload: {
+        choiceId: "choice_go",
+        sourceSceneId: "scene_entry",
+        targetSceneId: "scene_next",
+        label: "Go",
+        gates: [{ stateKey: "Trust", operator: "gte", value: 1 }],
+        consequences: [{ stateKey: "Trust", operation: "increment", value: 2 }],
+        expectedRevision: 4,
+        idempotencyKey: "key_release_choice",
+      },
+    });
+
+    const preflight = await app.inject({
+      method: "GET",
+      url: "/api/v2/core/worlds/world_release_api/releases/preflight",
+    });
+    assert.equal(preflight.statusCode, 200);
+    assert.equal(preflight.json().valid, true);
+
+    const release = await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds/world_release_api/releases",
+      payload: {
+        releaseId: "release_api",
+        version: "1.0.0",
+        sourceRevision: 5,
+        idempotencyKey: "key_create_release",
+      },
+    });
+    assert.equal(release.statusCode, 201);
+    assert.equal(release.json().version, "1.0.0");
+    assert.deepEqual(release.json().graph.arcs, []);
+    assert.match(release.json().contentHash, /^[a-f0-9]{64}$/);
+
+    const run = await app.inject({
+      method: "POST",
+      url: "/api/v2/core/runtime/runs",
+      payload: {
+        runId: "run_api",
+        releaseId: "release_api",
+        idempotencyKey: "key_start_run",
+      },
+    });
+    assert.equal(run.statusCode, 201);
+    assert.equal(run.json().scene.sceneId, "scene_entry");
+    assert.equal(run.json().availableChoices[0].choiceId, "choice_go");
+
+    const advanced = await app.inject({
+      method: "POST",
+      url: "/api/v2/core/runtime/runs/run_api/choices",
+      payload: {
+        choiceId: "choice_go",
+        idempotencyKey: "key_submit_choice",
+      },
+    });
+    assert.equal(advanced.statusCode, 200);
+    assert.equal(advanced.json().scene.sceneId, "scene_next");
+    assert.equal(advanced.json().run.stateValues.Trust, 3);
+
+    const save = await app.inject({
+      method: "POST",
+      url: "/api/v2/core/runtime/runs/run_api/saves",
+      payload: {
+        saveId: "save_api",
+        idempotencyKey: "key_create_save",
+      },
+    });
+    assert.equal(save.statusCode, 201);
+    assert.equal(save.json().releaseVersion, "1.0.0");
+
+    const loaded = await app.inject({
+      method: "POST",
+      url: "/api/v2/core/runtime/saves/save_api/load",
+      payload: {
+        runId: "run_loaded",
+        idempotencyKey: "key_load_save",
+      },
+    });
+    assert.equal(loaded.statusCode, 201);
+    assert.equal(loaded.json().run.runId, "run_loaded");
+    assert.equal(loaded.json().scene.sceneId, "scene_next");
+    assert.equal(loaded.json().run.stateValues.Trust, 3);
+
+    const workspaceExport = await app.inject({
+      method: "GET",
+      url: "/api/v2/core/worlds/world_release_api/export?revision=5",
+    });
+    assert.equal(workspaceExport.statusCode, 200);
+    assert.match(workspaceExport.json().markdown, /Release API World/);
+
+    const releaseExport = await app.inject({
+      method: "GET",
+      url: "/api/v2/core/releases/release_api/export",
+    });
+    assert.equal(releaseExport.statusCode, 200);
+    assert.equal(releaseExport.json().source.releaseVersion, "1.0.0");
+  } finally {
+    await app.close();
+    db.close();
+    cleanup();
+  }
+});

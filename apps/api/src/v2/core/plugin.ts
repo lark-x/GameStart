@@ -1,9 +1,17 @@
 import type { FastifyPluginAsync } from "fastify";
-import type { V2CandidateId, V2StoryWorldId } from "@living-network/contracts";
+import type {
+  V2CandidateId,
+  V2ReleaseId,
+  V2Revision,
+  V2RunId,
+  V2SaveId,
+  V2StoryWorldId,
+} from "@living-network/contracts";
 import {
   V2SqliteCanonUnitOfWork,
   V2SqliteCandidateReviewUnitOfWork,
   V2SqliteGraphStateUnitOfWork,
+  V2SqliteReleaseRuntimeUnitOfWork,
 } from "@living-network/database";
 
 import { toV2HttpError, V2HttpError } from "./errors.ts";
@@ -13,13 +21,18 @@ import {
   parseCreateChoiceBody,
   parseCreateFactBody,
   parseCreateLocationBody,
+  parseCreateReleaseBody,
   parseCreateRuleBody,
+  parseCreateRuntimeSaveBody,
   parseCreateSceneBody,
   parseCreateStateVariableBody,
   parseCreateTimelineEventBody,
   parseCreateWorldBody,
+  parseLoadRuntimeSaveBody,
   parsePreviewStateDeltaBody,
   parseReviewCandidateBody,
+  parseStartRuntimeRunBody,
+  parseSubmitRuntimeChoiceBody,
   parseSubmitSceneCandidateBody,
 } from "./parsers.ts";
 import { createV2CoreUseCases, type V2CoreUseCases } from "./use-cases.ts";
@@ -35,6 +48,7 @@ export const v2CorePlugin: FastifyPluginAsync<V2CorePluginOptions> = async (app,
       new V2SqliteCanonUnitOfWork(options.sqlite),
       new V2SqliteGraphStateUnitOfWork(options.sqlite),
       new V2SqliteCandidateReviewUnitOfWork(options.sqlite),
+      new V2SqliteReleaseRuntimeUnitOfWork(options.sqlite),
     )
     : undefined);
   if (!useCases) {
@@ -142,6 +156,53 @@ export const v2CorePlugin: FastifyPluginAsync<V2CorePluginOptions> = async (app,
     const { storyWorldId, candidateId } = getCandidateParams(request.params);
     return useCases.listCandidateReviewAudits(storyWorldId, candidateId);
   });
+  app.get("/worlds/:storyWorldId/releases", async (request) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    return useCases.listReleases(storyWorldId);
+  });
+  app.get("/worlds/:storyWorldId/releases/preflight", async (request) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    return useCases.preflightRelease(storyWorldId);
+  });
+  app.post("/worlds/:storyWorldId/releases", async (request, reply) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    const result = await useCases.createRelease(storyWorldId, parseCreateReleaseBody(request.body));
+    return reply.status(201).send(result);
+  });
+  app.post("/runtime/runs", async (request, reply) => {
+    const result = await useCases.startRuntimeRun(parseStartRuntimeRunBody(request.body));
+    return reply.status(201).send(result);
+  });
+  app.get("/runtime/runs/:runId/scene", async (request) => {
+    const { runId } = getRunParams(request.params);
+    return useCases.getRuntimeScene(runId);
+  });
+  app.post("/runtime/runs/:runId/choices", async (request) => {
+    const { runId } = getRunParams(request.params);
+    return useCases.submitRuntimeChoice(runId, parseSubmitRuntimeChoiceBody(request.body));
+  });
+  app.post("/runtime/runs/:runId/saves", async (request, reply) => {
+    const { runId } = getRunParams(request.params);
+    const result = await useCases.createRuntimeSave(runId, parseCreateRuntimeSaveBody(request.body));
+    return reply.status(201).send(result);
+  });
+  app.get("/runtime/saves/:saveId", async (request) => {
+    const { saveId } = getSaveParams(request.params);
+    return useCases.getRuntimeSave(saveId);
+  });
+  app.post("/runtime/saves/:saveId/load", async (request, reply) => {
+    const { saveId } = getSaveParams(request.params);
+    const result = await useCases.loadRuntimeSave(saveId, parseLoadRuntimeSaveBody(request.body));
+    return reply.status(201).send(result);
+  });
+  app.get("/worlds/:storyWorldId/export", async (request) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    return useCases.exportWorkspace(storyWorldId, getRevisionQuery(request.query));
+  });
+  app.get("/releases/:releaseId/export", async (request) => {
+    const { releaseId } = getReleaseParams(request.params);
+    return useCases.exportRelease(releaseId);
+  });
 };
 
 function getWorldParams(params: unknown): { readonly storyWorldId: V2StoryWorldId } {
@@ -165,4 +226,49 @@ function getCandidateParams(params: unknown): {
     throw new V2HttpError(400, "BAD_REQUEST", "candidateId must be a non-empty string");
   }
   return { storyWorldId, candidateId: candidateId as V2CandidateId };
+}
+
+function getRunParams(params: unknown): { readonly runId: V2RunId } {
+  if (typeof params !== "object" || params === null || Array.isArray(params)) {
+    throw new V2HttpError(400, "BAD_REQUEST", "Route params must be an object");
+  }
+  const runId = (params as { readonly runId?: unknown }).runId;
+  if (typeof runId !== "string" || runId.trim().length === 0) {
+    throw new V2HttpError(400, "BAD_REQUEST", "runId must be a non-empty string");
+  }
+  return { runId: runId as V2RunId };
+}
+
+function getSaveParams(params: unknown): { readonly saveId: V2SaveId } {
+  if (typeof params !== "object" || params === null || Array.isArray(params)) {
+    throw new V2HttpError(400, "BAD_REQUEST", "Route params must be an object");
+  }
+  const saveId = (params as { readonly saveId?: unknown }).saveId;
+  if (typeof saveId !== "string" || saveId.trim().length === 0) {
+    throw new V2HttpError(400, "BAD_REQUEST", "saveId must be a non-empty string");
+  }
+  return { saveId: saveId as V2SaveId };
+}
+
+function getReleaseParams(params: unknown): { readonly releaseId: V2ReleaseId } {
+  if (typeof params !== "object" || params === null || Array.isArray(params)) {
+    throw new V2HttpError(400, "BAD_REQUEST", "Route params must be an object");
+  }
+  const releaseId = (params as { readonly releaseId?: unknown }).releaseId;
+  if (typeof releaseId !== "string" || releaseId.trim().length === 0) {
+    throw new V2HttpError(400, "BAD_REQUEST", "releaseId must be a non-empty string");
+  }
+  return { releaseId: releaseId as V2ReleaseId };
+}
+
+function getRevisionQuery(query: unknown): V2Revision {
+  if (typeof query !== "object" || query === null || Array.isArray(query)) {
+    throw new V2HttpError(400, "BAD_REQUEST", "Query must be an object");
+  }
+  const revision = (query as { readonly revision?: unknown }).revision;
+  const parsed = typeof revision === "string" ? Number(revision) : revision;
+  if (typeof parsed !== "number" || !Number.isSafeInteger(parsed) || parsed < 1) {
+    throw new V2HttpError(400, "BAD_REQUEST", "revision query must be a positive integer");
+  }
+  return parsed as V2Revision;
 }

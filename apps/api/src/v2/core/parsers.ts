@@ -3,6 +3,8 @@ import type {
   V2ArcId,
   V2CandidateId,
   V2ChoiceId,
+  V2CreateReleaseRequest,
+  V2CreateRuntimeSaveRequest,
   V2CreateArcRequest,
   V2CreateCharacterRequest,
   V2CreateChoiceRequest,
@@ -16,6 +18,7 @@ import type {
   V2FactVisibility,
   V2IdempotencyKey,
   V2LocationId,
+  V2LoadRuntimeSaveRequest,
   V2PreviewStateDeltaRequest,
   V2Revision,
   V2RuleSeverity,
@@ -30,6 +33,11 @@ import type {
   V2StoryWorldId,
   V2SubmitSceneCandidateRequest,
   V2ReviewCandidateRequest,
+  V2ReleaseId,
+  V2RunId,
+  V2SaveId,
+  V2StartRuntimeRunRequest,
+  V2SubmitRuntimeChoiceRequest,
 } from "@living-network/contracts";
 
 import { V2HttpError } from "./errors.ts";
@@ -188,6 +196,54 @@ export function parseReviewCandidateBody(body: unknown): V2ReviewCandidateReques
     reviewer: requiredString(value.reviewer, "reviewer"),
     ...(value.reason === undefined ? {} : { reason: requiredString(value.reason, "reason") }),
     expectedRevision: requiredRevision(value.expectedRevision),
+    idempotencyKey: requiredString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey,
+  };
+}
+
+export function parseCreateReleaseBody(body: unknown): V2CreateReleaseRequest {
+  const value = requireBody(body);
+  assertKeys(value, ["releaseId", "version", "sourceRevision", "idempotencyKey"]);
+  return {
+    releaseId: requiredString(value.releaseId, "releaseId") as V2ReleaseId,
+    version: requiredString(value.version, "version"),
+    sourceRevision: requiredRevision(value.sourceRevision),
+    idempotencyKey: requiredString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey,
+  };
+}
+
+export function parseStartRuntimeRunBody(body: unknown): V2StartRuntimeRunRequest {
+  const value = requireBody(body);
+  assertKeys(value, ["runId", "releaseId", "idempotencyKey"]);
+  return {
+    runId: requiredString(value.runId, "runId") as V2RunId,
+    releaseId: requiredString(value.releaseId, "releaseId") as V2ReleaseId,
+    idempotencyKey: requiredString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey,
+  };
+}
+
+export function parseSubmitRuntimeChoiceBody(body: unknown): V2SubmitRuntimeChoiceRequest {
+  const value = requireBody(body);
+  assertKeys(value, ["choiceId", "idempotencyKey"]);
+  return {
+    choiceId: requiredString(value.choiceId, "choiceId") as V2ChoiceId,
+    idempotencyKey: requiredString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey,
+  };
+}
+
+export function parseCreateRuntimeSaveBody(body: unknown): V2CreateRuntimeSaveRequest {
+  const value = requireBody(body);
+  assertKeys(value, ["saveId", "idempotencyKey"]);
+  return {
+    saveId: requiredString(value.saveId, "saveId") as V2SaveId,
+    idempotencyKey: requiredString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey,
+  };
+}
+
+export function parseLoadRuntimeSaveBody(body: unknown): V2LoadRuntimeSaveRequest {
+  const value = requireBody(body);
+  assertKeys(value, ["runId", "idempotencyKey"]);
+  return {
+    runId: requiredString(value.runId, "runId") as V2RunId,
     idempotencyKey: requiredString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey,
   };
 }
