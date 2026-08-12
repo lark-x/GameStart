@@ -28,3 +28,15 @@ export function withV2SqliteTransaction<T>(db: DatabaseSync, fn: () => T): T {
     throw error;
   }
 }
+
+export async function withV2SqliteAsyncTransaction<T>(db: DatabaseSync, fn: () => Promise<T>): Promise<T> {
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const result = await fn();
+    db.exec("COMMIT");
+    return result;
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
