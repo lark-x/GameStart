@@ -11,6 +11,9 @@ test("V2 mock adapter returns typed Gate 0 snapshot data", async () => {
   assert.equal(snapshot.health.version, "v2");
   assert.equal(snapshot.world.storyWorldId, "world_v2_demo");
   assert.equal(snapshot.sceneGraph.scenes[0]?.sceneId, "scene_opening");
+  assert.equal(snapshot.world.characters.length, 2);
+  assert.equal(snapshot.sceneGraph.diagnostics.length, 2);
+  assert.equal(snapshot.typedState.preview.length, 2);
   assert.equal(snapshot.candidate.kind, "scene");
   assert.equal(snapshot.release.valid, true);
   assert.equal(snapshot.run.releaseVersion, "0.0.1");

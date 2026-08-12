@@ -23,3 +23,25 @@ Requested integration surface:
 Reason:
 
 - AI-3 can keep page state and adapter boundaries stable with fixtures, but replacing Mock with Http should not require rewriting page state.
+
+## IR-WEB-002: Canon, Graph, and Typed State Preview Contracts
+
+Severity: `integration`
+
+Checkpoint: Canon + Graph + Typed State
+
+Current Web proposal:
+
+- Canon summary includes world premise, character/location/fact/rule summaries, and an expected revision draft preview.
+- Graph summary includes scene reachability, choice counts, state delta preview counts, and diagnostics.
+- Typed State summary includes schema revision, variables, and scene delta previews.
+
+Requested integration surface:
+
+- Read endpoints or snapshot fields for Canon/Graph/Typed State summaries.
+- A preview endpoint for Canon edits that accepts `expectedRevision` and returns either a revised snapshot or a stale revision conflict.
+- Stable diagnostic severity values aligned with Badge tones: `info`, `warning`, `danger`.
+
+Reason:
+
+- The Web can show conflict and graph/state validation flows with fixtures, but integration needs authoritative backend validation and revision conflict semantics.

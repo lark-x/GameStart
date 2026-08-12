@@ -70,7 +70,18 @@ onMounted(() => {
         </div>
 
         <div :id="`v2-${currentArea}-panel`" role="tabpanel">
-          <V2WorkspacePanel :area="currentArea" :snapshot="store.snapshot" :loading="store.loading" />
+          <V2WorkspacePanel
+            :area="currentArea"
+            :snapshot="store.snapshot"
+            :loading="store.loading"
+            v-model:draft-world-name="store.draftWorldName"
+            v-model:draft-premise="store.draftPremise"
+            v-model:expected-revision="store.expectedRevision"
+            :conflict="store.conflict"
+            :has-draft-changes="store.hasDraftChanges"
+            @preview-canon-draft="store.previewCanonDraft"
+            @reset-canon-draft="store.resetCanonDraft"
+          />
         </div>
       </main>
 
@@ -79,6 +90,8 @@ onMounted(() => {
         :loading="store.loading"
         :error="store.error"
         :mode="store.mode"
+        :graph-issue-count="store.graphIssueCount"
+        :typed-state-preview-count="store.typedStatePreviewCount"
         @refresh="store.loadSnapshot"
         @switch-mode="store.setMode"
       />

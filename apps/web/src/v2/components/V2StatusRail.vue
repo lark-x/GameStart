@@ -10,6 +10,8 @@ defineProps<{
   loading: boolean;
   error: string | null;
   mode: "mock" | "http";
+  graphIssueCount: number;
+  typedStatePreviewCount: number;
 }>();
 
 const emit = defineEmits<{
@@ -89,6 +91,14 @@ const emit = defineEmits<{
       <div>
         <dt>Release</dt>
         <dd>{{ snapshot.release.valid ? "preflight valid" : "blocked" }}</dd>
+      </div>
+      <div>
+        <dt>Graph diagnostics</dt>
+        <dd>{{ graphIssueCount }}</dd>
+      </div>
+      <div>
+        <dt>State preview</dt>
+        <dd>{{ typedStatePreviewCount }}</dd>
       </div>
     </dl>
   </aside>

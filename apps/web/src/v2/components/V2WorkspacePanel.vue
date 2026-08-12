@@ -3,13 +3,30 @@ import { computed } from "vue";
 import { Boxes, FileCheck2, GitFork, PlayCircle, Sparkles } from "@lucide/vue";
 
 import Badge from "../../components/ui/Badge.vue";
+import Button from "../../components/ui/Button.vue";
 import EmptyState from "../../components/ui/EmptyState.vue";
+import Field from "../../components/ui/Field.vue";
+import Input from "../../components/ui/Input.vue";
+import Textarea from "../../components/ui/Textarea.vue";
 import type { V2WorkspaceSnapshot } from "../adapters";
 
 const props = defineProps<{
   area: string;
   snapshot: V2WorkspaceSnapshot | null;
   loading: boolean;
+  draftWorldName: string;
+  draftPremise: string;
+  expectedRevision: number;
+  conflict: string | null;
+  hasDraftChanges: boolean;
+}>();
+
+const emit = defineEmits<{
+  "update:draftWorldName": [value: string];
+  "update:draftPremise": [value: string];
+  "update:expectedRevision": [value: number];
+  previewCanonDraft: [];
+  resetCanonDraft: [];
 }>();
 
 const areaMeta = computed(() => {
@@ -28,6 +45,16 @@ const areaMeta = computed(() => {
       return { icon: Boxes, title: "Operations", badge: "status" };
   }
 });
+
+const statusTone = {
+  info: "info",
+  warning: "warning",
+  danger: "danger",
+} as const;
+
+function formatValue(value: boolean | number | string) {
+  return typeof value === "boolean" ? (value ? "true" : "false") : String(value);
+}
 </script>
 
 <template>
@@ -58,26 +85,144 @@ const areaMeta = computed(() => {
     </EmptyState>
 
     <div v-else class="v2-panel-grid">
-      <article class="v2-metric">
-        <span>Workspace</span>
-        <strong>{{ snapshot.world.name }}</strong>
-        <small>revision {{ snapshot.world.revision }}</small>
-      </article>
-      <article class="v2-metric">
-        <span>Graph</span>
-        <strong>{{ snapshot.sceneGraph.scenes.length }} scene</strong>
-        <small>entry {{ snapshot.sceneGraph.entrySceneId }}</small>
-      </article>
-      <article class="v2-metric">
-        <span>Candidate</span>
-        <strong>{{ snapshot.candidate.status }}</strong>
-        <small>{{ snapshot.candidate.provenance.source }} source</small>
-      </article>
-      <article class="v2-metric">
-        <span>Runtime</span>
-        <strong>{{ snapshot.run.releaseVersion }}</strong>
-        <small>{{ snapshot.run.currentSceneId }}</small>
-      </article>
+      <template v-if="area === 'canon'">
+        <form class="v2-canon-form" aria-label="Canon draft preview" @submit.prevent="emit('previewCanonDraft')">
+          <Field label="World name" hint="Preview-only mock edit with optimistic revision guard.">
+            <Input
+              :model-value="draftWorldName"
+              :disabled="loading"
+              id="v2-world-name"
+              aria-label="World name"
+              @update:model-value="emit('update:draftWorldName', $event)"
+            />
+          </Field>
+          <Field label="Premise">
+            <Textarea
+              :model-value="draftPremise"
+              :disabled="loading"
+              id="v2-world-premise"
+              aria-label="Premise"
+              :rows="4"
+              @update:model-value="emit('update:draftPremise', $event)"
+            />
+          </Field>
+          <Field v-if="conflict" label="Expected revision" :error="conflict">
+            <Input
+              :model-value="expectedRevision"
+              :disabled="loading"
+              id="v2-expected-revision"
+              type="number"
+              aria-label="Expected revision"
+              @update:model-value="emit('update:expectedRevision', Number($event))"
+            />
+          </Field>
+          <Field v-else label="Expected revision">
+            <Input
+              :model-value="expectedRevision"
+              :disabled="loading"
+              id="v2-expected-revision"
+              type="number"
+              aria-label="Expected revision"
+              @update:model-value="emit('update:expectedRevision', Number($event))"
+            />
+          </Field>
+          <div class="v2-form-actions">
+            <Button variant="primary" size="md" type="submit" :disabled="!hasDraftChanges || loading">
+              Preview Revision
+            </Button>
+            <Button variant="secondary" size="md" :disabled="loading" @click="emit('resetCanonDraft')">
+              Reset Draft
+            </Button>
+          </div>
+        </form>
+
+        <div class="v2-list-grid" aria-label="Canon facts and rules">
+          <article class="v2-metric">
+            <span>Characters</span>
+            <strong>{{ snapshot.world.characters.length }}</strong>
+            <small>{{ snapshot.world.characters.map((character) => character.name).join(", ") }}</small>
+          </article>
+          <article class="v2-metric">
+            <span>Locations</span>
+            <strong>{{ snapshot.world.locations.length }}</strong>
+            <small>{{ snapshot.world.locations.map((location) => location.name).join(", ") }}</small>
+          </article>
+          <article v-for="fact in snapshot.world.facts" :key="fact.factId" class="v2-record">
+            <Badge :tone="fact.visibility === 'creator' ? 'warning' : 'info'">{{ fact.visibility }}</Badge>
+            <p>{{ fact.text }}</p>
+          </article>
+          <article v-for="rule in snapshot.world.rules" :key="rule.ruleId" class="v2-record">
+            <Badge :tone="rule.severity === 'hard' ? 'danger' : 'neutral'">{{ rule.severity }}</Badge>
+            <p>{{ rule.text }}</p>
+          </article>
+        </div>
+      </template>
+
+      <template v-else-if="area === 'graph'">
+        <div class="v2-list-grid">
+          <article v-for="scene in snapshot.sceneGraph.scenes" :key="scene.sceneId" class="v2-record">
+            <div class="v2-record-head">
+              <strong>{{ scene.title }}</strong>
+              <Badge :tone="scene.reachable ? 'success' : 'warning'">
+                {{ scene.reachable ? "reachable" : "unreachable" }}
+              </Badge>
+            </div>
+            <p>{{ scene.choiceCount }} choices · {{ scene.stateDeltaPreview.length }} state previews</p>
+          </article>
+        </div>
+
+        <div class="v2-diagnostics" aria-label="Graph diagnostics">
+          <article
+            v-for="diagnostic in snapshot.sceneGraph.diagnostics"
+            :key="`${diagnostic.code}-${diagnostic.targetId}`"
+            class="v2-record"
+          >
+            <Badge :tone="statusTone[diagnostic.severity]">{{ diagnostic.severity }}</Badge>
+            <p>{{ diagnostic.message }}</p>
+          </article>
+        </div>
+      </template>
+
+      <template v-else-if="area === 'operations'">
+        <div class="v2-list-grid">
+          <article v-for="variable in snapshot.typedState.variables" :key="variable.key" class="v2-record">
+            <div class="v2-record-head">
+              <strong>{{ variable.label }}</strong>
+              <Badge tone="neutral">{{ variable.type }}</Badge>
+            </div>
+            <p>{{ variable.key }} = {{ formatValue(variable.value) }}</p>
+          </article>
+        </div>
+        <div class="v2-diagnostics" aria-label="Typed state delta preview">
+          <article v-for="delta in snapshot.typedState.preview" :key="delta.key" class="v2-record">
+            <Badge tone="info">{{ delta.sourceSceneId }}</Badge>
+            <p>{{ delta.key }}: {{ formatValue(delta.before) }} -> {{ formatValue(delta.after) }}</p>
+          </article>
+        </div>
+      </template>
+
+      <template v-else>
+        <article class="v2-metric">
+          <span>Workspace</span>
+          <strong>{{ snapshot.world.name }}</strong>
+          <small>revision {{ snapshot.world.revision }}</small>
+        </article>
+        <article class="v2-metric">
+          <span>Graph</span>
+          <strong>{{ snapshot.sceneGraph.scenes.length }} scenes</strong>
+          <small>{{ snapshot.sceneGraph.diagnostics.length }} diagnostics</small>
+        </article>
+        <article class="v2-metric">
+          <span>Candidate</span>
+          <strong>{{ snapshot.candidate.status }}</strong>
+          <small>{{ snapshot.candidate.provenance.source }} source</small>
+        </article>
+        <article class="v2-metric">
+          <span>Runtime</span>
+          <strong>{{ snapshot.run.releaseVersion }}</strong>
+          <small>{{ snapshot.run.currentSceneId }}</small>
+        </article>
+      </template>
     </div>
   </section>
 </template>
@@ -125,8 +270,25 @@ const areaMeta = computed(() => {
 
 .v2-panel-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  grid-template-columns: 1fr;
   gap: var(--space-3);
+}
+
+.v2-list-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: var(--space-3);
+}
+
+.v2-canon-form {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.v2-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }
 
 .v2-metric {
@@ -137,6 +299,41 @@ const areaMeta = computed(() => {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface-soft);
+}
+
+.v2-record {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+}
+
+.v2-record p {
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.v2-record-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.v2-record-head strong {
+  overflow-wrap: anywhere;
+  color: var(--text-strong);
+  font-size: var(--text-md);
+}
+
+.v2-diagnostics {
+  display: grid;
+  gap: var(--space-3);
 }
 
 .v2-metric span {

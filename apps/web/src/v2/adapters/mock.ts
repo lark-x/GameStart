@@ -10,6 +10,7 @@ import {
   v2WebFixtureRelease,
   v2WebFixtureRun,
   v2WebFixtureSceneGraph,
+  v2WebFixtureTypedState,
   v2WebFixtureWorld,
 } from "../fixtures/mock-data.ts";
 import type { V2WorkspaceAdapter, V2WorkspaceSnapshot } from "./types.ts";
@@ -24,6 +25,7 @@ export function createV2MockAdapter(): V2WorkspaceAdapter {
         health: { ok: true, version: "v2" },
         world: v2WebFixtureWorld,
         sceneGraph: v2WebFixtureSceneGraph,
+        typedState: v2WebFixtureTypedState,
         candidate: v2WebFixtureCandidate,
         release: v2WebFixtureRelease,
         run: v2WebFixtureRun,
