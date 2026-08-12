@@ -352,3 +352,84 @@ External Services:
 - Real LLM: not executed; Slice C asset worker does not call LLM.
 - Real ComfyUI: not executed; worker tests use injected fake ComfyUI clients.
 - Qdrant: not executed; Slice D optional scope.
+
+## Checkpoint 6: Asset Review + Approved Asset Facts
+
+Scope:
+
+- Added V2 asset candidate review contracts under `packages/contracts/src/v2/generation`.
+- Added AI-2 asset review repository port under `packages/ports/src/v2/generation`.
+- Added SQLite migration and repository behavior under `packages/database/src/v2/generation`.
+- Asset review reuses the shared V2 review transition semantics from `packages/domain/src/v2/shared/review.ts`.
+- Review writes candidate status, audit record, and approved asset facts in one SQLite transaction.
+- Identical `(candidate_id, idempotency_key)` review replays return the original review; conflicting replay payloads are rejected.
+- Approval writes an approved asset fact with controlled `mediaRef` and deterministic `sha256:` content hash.
+- `V2SqliteAssetGenerationRepository` now implements the AI-2 `V2AssetReviewRepository` and Gate 0 `ApprovedAssetReaderPort`.
+
+Non-scope:
+
+- No asset review API endpoint yet.
+- No direct canon repository reads or writes.
+- No release/save writes.
+- No asset review writes to AI-1 canon candidate tables.
+- No real Redis, LLM, ComfyUI, Qdrant, Social Temp, Web, shared composition root, or lockfile changes.
+
+Contract:
+
+- `V2AssetReviewAction`
+- `V2AssetCandidateReviewRecord`
+- `V2ApprovedAssetRecord`
+- `V2ReviewAssetCandidateInput`
+- `V2AssetCandidateReviewResult`
+- `V2AssetReviewRepository`
+- `ApprovedAssetReaderPort` implementation in the AI-2 SQLite asset repository
+
+Migration:
+
+- `0102_asset_candidate_review`
+- Creates `v2_asset_candidate_reviews` and `v2_approved_assets`.
+- Adds a unique review replay boundary on `(candidate_id, idempotency_key)`.
+- Adds one approved asset fact per `asset_id` and per approved `candidate_id`.
+- Adds lookup indexes for candidate review history, approved asset lookup, and release asset reads.
+
+State Machine:
+
+- Asset candidate review lifecycle reuses shared transitions:
+  - `pending -> approved|rejected|changes_requested`
+  - `changes_requested -> approved|rejected`
+  - `approved` and `rejected` are terminal
+- `approve` updates the candidate to `approved`, writes the review audit row, and writes an approved asset fact in the same transaction.
+- `reject` updates the candidate to `rejected` and writes the review audit row only.
+- `request_changes` updates the candidate to `changes_requested` and writes the review audit row only.
+- Review replay with the same idempotency key is read-only when the payload matches.
+
+Verification:
+
+- `pnpm --filter @living-network/contracts typecheck`: exit 0
+- `pnpm --filter @living-network/ports typecheck`: exit 0
+- `pnpm --filter @living-network/domain typecheck`: exit 0
+- `pnpm --filter @living-network/domain test`: exit 0
+- `pnpm --filter @living-network/database typecheck`: exit 0
+- `pnpm --filter @living-network/database test`: exit 0
+- `pnpm check:boundaries`: exit 0
+- `pnpm typecheck`: exit 0
+- `git diff --check`: exit 0
+
+Known validation note:
+
+- Initial direct `pnpm --filter @living-network/database test` and `pnpm typecheck` runs inside the sandbox failed with `spawn EPERM`; reruns with approved escalation passed.
+- `git diff --check` reported only Git line-ending normalization warnings for the Windows checkout; no whitespace errors.
+
+Fake Service Evidence:
+
+- SQLite tests approve a pending asset candidate and verify the review audit row, candidate status, approved asset fact, and `sha256:` content hash.
+- SQLite tests replay the same review idempotency key without rewriting and reject conflicting replay payloads.
+- SQLite tests verify `reject` and `request_changes` do not create approved asset facts.
+- SQLite tests verify `ApprovedAssetReaderPort` reads approved assets by asset id and release binding.
+
+External Services:
+
+- Real Redis: not executed; no queue consumer wiring changed in this checkpoint.
+- Real LLM: not executed; asset review does not call LLM.
+- Real ComfyUI: not executed; this checkpoint reviews already-created fake media refs.
+- Qdrant: not executed; Slice D optional scope.

@@ -1,9 +1,13 @@
+import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
 import type {
+  V2ApprovedAssetRecord,
+  V2AssetCandidateReviewRecord,
   V2AssetCandidatePayload,
   V2AssetCandidateRecord,
   V2AssetCandidateStatus,
+  V2AssetId,
   V2AssetGenerationJobRecord,
   V2CandidateId,
   V2CreateAssetGenerationJobInput,
@@ -11,12 +15,19 @@ import type {
   V2IsoDateTime,
   V2JobId,
   V2JobStatus,
+  V2ReleaseId,
+  V2ReviewAssetCandidateInput,
   V2StoryWorldId,
 } from "@living-network/contracts";
+import type { V2ReviewAction, V2ReviewStatus } from "@living-network/domain";
+import { assertV2ReviewTransition } from "@living-network/domain";
 import type {
+  V2ApprovedAssetRef,
   V2AssetCandidateRepository,
+  V2AssetCandidateReviewResult,
   V2AssetGenerationJobCreateResult,
   V2AssetGenerationJobRepository,
+  V2AssetReviewRepository,
 } from "@living-network/ports";
 import { withV2SqliteTransaction } from "../platform/index.ts";
 
@@ -55,6 +66,29 @@ type AssetCandidateRow = {
   reviewed_at: string | null;
   reviewer: string | null;
   review_reason: string | null;
+};
+
+type AssetCandidateReviewRow = {
+  review_id: string;
+  candidate_id: string;
+  action: string;
+  resulting_status: string;
+  reviewed_at: string;
+  idempotency_key: string;
+  reviewer: string | null;
+  reason: string | null;
+};
+
+type ApprovedAssetRow = {
+  asset_id: string;
+  story_world_id: string;
+  candidate_id: string;
+  media_ref: string;
+  content_hash: string;
+  approved_at: string;
+  reviewer: string | null;
+  review_reason: string | null;
+  release_id: string | null;
 };
 
 function parseRecord(value: string): Record<string, unknown> {
@@ -112,6 +146,47 @@ function mapAssetCandidate(row: AssetCandidateRow): V2AssetCandidateRecord {
   return candidate;
 }
 
+function mapReview(row: AssetCandidateReviewRow): V2AssetCandidateReviewRecord {
+  const review: {
+    -readonly [K in keyof V2AssetCandidateReviewRecord]: V2AssetCandidateReviewRecord[K];
+  } = {
+    reviewId: row.review_id,
+    candidateId: row.candidate_id as V2CandidateId,
+    action: row.action as V2AssetCandidateReviewRecord["action"],
+    resultingStatus: row.resulting_status as V2AssetCandidateStatus,
+    reviewedAt: row.reviewed_at as V2IsoDateTime,
+    idempotencyKey: row.idempotency_key as V2IdempotencyKey,
+  };
+  if (row.reviewer !== null) review.reviewer = row.reviewer;
+  if (row.reason !== null) review.reason = row.reason;
+  return review;
+}
+
+function mapApprovedAsset(row: ApprovedAssetRow): V2ApprovedAssetRecord {
+  const asset: {
+    -readonly [K in keyof V2ApprovedAssetRecord]: V2ApprovedAssetRecord[K];
+  } = {
+    assetId: row.asset_id as V2AssetId,
+    storyWorldId: row.story_world_id as V2StoryWorldId,
+    candidateId: row.candidate_id as V2CandidateId,
+    mediaRef: row.media_ref,
+    contentHash: row.content_hash,
+    approvedAt: row.approved_at as V2IsoDateTime,
+  };
+  if (row.reviewer !== null) asset.reviewer = row.reviewer;
+  if (row.review_reason !== null) asset.reviewReason = row.review_reason;
+  return asset;
+}
+
+function mapApprovedAssetRef(row: ApprovedAssetRow): V2ApprovedAssetRef {
+  return {
+    assetId: row.asset_id as V2AssetId,
+    storyWorldId: row.story_world_id as V2StoryWorldId,
+    mediaRef: row.media_ref,
+    contentHash: row.content_hash,
+  };
+}
+
 function getAssetJobOrThrow(db: DatabaseSync, jobId: V2JobId): V2AssetGenerationJobRecord {
   const row = db.prepare("SELECT * FROM v2_asset_generation_jobs WHERE job_id = ?").get(jobId) as AssetJobRow | undefined;
   if (row === undefined) throw new Error(`V2 asset generation job not found: ${jobId}`);
@@ -120,6 +195,22 @@ function getAssetJobOrThrow(db: DatabaseSync, jobId: V2JobId): V2AssetGeneration
 
 function getAssetCandidateRow(db: DatabaseSync, candidateId: V2CandidateId): AssetCandidateRow | undefined {
   return db.prepare("SELECT * FROM v2_asset_candidates WHERE candidate_id = ?").get(candidateId) as AssetCandidateRow | undefined;
+}
+
+function getReviewRow(db: DatabaseSync, candidateId: V2CandidateId, idempotencyKey: V2IdempotencyKey): AssetCandidateReviewRow | undefined {
+  return db.prepare(
+    "SELECT * FROM v2_asset_candidate_reviews WHERE candidate_id = ? AND idempotency_key = ?",
+  ).get(candidateId, idempotencyKey) as AssetCandidateReviewRow | undefined;
+}
+
+function getApprovedAssetRowForCandidate(db: DatabaseSync, candidateId: V2CandidateId): ApprovedAssetRow | undefined {
+  return db.prepare("SELECT * FROM v2_approved_assets WHERE candidate_id = ?").get(candidateId) as ApprovedAssetRow | undefined;
+}
+
+function getApprovedAssetRow(db: DatabaseSync, storyWorldId: V2StoryWorldId, assetId: V2AssetId): ApprovedAssetRow | undefined {
+  return db.prepare(
+    "SELECT * FROM v2_approved_assets WHERE story_world_id = ? AND asset_id = ?",
+  ).get(storyWorldId, assetId) as ApprovedAssetRow | undefined;
 }
 
 function sameAssetJobPayload(existing: V2AssetGenerationJobRecord, input: V2CreateAssetGenerationJobInput): boolean {
@@ -139,7 +230,19 @@ function sameCandidate(existing: V2AssetCandidateRecord, input: V2AssetCandidate
     JSON.stringify(existing.payload) === JSON.stringify(input.payload);
 }
 
-export class V2SqliteAssetGenerationRepository implements V2AssetGenerationJobRepository, V2AssetCandidateRepository {
+function sameReview(existing: V2AssetCandidateReviewRecord, input: V2ReviewAssetCandidateInput): boolean {
+  return existing.action === input.action &&
+    existing.reviewedAt === input.reviewedAt &&
+    existing.idempotencyKey === input.idempotencyKey &&
+    (existing.reviewer ?? undefined) === input.reviewer &&
+    (existing.reason ?? undefined) === input.reason;
+}
+
+function assetContentHash(candidate: V2AssetCandidateRecord): string {
+  return `sha256:${createHash("sha256").update(JSON.stringify(candidate.payload.asset)).digest("hex")}`;
+}
+
+export class V2SqliteAssetGenerationRepository implements V2AssetGenerationJobRepository, V2AssetCandidateRepository, V2AssetReviewRepository {
   private readonly db: DatabaseSync;
 
   public constructor(db: DatabaseSync) {
@@ -305,5 +408,105 @@ export class V2SqliteAssetGenerationRepository implements V2AssetGenerationJobRe
   public async getAssetCandidate(candidateId: V2CandidateId): Promise<V2AssetCandidateRecord | undefined> {
     const row = getAssetCandidateRow(this.db, candidateId);
     return row === undefined ? undefined : mapAssetCandidate(row);
+  }
+
+  public async reviewAssetCandidate(input: V2ReviewAssetCandidateInput): Promise<V2AssetCandidateReviewResult> {
+    return withV2SqliteTransaction(this.db, () => {
+      const candidateRow = getAssetCandidateRow(this.db, input.candidateId);
+      if (candidateRow === undefined) throw new Error(`V2 asset candidate not found: ${input.candidateId}`);
+      const existingReviewRow = getReviewRow(this.db, input.candidateId, input.idempotencyKey);
+      if (existingReviewRow !== undefined) {
+        const review = mapReview(existingReviewRow);
+        if (!sameReview(review, input)) throw new Error("V2 asset candidate review idempotency key conflict");
+        const candidate = mapAssetCandidate(candidateRow);
+        const approvedRow = review.resultingStatus === "approved"
+          ? getApprovedAssetRowForCandidate(this.db, input.candidateId)
+          : undefined;
+        return {
+          candidate,
+          review,
+          inserted: false,
+          ...(approvedRow === undefined ? {} : { approvedAsset: mapApprovedAsset(approvedRow) }),
+        };
+      }
+
+      const nextStatus = assertV2ReviewTransition(
+        candidateRow.status as V2ReviewStatus,
+        input.action as V2ReviewAction,
+      ) as V2AssetCandidateStatus;
+      const reviewId = `asset-review:${input.candidateId}:${input.idempotencyKey}`;
+      this.db.prepare(`
+        UPDATE v2_asset_candidates
+        SET status = ?, reviewed_at = ?, reviewer = ?, review_reason = ?
+        WHERE candidate_id = ?
+      `).run(nextStatus, input.reviewedAt, input.reviewer ?? null, input.reason ?? null, input.candidateId);
+      this.db.prepare(`
+        INSERT INTO v2_asset_candidate_reviews (
+          review_id, candidate_id, action, resulting_status, reviewed_at,
+          idempotency_key, reviewer, reason
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        reviewId,
+        input.candidateId,
+        input.action,
+        nextStatus,
+        input.reviewedAt,
+        input.idempotencyKey,
+        input.reviewer ?? null,
+        input.reason ?? null,
+      );
+
+      const updatedRow = getAssetCandidateRow(this.db, input.candidateId);
+      if (updatedRow === undefined) throw new Error(`V2 asset candidate not found after review: ${input.candidateId}`);
+      const candidate = mapAssetCandidate(updatedRow);
+      let approvedAsset: V2ApprovedAssetRecord | undefined;
+      if (nextStatus === "approved") {
+        const asset = candidate.payload.asset;
+        const existingAsset = getApprovedAssetRow(this.db, candidate.storyWorldId, asset.assetId);
+        if (existingAsset !== undefined && existingAsset.candidate_id !== candidate.candidateId) {
+          throw new Error("V2 approved asset already exists for a different candidate");
+        }
+        this.db.prepare(`
+          INSERT INTO v2_approved_assets (
+            asset_id, story_world_id, candidate_id, media_ref, content_hash,
+            approved_at, reviewer, review_reason, release_id
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
+        `).run(
+          asset.assetId,
+          candidate.storyWorldId,
+          candidate.candidateId,
+          asset.mediaRef,
+          assetContentHash(candidate),
+          input.reviewedAt,
+          input.reviewer ?? null,
+          input.reason ?? null,
+        );
+        const approvedRow = getApprovedAssetRowForCandidate(this.db, candidate.candidateId);
+        if (approvedRow === undefined) throw new Error(`V2 approved asset not found after review: ${candidate.candidateId}`);
+        approvedAsset = mapApprovedAsset(approvedRow);
+      }
+      const reviewRow = getReviewRow(this.db, input.candidateId, input.idempotencyKey);
+      if (reviewRow === undefined) throw new Error(`V2 asset candidate review not found after insert: ${reviewId}`);
+      return {
+        candidate,
+        review: mapReview(reviewRow),
+        inserted: true,
+        ...(approvedAsset === undefined ? {} : { approvedAsset }),
+      };
+    });
+  }
+
+  public async getApprovedAsset(input: { readonly storyWorldId: V2StoryWorldId; readonly assetId: V2AssetId }): Promise<V2ApprovedAssetRef | undefined> {
+    const row = getApprovedAssetRow(this.db, input.storyWorldId, input.assetId);
+    return row === undefined ? undefined : mapApprovedAssetRef(row);
+  }
+
+  public async listReleaseAssets(input: { readonly storyWorldId: V2StoryWorldId; readonly releaseId: V2ReleaseId }): Promise<readonly V2ApprovedAssetRef[]> {
+    const rows = this.db.prepare(`
+      SELECT * FROM v2_approved_assets
+      WHERE story_world_id = ? AND release_id = ?
+      ORDER BY asset_id ASC
+    `).all(input.storyWorldId, input.releaseId) as ApprovedAssetRow[];
+    return rows.map(mapApprovedAssetRef);
   }
 }

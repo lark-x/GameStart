@@ -51,6 +51,7 @@ export interface V2ParsedSceneCandidate {
 export type V2GenerationJobKind = "scene";
 export type V2AssetMediaKind = "image";
 export type V2AssetCandidateStatus = "pending" | "approved" | "rejected" | "changes_requested";
+export type V2AssetReviewAction = "approve" | "reject" | "request_changes";
 
 export interface V2AssetCandidatePayload {
   readonly asset: {
@@ -149,6 +150,37 @@ export interface V2AssetCandidateRecord {
   readonly reviewedAt?: V2IsoDateTime;
   readonly reviewer?: string;
   readonly reviewReason?: string;
+}
+
+export interface V2AssetCandidateReviewRecord {
+  readonly reviewId: string;
+  readonly candidateId: V2CandidateId;
+  readonly action: V2AssetReviewAction;
+  readonly resultingStatus: V2AssetCandidateStatus;
+  readonly reviewedAt: V2IsoDateTime;
+  readonly idempotencyKey: V2IdempotencyKey;
+  readonly reviewer?: string;
+  readonly reason?: string;
+}
+
+export interface V2ApprovedAssetRecord {
+  readonly assetId: V2AssetId;
+  readonly storyWorldId: V2StoryWorldId;
+  readonly candidateId: V2CandidateId;
+  readonly mediaRef: string;
+  readonly contentHash: string;
+  readonly approvedAt: V2IsoDateTime;
+  readonly reviewer?: string;
+  readonly reviewReason?: string;
+}
+
+export interface V2ReviewAssetCandidateInput {
+  readonly candidateId: V2CandidateId;
+  readonly action: V2AssetReviewAction;
+  readonly reviewedAt: V2IsoDateTime;
+  readonly idempotencyKey: V2IdempotencyKey;
+  readonly reviewer?: string;
+  readonly reason?: string;
 }
 
 export interface V2CreateSceneGenerationJobInput {

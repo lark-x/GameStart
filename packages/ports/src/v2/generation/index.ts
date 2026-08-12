@@ -1,14 +1,18 @@
 import type {
   V2AssetCandidateRecord,
+  V2AssetCandidateReviewRecord,
   V2AssetGenerationJobRecord,
+  V2ApprovedAssetRecord,
   V2CandidateId,
   V2CreateAssetGenerationJobInput,
   V2CreateSceneGenerationJobInput,
   V2GenerationDispatchRecord,
   V2GenerationJobKind,
+  V2ReviewAssetCandidateInput,
   V2SceneGenerationJobRecord,
 } from "@living-network/contracts";
 import type { V2JobId, V2JobStatus } from "@living-network/contracts";
+import type { ApprovedAssetReaderPort } from "../shared/index.ts";
 
 export interface V2GenerationJobCreateResult {
   readonly job: V2SceneGenerationJobRecord;
@@ -68,4 +72,15 @@ export interface V2AssetGenerationJobQueuePayload {
   readonly kind: "asset";
   readonly workflowVersion: string;
   readonly correlationId: string;
+}
+
+export interface V2AssetCandidateReviewResult {
+  readonly candidate: V2AssetCandidateRecord;
+  readonly review: V2AssetCandidateReviewRecord;
+  readonly inserted: boolean;
+  readonly approvedAsset?: V2ApprovedAssetRecord;
+}
+
+export interface V2AssetReviewRepository extends ApprovedAssetReaderPort {
+  reviewAssetCandidate(input: V2ReviewAssetCandidateInput): Promise<V2AssetCandidateReviewResult>;
 }

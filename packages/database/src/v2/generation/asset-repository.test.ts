@@ -8,6 +8,7 @@ import type {
   V2IdempotencyKey,
   V2IsoDateTime,
   V2JobId,
+  V2ReleaseId,
   V2StoryWorldId,
 } from "@living-network/contracts";
 import {
@@ -35,6 +36,40 @@ function assetInput(overrides: Partial<V2CreateAssetGenerationJobInput> = {}): V
   };
 }
 
+async function createPendingAssetCandidate(repository: V2SqliteAssetGenerationRepository, overrides: {
+  readonly candidateId?: V2CandidateId;
+  readonly jobId?: V2JobId;
+  readonly assetId?: V2AssetId;
+  readonly storyWorldId?: V2StoryWorldId;
+  readonly idempotencyKey?: V2IdempotencyKey;
+} = {}) {
+  const jobOverrides: Partial<V2CreateAssetGenerationJobInput> = {
+    jobId: overrides.jobId ?? ("job_asset_review" as V2JobId),
+    idempotencyKey: overrides.idempotencyKey ?? ("idem-asset-review" as V2IdempotencyKey),
+    ...(overrides.storyWorldId === undefined ? {} : { storyWorldId: overrides.storyWorldId }),
+  };
+  const jobResult = await repository.createAssetJob(assetInput(jobOverrides));
+  return repository.createAssetCandidate({
+    candidateId: overrides.candidateId ?? ("candidate_asset_review" as V2CandidateId),
+    jobId: jobResult.job.jobId,
+    storyWorldId: jobResult.job.storyWorldId,
+    status: "pending",
+    payload: {
+      asset: {
+        assetId: overrides.assetId ?? ("asset_review" as V2AssetId),
+        mediaKind: "image",
+        mediaRef: `media://fake-comfy/${jobResult.job.jobId}.png`,
+        prompt: jobResult.job.prompt,
+        workflowVersion: jobResult.job.workflowVersion,
+        sourceJobId: jobResult.job.jobId,
+        ...(jobResult.job.seed === undefined ? {} : { seed: jobResult.job.seed }),
+      },
+      validationNotes: ["Fake ComfyUI output for review."],
+    },
+    createdAt: "2026-08-12T02:04:00.000Z" as V2IsoDateTime,
+  });
+}
+
 test("V2 asset generation migration creates and drops asset tables", () => {
   const { db, cleanup } = openV2TempSqliteConnection();
   try {
@@ -42,8 +77,143 @@ test("V2 asset generation migration creates and drops asset tables", () => {
     assert.notEqual(db.prepare("SELECT name FROM sqlite_master WHERE name = 'v2_asset_generation_jobs'").get(), undefined);
     assert.notEqual(db.prepare("SELECT name FROM sqlite_master WHERE name = 'v2_asset_generation_dispatches'").get(), undefined);
     assert.notEqual(db.prepare("SELECT name FROM sqlite_master WHERE name = 'v2_asset_candidates'").get(), undefined);
+    assert.notEqual(db.prepare("SELECT name FROM sqlite_master WHERE name = 'v2_asset_candidate_reviews'").get(), undefined);
+    assert.notEqual(db.prepare("SELECT name FROM sqlite_master WHERE name = 'v2_approved_assets'").get(), undefined);
     revertV2Migrations(db, v2GenerationJobMigrations);
     assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE name = 'v2_asset_generation_jobs'").get(), undefined);
+    assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE name = 'v2_asset_candidate_reviews'").get(), undefined);
+    assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE name = 'v2_approved_assets'").get(), undefined);
+  } finally {
+    db.close();
+    cleanup();
+  }
+});
+
+test("approves V2 asset candidates with review audit and approved asset facts", async () => {
+  const { db, cleanup } = openV2TempSqliteConnection();
+  try {
+    applyV2Migrations(db, v2GenerationJobMigrations);
+    const repository = new V2SqliteAssetGenerationRepository(db);
+    const seeded = await createPendingAssetCandidate(repository);
+    const reviewInput = {
+      candidateId: seeded.candidate.candidateId,
+      action: "approve" as const,
+      reviewedAt: "2026-08-12T02:10:00.000Z" as V2IsoDateTime,
+      idempotencyKey: "idem-review-approve" as V2IdempotencyKey,
+      reviewer: "creator:ai2",
+      reason: "Asset matches the scene brief.",
+    };
+
+    const approved = await repository.reviewAssetCandidate(reviewInput);
+    assert.equal(approved.inserted, true);
+    assert.equal(approved.candidate.status, "approved");
+    assert.equal(approved.review.resultingStatus, "approved");
+    assert.equal(approved.approvedAsset?.assetId, "asset_review");
+    assert.equal(approved.approvedAsset?.mediaRef, "media://fake-comfy/job_asset_review.png");
+    assert.match(approved.approvedAsset?.contentHash ?? "", /^sha256:[a-f0-9]{64}$/);
+
+    const approvedRef = await repository.getApprovedAsset({
+      storyWorldId: seeded.candidate.storyWorldId,
+      assetId: "asset_review" as V2AssetId,
+    });
+    assert.equal(approvedRef?.mediaRef, "media://fake-comfy/job_asset_review.png");
+    assert.equal(approvedRef?.contentHash, approved.approvedAsset?.contentHash);
+
+    db.prepare("UPDATE v2_approved_assets SET release_id = ? WHERE asset_id = ?")
+      .run("release_review" as V2ReleaseId, "asset_review");
+    const releaseAssets = await repository.listReleaseAssets({
+      storyWorldId: seeded.candidate.storyWorldId,
+      releaseId: "release_review" as V2ReleaseId,
+    });
+    assert.equal(releaseAssets.length, 1);
+    assert.equal(releaseAssets[0]?.assetId, "asset_review");
+  } finally {
+    db.close();
+    cleanup();
+  }
+});
+
+test("replays identical V2 asset candidate reviews and rejects conflicts", async () => {
+  const { db, cleanup } = openV2TempSqliteConnection();
+  try {
+    applyV2Migrations(db, v2GenerationJobMigrations);
+    const repository = new V2SqliteAssetGenerationRepository(db);
+    const seeded = await createPendingAssetCandidate(repository);
+    const reviewInput = {
+      candidateId: seeded.candidate.candidateId,
+      action: "approve" as const,
+      reviewedAt: "2026-08-12T02:10:00.000Z" as V2IsoDateTime,
+      idempotencyKey: "idem-review-replay" as V2IdempotencyKey,
+      reviewer: "creator:ai2",
+      reason: "Approved once.",
+    };
+
+    const first = await repository.reviewAssetCandidate(reviewInput);
+    const replay = await repository.reviewAssetCandidate(reviewInput);
+    assert.equal(first.inserted, true);
+    assert.equal(replay.inserted, false);
+    assert.equal(replay.candidate.status, "approved");
+    assert.equal(replay.approvedAsset?.contentHash, first.approvedAsset?.contentHash);
+
+    await assert.rejects(
+      repository.reviewAssetCandidate({ ...reviewInput, reason: "Different payload." }),
+      /idempotency key conflict/,
+    );
+  } finally {
+    db.close();
+    cleanup();
+  }
+});
+
+test("rejects or requests changes without creating approved asset facts", async () => {
+  const { db, cleanup } = openV2TempSqliteConnection();
+  try {
+    applyV2Migrations(db, v2GenerationJobMigrations);
+    const repository = new V2SqliteAssetGenerationRepository(db);
+    const changesSeed = await createPendingAssetCandidate(repository, {
+      candidateId: "candidate_asset_changes" as V2CandidateId,
+      jobId: "job_asset_changes" as V2JobId,
+      assetId: "asset_changes" as V2AssetId,
+      idempotencyKey: "idem-asset-changes" as V2IdempotencyKey,
+    });
+    const changes = await repository.reviewAssetCandidate({
+      candidateId: changesSeed.candidate.candidateId,
+      action: "request_changes",
+      reviewedAt: "2026-08-12T02:11:00.000Z" as V2IsoDateTime,
+      idempotencyKey: "idem-review-changes" as V2IdempotencyKey,
+      reason: "Need a brighter palette.",
+    });
+    assert.equal(changes.candidate.status, "changes_requested");
+    assert.equal(changes.approvedAsset, undefined);
+    assert.equal(await repository.getApprovedAsset({
+      storyWorldId: changesSeed.candidate.storyWorldId,
+      assetId: "asset_changes" as V2AssetId,
+    }), undefined);
+
+    const rejectedSeed = await createPendingAssetCandidate(repository, {
+      candidateId: "candidate_asset_reject" as V2CandidateId,
+      jobId: "job_asset_reject" as V2JobId,
+      assetId: "asset_reject" as V2AssetId,
+      idempotencyKey: "idem-asset-reject" as V2IdempotencyKey,
+    });
+    const rejected = await repository.reviewAssetCandidate({
+      candidateId: rejectedSeed.candidate.candidateId,
+      action: "reject",
+      reviewedAt: "2026-08-12T02:12:00.000Z" as V2IsoDateTime,
+      idempotencyKey: "idem-review-reject" as V2IdempotencyKey,
+      reason: "Not usable.",
+    });
+    assert.equal(rejected.candidate.status, "rejected");
+    assert.equal(rejected.approvedAsset, undefined);
+    await assert.rejects(
+      repository.reviewAssetCandidate({
+        candidateId: rejectedSeed.candidate.candidateId,
+        action: "approve",
+        reviewedAt: "2026-08-12T02:13:00.000Z" as V2IsoDateTime,
+        idempotencyKey: "idem-review-after-reject" as V2IdempotencyKey,
+      }),
+      /Cannot approve a rejected candidate/,
+    );
   } finally {
     db.close();
     cleanup();

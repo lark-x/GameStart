@@ -113,4 +113,41 @@ export const v2GenerationJobMigrations: readonly V2SqliteMigration[] = [
       DROP TABLE v2_asset_generation_jobs;
     `),
   },
+  {
+    id: "0102_asset_candidate_review",
+    up: (db) => db.exec(`
+      CREATE TABLE v2_asset_candidate_reviews (
+        review_id TEXT PRIMARY KEY,
+        candidate_id TEXT NOT NULL REFERENCES v2_asset_candidates(candidate_id) ON DELETE CASCADE,
+        action TEXT NOT NULL CHECK (action IN ('approve', 'reject', 'request_changes')),
+        resulting_status TEXT NOT NULL CHECK (resulting_status IN ('pending', 'approved', 'rejected', 'changes_requested')),
+        reviewed_at TEXT NOT NULL,
+        idempotency_key TEXT NOT NULL,
+        reviewer TEXT,
+        reason TEXT,
+        UNIQUE (candidate_id, idempotency_key)
+      );
+
+      CREATE INDEX v2_asset_candidate_reviews_candidate_idx ON v2_asset_candidate_reviews (candidate_id, reviewed_at);
+
+      CREATE TABLE v2_approved_assets (
+        asset_id TEXT PRIMARY KEY,
+        story_world_id TEXT NOT NULL,
+        candidate_id TEXT NOT NULL UNIQUE REFERENCES v2_asset_candidates(candidate_id) ON DELETE CASCADE,
+        media_ref TEXT NOT NULL,
+        content_hash TEXT NOT NULL,
+        approved_at TEXT NOT NULL,
+        reviewer TEXT,
+        review_reason TEXT,
+        release_id TEXT
+      );
+
+      CREATE INDEX v2_approved_assets_story_world_idx ON v2_approved_assets (story_world_id, asset_id);
+      CREATE INDEX v2_approved_assets_release_idx ON v2_approved_assets (story_world_id, release_id);
+    `),
+    down: (db) => db.exec(`
+      DROP TABLE v2_approved_assets;
+      DROP TABLE v2_asset_candidate_reviews;
+    `),
+  },
 ];
