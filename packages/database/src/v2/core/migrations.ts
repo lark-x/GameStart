@@ -256,6 +256,7 @@ export const v2CoreReleaseRuntimeMigration: V2SqliteMigration = {
         content_hash TEXT NOT NULL,
         manifest_json TEXT NOT NULL,
         created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        UNIQUE (release_id, version),
         UNIQUE (story_world_id, version)
       );
 
@@ -267,7 +268,11 @@ export const v2CoreReleaseRuntimeMigration: V2SqliteMigration = {
         state_json TEXT NOT NULL,
         choice_history_json TEXT NOT NULL,
         created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        UNIQUE (run_id, release_id, release_version),
+        FOREIGN KEY (release_id, release_version)
+          REFERENCES v2_releases(release_id, version)
+          ON DELETE RESTRICT
       );
 
       CREATE TABLE v2_runtime_saves (
@@ -278,7 +283,10 @@ export const v2CoreReleaseRuntimeMigration: V2SqliteMigration = {
         current_scene_id TEXT NOT NULL,
         state_json TEXT NOT NULL,
         choice_history_json TEXT NOT NULL,
-        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        FOREIGN KEY (run_id, release_id, release_version)
+          REFERENCES v2_runtime_runs(run_id, release_id, release_version)
+          ON DELETE CASCADE
       );
 
       CREATE INDEX v2_releases_world_idx ON v2_releases(story_world_id, created_at);
