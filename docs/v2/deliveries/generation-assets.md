@@ -196,3 +196,77 @@ External Services:
 - Real LLM: not executed; worker tests use injected fake provider.
 - Real ComfyUI: not executed; Slice C scope.
 - Qdrant: not executed; Slice D optional scope.
+
+## Checkpoint 4: Generation API
+
+Scope:
+
+- Added injectable V2 generation Fastify plugin factory under `apps/api/src/v2/generation`.
+- Added context preview endpoint that reads the requested canon revision through `CanonSnapshotReaderPort` and builds a deterministic generation context snapshot.
+- Added scene job creation endpoint that builds the same context snapshot, derives a stable job id from world/revision/idempotency key, and writes through `V2GenerationJobRepository`.
+- Added job read and cancel endpoints.
+- Added generation-specific API DTOs under `packages/contracts/src/v2/generation` without changing Gate 0 shared wire v0 names.
+- Kept the Gate 0 default `v2GenerationPlugin` hook intact and did not modify the shared Fastify composition root.
+
+Routes:
+
+- `POST /api/v2/generation/context-preview`
+- `POST /api/v2/generation/jobs/scene`
+- `GET /api/v2/generation/jobs/:jobId`
+- `POST /api/v2/generation/jobs/:jobId/cancel`
+
+Non-scope:
+
+- No candidate list/review/apply API; those remain AI-1 Core API responsibilities.
+- No real BullMQ dispatch pump wiring from API.
+- No direct canon repository reads or writes.
+- No second canon candidate table.
+- No release/save writes.
+- No ComfyUI, media, asset review, Qdrant, Social Temp, Web, shared composition root, or lockfile changes.
+
+Contract:
+
+- `V2GenerationContextPreviewApiRequest`
+- `V2GenerationContextPreviewApiResponse`
+- `V2CreateSceneGenerationJobApiRequest`
+- `V2CreateSceneGenerationJobApiResponse`
+- `V2GenerationJobApiResponse`
+
+Migration:
+
+- Reuses `0100_generation_jobs`.
+- No new migration in this checkpoint.
+
+State Machine:
+
+- API creates jobs in `queued`.
+- API cancel writes `cancelled` through `V2GenerationJobRepository`.
+- Worker-owned claim/running/success/failure transitions are unchanged from checkpoint 3.
+
+Verification:
+
+- `pnpm --filter @living-network/contracts typecheck`: exit 0
+- `pnpm --filter @living-network/ports typecheck`: exit 0
+- `pnpm --filter @living-network/domain typecheck`: exit 0
+- `pnpm --filter @living-network/api typecheck`: exit 0
+- `pnpm --filter @living-network/api test`: exit 0
+- `pnpm check:boundaries`: exit 0
+- `git diff --check`: exit 0
+
+Known validation note:
+
+- `git diff --check` reported only Git line-ending normalization warnings for existing Windows checkout behavior; no whitespace errors.
+
+Fake Service Evidence:
+
+- API tests use fake canon snapshot reader and fake generation job repository.
+- Context preview verifies requested revision usage and `sha256:` context hash creation.
+- Scene job create verifies idempotent replay and stable persisted job state.
+- Job read/cancel and validation/404 responses are covered through Fastify injection.
+
+External Services:
+
+- Real Redis: not executed; API does not start a real queue or dispatch worker in this checkpoint.
+- Real LLM: not executed; API only creates job facts and context snapshots.
+- Real ComfyUI: not executed; Slice C scope.
+- Qdrant: not executed; Slice D optional scope.

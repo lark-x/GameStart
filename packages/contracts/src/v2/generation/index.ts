@@ -94,3 +94,28 @@ export interface V2CreateSceneGenerationJobInput {
   readonly createdAt: V2IsoDateTime;
   readonly maxAttempts?: number;
 }
+
+export interface V2GenerationContextPreviewApiRequest {
+  readonly storyWorldId: V2StoryWorldId;
+  readonly baseCanonRevision: V2Revision;
+  readonly prompt: string;
+  readonly tokenBudget?: number;
+}
+
+export interface V2GenerationContextPreviewApiResponse {
+  readonly context: V2GenerationContextSnapshot;
+}
+
+export interface V2CreateSceneGenerationJobApiRequest extends V2GenerationContextPreviewApiRequest {
+  readonly idempotencyKey: V2IdempotencyKey;
+  readonly maxAttempts?: number;
+}
+
+export interface V2CreateSceneGenerationJobApiResponse {
+  readonly job: V2SceneGenerationJobRecord;
+  readonly inserted: boolean;
+}
+
+export interface V2GenerationJobApiResponse {
+  readonly job: V2SceneGenerationJobRecord;
+}
