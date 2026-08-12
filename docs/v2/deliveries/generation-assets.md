@@ -433,3 +433,72 @@ External Services:
 - Real LLM: not executed; asset review does not call LLM.
 - Real ComfyUI: not executed; this checkpoint reviews already-created fake media refs.
 - Qdrant: not executed; Slice D optional scope.
+
+## Checkpoint 7: Controlled Asset Media Store
+
+Scope:
+
+- Added an AI-2 `V2AssetMediaStorePort` under `packages/ports/src/v2/generation`.
+- Added `V2LocalAssetMediaStore` under `apps/worker/src/v2` for controlled local asset media persistence.
+- The store fetches external ComfyUI image URLs, validates image responses, bounds byte size, writes a temporary file, and then uses atomic rename into `mediaRoot/v2/assets/<sha256>.<ext>`.
+- Stored worker-facing references are `media://local/...`; raw external `/view` URLs are not written into SQLite candidate or job facts.
+- Replayed media storage for the same bytes returns the same content-addressed media ref.
+- The V2 asset worker now accepts existing controlled refs directly and uses the media store for external ComfyUI URLs when provided.
+- Retryable media write/fetch failures reuse the existing asset job retry state machine and do not create asset candidates.
+
+Non-scope:
+
+- No asset API endpoint yet.
+- No thumbnail derivative pipeline yet; this checkpoint stores the primary controlled image asset.
+- No direct canon repository reads or writes.
+- No release/save writes.
+- No real Redis, LLM, ComfyUI, Qdrant, Social Temp, Web, shared composition root, or lockfile changes.
+
+Contract:
+
+- `V2StoreGeneratedAssetMediaInput`
+- `V2StoredAssetMediaResult`
+- `V2AssetMediaStorePort`
+
+Migration:
+
+- None in this checkpoint.
+- Reuses `0101_asset_generation_jobs` for asset job/candidate facts and `0102_asset_candidate_review` for approved asset facts.
+
+State Machine:
+
+- Asset job lifecycle remains `queued -> claimed -> running -> succeeded|failed|cancelled`.
+- Controlled `media://fake-comfy/...` or `media://local/...` output continues directly to pending candidate creation.
+- External ComfyUI URL output is stored first; only the resulting `media://local/...` ref is persisted.
+- Retryable media storage failures return `running -> queued` while attempts remain, and do not create candidates.
+- Non-retryable invalid media output becomes terminal `failed` and does not create candidates.
+
+Verification:
+
+- `pnpm --filter @living-network/contracts typecheck`: exit 0
+- `pnpm --filter @living-network/ports typecheck`: exit 0
+- `pnpm --filter @living-network/database typecheck`: exit 0
+- `pnpm --filter @living-network/worker typecheck`: exit 0
+- `pnpm --filter @living-network/worker test`: exit 0
+- `pnpm check:boundaries`: exit 0
+- `pnpm typecheck`: exit 0
+- `pnpm test`: exit 0
+- `pnpm build`: exit 0
+- `git diff --check`: exit 0
+
+Known validation note:
+
+- `git diff --check` reported only Git line-ending normalization warnings for the Windows checkout; no whitespace errors.
+
+Fake Service Evidence:
+
+- Worker tests store an external ComfyUI URL as a controlled `media://local/...` ref before candidate creation.
+- Worker tests verify retryable media store failures return the asset job to `queued` without creating a candidate.
+- Local media store tests verify content-addressed `sha256:` refs, image content validation, max byte enforcement, replay, and no leftover `.tmp` file after successful rename.
+
+External Services:
+
+- Real Redis: not executed; no queue consumer wiring changed in this checkpoint.
+- Real LLM: not executed; asset media storage does not call LLM.
+- Real ComfyUI: not executed; tests inject fake fetch and fake ComfyUI clients.
+- Qdrant: not executed; Slice D optional scope.

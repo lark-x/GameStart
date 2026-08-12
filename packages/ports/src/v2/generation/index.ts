@@ -8,6 +8,7 @@ import type {
   V2CreateSceneGenerationJobInput,
   V2GenerationDispatchRecord,
   V2GenerationJobKind,
+  V2IsoDateTime,
   V2ReviewAssetCandidateInput,
   V2SceneGenerationJobRecord,
 } from "@living-network/contracts";
@@ -72,6 +73,24 @@ export interface V2AssetGenerationJobQueuePayload {
   readonly kind: "asset";
   readonly workflowVersion: string;
   readonly correlationId: string;
+}
+
+export interface V2StoreGeneratedAssetMediaInput {
+  readonly jobId: V2JobId;
+  readonly externalJobId: string;
+  readonly sourceMediaRef: string;
+  readonly storedAt: V2IsoDateTime;
+}
+
+export interface V2StoredAssetMediaResult {
+  readonly mediaRef: string;
+  readonly contentHash: string;
+  readonly byteLength: number;
+  readonly contentType?: string;
+}
+
+export interface V2AssetMediaStorePort {
+  storeGeneratedAsset(input: V2StoreGeneratedAssetMediaInput): Promise<V2StoredAssetMediaResult>;
 }
 
 export interface V2AssetCandidateReviewResult {
