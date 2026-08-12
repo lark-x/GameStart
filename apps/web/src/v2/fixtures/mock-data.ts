@@ -1,7 +1,9 @@
 import type {
   V2CandidateEnvelope,
   V2CandidateId,
+  V2IdempotencyKey,
   V2IsoDateTime,
+  V2JobId,
   V2ReleasePreflightResponse,
   V2Revision,
   V2RunId,
@@ -151,6 +153,45 @@ export const v2WebFixtureTypedState = {
       sourceSceneId: "scene_archive",
     },
   ],
+} as const;
+
+export const v2WebFixtureGeneration = {
+  context: {
+    baseCanonRevision: 2,
+    contextHash: "sha256:gate0-web-context",
+    tokenBudget: 1200,
+    sources: [
+      { id: "world_v2_demo", label: "Gate 0 Demo World", kind: "world" },
+      { id: "char_archivist", label: "The Archivist", kind: "character" },
+      { id: "loc_archive", label: "Civic Archive", kind: "location" },
+      { id: "fact_ticket", label: "Mira ticket fact", kind: "fact" },
+    ],
+  },
+  job: {
+    jobId: "job_scene_opening" as V2JobId,
+    status: "succeeded",
+    createdAt: "2026-08-12T00:00:00.000Z" as V2IsoDateTime,
+    updatedAt: "2026-08-12T00:01:10.000Z" as V2IsoDateTime,
+    promptPreview: "Generate a single reviewed scene candidate at the archive door.",
+    terminalMessage: "Candidate submitted for creator review.",
+  },
+  diff: {
+    title: "Opening Scene candidate",
+    scope: ["scene body", "2 choices", "trust_archivist delta"],
+    additions: [
+      "Adds a concise scene body for the Rain Station opening.",
+      "Adds a choice leading toward the Civic Archive.",
+      "Suggests trust_archivist +1 as a candidate state delta.",
+    ],
+    warnings: ["Base revision must still be 2 before approval."],
+  },
+} as const;
+
+export const v2WebDefaultGenerationRequest = {
+  storyWorldId: v2WebFixtureWorld.storyWorldId,
+  baseCanonRevision: 2 as V2Revision,
+  prompt: "Generate a scene candidate that tests the archive mystery without changing canon.",
+  idempotencyKey: "idem_web_scene_generation" as V2IdempotencyKey,
 } as const;
 
 export const v2WebFixtureCandidate = {

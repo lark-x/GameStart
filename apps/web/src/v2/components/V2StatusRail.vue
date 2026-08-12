@@ -12,6 +12,7 @@ defineProps<{
   mode: "mock" | "http";
   graphIssueCount: number;
   typedStatePreviewCount: number;
+  candidateStatus: string;
 }>();
 
 const emit = defineEmits<{
@@ -86,7 +87,7 @@ const emit = defineEmits<{
       </div>
       <div>
         <dt>Candidate</dt>
-        <dd>{{ snapshot.candidate.status }}</dd>
+        <dd>{{ candidateStatus }}</dd>
       </div>
       <div>
         <dt>Release</dt>

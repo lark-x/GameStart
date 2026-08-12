@@ -1,9 +1,11 @@
 import type {
   V2CandidateEnvelope,
+  V2CandidateStatus,
   V2CreateSceneGenerationJobRequest,
   V2CreateSceneGenerationJobResponse,
   V2ErrorEnvelope,
   V2HealthResponse,
+  V2JobRef,
   V2ReleasePreflightResponse,
   V2SceneCandidatePayload,
 } from "@living-network/contracts";
@@ -97,9 +99,54 @@ export interface V2WorkspaceSnapshot {
   readonly world: V2WorkspaceSummary;
   readonly sceneGraph: V2SceneGraphSummary;
   readonly typedState: V2TypedStateSummary;
+  readonly generation: V2GenerationSummary;
   readonly candidate: V2CandidateEnvelope<V2SceneCandidatePayload>;
   readonly release: V2ReleasePreflightResponse;
   readonly run: V2RunSummary;
+}
+
+export interface V2GenerationSummary {
+  readonly context: V2GenerationContextSummary;
+  readonly job: V2GenerationJobSummary;
+  readonly diff: V2CandidateDiffSummary;
+}
+
+export interface V2GenerationContextSummary {
+  readonly baseCanonRevision: number;
+  readonly contextHash: string;
+  readonly tokenBudget: number;
+  readonly sources: readonly {
+    readonly id: string;
+    readonly label: string;
+    readonly kind: "world" | "character" | "location" | "fact" | "scene";
+  }[];
+}
+
+export interface V2GenerationJobSummary extends V2JobRef {
+  readonly promptPreview: string;
+  readonly terminalMessage?: string;
+}
+
+export interface V2CandidateDiffSummary {
+  readonly title: string;
+  readonly scope: readonly string[];
+  readonly additions: readonly string[];
+  readonly warnings: readonly string[];
+}
+
+export type V2CandidateReviewAction = "approve" | "reject" | "request_changes";
+
+export interface V2CandidateReviewRequest {
+  readonly candidateId: string;
+  readonly action: V2CandidateReviewAction;
+  readonly reviewer: string;
+  readonly reason: string;
+}
+
+export interface V2CandidateReviewResult {
+  readonly status: V2CandidateStatus;
+  readonly reviewedAt: string;
+  readonly reviewReason: string;
 }
 
 export interface V2WorkspaceAdapter {
@@ -108,6 +155,7 @@ export interface V2WorkspaceAdapter {
   createSceneGenerationJob(
     request: V2CreateSceneGenerationJobRequest,
   ): Promise<V2CreateSceneGenerationJobResponse>;
+  reviewCandidate(request: V2CandidateReviewRequest): Promise<V2CandidateReviewResult>;
 }
 
 export class V2AdapterError extends Error {

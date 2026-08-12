@@ -79,8 +79,16 @@ onMounted(() => {
             v-model:expected-revision="store.expectedRevision"
             :conflict="store.conflict"
             :has-draft-changes="store.hasDraftChanges"
+            v-model:generation-prompt="store.generationPrompt"
+            v-model:reviewer="store.reviewer"
+            v-model:review-reason="store.reviewReason"
+            :generation-message="store.generationMessage"
+            :review-message="store.reviewMessage"
+            :can-review-candidate="store.canReviewCandidate"
             @preview-canon-draft="store.previewCanonDraft"
             @reset-canon-draft="store.resetCanonDraft"
+            @create-generation-job="store.createGenerationJob"
+            @review-candidate="store.reviewCandidate"
           />
         </div>
       </main>
@@ -92,6 +100,7 @@ onMounted(() => {
         :mode="store.mode"
         :graph-issue-count="store.graphIssueCount"
         :typed-state-preview-count="store.typedStatePreviewCount"
+        :candidate-status="store.candidateStatus"
         @refresh="store.loadSnapshot"
         @switch-mode="store.setMode"
       />

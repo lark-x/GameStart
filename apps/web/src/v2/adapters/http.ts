@@ -1,12 +1,19 @@
 import type {
   V2CreateSceneGenerationJobRequest,
   V2CreateSceneGenerationJobResponse,
+  V2CandidateId,
   V2ErrorEnvelope,
   V2HealthResponse,
 } from "@living-network/contracts";
 
 import { createV2MockAdapter } from "./mock.ts";
-import { V2AdapterError, type V2WorkspaceAdapter, type V2WorkspaceSnapshot } from "./types.ts";
+import {
+  V2AdapterError,
+  type V2CandidateReviewRequest,
+  type V2CandidateReviewResult,
+  type V2WorkspaceAdapter,
+  type V2WorkspaceSnapshot,
+} from "./types.ts";
 
 export interface V2HttpAdapterOptions {
   readonly baseUrl: string;
@@ -57,6 +64,23 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
           body: JSON.stringify(request),
         }),
       );
+    },
+    async reviewCandidate(request: V2CandidateReviewRequest): Promise<V2CandidateReviewResult> {
+      const response = await parseJson<{ candidateId: V2CandidateId; status: V2CandidateReviewResult["status"] }>(
+        await fetcher(`${baseUrl}/api/v2/candidates/${request.candidateId}/review`, {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(request),
+        }),
+      );
+      return {
+        status: response.status,
+        reviewedAt: new Date().toISOString(),
+        reviewReason: request.reason,
+      };
     },
   };
 }

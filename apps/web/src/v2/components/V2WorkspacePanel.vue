@@ -9,6 +9,7 @@ import Field from "../../components/ui/Field.vue";
 import Input from "../../components/ui/Input.vue";
 import Textarea from "../../components/ui/Textarea.vue";
 import type { V2WorkspaceSnapshot } from "../adapters";
+import type { V2CandidateReviewAction } from "../adapters/types";
 
 const props = defineProps<{
   area: string;
@@ -19,14 +20,25 @@ const props = defineProps<{
   expectedRevision: number;
   conflict: string | null;
   hasDraftChanges: boolean;
+  generationPrompt: string;
+  generationMessage: string | null;
+  reviewer: string;
+  reviewReason: string;
+  reviewMessage: string | null;
+  canReviewCandidate: boolean;
 }>();
 
 const emit = defineEmits<{
   "update:draftWorldName": [value: string];
   "update:draftPremise": [value: string];
   "update:expectedRevision": [value: number];
+  "update:generationPrompt": [value: string];
+  "update:reviewer": [value: string];
+  "update:reviewReason": [value: string];
   previewCanonDraft: [];
   resetCanonDraft: [];
+  createGenerationJob: [];
+  reviewCandidate: [action: V2CandidateReviewAction];
 }>();
 
 const areaMeta = computed(() => {
@@ -183,6 +195,101 @@ function formatValue(value: boolean | number | string) {
         </div>
       </template>
 
+      <template v-else-if="area === 'review'">
+        <form class="v2-canon-form" aria-label="Generation job controls" @submit.prevent="emit('createGenerationJob')">
+          <Field label="Generation prompt" hint="Mock adapter creates a typed job without writing canon.">
+            <Textarea
+              :model-value="generationPrompt"
+              :disabled="loading"
+              id="v2-generation-prompt"
+              aria-label="Generation prompt"
+              :rows="3"
+              @update:model-value="emit('update:generationPrompt', $event)"
+            />
+          </Field>
+          <div class="v2-form-actions">
+            <Button variant="primary" size="md" type="submit" :loading="loading">
+              Create Job
+            </Button>
+            <Badge tone="info">{{ snapshot.generation.job.status }}</Badge>
+          </div>
+          <p v-if="generationMessage" class="v2-feedback">{{ generationMessage }}</p>
+        </form>
+
+        <div class="v2-list-grid" aria-label="Generation context sources">
+          <article v-for="source in snapshot.generation.context.sources" :key="source.id" class="v2-record">
+            <div class="v2-record-head">
+              <strong>{{ source.label }}</strong>
+              <Badge tone="neutral">{{ source.kind }}</Badge>
+            </div>
+            <p>{{ source.id }}</p>
+          </article>
+        </div>
+
+        <article class="v2-record" aria-label="Candidate diff">
+          <div class="v2-record-head">
+            <strong>{{ snapshot.generation.diff.title }}</strong>
+            <Badge :tone="snapshot.candidate.status === 'pending' ? 'warning' : 'success'">
+              {{ snapshot.candidate.status }}
+            </Badge>
+          </div>
+          <p>Base revision {{ snapshot.candidate.baseCanonRevision }} · {{ snapshot.generation.context.contextHash }}</p>
+          <ul class="v2-plain-list">
+            <li v-for="addition in snapshot.generation.diff.additions" :key="addition">{{ addition }}</li>
+          </ul>
+          <ul class="v2-plain-list v2-warning-list">
+            <li v-for="warning in snapshot.generation.diff.warnings" :key="warning">{{ warning }}</li>
+          </ul>
+        </article>
+
+        <form class="v2-canon-form" aria-label="Candidate review actions" @submit.prevent="emit('reviewCandidate', 'approve')">
+          <Field label="Reviewer">
+            <Input
+              :model-value="reviewer"
+              :disabled="loading || !canReviewCandidate"
+              id="v2-reviewer"
+              aria-label="Reviewer"
+              @update:model-value="emit('update:reviewer', $event)"
+            />
+          </Field>
+          <Field label="Review reason">
+            <Textarea
+              :model-value="reviewReason"
+              :disabled="loading || !canReviewCandidate"
+              id="v2-review-reason"
+              aria-label="Review reason"
+              :rows="3"
+              @update:model-value="emit('update:reviewReason', $event)"
+            />
+          </Field>
+          <div class="v2-form-actions">
+            <Button variant="primary" size="md" type="submit" :disabled="!canReviewCandidate" :loading="loading">
+              Approve
+            </Button>
+            <Button
+              variant="secondary"
+              size="md"
+              :disabled="!canReviewCandidate || loading"
+              @click="emit('reviewCandidate', 'request_changes')"
+            >
+              Request Changes
+            </Button>
+            <Button
+              variant="danger"
+              size="md"
+              :disabled="!canReviewCandidate || loading"
+              @click="emit('reviewCandidate', 'reject')"
+            >
+              Reject
+            </Button>
+          </div>
+          <p v-if="reviewMessage" class="v2-feedback">{{ reviewMessage }}</p>
+          <p v-if="snapshot.candidate.reviewReason" class="v2-feedback">
+            {{ snapshot.candidate.reviewer }}: {{ snapshot.candidate.reviewReason }}
+          </p>
+        </form>
+      </template>
+
       <template v-else-if="area === 'operations'">
         <div class="v2-list-grid">
           <article v-for="variable in snapshot.typedState.variables" :key="variable.key" class="v2-record">
@@ -334,6 +441,26 @@ function formatValue(value: boolean | number | string) {
 .v2-diagnostics {
   display: grid;
   gap: var(--space-3);
+}
+
+.v2-feedback {
+  color: var(--muted);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.v2-plain-list {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding-left: var(--space-5);
+  color: var(--text);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.v2-warning-list {
+  color: var(--warning);
 }
 
 .v2-metric span {

@@ -70,3 +70,32 @@ test("V2 workspace store reports stale canon draft revision", async () => {
   assert.equal(store.snapshot?.world.name, "Gate 0 Demo World");
   assert.equal(store.snapshot?.world.revision, 2);
 });
+
+test("V2 workspace store creates a generation job through the adapter", async () => {
+  setActivePinia(createPinia());
+  const store = useV2WorkspaceStore();
+  store.setAdapter(createV2MockAdapter());
+  await store.loadSnapshot();
+
+  store.generationPrompt = "Create an archive scene candidate.";
+  await store.createGenerationJob();
+
+  assert.match(store.generationMessage ?? "", /Generation job/);
+  assert.equal(store.snapshot?.generation.job.status, "queued");
+  assert.equal(store.snapshot?.generation.job.promptPreview, "Create an archive scene candidate.");
+});
+
+test("V2 workspace store applies candidate review result to mock state", async () => {
+  setActivePinia(createPinia());
+  const store = useV2WorkspaceStore();
+  store.setAdapter(createV2MockAdapter());
+  await store.loadSnapshot();
+
+  store.reviewReason = "Approved for mock review.";
+  await store.reviewCandidate("approve");
+
+  assert.equal(store.reviewMessage, "Candidate marked approved.");
+  assert.equal(store.snapshot?.candidate.status, "approved");
+  assert.equal(store.snapshot?.candidate.reviewReason, "Approved for mock review.");
+  assert.equal(store.canReviewCandidate, false);
+});
