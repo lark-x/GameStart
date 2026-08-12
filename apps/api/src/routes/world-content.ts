@@ -12,11 +12,22 @@ import {
   parseUpdateWorldEventDefinitionRequest,
   parseCreateWorldLoreEntryRequest,
   parseUpdateWorldLoreEntryRequest,
+  parseCreateStoryArcRequest,
+  parseUpdateStoryArcRequest,
+  parseCreateStoryNodeRequest,
+  parseUpdateStoryNodeRequest,
+  parseCreateStoryEdgeRequest,
+  parseUpdateStoryEdgeRequest,
+  parseCreatePromptTemplateRequest,
+  parseUpdatePromptTemplateRequest,
+  parseCreateMemoryCandidateRequest,
+  parseReviewMemoryCandidateRequest,
 } from "../parsers.ts";
 import * as worlds from "../use-cases/worlds.ts";
 import * as characters from "../use-cases/characters.ts";
 import * as relationships from "../use-cases/relationships.ts";
 import * as worldEvents from "../use-cases/world-events.ts";
+import * as storyGraph from "../use-cases/story-graph.ts";
 
 async function parseBody(request: Request): Promise<unknown> {
   try { return await request.json(); } catch { throw new ApiError(400, "BAD_REQUEST", "Request body must be valid JSON"); }
@@ -74,6 +85,146 @@ export async function handleWorldContent(
       return new Response(null, { status: 204 });
     }
     throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
+  }
+
+  // --- Story Graph ---
+  if (url.pathname === "/v1/story-arcs") {
+    if (request.method === "GET") {
+      const storyWorldId = url.searchParams.get("storyWorldId");
+      if (!storyWorldId) throw new ApiError(400, "BAD_REQUEST", "storyWorldId is required");
+      return jsonResponse({ data: await storyGraph.listStoryArcs(ctx.store, storyWorldId) });
+    }
+    if (request.method === "POST") {
+      trustedActor(ctx, request);
+      return jsonResponse({ data: await storyGraph.createStoryArcUseCase(ctx.store, parseCreateStoryArcRequest(await parseBody(request))) }, 201);
+    }
+    throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
+  }
+
+  const storyArcPath = /^\/v1\/story-arcs\/([^/]+)$/.exec(url.pathname);
+  if (storyArcPath) {
+    const id = decodeURIComponent(storyArcPath[1] ?? "");
+    if (request.method === "PUT") {
+      trustedActor(ctx, request);
+      return jsonResponse({ data: await storyGraph.updateStoryArcUseCase(ctx.store, id, parseUpdateStoryArcRequest(await parseBody(request))) });
+    }
+    if (request.method === "DELETE") {
+      trustedActor(ctx, request);
+      await storyGraph.deleteStoryArc(ctx.store, id);
+      return new Response(null, { status: 204 });
+    }
+    throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
+  }
+
+  if (url.pathname === "/v1/story-nodes") {
+    if (request.method === "GET") {
+      const storyWorldId = url.searchParams.get("storyWorldId");
+      if (!storyWorldId) throw new ApiError(400, "BAD_REQUEST", "storyWorldId is required");
+      return jsonResponse({ data: await storyGraph.listStoryNodes(ctx.store, storyWorldId, url.searchParams.get("arcId") ?? undefined) });
+    }
+    if (request.method === "POST") {
+      trustedActor(ctx, request);
+      return jsonResponse({ data: await storyGraph.createStoryNodeUseCase(ctx.store, parseCreateStoryNodeRequest(await parseBody(request))) }, 201);
+    }
+    throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
+  }
+
+  const storyNodePath = /^\/v1\/story-nodes\/([^/]+)$/.exec(url.pathname);
+  if (storyNodePath) {
+    const id = decodeURIComponent(storyNodePath[1] ?? "");
+    if (request.method === "PUT") {
+      trustedActor(ctx, request);
+      return jsonResponse({ data: await storyGraph.updateStoryNodeUseCase(ctx.store, id, parseUpdateStoryNodeRequest(await parseBody(request))) });
+    }
+    if (request.method === "DELETE") {
+      trustedActor(ctx, request);
+      await storyGraph.deleteStoryNode(ctx.store, id);
+      return new Response(null, { status: 204 });
+    }
+    throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
+  }
+
+  if (url.pathname === "/v1/story-edges") {
+    if (request.method === "GET") {
+      const arcId = url.searchParams.get("arcId");
+      if (!arcId) throw new ApiError(400, "BAD_REQUEST", "arcId is required");
+      return jsonResponse({ data: await storyGraph.listStoryEdges(ctx.store, arcId) });
+    }
+    if (request.method === "POST") {
+      trustedActor(ctx, request);
+      return jsonResponse({ data: await storyGraph.createStoryEdgeUseCase(ctx.store, parseCreateStoryEdgeRequest(await parseBody(request))) }, 201);
+    }
+    throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
+  }
+
+  const storyEdgePath = /^\/v1\/story-edges\/([^/]+)$/.exec(url.pathname);
+  if (storyEdgePath) {
+    const id = decodeURIComponent(storyEdgePath[1] ?? "");
+    if (request.method === "PUT") {
+      trustedActor(ctx, request);
+      return jsonResponse({ data: await storyGraph.updateStoryEdgeUseCase(ctx.store, id, parseUpdateStoryEdgeRequest(await parseBody(request))) });
+    }
+    if (request.method === "DELETE") {
+      trustedActor(ctx, request);
+      await storyGraph.deleteStoryEdge(ctx.store, id);
+      return new Response(null, { status: 204 });
+    }
+    throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
+  }
+
+  if (url.pathname === "/v1/prompt-templates") {
+    if (request.method === "GET") {
+      const storyWorldId = url.searchParams.get("storyWorldId");
+      if (!storyWorldId) throw new ApiError(400, "BAD_REQUEST", "storyWorldId is required");
+      return jsonResponse({ data: await storyGraph.listPromptTemplates(ctx.store, storyWorldId) });
+    }
+    if (request.method === "POST") {
+      trustedActor(ctx, request);
+      return jsonResponse({ data: await storyGraph.createPromptTemplateUseCase(ctx.store, parseCreatePromptTemplateRequest(await parseBody(request))) }, 201);
+    }
+    throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
+  }
+
+  const promptTemplatePath = /^\/v1\/prompt-templates\/([^/]+)$/.exec(url.pathname);
+  if (promptTemplatePath) {
+    const id = decodeURIComponent(promptTemplatePath[1] ?? "");
+    if (request.method === "PUT") {
+      trustedActor(ctx, request);
+      return jsonResponse({ data: await storyGraph.updatePromptTemplateUseCase(ctx.store, id, parseUpdatePromptTemplateRequest(await parseBody(request))) });
+    }
+    if (request.method === "DELETE") {
+      trustedActor(ctx, request);
+      await storyGraph.deletePromptTemplate(ctx.store, id);
+      return new Response(null, { status: 204 });
+    }
+    throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
+  }
+
+  if (url.pathname === "/v1/prompt-preview") {
+    if (request.method !== "GET") throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
+    const storyWorldId = url.searchParams.get("storyWorldId");
+    if (!storyWorldId) throw new ApiError(400, "BAD_REQUEST", "storyWorldId is required");
+    return jsonResponse({ data: await storyGraph.previewPrompt(ctx.store, storyWorldId, url.searchParams.get("arcId") ?? undefined, url.searchParams.get("nodeId") ?? undefined) });
+  }
+
+  if (url.pathname === "/v1/memory-candidates") {
+    if (request.method === "GET") {
+      const storyWorldId = url.searchParams.get("storyWorldId");
+      if (!storyWorldId) throw new ApiError(400, "BAD_REQUEST", "storyWorldId is required");
+      return jsonResponse({ data: await storyGraph.listMemoryCandidates(ctx.store, storyWorldId) });
+    }
+    if (request.method === "POST") {
+      trustedActor(ctx, request);
+      return jsonResponse({ data: await storyGraph.createMemoryCandidateUseCase(ctx.store, parseCreateMemoryCandidateRequest(await parseBody(request))) }, 201);
+    }
+    throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
+  }
+
+  const memoryCandidateReviewPath = /^\/v1\/memory-candidates\/([^/]+)\/review$/.exec(url.pathname);
+  if (memoryCandidateReviewPath) {
+    if (request.method !== "POST") throw new ApiError(405, "METHOD_NOT_ALLOWED", "Method not allowed");
+    trustedActor(ctx, request);
+    return jsonResponse({ data: await storyGraph.reviewMemoryCandidate(ctx.store, decodeURIComponent(memoryCandidateReviewPath[1] ?? ""), parseReviewMemoryCandidateRequest(await parseBody(request))) });
   }
 
   // --- World Events ---

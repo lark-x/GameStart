@@ -20,6 +20,11 @@ import {
   type WorldLoreEntry,
   type BehaviorAction,
   type ActorSession,
+  type StoryArc,
+  type StoryNode,
+  type StoryEdge,
+  type PromptTemplate,
+  type MemoryCandidate,
 } from "@living-network/domain";
 import { ImageAssetCategory } from "@living-network/contracts";
 import type {
@@ -44,6 +49,11 @@ import type {
   StoryWorldDto,
   WorldEventDefinitionDto,
   WorldLoreEntryDto,
+  StoryArcDto,
+  StoryNodeDto,
+  StoryEdgeDto,
+  PromptTemplateDto,
+  MemoryCandidateDto,
 } from "@living-network/contracts";
 import { ApiError } from "./helpers.ts";
 
@@ -198,6 +208,31 @@ export function toAppearanceSettingsDto(
 
 export function toWorldLoreEntryDto(entry: WorldLoreEntry): WorldLoreEntryDto {
   return { ...entry, tags: [...entry.tags] };
+}
+
+export function toStoryArcDto(arc: StoryArc): StoryArcDto {
+  return { ...arc };
+}
+
+export function toStoryNodeDto(node: StoryNode): StoryNodeDto {
+  return {
+    ...node,
+    requiredFacts: [...node.requiredFacts],
+    involvedCharacterIds: [...node.involvedCharacterIds],
+    referencedMemoryIds: [...node.referencedMemoryIds],
+  };
+}
+
+export function toStoryEdgeDto(edge: StoryEdge): StoryEdgeDto {
+  return { ...edge };
+}
+
+export function toPromptTemplateDto(template: PromptTemplate): PromptTemplateDto {
+  return { ...template };
+}
+
+export function toMemoryCandidateDto(candidate: MemoryCandidate): MemoryCandidateDto {
+  return { ...candidate };
 }
 
 export function toLlmProviderProfileDto(

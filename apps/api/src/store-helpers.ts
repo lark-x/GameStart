@@ -94,6 +94,31 @@ export function requireWorldLoreStore(store: ApiStore): WorldLoreStore {
   return store as WorldLoreStore;
 }
 
+export type StoryGraphStore = ApiStore & {
+  storyArcs: NonNullable<ApiStore["storyArcs"]>;
+  storyNodes: NonNullable<ApiStore["storyNodes"]>;
+  storyEdges: NonNullable<ApiStore["storyEdges"]>;
+  promptTemplates: NonNullable<ApiStore["promptTemplates"]>;
+  memoryCandidates: NonNullable<ApiStore["memoryCandidates"]>;
+  memories: NonNullable<ApiStore["memories"]>;
+  worldLoreEntries: NonNullable<ApiStore["worldLoreEntries"]>;
+};
+
+export function requireStoryGraphStore(store: ApiStore): StoryGraphStore {
+  if (
+    !store.storyArcs ||
+    !store.storyNodes ||
+    !store.storyEdges ||
+    !store.promptTemplates ||
+    !store.memoryCandidates ||
+    !store.memories ||
+    !store.worldLoreEntries
+  ) {
+    throw new ApiError(501, "NOT_IMPLEMENTED", "Story graph repositories are not configured");
+  }
+  return store as StoryGraphStore;
+}
+
 export type LlmProviderProfileStore = ApiStore & {
   llmProviderProfiles: NonNullable<ApiStore["llmProviderProfiles"]>;
 };

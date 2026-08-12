@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onUnmounted, ref, watch, type ComponentPublicInstance } from "vue";
-import { Check, Image as ImageIcon, ImagePlus, Keyboard, RefreshCw, Send, Smile, Trash2, Wallpaper, X } from "@lucide/vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch, type ComponentPublicInstance } from "vue";
+import { Check, Image as ImageIcon, ImagePlus, Keyboard, MoreHorizontal, RefreshCw, Send, Smile, Trash2, X } from "@lucide/vue";
 import Button from "../components/ui/Button.vue";
 import EmptyState from "../components/ui/EmptyState.vue";
 import Input from "../components/ui/Input.vue";
@@ -19,6 +19,7 @@ import { useChatComposer } from "../composables/useChatComposer";
 import { useChatBackground } from "../composables/useChatBackground";
 
 type StickerOption = NonNullable<ApiStickerPack["_stickers"]>[number];
+type ComposerPanel = "stickers" | "image-request";
 
 const store = useAppStore();
 
@@ -54,25 +55,28 @@ const {
 
 // --- Background ---
 const {
-  chatBackground, backgroundStatus, backgroundPickerOpen,
+  chatBackground, backgroundStatus,
   setChatBackground,
   pickBackgroundImage, onBackgroundFileChange, removeBackgroundItem,
-  toggleBackgroundPicker, cleanup: cleanupBackground,
+  cleanup: cleanupBackground,
 } = useChatBackground();
 
 // --- UI state ---
 const unavailableImageIds = ref(new Set<string>());
+const unavailableStickerIds = ref(new Set<string>());
+const unavailableStickerPackIconIds = ref(new Set<string>());
 const imageInput = ref<HTMLInputElement | null>(null);
 const composerInput = ref<ComponentPublicInstance | null>(null);
+const composerRoot = ref<HTMLElement | null>(null);
 const backgroundInput = ref<HTMLInputElement | null>(null);
-const imageRequestOpen = ref(false);
 const imagePrompt = ref("");
 const imageWorkflowVersion = ref("");
 const isRequestingImage = ref(false);
 const stickerPacks = ref<ApiStickerPack[]>([]);
 const activeStickerPackId = ref("");
-const stickerPanelOpen = ref(false);
 const stickerStatus = ref("");
+const settingsDrawerOpen = ref(false);
+const activeComposerPanel = ref<ComposerPanel | null>(null);
 
 // --- Computed views ---
 const chatStatus = computed(() => currentConversation.value ? "对话已同步" : status.value);
@@ -171,22 +175,67 @@ function resizeComposer(event?: Event) {
 
 function sendMessage() { return sendComposerMessage(resizeComposer); }
 
+function closeChatSettings() {
+  settingsDrawerOpen.value = false;
+}
+
+function closeComposerPanel() {
+  activeComposerPanel.value = null;
+}
+
+function toggleChatSettings() {
+  settingsDrawerOpen.value = !settingsDrawerOpen.value;
+  if (settingsDrawerOpen.value) closeComposerPanel();
+}
+
 function openImagePicker() {
-  stickerPanelOpen.value = false;
-  backgroundPickerOpen.value = false;
+  closeComposerPanel();
+  closeChatSettings();
   imageInput.value?.click();
 }
 
+function openImageRequest() {
+  activeComposerPanel.value = activeComposerPanel.value === "image-request" ? null : "image-request";
+  if (activeComposerPanel.value !== "image-request") return;
+  closeChatSettings();
+  void nextTick(() => resizeComposer());
+}
+
+function openBackgroundPicker() {
+  pickBackgroundImage(backgroundInput.value);
+}
+
 function toggleStickerPanel() {
-  stickerPanelOpen.value = !stickerPanelOpen.value;
-  if (stickerPanelOpen.value) {
-    backgroundPickerOpen.value = false;
+  activeComposerPanel.value = activeComposerPanel.value === "stickers" ? null : "stickers";
+  if (activeComposerPanel.value === "stickers") {
+    closeChatSettings();
     if (stickerPacks.value.length === 0) void loadStickerPacks();
   }
 }
 
+function onDocumentKeydown(event: KeyboardEvent) {
+  if (event.key !== "Escape") return;
+  closeChatSettings();
+  closeComposerPanel();
+}
+
+function onDocumentPointerDown(event: PointerEvent) {
+  if (!activeComposerPanel.value) return;
+  const target = event.target;
+  if (target instanceof Node && composerRoot.value?.contains(target)) return;
+  closeComposerPanel();
+}
+
 function markImageUnavailable(messageId: string) {
   unavailableImageIds.value = new Set([...unavailableImageIds.value, messageId]);
+}
+
+function markStickerUnavailable(stickerId: string) {
+  unavailableStickerIds.value = new Set([...unavailableStickerIds.value, stickerId]);
+}
+
+function markStickerPackIconUnavailable(packId: string) {
+  unavailableStickerPackIconIds.value = new Set([...unavailableStickerPackIconIds.value, packId]);
 }
 
 function stickerForMessage(message: ApiMessage) {
@@ -200,6 +249,12 @@ function stickerLabel(message: ApiMessage) {
 function stickerImageUrl(message: ApiMessage) {
   if (unavailableImageIds.value.has(message.id)) return "";
   const mediaRef = stickerForMessage(message)?.mediaRef;
+  return mediaRef ? store.api.mediaUrl(mediaRef) : "";
+}
+
+function stickerPackIconUrl(pack: ApiStickerPack) {
+  if (unavailableStickerPackIconIds.value.has(pack.id)) return "";
+  const mediaRef = pack._stickers?.[0]?.mediaRef;
   return mediaRef ? store.api.mediaUrl(mediaRef) : "";
 }
 
@@ -266,7 +321,7 @@ async function requestConversationImage() {
     });
     imageJob.value = result.data ?? null;
     imagePrompt.value = "";
-    imageRequestOpen.value = false;
+    closeComposerPanel();
     imageStatus.value = "已请求对方生成图片，完成后会出现在聊天里。";
     if (imageJob.value) void pollImageJob(imageJob.value.id);
   } catch (error: unknown) { imageStatus.value = errorMessage(error); }
@@ -339,8 +394,8 @@ watch(currentConversationId, () => {
   autoReply.value = null;
   replyError.value = "";
     prevConversationId = currentConversationId.value;
-  stickerPanelOpen.value = false;
-  backgroundPickerOpen.value = false;
+  closeComposerPanel();
+  closeChatSettings();
   void loadMessages();
 });
 
@@ -348,7 +403,14 @@ watch(() => store.currentWorldId, () => void loadStickerPacks(), { immediate: tr
 
 void loadImageDefaults();
 
+onMounted(() => {
+  document.addEventListener("keydown", onDocumentKeydown);
+  document.addEventListener("pointerdown", onDocumentPointerDown);
+});
+
 onUnmounted(() => {
+  document.removeEventListener("keydown", onDocumentKeydown);
+  document.removeEventListener("pointerdown", onDocumentPointerDown);
   cleanupAutoReply();
   cleanupMessages();
   cleanupImagePolling();
@@ -415,6 +477,16 @@ onUnmounted(() => {
             <p>{{ characterSubtitle }}</p>
           </div>
         </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          class="chat-more-button"
+          :class="{ active: settingsDrawerOpen }"
+          title="聊天设置"
+          aria-label="聊天设置"
+          :aria-expanded="settingsDrawerOpen"
+          @click="toggleChatSettings"
+        ><MoreHorizontal :size="19" /></Button>
       </header>
 
       <div class="chat-status-strip">
@@ -430,6 +502,73 @@ onUnmounted(() => {
           v-if="autoReply?.correlationId"
           :to="{ path: '/creator/logs', query: { correlationId: autoReply.correlationId } }"
         >查看日志</RouterLink>
+      </div>
+
+      <div v-if="settingsDrawerOpen" class="chat-settings-scrim" role="presentation" @click.self="closeChatSettings">
+        <aside class="chat-settings-drawer" aria-label="聊天设置">
+          <header class="settings-drawer-head">
+            <div>
+              <strong>聊天设置</strong>
+              <span>背景、回复与输入偏好</span>
+            </div>
+            <Button variant="ghost" size="icon" title="关闭设置" aria-label="关闭设置" @click="closeChatSettings"><X :size="16" /></Button>
+          </header>
+
+          <section class="settings-section">
+            <div class="settings-section-head">
+              <div>
+                <strong>聊天背景</strong>
+                <span>选择主题默认或已导入背景</span>
+              </div>
+              <Button variant="ghost" size="icon" title="导入背景" aria-label="导入背景" :disabled="chatBackground.items.length >= MAX_CHAT_BACKGROUND_ITEMS" @click="openBackgroundPicker"><ImageIcon :size="16" /></Button>
+            </div>
+            <div class="background-options">
+              <button type="button" class="background-option theme-option" :class="{ active: chatBackground.kind === 'theme' }" @click="selectThemeBackground">
+                <span class="background-thumb theme-thumb" />
+                <span>主题默认</span>
+                <Check v-if="chatBackground.kind === 'theme'" :size="15" />
+              </button>
+              <article v-for="item in chatBackground.items" :key="item.id" class="background-option custom-option" :class="{ active: chatBackground.kind === 'custom' && chatBackground.imageRef === item.imageRef }">
+                <button type="button" @click="selectCustomBackground(item.imageRef)">
+                  <img :src="store.api.mediaUrl(item.imageRef)" :alt="item.label" />
+                  <span>{{ item.label }}</span>
+                  <Check v-if="chatBackground.kind === 'custom' && chatBackground.imageRef === item.imageRef" :size="15" />
+                </button>
+                <Button variant="ghost" size="icon" title="删除背景" aria-label="删除背景" @click="removeBackgroundItem(item.id)"><Trash2 :size="14" /></Button>
+              </article>
+            </div>
+            <p class="background-picker-hint">最多保存 {{ MAX_CHAT_BACKGROUND_ITEMS }} 个背景；主题默认始终可用。</p>
+          </section>
+
+          <section class="settings-section compact-section">
+            <div>
+              <strong>回复</strong>
+              <span>上一条消息没有生成回复时可重试</span>
+            </div>
+            <Button variant="secondary" size="sm" title="重试回复" aria-label="重试回复" @click="triggerGenerateReply" :disabled="isGenerating || !pendingSource">
+              <RefreshCw :size="15" />
+              重试
+            </Button>
+          </section>
+
+          <section class="settings-section compact-section">
+            <div>
+              <strong>输入模式</strong>
+              <span>{{ enterModeLabel }}</span>
+            </div>
+            <Button
+              variant="secondary"
+              size="sm"
+              :title="enterModeLabel"
+              :aria-label="enterModeLabel"
+              :aria-pressed="enterSends"
+              @click="setEnterSends(!enterSends)"
+            >
+              <Keyboard :size="15" />
+              切换
+            </Button>
+          </section>
+        </aside>
       </div>
 
       <div ref="messagesContainer" class="message-stream">
@@ -481,73 +620,88 @@ onUnmounted(() => {
       </div>
 
 
-      <footer class="composer" @paste="onComposerPaste">
-        <input ref="imageInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple class="visually-hidden" @change="onImagesSelected" />
-        <input ref="backgroundInput" type="file" accept="image/*" class="visually-hidden" aria-hidden="true" tabindex="-1" @change="onBackgroundFileChange" />
+      <footer ref="composerRoot" class="composer" @paste="onComposerPaste">
+        <input ref="imageInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple class="file-input-hidden" @change="onImagesSelected" />
+        <input ref="backgroundInput" type="file" accept="image/*" class="file-input-hidden" aria-hidden="true" tabindex="-1" @change="onBackgroundFileChange" />
+
+        <div v-if="activeComposerPanel === 'stickers'" class="composer-popover sticker-picker" role="dialog" aria-label="表情包">
+          <div class="sticker-popover-head">
+            <strong>发表情</strong>
+            <span>{{ activeStickerPack?.name || "表情包" }}</span>
+          </div>
+          <div v-if="activeStickerPack && (activeStickerPack._stickers || []).length" class="sticker-options">
+            <button
+              v-for="sticker in activeStickerPack._stickers || []"
+              :key="sticker.id"
+              type="button"
+              class="sticker-choice"
+              :title="sticker.label"
+              :aria-label="sticker.label"
+              :disabled="isSendingMessage"
+              @click="sendSticker(sticker)"
+            >
+              <img
+                v-if="!unavailableStickerIds.has(sticker.id)"
+                :src="store.api.mediaUrl(sticker.mediaRef)"
+                :alt="sticker.label"
+                loading="lazy"
+                @error="markStickerUnavailable(sticker.id)"
+              />
+              <span v-else>{{ sticker.label }}</span>
+            </button>
+          </div>
+          <p v-else class="sticker-empty">{{ stickerStatus || "还没有可发送的表情包" }}</p>
+          <div v-if="stickerPacks.length" class="sticker-pack-tabs" role="tablist" aria-label="表情包主题">
+            <button
+              v-for="pack in stickerPacks"
+              :key="pack.id"
+              type="button"
+              class="sticker-pack-tab"
+              :class="{ active: activeStickerPack?.id === pack.id }"
+              :aria-selected="activeStickerPack?.id === pack.id"
+              @click="activeStickerPackId = pack.id"
+            >
+              <img
+                v-if="stickerPackIconUrl(pack)"
+                :src="stickerPackIconUrl(pack)"
+                :alt="pack.name"
+                loading="lazy"
+                @error="markStickerPackIconUnavailable(pack.id)"
+              />
+              <span v-else>{{ pack.name.slice(0, 2) }}</span>
+            </button>
+          </div>
+        </div>
+
+        <form
+          v-if="activeComposerPanel === 'image-request'"
+          class="composer-popover image-request-panel"
+          aria-label="让对方发图"
+          @submit.prevent="requestConversationImage"
+        >
+          <header class="image-request-panel-head">
+            <div>
+              <strong>让对方发图</strong>
+              <span>提交后由对方角色把图片发进当前聊天。</span>
+            </div>
+            <Button variant="ghost" size="icon" title="关闭" aria-label="关闭" @click="closeComposerPanel"><X :size="16" /></Button>
+          </header>
+          <Input v-model="imagePrompt" class="image-request-input" placeholder="描述你希望对方发来的图片" autofocus />
+          <Input v-model="imageWorkflowVersion" class="image-request-input" placeholder="workflow@version" />
+          <p v-if="imageStatus" class="image-request-status">{{ imageStatus }}</p>
+          <footer class="image-request-panel-actions">
+            <Button variant="ghost" @click="closeComposerPanel">取消</Button>
+            <Button type="submit" :loading="isRequestingImage" :disabled="isRequestingImage || !imagePrompt.trim() || !imageRecipientId">请求发图</Button>
+          </footer>
+        </form>
 
         <div class="composer-toolbar" role="toolbar" aria-label="聊天功能">
-          <Button variant="ghost" size="icon" class="composer-tool" title="表情包" aria-label="表情包" :class="{ active: stickerPanelOpen }" @click="toggleStickerPanel"><Smile :size="17" /></Button>
+          <Button variant="ghost" size="icon" class="composer-tool" title="表情包" aria-label="表情包" :class="{ active: activeComposerPanel === 'stickers' }" @click="toggleStickerPanel"><Smile :size="17" /></Button>
           <Button variant="ghost" size="icon" class="composer-tool" title="发送图片" aria-label="发送图片" @click="openImagePicker"><ImageIcon :size="17" /></Button>
-          <Button variant="ghost" size="icon" class="composer-tool" :disabled="!imageRecipientId" title="请求对方发图" aria-label="请求对方发图" @click="imageRequestOpen = true; backgroundPickerOpen = false; stickerPanelOpen = false"><ImagePlus :size="17" /></Button>
-          <Button variant="ghost" size="icon" class="composer-tool" title="聊天背景" aria-label="聊天背景" :class="{ active: backgroundPickerOpen || chatBackground.kind === 'custom' }" @click="toggleBackgroundPicker"><Wallpaper :size="17" /></Button>
-          <Button variant="ghost" size="icon" class="composer-tool" title="重试回复" aria-label="重试回复" @click="triggerGenerateReply" :disabled="isGenerating || !pendingSource"><RefreshCw :size="17" /></Button>
-          <Button variant="ghost" size="icon" class="composer-tool" :title="enterModeLabel" :aria-label="enterModeLabel" :aria-pressed="enterSends" :class="{ active: enterSends }" @click="setEnterSends(!enterSends)"><Keyboard :size="17" /></Button>
+          <Button variant="ghost" size="icon" class="composer-tool" :class="{ active: activeComposerPanel === 'image-request' }" :disabled="!imageRecipientId" title="请求对方发图" aria-label="请求对方发图" @click="openImageRequest"><ImagePlus :size="17" /></Button>
         </div>
 
         <div class="composer-main">
-          <div v-if="backgroundPickerOpen" class="background-picker">
-            <div class="background-picker-head">
-              <div>
-                <strong>聊天背景</strong>
-                <span>选择主题默认或已导入背景</span>
-              </div>
-              <Button variant="ghost" size="icon" title="导入背景" aria-label="导入背景" :disabled="chatBackground.items.length >= MAX_CHAT_BACKGROUND_ITEMS" @click="pickBackgroundImage"><ImageIcon :size="16" /></Button>
-            </div>
-            <div class="background-options">
-              <button type="button" class="background-option theme-option" :class="{ active: chatBackground.kind === 'theme' }" @click="selectThemeBackground">
-                <span class="background-thumb theme-thumb" />
-                <span>主题默认</span>
-                <Check v-if="chatBackground.kind === 'theme'" :size="15" />
-              </button>
-              <article v-for="item in chatBackground.items" :key="item.id" class="background-option custom-option" :class="{ active: chatBackground.kind === 'custom' && chatBackground.imageRef === item.imageRef }">
-                <button type="button" @click="selectCustomBackground(item.imageRef)">
-                  <img :src="store.api.mediaUrl(item.imageRef)" :alt="item.label" />
-                  <span>{{ item.label }}</span>
-                  <Check v-if="chatBackground.kind === 'custom' && chatBackground.imageRef === item.imageRef" :size="15" />
-                </button>
-                <Button variant="ghost" size="icon" title="删除背景" aria-label="删除背景" @click="removeBackgroundItem(item.id)"><Trash2 :size="14" /></Button>
-              </article>
-            </div>
-            <p class="background-picker-hint">最多保存 {{ MAX_CHAT_BACKGROUND_ITEMS }} 个背景；主题默认始终可用。</p>
-          </div>
-
-          <div v-if="stickerPanelOpen" class="sticker-picker">
-            <div v-if="stickerPacks.length" class="sticker-pack-tabs" role="tablist" aria-label="表情包主题">
-              <button
-                v-for="pack in stickerPacks"
-                :key="pack.id"
-                type="button"
-                :class="{ active: activeStickerPack?.id === pack.id }"
-                @click="activeStickerPackId = pack.id"
-              >{{ pack.name }}</button>
-            </div>
-            <div v-if="activeStickerPack && (activeStickerPack._stickers || []).length" class="sticker-options">
-              <button
-                v-for="sticker in activeStickerPack._stickers || []"
-                :key="sticker.id"
-                type="button"
-                class="sticker-choice"
-                :title="sticker.label"
-                :aria-label="sticker.label"
-                :disabled="isSendingMessage"
-                @click="sendSticker(sticker)"
-              >
-                <img :src="store.api.mediaUrl(sticker.mediaRef)" :alt="sticker.label" loading="lazy" />
-              </button>
-            </div>
-            <p v-else class="sticker-empty">{{ stickerStatus || "还没有可发送的表情包" }}</p>
-          </div>
-
           <div v-if="selectedImages.length" class="composer-previews" aria-label="待发送图片">
             <article v-for="image in selectedImages" :key="image.id" class="composer-preview" :class="image.status">
               <img :src="image.previewUrl" :alt="image.file.name" />
@@ -587,27 +741,6 @@ onUnmounted(() => {
       </footer>
     </section>
   </div>
-
-  <Teleport to="body">
-    <div v-if="imageRequestOpen" class="image-request-overlay" role="presentation" @click.self="imageRequestOpen = false">
-      <form class="image-request-dialog" @submit.prevent="requestConversationImage">
-        <header>
-          <div>
-            <strong>让对方发图</strong>
-            <span>提交后由对方角色把图片发进当前聊天。</span>
-          </div>
-          <Button variant="ghost" size="icon" title="关闭" aria-label="关闭" @click="imageRequestOpen = false"><X :size="16" /></Button>
-        </header>
-        <Input v-model="imagePrompt" class="image-prompt-input" placeholder="描述你希望对方发来的图片" autofocus />
-        <Input v-model="imageWorkflowVersion" class="image-workflow-input" placeholder="workflow@version" />
-        <p v-if="imageStatus" class="image-request-status">{{ imageStatus }}</p>
-        <footer>
-          <Button variant="ghost" @click="imageRequestOpen = false">取消</Button>
-          <Button type="submit" :loading="isRequestingImage" :disabled="isRequestingImage || !imagePrompt.trim() || !imageRecipientId">请求发图</Button>
-        </footer>
-      </form>
-    </div>
-  </Teleport>
 </template>
 
 <style scoped>
@@ -788,6 +921,84 @@ onUnmounted(() => {
   color: var(--primary);
   font-size: var(--text-sm);
   font-weight: 700;
+}
+.chat-more-button {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  border-radius: var(--radius-full);
+}
+.chat-more-button.active {
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+.chat-settings-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  justify-content: flex-end;
+  background: color-mix(in srgb, var(--background) 26%, transparent);
+  backdrop-filter: blur(2px);
+}
+.chat-settings-drawer {
+  width: clamp(320px, 28vw, 360px);
+  max-width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-left: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 97%, transparent);
+  box-shadow: -16px 0 36px rgb(0 0 0 / 12%);
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.settings-drawer-head,
+.settings-section-head,
+.compact-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.settings-drawer-head {
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+.settings-drawer-head strong,
+.settings-section strong {
+  display: block;
+  color: var(--text-strong);
+}
+.settings-drawer-head strong {
+  font-size: var(--text-lg);
+}
+.settings-drawer-head span,
+.settings-section span,
+.background-picker-hint {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+}
+.settings-section {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+}
+.compact-section {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.settings-section .background-options {
+  max-height: min(44vh, 380px);
 }
 .thought-status {
   max-width: 300px;
@@ -981,6 +1192,7 @@ onUnmounted(() => {
   justify-content: center;
 }
 .composer {
+  position: relative;
   flex: 0 0 auto;
   display: grid;
   gap: 8px;
@@ -991,8 +1203,19 @@ onUnmounted(() => {
   border-radius: 20px;
   background: color-mix(in srgb, var(--surface) 96%, transparent);
   box-shadow: var(--shadow-sm);
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: visible;
+}
+.file-input-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  border: 0;
+  white-space: nowrap;
 }
 .composer-toolbar {
   min-width: 0;
@@ -1012,37 +1235,9 @@ onUnmounted(() => {
   border-radius: var(--radius-full);
 }
 .composer-tool.active {
-  color: var(--primary);
-  background: var(--primary-soft);
-}
-.background-picker {
-  display: grid;
-  gap: 10px;
-  max-height: 210px;
-  overflow: hidden;
-  padding: 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--surface-soft);
-}
-.background-picker-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-.background-picker-head strong,
-.background-picker-head span {
-  display: block;
-}
-.background-picker-head strong {
-  color: var(--text-strong);
-  font-size: var(--text-sm);
-}
-.background-picker-head span,
-.background-picker-hint {
-  color: var(--muted);
-  font-size: var(--text-xs);
+  color: #ffe2d1;
+  background: #3c3835;
+  box-shadow: inset 0 0 0 1px rgb(255 226 209 / 24%);
 }
 .background-options {
   min-height: 0;
@@ -1107,65 +1302,135 @@ onUnmounted(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.composer-popover {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 10px);
+  z-index: 4;
+  width: min(680px, 100%);
+  max-height: min(54vh, 480px);
+  border-radius: 8px;
+}
 .sticker-picker {
   display: grid;
-  gap: 8px;
-  max-height: 178px;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 12px;
   overflow: hidden;
-  padding: 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--surface-soft);
+  padding: 14px;
+  border: 1px solid rgb(255 226 209 / 30%);
+  color: #fff4ec;
+  background: #2e2d2c;
+  box-shadow: 0 18px 44px rgb(0 0 0 / 24%);
+}
+.sticker-popover-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.sticker-popover-head strong,
+.sticker-popover-head span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sticker-popover-head strong {
+  color: #ffe2d1;
+  font-size: var(--text-base);
+}
+.sticker-popover-head span {
+  color: rgb(255 226 209 / 68%);
+  font-size: var(--text-xs);
 }
 .sticker-pack-tabs {
   display: flex;
-  gap: 6px;
+  align-items: center;
+  gap: 10px;
   overflow-x: auto;
-  padding-bottom: 2px;
+  overflow-y: hidden;
+  margin: 0 -14px -14px;
+  padding: 10px 14px 12px;
+  border-top: 1px solid rgb(255 226 209 / 15%);
+  scrollbar-width: thin;
 }
-.sticker-pack-tabs button {
+.sticker-pack-tab {
   flex: 0 0 auto;
-  min-height: 28px;
-  padding: 0 9px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-full);
-  background: var(--surface);
-  color: var(--muted);
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  padding: 6px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #ffe2d1;
   cursor: pointer;
   font: inherit;
   font-size: var(--text-xs);
 }
-.sticker-pack-tabs button.active {
-  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
-  color: var(--primary);
+.sticker-pack-tab:hover,
+.sticker-pack-tab.active {
+  border-color: rgb(255 226 209 / 24%);
+  background: rgb(255 226 209 / 12%);
+}
+.sticker-pack-tab img,
+.sticker-pack-tab span {
+  width: 100%;
+  height: 100%;
+  border-radius: 6px;
+}
+.sticker-pack-tab img {
+  object-fit: cover;
+}
+.sticker-pack-tab span {
+  display: grid;
+  place-items: center;
+  background: rgb(255 226 209 / 10%);
 }
 .sticker-options {
   min-height: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(48px, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
+  gap: 12px;
+  overflow-x: hidden;
   overflow-y: auto;
+  padding-right: 2px;
 }
 .sticker-choice {
   display: grid;
   place-items: center;
   aspect-ratio: 1;
-  padding: 5px;
+  min-width: 0;
+  padding: 8px;
   border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  background: var(--surface);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 5%);
+  color: #ffe2d1;
   cursor: pointer;
 }
 .sticker-choice:hover {
-  border-color: color-mix(in srgb, var(--primary) 38%, var(--border));
+  border-color: rgb(255 226 209 / 28%);
+  background: rgb(255 226 209 / 10%);
 }
 .sticker-choice img {
-  max-width: 100%;
-  max-height: 100%;
+  width: 100%;
+  height: 100%;
   object-fit: contain;
 }
+.sticker-choice span {
+  max-width: 100%;
+  overflow: hidden;
+  color: #ffe2d1;
+  font-size: var(--text-xs);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
 .sticker-empty {
-  color: var(--muted);
+  display: grid;
+  place-items: center;
+  min-height: 120px;
+  color: rgb(255 226 209 / 72%);
   font-size: var(--text-xs);
 }
 .composer-main {
@@ -1263,45 +1528,43 @@ onUnmounted(() => {
   width: 36px;
   height: 36px;
 }
-.image-request-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
-  display: grid;
-  place-items: center;
-  padding: var(--space-4);
-  background: color-mix(in srgb, var(--background) 46%, transparent);
-  backdrop-filter: blur(10px);
-}
-.image-request-dialog {
-  width: min(100%, 460px);
+.image-request-panel {
   display: grid;
   gap: var(--space-3);
   padding: var(--space-4);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-  box-shadow: var(--shadow-lg);
+  border: 1px solid rgb(255 226 209 / 30%);
+  color: #fff4ec;
+  background: #2e2d2c;
+  box-shadow: 0 18px 44px rgb(0 0 0 / 24%);
 }
-.image-request-dialog header,
-.image-request-dialog footer {
+.image-request-panel-head,
+.image-request-panel-actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
 }
-.image-request-dialog header strong {
+.image-request-panel-head strong {
   display: block;
-  color: var(--text-strong);
+  color: #ffe2d1;
   font-size: var(--text-lg);
 }
-.image-request-dialog header span,
+.image-request-panel-head span,
 .image-request-status {
-  color: var(--muted);
+  color: rgb(255 226 209 / 72%);
   font-size: var(--text-xs);
   line-height: 1.5;
 }
-.image-request-dialog footer {
+.image-request-input {
+  border-color: rgb(255 226 209 / 20%);
+  color: #fff4ec;
+  background: rgb(255 255 255 / 6%);
+}
+.image-request-input:focus {
+  border-color: rgb(255 226 209 / 44%);
+  box-shadow: 0 0 0 3px rgb(255 226 209 / 12%);
+}
+.image-request-panel-actions {
   justify-content: flex-end;
 }
 
@@ -1320,18 +1583,15 @@ onUnmounted(() => {
     min-height: 64px;
     padding: 0 var(--space-4);
   }
-  .header-actions {
-    gap: 4px;
+  .chat-settings-drawer {
+    width: min(88vw, 360px);
+    padding: var(--space-3);
   }
-  .header-actions .image-action,
-  .header-actions .retry-action {
-    width: 36px;
-    height: 36px;
-    padding: 0;
+  .settings-section {
+    padding: 10px;
   }
-  .header-actions .image-action span,
-  .header-actions .retry-action span {
-    display: none;
+  .settings-section .background-options {
+    max-height: min(48vh, 360px);
   }
   .chat-status-strip {
     padding: 0 var(--space-4);
@@ -1358,8 +1618,21 @@ onUnmounted(() => {
     width: 33px;
     height: 33px;
   }
+  .composer-popover {
+    left: 0;
+    width: calc(100vw - 32px);
+    max-height: min(44vh, 360px);
+  }
   .sticker-picker {
-    max-height: 160px;
+    padding: 12px;
+  }
+  .sticker-options {
+    grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
+    gap: 8px;
+  }
+  .sticker-pack-tabs {
+    margin: 0 -12px -12px;
+    padding: 9px 12px 11px;
   }
   .composer-previews {
     grid-template-columns: 1fr;

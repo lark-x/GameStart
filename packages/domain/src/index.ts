@@ -15,5 +15,6 @@ export * from "./behavior-media.ts";
 export * from "./social.ts";
 export * from "./visual-workflow.ts";
 export * from "./world-lore.ts";
+export * from "./story-graph.ts";
 export * from "./sticker.ts";
 export * from "./validation.ts";

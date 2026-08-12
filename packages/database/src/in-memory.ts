@@ -51,6 +51,11 @@ import {
   type RelationshipEdge,
   type ScheduledOccurrence,
   type StoryWorld,
+  type StoryArc,
+  type StoryNode,
+  type StoryEdge,
+  type PromptTemplate,
+  type MemoryCandidate,
   type WorldEventDefinition,
   type WorldLoreEntry,
 } from "../../domain/src/index.ts";
@@ -76,6 +81,11 @@ import type {
   StoryWorldRepository,
   WorldEventDefinitionRepository,
   WorldLoreEntryRepository,
+  StoryArcRepository,
+  StoryNodeRepository,
+  StoryEdgeRepository,
+  PromptTemplateRepository,
+  MemoryCandidateRepository,
   ProactiveMessageBudgetRepository,
   MomentDraftRepository,
   CharacterVisualIdentityRepository,
@@ -233,6 +243,31 @@ function copyComfyUiSettings(settings: ComfyUiSettings): ComfyUiSettings {
 
 function copyWorldLoreEntry(entry: WorldLoreEntry): WorldLoreEntry {
   return { ...entry, tags: [...entry.tags] };
+}
+
+function copyStoryArc(arc: StoryArc): StoryArc {
+  return { ...arc };
+}
+
+function copyStoryNode(node: StoryNode): StoryNode {
+  return {
+    ...node,
+    requiredFacts: [...node.requiredFacts],
+    involvedCharacterIds: [...node.involvedCharacterIds],
+    referencedMemoryIds: [...node.referencedMemoryIds],
+  };
+}
+
+function copyStoryEdge(edge: StoryEdge): StoryEdge {
+  return { ...edge };
+}
+
+function copyPromptTemplate(template: PromptTemplate): PromptTemplate {
+  return { ...template };
+}
+
+function copyMemoryCandidate(candidate: MemoryCandidate): MemoryCandidate {
+  return { ...candidate };
 }
 
 function addUnique<T extends { id: string }>(
@@ -569,6 +604,95 @@ function assertWorldLoreEntryReferences(
   }
 }
 
+function assertStoryArcReferences(arc: StoryArc, worlds: Map<string, StoryWorld>): void {
+  if (!worlds.has(arc.storyWorldId)) {
+    throw new TypeError(`Story arc ${arc.id} references an unknown story world`);
+  }
+}
+
+function assertStoryNodeReferences(
+  node: StoryNode,
+  worlds: Map<string, StoryWorld>,
+  arcs: Map<string, StoryArc>,
+  characters: Map<string, Character>,
+  memories: Map<string, MemoryItem>,
+): void {
+  if (!worlds.has(node.storyWorldId)) {
+    throw new TypeError(`Story node ${node.id} references an unknown story world`);
+  }
+  const arc = arcs.get(node.arcId);
+  if (!arc || arc.storyWorldId !== node.storyWorldId) {
+    throw new TypeError(`Story node ${node.id} references an invalid story arc`);
+  }
+  for (const characterId of node.involvedCharacterIds) {
+    const character = characters.get(characterId);
+    if (!character || character.storyWorldId !== node.storyWorldId) {
+      throw new TypeError(`Story node ${node.id} references an invalid character`);
+    }
+  }
+  for (const memoryId of node.referencedMemoryIds) {
+    const memory = memories.get(memoryId);
+    if (!memory || memory.storyWorldId !== node.storyWorldId) {
+      throw new TypeError(`Story node ${node.id} references an invalid memory`);
+    }
+  }
+}
+
+function assertStoryEdgeReferences(
+  edge: StoryEdge,
+  worlds: Map<string, StoryWorld>,
+  arcs: Map<string, StoryArc>,
+  nodes: Map<string, StoryNode>,
+): void {
+  if (!worlds.has(edge.storyWorldId)) {
+    throw new TypeError(`Story edge ${edge.id} references an unknown story world`);
+  }
+  const arc = arcs.get(edge.arcId);
+  const fromNode = nodes.get(edge.fromNodeId);
+  const toNode = nodes.get(edge.toNodeId);
+  if (
+    !arc ||
+    arc.storyWorldId !== edge.storyWorldId ||
+    !fromNode ||
+    !toNode ||
+    fromNode.storyWorldId !== edge.storyWorldId ||
+    toNode.storyWorldId !== edge.storyWorldId ||
+    fromNode.arcId !== edge.arcId ||
+    toNode.arcId !== edge.arcId
+  ) {
+    throw new TypeError(`Story edge ${edge.id} references invalid story nodes`);
+  }
+}
+
+function assertPromptTemplateReferences(template: PromptTemplate, worlds: Map<string, StoryWorld>): void {
+  if (!worlds.has(template.storyWorldId)) {
+    throw new TypeError(`Prompt template ${template.id} references an unknown story world`);
+  }
+}
+
+function assertMemoryCandidateReferences(
+  candidate: MemoryCandidate,
+  worlds: Map<string, StoryWorld>,
+  characters: Map<string, Character>,
+  memories: Map<string, MemoryItem>,
+): void {
+  if (!worlds.has(candidate.storyWorldId)) {
+    throw new TypeError(`Memory candidate ${candidate.id} references an unknown story world`);
+  }
+  if (candidate.reviewerCharacterId !== undefined) {
+    const character = characters.get(candidate.reviewerCharacterId);
+    if (!character || character.storyWorldId !== candidate.storyWorldId) {
+      throw new TypeError(`Memory candidate ${candidate.id} references an invalid reviewer`);
+    }
+  }
+  if (candidate.mergedIntoMemoryId !== undefined) {
+    const memory = memories.get(candidate.mergedIntoMemoryId);
+    if (!memory || memory.storyWorldId !== candidate.storyWorldId) {
+      throw new TypeError(`Memory candidate ${candidate.id} references an invalid merged memory`);
+    }
+  }
+}
+
 export class InMemoryRepositories implements DomainRepositories {
   public readonly storyWorlds: StoryWorldRepository;
   public readonly characters: CharacterRepository;
@@ -579,6 +703,11 @@ export class InMemoryRepositories implements DomainRepositories {
   public readonly memories: MemoryRepository;
   public readonly worldEventDefinitions: WorldEventDefinitionRepository;
   public readonly worldLoreEntries: WorldLoreEntryRepository;
+  public readonly storyArcs: StoryArcRepository;
+  public readonly storyNodes: StoryNodeRepository;
+  public readonly storyEdges: StoryEdgeRepository;
+  public readonly promptTemplates: PromptTemplateRepository;
+  public readonly memoryCandidates: MemoryCandidateRepository;
   public readonly scheduledOccurrences: ScheduledOccurrenceRepository;
   public readonly dispatchRequests: DispatchRequestRepository;
   public readonly characterPlans: CharacterPlanRepository;
@@ -606,6 +735,11 @@ export class InMemoryRepositories implements DomainRepositories {
   private readonly memoryMap = new Map<string, MemoryItem>();
   private readonly worldEventDefinitionMap = new Map<string, WorldEventDefinition>();
   private readonly worldLoreEntryMap = new Map<string, WorldLoreEntry>();
+  private readonly storyArcMap = new Map<string, StoryArc>();
+  private readonly storyNodeMap = new Map<string, StoryNode>();
+  private readonly storyEdgeMap = new Map<string, StoryEdge>();
+  private readonly promptTemplateMap = new Map<string, PromptTemplate>();
+  private readonly memoryCandidateMap = new Map<string, MemoryCandidate>();
   private readonly scheduledOccurrenceMap = new Map<string, ScheduledOccurrence>();
   private readonly characterPlanMap = new Map<string, CharacterPlan>();
   private readonly eventExecutionMap = new Map<string, EventExecution>();
@@ -701,6 +835,26 @@ export class InMemoryRepositories implements DomainRepositories {
     for (const memory of seed.memories ?? []) {
       assertMemoryReferences(memory, this.worldMap, this.characterMap);
       addUnique(this.memoryMap, copyMemory(memory), "memory");
+    }
+    for (const arc of seed.storyArcs ?? []) {
+      assertStoryArcReferences(arc, this.worldMap);
+      addUnique(this.storyArcMap, copyStoryArc(arc), "storyArc");
+    }
+    for (const node of seed.storyNodes ?? []) {
+      assertStoryNodeReferences(node, this.worldMap, this.storyArcMap, this.characterMap, this.memoryMap);
+      addUnique(this.storyNodeMap, copyStoryNode(node), "storyNode");
+    }
+    for (const edge of seed.storyEdges ?? []) {
+      assertStoryEdgeReferences(edge, this.worldMap, this.storyArcMap, this.storyNodeMap);
+      addUnique(this.storyEdgeMap, copyStoryEdge(edge), "storyEdge");
+    }
+    for (const template of seed.promptTemplates ?? []) {
+      assertPromptTemplateReferences(template, this.worldMap);
+      addUnique(this.promptTemplateMap, copyPromptTemplate(template), "promptTemplate");
+    }
+    for (const candidate of seed.memoryCandidates ?? []) {
+      assertMemoryCandidateReferences(candidate, this.worldMap, this.characterMap, this.memoryMap);
+      addUnique(this.memoryCandidateMap, copyMemoryCandidate(candidate), "memoryCandidate");
     }
     for (const definition of seed.worldEventDefinitions ?? []) {
       assertEventDefinitionReferences(definition, this.worldMap, this.characterMap);
@@ -910,6 +1064,10 @@ this.storyWorlds = {
     };
 
     this.memories = {
+      getById: async (id) => {
+        const memory = this.memoryMap.get(id);
+        return memory ? copyMemory(memory) : undefined;
+      },
       listForCharacter: async (storyWorldId, readerCharacterId) =>
         [...this.memoryMap.values()]
           .filter(
@@ -1009,6 +1167,115 @@ this.storyWorlds = {
       },
       delete: async (id) => {
         this.worldLoreEntryMap.delete(id);
+      },
+    };
+
+    this.storyArcs = {
+      listByStoryWorld: async (storyWorldId) =>
+        [...this.storyArcMap.values()]
+          .filter((arc) => arc.storyWorldId === storyWorldId)
+          .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || left.id.localeCompare(right.id))
+          .map(copyStoryArc),
+      getById: async (id) => {
+        const arc = this.storyArcMap.get(id);
+        return arc ? copyStoryArc(arc) : undefined;
+      },
+      save: async (arc) => {
+        assertStoryArcReferences(arc, this.worldMap);
+        this.storyArcMap.set(arc.id, copyStoryArc(arc));
+      },
+      delete: async (id) => {
+        const nodeIds = new Set(
+          [...this.storyNodeMap.values()].filter((node) => node.arcId === id).map((node) => node.id),
+        );
+        for (const edge of [...this.storyEdgeMap.values()]) {
+          if (edge.arcId === id || nodeIds.has(edge.fromNodeId) || nodeIds.has(edge.toNodeId)) {
+            this.storyEdgeMap.delete(edge.id);
+          }
+        }
+        for (const nodeId of nodeIds) this.storyNodeMap.delete(nodeId);
+        this.storyArcMap.delete(id);
+      },
+    };
+
+    this.storyNodes = {
+      listByArc: async (arcId) =>
+        [...this.storyNodeMap.values()]
+          .filter((node) => node.arcId === arcId)
+          .sort((left, right) => left.priority - right.priority || left.createdAt.localeCompare(right.createdAt))
+          .map(copyStoryNode),
+      listByStoryWorld: async (storyWorldId) =>
+        [...this.storyNodeMap.values()]
+          .filter((node) => node.storyWorldId === storyWorldId)
+          .sort((left, right) => left.priority - right.priority || left.createdAt.localeCompare(right.createdAt))
+          .map(copyStoryNode),
+      getById: async (id) => {
+        const node = this.storyNodeMap.get(id);
+        return node ? copyStoryNode(node) : undefined;
+      },
+      save: async (node) => {
+        assertStoryNodeReferences(node, this.worldMap, this.storyArcMap, this.characterMap, this.memoryMap);
+        this.storyNodeMap.set(node.id, copyStoryNode(node));
+      },
+      delete: async (id) => {
+        for (const edge of [...this.storyEdgeMap.values()]) {
+          if (edge.fromNodeId === id || edge.toNodeId === id) this.storyEdgeMap.delete(edge.id);
+        }
+        this.storyNodeMap.delete(id);
+      },
+    };
+
+    this.storyEdges = {
+      listByArc: async (arcId) =>
+        [...this.storyEdgeMap.values()]
+          .filter((edge) => edge.arcId === arcId)
+          .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id))
+          .map(copyStoryEdge),
+      getById: async (id) => {
+        const edge = this.storyEdgeMap.get(id);
+        return edge ? copyStoryEdge(edge) : undefined;
+      },
+      save: async (edge) => {
+        assertStoryEdgeReferences(edge, this.worldMap, this.storyArcMap, this.storyNodeMap);
+        this.storyEdgeMap.set(edge.id, copyStoryEdge(edge));
+      },
+      delete: async (id) => {
+        this.storyEdgeMap.delete(id);
+      },
+    };
+
+    this.promptTemplates = {
+      listByStoryWorld: async (storyWorldId) =>
+        [...this.promptTemplateMap.values()]
+          .filter((template) => template.storyWorldId === storyWorldId)
+          .sort((left, right) => left.type.localeCompare(right.type) || left.name.localeCompare(right.name))
+          .map(copyPromptTemplate),
+      getById: async (id) => {
+        const template = this.promptTemplateMap.get(id);
+        return template ? copyPromptTemplate(template) : undefined;
+      },
+      save: async (template) => {
+        assertPromptTemplateReferences(template, this.worldMap);
+        this.promptTemplateMap.set(template.id, copyPromptTemplate(template));
+      },
+      delete: async (id) => {
+        this.promptTemplateMap.delete(id);
+      },
+    };
+
+    this.memoryCandidates = {
+      listByStoryWorld: async (storyWorldId) =>
+        [...this.memoryCandidateMap.values()]
+          .filter((candidate) => candidate.storyWorldId === storyWorldId)
+          .sort((left, right) => right.createdAt.localeCompare(left.createdAt) || left.id.localeCompare(right.id))
+          .map(copyMemoryCandidate),
+      getById: async (id) => {
+        const candidate = this.memoryCandidateMap.get(id);
+        return candidate ? copyMemoryCandidate(candidate) : undefined;
+      },
+      save: async (candidate) => {
+        assertMemoryCandidateReferences(candidate, this.worldMap, this.characterMap, this.memoryMap);
+        this.memoryCandidateMap.set(candidate.id, copyMemoryCandidate(candidate));
       },
     };
 

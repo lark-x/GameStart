@@ -26,6 +26,11 @@ import type {
   StoryWorld,
   WorldLoreEntry,
   WorldEventDefinition,
+  StoryArc,
+  StoryNode,
+  StoryEdge,
+  PromptTemplate,
+  MemoryCandidate,
 } from "@living-network/domain";
 import type { OutboxEventRepository } from "./outbox.ts";
 import type { DispatchRequestRepository, ExecutionDispatchRequest } from "./dispatch.ts";
@@ -70,6 +75,7 @@ export interface MessageRepository {
 }
 
 export interface MemoryRepository {
+  getById(id: string): Promise<MemoryItem | undefined>;
   listForCharacter(storyWorldId: string, readerCharacterId: string): Promise<readonly MemoryItem[]>;
   search(query: MemorySearchQuery): Promise<readonly MemorySearchResult[]>;
   save(memory: MemoryItem): Promise<void>;
@@ -170,6 +176,41 @@ export interface WorldLoreEntryRepository {
   delete(id: string): Promise<void>;
 }
 
+export interface StoryArcRepository {
+  listByStoryWorld(storyWorldId: string): Promise<readonly StoryArc[]>;
+  getById(id: string): Promise<StoryArc | undefined>;
+  save(arc: StoryArc): Promise<void>;
+  delete(id: string): Promise<void>;
+}
+
+export interface StoryNodeRepository {
+  listByArc(arcId: string): Promise<readonly StoryNode[]>;
+  listByStoryWorld(storyWorldId: string): Promise<readonly StoryNode[]>;
+  getById(id: string): Promise<StoryNode | undefined>;
+  save(node: StoryNode): Promise<void>;
+  delete(id: string): Promise<void>;
+}
+
+export interface StoryEdgeRepository {
+  listByArc(arcId: string): Promise<readonly StoryEdge[]>;
+  getById(id: string): Promise<StoryEdge | undefined>;
+  save(edge: StoryEdge): Promise<void>;
+  delete(id: string): Promise<void>;
+}
+
+export interface PromptTemplateRepository {
+  listByStoryWorld(storyWorldId: string): Promise<readonly PromptTemplate[]>;
+  getById(id: string): Promise<PromptTemplate | undefined>;
+  save(template: PromptTemplate): Promise<void>;
+  delete(id: string): Promise<void>;
+}
+
+export interface MemoryCandidateRepository {
+  listByStoryWorld(storyWorldId: string): Promise<readonly MemoryCandidate[]>;
+  getById(id: string): Promise<MemoryCandidate | undefined>;
+  save(candidate: MemoryCandidate): Promise<void>;
+}
+
 export interface LlmProviderProfileRepository {
   list(): Promise<readonly LlmProviderProfile[]>;
   getById(id: string): Promise<LlmProviderProfile | undefined>;
@@ -209,6 +250,11 @@ export interface DomainRepositories {
   readonly memories?: MemoryRepository;
   readonly worldEventDefinitions?: WorldEventDefinitionRepository;
   readonly worldLoreEntries?: WorldLoreEntryRepository;
+  readonly storyArcs?: StoryArcRepository;
+  readonly storyNodes?: StoryNodeRepository;
+  readonly storyEdges?: StoryEdgeRepository;
+  readonly promptTemplates?: PromptTemplateRepository;
+  readonly memoryCandidates?: MemoryCandidateRepository;
   readonly scheduledOccurrences?: ScheduledOccurrenceRepository;
   readonly characterPlans?: CharacterPlanRepository;
   readonly eventExecutions?: EventExecutionRepository;
@@ -239,6 +285,11 @@ export interface InMemoryRepositorySeed {
   memories?: readonly MemoryItem[];
   worldEventDefinitions?: readonly WorldEventDefinition[];
   worldLoreEntries?: readonly WorldLoreEntry[];
+  storyArcs?: readonly StoryArc[];
+  storyNodes?: readonly StoryNode[];
+  storyEdges?: readonly StoryEdge[];
+  promptTemplates?: readonly PromptTemplate[];
+  memoryCandidates?: readonly MemoryCandidate[];
   scheduledOccurrences?: readonly ScheduledOccurrence[];
   characterPlans?: readonly CharacterPlan[];
   eventExecutions?: readonly EventExecution[];

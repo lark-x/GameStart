@@ -358,6 +358,91 @@
   createCreatorDispatch(worldId, input) { return this.request('/v1/creator/worlds/' + encodeURIComponent(worldId) + '/event-dispatches', { method: 'POST', body: JSON.stringify(input) }); }
   getCreatorDispatch(batchId) { return this.request('/v1/creator/event-dispatches/' + encodeURIComponent(batchId)); }
 
+  getStoryArcs(storyWorldId) {
+    return this.request(`/v1/story-arcs?storyWorldId=${encodeURIComponent(storyWorldId)}`);
+  }
+
+  createStoryArc(input) {
+    return this.request("/v1/story-arcs", { method: "POST", body: JSON.stringify(input) });
+  }
+
+  updateStoryArc(id, input) {
+    return this.request(`/v1/story-arcs/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(input) });
+  }
+
+  deleteStoryArc(id) {
+    return this.request(`/v1/story-arcs/${encodeURIComponent(id)}`, { method: "DELETE" });
+  }
+
+  getStoryNodes(storyWorldId, arcId = "") {
+    const params = new URLSearchParams({ storyWorldId });
+    if (arcId) params.set("arcId", arcId);
+    return this.request(`/v1/story-nodes?${params}`);
+  }
+
+  createStoryNode(input) {
+    return this.request("/v1/story-nodes", { method: "POST", body: JSON.stringify(input) });
+  }
+
+  updateStoryNode(id, input) {
+    return this.request(`/v1/story-nodes/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(input) });
+  }
+
+  deleteStoryNode(id) {
+    return this.request(`/v1/story-nodes/${encodeURIComponent(id)}`, { method: "DELETE" });
+  }
+
+  getStoryEdges(arcId) {
+    return this.request(`/v1/story-edges?arcId=${encodeURIComponent(arcId)}`);
+  }
+
+  createStoryEdge(input) {
+    return this.request("/v1/story-edges", { method: "POST", body: JSON.stringify(input) });
+  }
+
+  updateStoryEdge(id, input) {
+    return this.request(`/v1/story-edges/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(input) });
+  }
+
+  deleteStoryEdge(id) {
+    return this.request(`/v1/story-edges/${encodeURIComponent(id)}`, { method: "DELETE" });
+  }
+
+  getPromptTemplates(storyWorldId) {
+    return this.request(`/v1/prompt-templates?storyWorldId=${encodeURIComponent(storyWorldId)}`);
+  }
+
+  createPromptTemplate(input) {
+    return this.request("/v1/prompt-templates", { method: "POST", body: JSON.stringify(input) });
+  }
+
+  updatePromptTemplate(id, input) {
+    return this.request(`/v1/prompt-templates/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(input) });
+  }
+
+  deletePromptTemplate(id) {
+    return this.request(`/v1/prompt-templates/${encodeURIComponent(id)}`, { method: "DELETE" });
+  }
+
+  getPromptPreview(storyWorldId, arcId = "", nodeId = "") {
+    const params = new URLSearchParams({ storyWorldId });
+    if (arcId) params.set("arcId", arcId);
+    if (nodeId) params.set("nodeId", nodeId);
+    return this.request(`/v1/prompt-preview?${params}`);
+  }
+
+  getMemoryCandidates(storyWorldId) {
+    return this.request(`/v1/memory-candidates?storyWorldId=${encodeURIComponent(storyWorldId)}`);
+  }
+
+  createMemoryCandidate(input) {
+    return this.request("/v1/memory-candidates", { method: "POST", body: JSON.stringify(input) });
+  }
+
+  reviewMemoryCandidate(id, input) {
+    return this.request(`/v1/memory-candidates/${encodeURIComponent(id)}/review`, { method: "POST", body: JSON.stringify(input) });
+  }
+
 }
 
 export function parseSseBlock(block) {

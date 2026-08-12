@@ -44,6 +44,22 @@ import type {
   WorldCalendarDto,
   LlmProviderProfileDto,
   SaveLlmProviderProfileRequest,
+  CreateMemoryCandidateRequest,
+  CreatePromptTemplateRequest,
+  CreateStoryArcRequest,
+  CreateStoryEdgeRequest,
+  CreateStoryNodeRequest,
+  MemoryCandidateDto,
+  PromptPreviewDto,
+  PromptTemplateDto,
+  ReviewMemoryCandidateRequest,
+  StoryArcDto,
+  StoryEdgeDto,
+  StoryNodeDto,
+  UpdatePromptTemplateRequest,
+  UpdateStoryArcRequest,
+  UpdateStoryEdgeRequest,
+  UpdateStoryNodeRequest,
 } from "@living-network/contracts";
 
 export interface AutoReplyState { status: "QUEUED" | "NOT_APPLICABLE" | "ALREADY_EXISTS" | "COMPLETED" | "FAILED"; correlationId?: string; sourceMessageId?: string; messageId?: string; }
@@ -130,6 +146,26 @@ export class ApiClient {
     input: { selections: CreatorDispatchSelectionDto[]; idempotencyKey?: string },
   ): Promise<ApiResponse<EventDispatchBatchDto>>;
   public getCreatorDispatch(batchId: string): Promise<ApiResponse<EventDispatchBatchDto>>;
+  public getStoryArcs(storyWorldId: string): Promise<ApiResponse<StoryArcDto[]>>;
+  public createStoryArc(input: CreateStoryArcRequest): Promise<ApiResponse<StoryArcDto>>;
+  public updateStoryArc(id: string, input: UpdateStoryArcRequest): Promise<ApiResponse<StoryArcDto>>;
+  public deleteStoryArc(id: string): Promise<ApiResponse<unknown>>;
+  public getStoryNodes(storyWorldId: string, arcId?: string): Promise<ApiResponse<StoryNodeDto[]>>;
+  public createStoryNode(input: CreateStoryNodeRequest): Promise<ApiResponse<StoryNodeDto>>;
+  public updateStoryNode(id: string, input: UpdateStoryNodeRequest): Promise<ApiResponse<StoryNodeDto>>;
+  public deleteStoryNode(id: string): Promise<ApiResponse<unknown>>;
+  public getStoryEdges(arcId: string): Promise<ApiResponse<StoryEdgeDto[]>>;
+  public createStoryEdge(input: CreateStoryEdgeRequest): Promise<ApiResponse<StoryEdgeDto>>;
+  public updateStoryEdge(id: string, input: UpdateStoryEdgeRequest): Promise<ApiResponse<StoryEdgeDto>>;
+  public deleteStoryEdge(id: string): Promise<ApiResponse<unknown>>;
+  public getPromptTemplates(storyWorldId: string): Promise<ApiResponse<PromptTemplateDto[]>>;
+  public createPromptTemplate(input: CreatePromptTemplateRequest): Promise<ApiResponse<PromptTemplateDto>>;
+  public updatePromptTemplate(id: string, input: UpdatePromptTemplateRequest): Promise<ApiResponse<PromptTemplateDto>>;
+  public deletePromptTemplate(id: string): Promise<ApiResponse<unknown>>;
+  public getPromptPreview(storyWorldId: string, arcId?: string, nodeId?: string): Promise<ApiResponse<PromptPreviewDto>>;
+  public getMemoryCandidates(storyWorldId: string): Promise<ApiResponse<MemoryCandidateDto[]>>;
+  public createMemoryCandidate(input: CreateMemoryCandidateRequest): Promise<ApiResponse<MemoryCandidateDto>>;
+  public reviewMemoryCandidate(id: string, input: ReviewMemoryCandidateRequest): Promise<ApiResponse<MemoryCandidateDto>>;
 }
 
 export interface SaveWorldLoreEntryRequest {

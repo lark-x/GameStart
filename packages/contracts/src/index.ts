@@ -3,6 +3,7 @@ export * from "./character.ts";
 export * from "./media.ts";
 export * from "./settings.ts";
 export * from "./world.ts";
+export * from "./story-graph.ts";
 export * from "./conversation.ts";
 export * from "./memory.ts";
 export * from "./events.ts";
