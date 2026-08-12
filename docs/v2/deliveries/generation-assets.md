@@ -61,3 +61,64 @@ External Services:
 - Real LLM: not executed; provider helper uses injected fake provider in tests.
 - Real ComfyUI: not executed; Slice C scope.
 - Qdrant: not executed; Slice D optional scope.
+
+## Checkpoint 2: Job + SQLite Dispatch/Outbox
+
+Scope:
+
+- Added V2 scene generation job and dispatch contracts under `packages/contracts/src/v2/generation`.
+- Added AI-2 ports for job persistence, dispatch persistence, and queue payload shape under `packages/ports/src/v2/generation`.
+- Added pure domain job transition and retry guards under `packages/domain/src/v2/generation`.
+- Added SQLite migration and repository under `packages/database/src/v2/generation`.
+- Job creation inserts the job row and pending dispatch row in one transaction.
+- Idempotency is enforced per `(story_world_id, idempotency_key)`, with identical replays returning the original job and conflicting payloads rejected.
+
+Non-scope:
+
+- No Worker consumer yet.
+- No `CandidateSubmissionPort` invocation yet.
+- No ComfyUI, media, asset review, Qdrant, Social Temp, canon, release, save, Web, or shared entrypoint changes.
+
+Contract:
+
+- `V2SceneGenerationJobRecord`
+- `V2GenerationDispatchRecord`
+- `V2CreateSceneGenerationJobInput`
+- `V2GenerationJobRepository`
+- `V2GenerationDispatchRepository`
+- `V2GenerationJobQueuePayload`
+
+Migration:
+
+- `0100_generation_jobs`
+- Creates `v2_generation_jobs` and `v2_generation_dispatches`.
+- Adds lookup indexes for job status/context hash and pending dispatch status/request time.
+
+State Machine:
+
+- Job lifecycle: `queued -> claimed -> running -> succeeded|failed|cancelled`.
+- Retry path: retryable failures return `failed -> queued` while attempts remain.
+- Dispatch lifecycle: `pending -> enqueued`.
+- Dispatch enqueue failure remains `pending`, increments attempts, and stores `lastError`.
+
+Verification:
+
+- `pnpm --filter @living-network/contracts typecheck`: exit 0
+- `pnpm --filter @living-network/ports typecheck`: exit 0
+- `pnpm --filter @living-network/domain test`: exit 0
+- `pnpm --filter @living-network/domain typecheck`: exit 0
+- `pnpm --filter @living-network/database typecheck`: exit 0
+- `pnpm --filter @living-network/database test`: exit 0
+- `pnpm check:boundaries`: exit 0
+- `git diff --check`: exit 0
+
+Known validation note:
+
+- `git diff --check` reported only Git line-ending normalization warnings for existing Windows checkout behavior; no whitespace errors.
+
+External Services:
+
+- Real Redis: not executed; dispatch repository was validated with SQLite tests only.
+- Real LLM: not executed; no provider call in checkpoint 2.
+- Real ComfyUI: not executed; Slice C scope.
+- Qdrant: not executed; Slice D optional scope.
