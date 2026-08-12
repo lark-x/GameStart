@@ -237,6 +237,33 @@ test("creates V2 asset job and dispatch facts atomically", async () => {
   }
 });
 
+test("asset dispatch failure remains pending and records retry details", async () => {
+  const { db, cleanup } = openV2TempSqliteConnection();
+  try {
+    applyV2Migrations(db, v2GenerationJobMigrations);
+    const repository = new V2SqliteAssetGenerationRepository(db);
+    await repository.createAssetJob(assetInput());
+    const dispatch = (await repository.listPendingAssetDispatches(10))[0];
+    assert.ok(dispatch);
+    const failed = await repository.recordAssetDispatchFailure({
+      dispatchId: dispatch.dispatchId,
+      error: "redis down",
+    });
+    assert.equal(failed.status, "pending");
+    assert.equal(failed.attempts, 1);
+    assert.equal(failed.lastError, "redis down");
+    const enqueued = await repository.markAssetDispatchEnqueued({
+      dispatchId: dispatch.dispatchId,
+      enqueuedAt: "2026-08-12T02:02:00.000Z",
+    });
+    assert.equal(enqueued.status, "enqueued");
+    assert.equal(enqueued.lastError, undefined);
+  } finally {
+    db.close();
+    cleanup();
+  }
+});
+
 test("replays identical asset idempotency keys and rejects conflicting payloads", async () => {
   const { db, cleanup } = openV2TempSqliteConnection();
   try {

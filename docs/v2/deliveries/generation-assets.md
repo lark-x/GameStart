@@ -587,3 +587,75 @@ External Services:
 - Real LLM: not executed; asset API only creates and reviews persisted facts.
 - Real ComfyUI: not executed; API tests use fake repositories and no provider calls.
 - Qdrant: not executed; Slice D optional scope.
+
+## Checkpoint 9: SQLite Dispatch Pump
+
+Scope:
+
+- Added an injectable V2 generation dispatch pump under `apps/worker/src/v2`.
+- The pump reads pending SQLite dispatch/outbox facts and enqueues rebuildable queue payloads for scene and asset generation jobs.
+- Scene queue payloads carry only `jobId`, `kind`, `contextHash`, and `correlationId`.
+- Asset queue payloads carry only `jobId`, `kind`, `workflowVersion`, and `correlationId`.
+- Queue enqueue success marks dispatch rows `enqueued`; enqueue failure leaves rows `pending`, increments attempts, and records a bounded error for later recovery.
+- Added asset dispatch repository methods to expose `v2_asset_generation_dispatches` through an AI-2 port.
+- Kept startup wiring and shared composition root unchanged; this checkpoint provides the deterministic pump unit for later integration wiring.
+
+Non-scope:
+
+- No shared Worker startup or persistent-main wiring.
+- No real Redis enqueue in tests.
+- No direct canon repository reads or writes.
+- No release/save writes.
+- No Web, Qdrant, Social Temp, lockfile, or root dependency changes.
+
+Contract:
+
+- `V2AssetGenerationDispatchRepository`
+- Reuses `V2GenerationDispatchRepository`
+- Reuses `V2GenerationJobQueuePayload`
+- Reuses `V2AssetGenerationJobQueuePayload`
+
+Migration:
+
+- None in this checkpoint.
+- Reuses `0100_generation_jobs` for scene dispatch rows.
+- Reuses `0101_asset_generation_jobs` for asset dispatch rows.
+
+State Machine:
+
+- Scene dispatch lifecycle remains `pending -> enqueued`.
+- Asset dispatch lifecycle is now exposed as `pending -> enqueued`.
+- Failed enqueue attempts remain `pending`, increment `attempts`, and preserve `lastError`.
+- Job state remains the source of truth; queue payloads remain rebuildable and carry only stable IDs plus version/hash guard fields.
+
+Verification:
+
+- `pnpm --filter @living-network/ports typecheck`: exit 0
+- `pnpm --filter @living-network/database typecheck`: exit 0
+- `pnpm --filter @living-network/worker typecheck`: exit 0
+- `pnpm --filter @living-network/database test`: exit 0
+- `pnpm --filter @living-network/worker test`: exit 0
+- `pnpm check:boundaries`: exit 0
+- `pnpm typecheck`: exit 0
+- `pnpm test`: exit 0
+- `pnpm build`: exit 0
+- `git diff --check`: exit 0
+
+Known validation note:
+
+- Initial direct `pnpm --filter @living-network/database test` and `pnpm --filter @living-network/worker test` runs inside the sandbox failed with `spawn EPERM`; reruns with approved escalation passed.
+- `git diff --check` reported only Git line-ending normalization warnings for the Windows checkout; no whitespace errors.
+
+Fake Service Evidence:
+
+- Worker pump tests use in-memory fake queues and SQLite repositories; no Redis connection is opened.
+- Pump success test verifies scene and asset dispatch payloads contain only stable IDs and guard fields before marking rows `enqueued`.
+- Pump failure test verifies failed enqueue leaves work `pending`, increments attempts, and stores `lastError`.
+- SQLite asset repository tests cover `listPendingAssetDispatches`, `markAssetDispatchEnqueued`, and `recordAssetDispatchFailure`.
+
+External Services:
+
+- Real Redis: not executed; tests use fake queues.
+- Real LLM: not executed; dispatch pump does not call providers.
+- Real ComfyUI: not executed; dispatch pump does not call ComfyUI.
+- Qdrant: not executed; Slice D optional scope.

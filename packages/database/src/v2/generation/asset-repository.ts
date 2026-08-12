@@ -11,6 +11,8 @@ import type {
   V2AssetGenerationJobRecord,
   V2CandidateId,
   V2CreateAssetGenerationJobInput,
+  V2GenerationDispatchRecord,
+  V2GenerationDispatchStatus,
   V2IdempotencyKey,
   V2IsoDateTime,
   V2JobId,
@@ -25,6 +27,7 @@ import type {
   V2ApprovedAssetRef,
   V2AssetCandidateRepository,
   V2AssetCandidateReviewResult,
+  V2AssetGenerationDispatchRepository,
   V2AssetGenerationJobCreateResult,
   V2AssetGenerationJobRepository,
   V2AssetReviewRepository,
@@ -89,6 +92,16 @@ type ApprovedAssetRow = {
   reviewer: string | null;
   review_reason: string | null;
   release_id: string | null;
+};
+
+type AssetDispatchRow = {
+  dispatch_id: string;
+  job_id: string;
+  status: string;
+  attempts: number;
+  requested_at: string;
+  enqueued_at: string | null;
+  last_error: string | null;
 };
 
 function parseRecord(value: string): Record<string, unknown> {
@@ -187,6 +200,21 @@ function mapApprovedAssetRef(row: ApprovedAssetRow): V2ApprovedAssetRef {
   };
 }
 
+function mapAssetDispatch(row: AssetDispatchRow): V2GenerationDispatchRecord {
+  const dispatch: {
+    -readonly [K in keyof V2GenerationDispatchRecord]: V2GenerationDispatchRecord[K];
+  } = {
+    dispatchId: row.dispatch_id,
+    jobId: row.job_id as V2JobId,
+    status: row.status as V2GenerationDispatchStatus,
+    attempts: row.attempts,
+    requestedAt: row.requested_at as V2IsoDateTime,
+  };
+  if (row.enqueued_at !== null) dispatch.enqueuedAt = row.enqueued_at as V2IsoDateTime;
+  if (row.last_error !== null) dispatch.lastError = row.last_error;
+  return dispatch;
+}
+
 function getAssetJobOrThrow(db: DatabaseSync, jobId: V2JobId): V2AssetGenerationJobRecord {
   const row = db.prepare("SELECT * FROM v2_asset_generation_jobs WHERE job_id = ?").get(jobId) as AssetJobRow | undefined;
   if (row === undefined) throw new Error(`V2 asset generation job not found: ${jobId}`);
@@ -242,7 +270,7 @@ function assetContentHash(candidate: V2AssetCandidateRecord): string {
   return `sha256:${createHash("sha256").update(JSON.stringify(candidate.payload.asset)).digest("hex")}`;
 }
 
-export class V2SqliteAssetGenerationRepository implements V2AssetGenerationJobRepository, V2AssetCandidateRepository, V2AssetReviewRepository {
+export class V2SqliteAssetGenerationRepository implements V2AssetGenerationJobRepository, V2AssetGenerationDispatchRepository, V2AssetCandidateRepository, V2AssetReviewRepository {
   private readonly db: DatabaseSync;
 
   public constructor(db: DatabaseSync) {
@@ -373,6 +401,35 @@ export class V2SqliteAssetGenerationRepository implements V2AssetGenerationJobRe
       WHERE job_id = ? AND status IN ('queued', 'claimed', 'running')
     `).run(input.cancelledAt, input.cancelledAt, input.reason ?? null, input.jobId);
     return getAssetJobOrThrow(this.db, input.jobId);
+  }
+
+  public async listPendingAssetDispatches(limit: number): Promise<readonly V2GenerationDispatchRecord[]> {
+    const rows = this.db.prepare(
+      "SELECT * FROM v2_asset_generation_dispatches WHERE status = 'pending' ORDER BY requested_at ASC LIMIT ?",
+    ).all(limit) as AssetDispatchRow[];
+    return rows.map(mapAssetDispatch);
+  }
+
+  public async markAssetDispatchEnqueued(input: { readonly dispatchId: string; readonly enqueuedAt: string }): Promise<V2GenerationDispatchRecord> {
+    this.db.prepare(`
+      UPDATE v2_asset_generation_dispatches
+      SET status = 'enqueued', enqueued_at = ?, last_error = NULL
+      WHERE dispatch_id = ?
+    `).run(input.enqueuedAt, input.dispatchId);
+    const row = this.db.prepare("SELECT * FROM v2_asset_generation_dispatches WHERE dispatch_id = ?").get(input.dispatchId) as AssetDispatchRow | undefined;
+    if (row === undefined) throw new Error(`V2 asset generation dispatch not found: ${input.dispatchId}`);
+    return mapAssetDispatch(row);
+  }
+
+  public async recordAssetDispatchFailure(input: { readonly dispatchId: string; readonly error: string }): Promise<V2GenerationDispatchRecord> {
+    this.db.prepare(`
+      UPDATE v2_asset_generation_dispatches
+      SET status = 'pending', attempts = attempts + 1, last_error = ?
+      WHERE dispatch_id = ?
+    `).run(input.error.slice(0, 2048), input.dispatchId);
+    const row = this.db.prepare("SELECT * FROM v2_asset_generation_dispatches WHERE dispatch_id = ?").get(input.dispatchId) as AssetDispatchRow | undefined;
+    if (row === undefined) throw new Error(`V2 asset generation dispatch not found: ${input.dispatchId}`);
+    return mapAssetDispatch(row);
   }
 
   public async createAssetCandidate(input: V2AssetCandidateRecord): Promise<{ readonly candidate: V2AssetCandidateRecord; readonly inserted: boolean }> {

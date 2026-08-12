@@ -63,6 +63,12 @@ export interface V2AssetGenerationJobRepository {
   cancelAssetJob(input: { readonly jobId: V2JobId; readonly cancelledAt: string; readonly reason?: string }): Promise<V2AssetGenerationJobRecord>;
 }
 
+export interface V2AssetGenerationDispatchRepository {
+  listPendingAssetDispatches(limit: number): Promise<readonly V2GenerationDispatchRecord[]>;
+  markAssetDispatchEnqueued(input: { readonly dispatchId: string; readonly enqueuedAt: string }): Promise<V2GenerationDispatchRecord>;
+  recordAssetDispatchFailure(input: { readonly dispatchId: string; readonly error: string }): Promise<V2GenerationDispatchRecord>;
+}
+
 export interface V2AssetCandidateRepository {
   createAssetCandidate(input: V2AssetCandidateRecord): Promise<{ readonly candidate: V2AssetCandidateRecord; readonly inserted: boolean }>;
   getAssetCandidate(candidateId: V2CandidateId): Promise<V2AssetCandidateRecord | undefined>;
