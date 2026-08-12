@@ -10,6 +10,7 @@ import { errorMessage, type ApiCharacter, type ApiConversation, type ApiMessage,
 import { splitChatMessage } from "../lib/chat-message";
 import { findPendingSource, normalizeAutoReply } from "../lib/auto-reply";
 import { MAX_CHAT_BACKGROUND_ITEMS } from "../lib/theme";
+import { conversationCharacters as _conversationCharacters, characterImage as _characterImage, messageCharacter as _messageCharacter, messageTime as _messageTime, isMine as _isMine, authorName as _authorName, stickerLabel as _stickerLabel, stickerImageUrl as _stickerImageUrl, stickerPackIconUrl as _stickerPackIconUrl } from "../lib/chat-helpers";
 
 import { useConversations } from "../composables/useConversations";
 import { useChatMessages } from "../composables/useChatMessages";
@@ -17,6 +18,7 @@ import { useAutoReply } from "../composables/useAutoReply";
 import { useImageJobPolling } from "../composables/useImageJobPolling";
 import { useChatComposer } from "../composables/useChatComposer";
 import { useChatBackground } from "../composables/useChatBackground";
+import { useChatMedia } from "../composables/useChatMedia";
 
 type StickerOption = NonNullable<ApiStickerPack["_stickers"]>[number];
 type ComposerPanel = "stickers" | "image-request";
@@ -43,9 +45,6 @@ const { messages, loadMessages, cancelPending: cancelMessages, cleanup: cleanupM
 // --- Auto-reply ---
 const { autoReply, replyError, isGenerating, applyAutoReply, stopReplyPolling, cleanup: cleanupAutoReply } = useAutoReply(currentConversationId, messages, loadMessages);
 
-// --- Image job polling ---
-const { imageJob, imageStatus, pollImageJob, cancelPolling: cancelImagePolling, cleanup: cleanupImagePolling } = useImageJobPolling(currentConversationId, loadMessages);
-
 // --- Composer ---
 const {
   messageInput, selectedImages, composerStatus, isSendingMessage, enterSends, canSend,
@@ -61,6 +60,29 @@ const {
   cleanup: cleanupBackground,
 } = useChatBackground();
 
+// --- Media (stickers + image requests) ---
+// --- Image job polling ---
+const { imageStatus, pollImageJob, cancelPolling: cancelImagePolling, cleanup: cleanupImagePolling } = useImageJobPolling(currentConversationId, loadMessages);
+
+// --- Media (stickers + image requests) ---
+const imageRecipientId = computed(() => {
+  const current = conversations.value.find((item) => item.conversation.id === currentConversationId.value);
+  return current?.members.find((member) => member.characterId !== store.currentCharacterId && !member.leftAt)?.characterId;
+});
+const {
+  stickerPacks, activeStickerPackId, stickerStatus,
+  imagePrompt, imageWorkflowVersion, isRequestingImage,
+  loadStickerPacks, requestConversationImage: requestImage, loadImageDefaults,
+} = useChatMedia(
+  computed(() => store.currentWorldId),
+  currentConversationId,
+  computed(() => store.currentCharacterId),
+  imageRecipientId,
+  imageStatus,
+  store.api,
+  (id) => void pollImageJob(id),
+);
+
 // --- UI state ---
 const unavailableImageIds = ref(new Set<string>());
 const unavailableStickerIds = ref(new Set<string>());
@@ -69,12 +91,6 @@ const imageInput = ref<HTMLInputElement | null>(null);
 const composerInput = ref<ComponentPublicInstance | null>(null);
 const composerRoot = ref<HTMLElement | null>(null);
 const backgroundInput = ref<HTMLInputElement | null>(null);
-const imagePrompt = ref("");
-const imageWorkflowVersion = ref("");
-const isRequestingImage = ref(false);
-const stickerPacks = ref<ApiStickerPack[]>([]);
-const activeStickerPackId = ref("");
-const stickerStatus = ref("");
 const settingsDrawerOpen = ref(false);
 const activeComposerPanel = ref<ComposerPanel | null>(null);
 
@@ -94,10 +110,6 @@ const messageViews = computed(() => messages.value.map((message, index) => {
 const pendingSource = computed(() =>
   findPendingSource(currentConversationId.value, currentConversation.value?.conversation, store.currentCharacter, store.currentCharacterId, messages.value),
 );
-const imageRecipientId = computed(() => {
-  const current = conversations.value.find((item) => item.conversation.id === currentConversationId.value);
-  return current?.members.find((member) => member.characterId !== store.currentCharacterId && !member.leftAt)?.characterId;
-});
 const activeStickerPack = computed(() =>
   stickerPacks.value.find((pack) => pack.id === activeStickerPackId.value) ?? stickerPacks.value[0],
 );
@@ -133,32 +145,15 @@ const backdropStyle = computed(() => {
 });
 
 // --- Helper functions ---
-function conversationCharacters(item: ApiConversation | undefined) {
-  if (!item) return [];
-  const memberIds = item.members
-    .filter((member) => !member.leftAt && member.characterId !== store.currentCharacterId)
-    .map((member) => member.characterId);
-  return memberIds
-    .map((id) => store.characters.find((character) => character.id === id))
-    .filter((character): character is ApiCharacter => character !== undefined);
-}
-
-function characterImage(character: ApiCharacter | undefined) {
-  const value = character?.visualPromptRef?.trim();
-  return value && /^(?:https?:\/\/|data:image\/|blob:|\/)/i.test(value) ? value : undefined;
-}
-
-function messageCharacter(message: ApiMessage) {
-  return store.characters.find((character) => character.id === message.authorCharacterId);
-}
-
-function messageTime(message: ApiMessage) {
-  return new Date(message.createdAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-}
-
-function isMine(message: ApiMessage) {
-  return message.authorCharacterId === store.currentCharacterId;
-}
+function conversationCharacters(item: ApiConversation | undefined) { return _conversationCharacters(item, store.currentCharacterId, store.characters); };
+function characterImage(character: ApiCharacter | undefined) { return _characterImage(character); };
+function messageCharacter(message: ApiMessage) { return _messageCharacter(message, store.characters); };
+function messageTime(message: ApiMessage) { return _messageTime(message); };
+function isMine(message: ApiMessage) { return _isMine(message, store.currentCharacterId); };
+function authorName(message: ApiMessage) { return _authorName(message, store.currentCharacterId, store.characters, characterName.value); };
+function stickerLabel(message: ApiMessage) { return _stickerLabel(message, stickerById.value); };
+function stickerImageUrl(message: ApiMessage) { return _stickerImageUrl(message, stickerById.value, unavailableImageIds.value, store.api.mediaUrl); };
+function stickerPackIconUrl(pack: ApiStickerPack) { return _stickerPackIconUrl(pack, unavailableStickerPackIconIds.value, store.api.mediaUrl); };
 
 function resizeComposer(event?: Event) {
   const emittedTarget = event?.target;
@@ -175,36 +170,21 @@ function resizeComposer(event?: Event) {
 
 function sendMessage() { return sendComposerMessage(resizeComposer); }
 
-function closeChatSettings() {
-  settingsDrawerOpen.value = false;
-}
-
-function closeComposerPanel() {
-  activeComposerPanel.value = null;
-}
-
+function closeChatSettings() { settingsDrawerOpen.value = false; }
+function closeComposerPanel() { activeComposerPanel.value = null; }
 function toggleChatSettings() {
   settingsDrawerOpen.value = !settingsDrawerOpen.value;
   if (settingsDrawerOpen.value) closeComposerPanel();
 }
-
-function openImagePicker() {
-  closeComposerPanel();
-  closeChatSettings();
-  imageInput.value?.click();
-}
-
+function openImagePicker() { closeComposerPanel(); closeChatSettings(); imageInput.value?.click(); }
 function openImageRequest() {
   activeComposerPanel.value = activeComposerPanel.value === "image-request" ? null : "image-request";
   if (activeComposerPanel.value !== "image-request") return;
   closeChatSettings();
   void nextTick(() => resizeComposer());
 }
-
-function openBackgroundPicker() {
-  pickBackgroundImage(backgroundInput.value);
-}
-
+function requestConversationImage() { return requestImage(closeComposerPanel); }
+function openBackgroundPicker() { pickBackgroundImage(backgroundInput.value); }
 function toggleStickerPanel() {
   activeComposerPanel.value = activeComposerPanel.value === "stickers" ? null : "stickers";
   if (activeComposerPanel.value === "stickers") {
@@ -212,66 +192,32 @@ function toggleStickerPanel() {
     if (stickerPacks.value.length === 0) void loadStickerPacks();
   }
 }
-
 function onDocumentKeydown(event: KeyboardEvent) {
   if (event.key !== "Escape") return;
   closeChatSettings();
   closeComposerPanel();
 }
-
 function onDocumentPointerDown(event: PointerEvent) {
   if (!activeComposerPanel.value) return;
   const target = event.target;
   if (target instanceof Node && composerRoot.value?.contains(target)) return;
   closeComposerPanel();
 }
-
-function markImageUnavailable(messageId: string) {
-  unavailableImageIds.value = new Set([...unavailableImageIds.value, messageId]);
-}
-
-function markStickerUnavailable(stickerId: string) {
-  unavailableStickerIds.value = new Set([...unavailableStickerIds.value, stickerId]);
-}
-
-function markStickerPackIconUnavailable(packId: string) {
-  unavailableStickerPackIconIds.value = new Set([...unavailableStickerPackIconIds.value, packId]);
-}
-
-function stickerForMessage(message: ApiMessage) {
-  return message.stickerId ? stickerById.value.get(message.stickerId) : undefined;
-}
-
-function stickerLabel(message: ApiMessage) {
-  return stickerForMessage(message)?.label ?? message.stickerId ?? "未知表情";
-}
-
-function stickerImageUrl(message: ApiMessage) {
-  if (unavailableImageIds.value.has(message.id)) return "";
-  const mediaRef = stickerForMessage(message)?.mediaRef;
-  return mediaRef ? store.api.mediaUrl(mediaRef) : "";
-}
-
-function stickerPackIconUrl(pack: ApiStickerPack) {
-  if (unavailableStickerPackIconIds.value.has(pack.id)) return "";
-  const mediaRef = pack._stickers?.[0]?.mediaRef;
-  return mediaRef ? store.api.mediaUrl(mediaRef) : "";
-}
-
+function markImageUnavailable(messageId: string) { unavailableImageIds.value = new Set([...unavailableImageIds.value, messageId]); }
+function markStickerUnavailable(stickerId: string) { unavailableStickerIds.value = new Set([...unavailableStickerIds.value, stickerId]); }
+function markStickerPackIconUnavailable(packId: string) { unavailableStickerPackIconIds.value = new Set([...unavailableStickerPackIconIds.value, packId]); }
 function onImagesSelected(event: Event) {
   const input = event.target as HTMLInputElement;
   const files = Array.from(input.files ?? []);
   input.value = "";
   addImageFiles(files);
 }
-
 function onComposerPaste(event: ClipboardEvent) {
   const files = Array.from(event.clipboardData?.files ?? []);
   if (!files.length) return;
   event.preventDefault();
   addImageFiles(files);
 }
-
 function onComposerKeydown(event: KeyboardEvent) {
   const send = enterSends.value
     ? event.key === "Enter" && !event.shiftKey
@@ -280,61 +226,6 @@ function onComposerKeydown(event: KeyboardEvent) {
   event.preventDefault();
   void sendMessage();
 }
-
-function authorName(message: ApiMessage) {
-  if (message.kind === "SYSTEM" || !message.authorCharacterId) return "系统";
-  return isMine(message) ? "我" : store.characters.find((c) => c.id === message.authorCharacterId)?.displayName || characterName.value;
-}
-
-// --- Sticker packs ---
-async function loadStickerPacks() {
-  if (!store.currentWorldId) { stickerPacks.value = []; activeStickerPackId.value = ""; return; }
-  try {
-    const result = await store.api.getStickerPacks(store.currentWorldId);
-    const packs = (result.data ?? []) as ApiStickerPack[];
-    await Promise.all(packs.map(async (pack) => {
-      const stickers = await store.api.getStickers(pack.id);
-      pack._stickers = stickers.data ?? [];
-    }));
-    stickerPacks.value = packs;
-    if (!packs.some((pack) => pack.id === activeStickerPackId.value)) activeStickerPackId.value = packs[0]?.id ?? "";
-    stickerStatus.value = "";
-  } catch (error: unknown) {
-    stickerPacks.value = []; activeStickerPackId.value = ""; stickerStatus.value = errorMessage(error);
-  }
-}
-
-// --- Image request ---
-async function requestConversationImage() {
-  const prompt = imagePrompt.value.trim();
-  if (!prompt || !currentConversationId.value || !store.currentCharacterId || !imageRecipientId.value) {
-    imageStatus.value = "请选择私聊会话，并填写配图描述。"; return;
-  }
-  isRequestingImage.value = true;
-  imageStatus.value = "正在创建图片请求…";
-  try {
-    const idempotencyKey = crypto.randomUUID();
-    const result = await store.api.requestConversationImage(currentConversationId.value, {
-      actorCharacterId: store.currentCharacterId, recipientCharacterId: imageRecipientId.value,
-      prompt, workflowVersion: imageWorkflowVersion.value.trim() || "comfy-anima@v1",
-      createdAt: new Date().toISOString(), idempotencyKey,
-    });
-    imageJob.value = result.data ?? null;
-    imagePrompt.value = "";
-    closeComposerPanel();
-    imageStatus.value = "已请求对方生成图片，完成后会出现在聊天里。";
-    if (imageJob.value) void pollImageJob(imageJob.value.id);
-  } catch (error: unknown) { imageStatus.value = errorMessage(error); }
-  finally { isRequestingImage.value = false; }
-}
-
-async function loadImageDefaults() {
-  try {
-    const result = await store.api.getComfyUiSettings();
-    imageWorkflowVersion.value = result.data.defaultWorkflowVersion ?? "comfy-anima@v1";
-  } catch { imageWorkflowVersion.value = "comfy-anima@v1"; }
-}
-
 // --- Background helpers ---
 function selectThemeBackground() {
   setChatBackground({ ...chatBackground, kind: "theme" });
@@ -373,10 +264,6 @@ watch(
     replyError.value = "";
     prevConversationId = currentConversationId.value;
     void loadConversations().then(() => {
-      // loadConversations may or may not change currentConversationId.
-      // If it DID change, the currentConversationId watcher handles loadMessages.
-      // If it did NOT change, we need to refresh messages explicitly.
-      // We defer to next microtask so the watcher has a chance to fire first.
       void nextTick(() => {
         if (currentConversationId.value && currentConversationId.value === prevConversationId) {
           void loadMessages();
@@ -418,7 +305,6 @@ onUnmounted(() => {
   cleanupBackground();
 });
 </script>
-
 <template>
   <div class="chat-layout">
     <aside class="conversation-panel">
@@ -743,899 +629,4 @@ onUnmounted(() => {
   </div>
 </template>
 
-<style scoped>
-:global(.app-main:has(.chat-layout)) {
-  overflow: hidden;
-}
-
-.chat-layout {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  max-height: 100dvh;
-  gap: var(--space-4);
-  padding: var(--space-4);
-  overflow: hidden;
-}
-.conversation-panel {
-  width: clamp(220px, 24vw, 300px);
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  padding: var(--space-4) var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
-  background: var(--surface-glass);
-  overflow: hidden;
-}
-.panel-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 var(--space-2) var(--space-3);
-  color: var(--text-strong);
-  font-size: var(--text-lg);
-  font-weight: 750;
-}
-.conversation-list {
-  display: grid;
-  gap: 7px;
-  min-height: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding-right: 2px;
-}
-.conversation-item {
-  width: 100%;
-  min-height: 0;
-  justify-content: flex-start;
-  gap: 10px;
-  padding: 10px;
-  border-radius: var(--radius-md);
-  font-weight: 400;
-  text-align: left;
-}
-.conversation-item:hover:not(:disabled),
-.conversation-item.active {
-  background: var(--primary-soft);
-  color: var(--text);
-  transform: none;
-}
-.conversation-copy {
-  min-width: 0;
-  flex: 1;
-  display: grid;
-  gap: 4px;
-}
-.conversation-copy strong {
-  overflow: hidden;
-  color: var(--text-strong);
-  font-size: var(--text-base);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.conversation-copy small {
-  overflow: hidden;
-  color: var(--muted);
-  font-size: var(--text-xs);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.panel-empty {
-  padding: var(--space-6) var(--space-2);
-  color: var(--muted);
-  font-size: var(--text-sm);
-  text-align: center;
-}
-.chat-room {
-  position: relative;
-  min-width: 0;
-  min-height: 0;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
-  background: var(--surface-glass);
-  box-shadow: var(--shadow-sm);
-}
-.chat-backdrop,
-.chat-backdrop-veil {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-}
-.chat-backdrop {
-  background-repeat: repeat;
-  transition: opacity var(--motion-base);
-}
-.chat-backdrop-veil {
-  background: var(--surface);
-  opacity: 0.34;
-}
-.chat-header,
-.chat-status-strip,
-.reply-error,
-.message-stream,
-.composer {
-  flex: 0 0 auto;
-  display: grid;
-  gap: 8px;
-  max-height: min(44vh, 360px);
-  margin: 0 var(--space-6) var(--space-5);
-  padding: 8px 10px 10px;
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  background: color-mix(in srgb, var(--surface) 96%, transparent);
-  box-shadow: var(--shadow-sm);
-  overflow: hidden;
-}
-
-/* Keep the message list as the only flexible primary scroll region. */
-.chat-header,
-.chat-status-strip,
-.reply-error,
-.composer {
-  position: relative;
-  z-index: 1;
-}
-.chat-header {
-  min-height: 72px;
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  margin: 0;
-  padding: 0 var(--space-6);
-  border: 0;
-  border-bottom: 1px solid var(--border);
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-  max-height: none;
-}
-.header-profile {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-.header-profile h1 {
-  overflow: hidden;
-  color: var(--text-strong);
-  font-size: var(--text-lg);
-  font-weight: 750;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.header-profile p {
-  margin-top: 4px;
-  color: var(--primary);
-  font-size: var(--text-sm);
-  font-weight: 700;
-}
-.chat-more-button {
-  width: 38px;
-  height: 38px;
-  flex: 0 0 auto;
-  border-radius: var(--radius-full);
-}
-.chat-more-button.active {
-  color: var(--primary);
-  background: var(--primary-soft);
-}
-.chat-settings-scrim {
-  position: absolute;
-  inset: 0;
-  z-index: 5;
-  display: flex;
-  justify-content: flex-end;
-  background: color-mix(in srgb, var(--background) 26%, transparent);
-  backdrop-filter: blur(2px);
-}
-.chat-settings-drawer {
-  width: clamp(320px, 28vw, 360px);
-  max-width: 100%;
-  height: 100%;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  border-left: 1px solid var(--border);
-  background: color-mix(in srgb, var(--surface) 97%, transparent);
-  box-shadow: -16px 0 36px rgb(0 0 0 / 12%);
-  overflow-x: hidden;
-  overflow-y: auto;
-}
-.settings-drawer-head,
-.settings-section-head,
-.compact-section {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-.settings-drawer-head {
-  padding-bottom: var(--space-2);
-  border-bottom: 1px solid var(--border);
-}
-.settings-drawer-head strong,
-.settings-section strong {
-  display: block;
-  color: var(--text-strong);
-}
-.settings-drawer-head strong {
-  font-size: var(--text-lg);
-}
-.settings-drawer-head span,
-.settings-section span,
-.background-picker-hint {
-  display: block;
-  margin-top: 4px;
-  color: var(--muted);
-  font-size: var(--text-xs);
-  line-height: 1.45;
-}
-.settings-section {
-  min-width: 0;
-  display: grid;
-  gap: 10px;
-  padding: var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--surface-soft);
-}
-.compact-section {
-  grid-template-columns: minmax(0, 1fr) auto;
-}
-.settings-section .background-options {
-  max-height: min(44vh, 380px);
-}
-.thought-status {
-  max-width: 300px;
-  overflow: hidden;
-  color: var(--muted);
-  font-size: var(--text-xs);
-  font-style: italic;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.chat-status-strip {
-  min-height: 32px;
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  margin: 0;
-  padding: 0 var(--space-6);
-  border: 0;
-  border-bottom: 1px solid var(--border);
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-  max-height: none;
-}
-.chat-status-message {
-  min-width: 0;
-  max-width: min(42%, 260px);
-  overflow: hidden;
-  color: var(--primary);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.reply-error {
-  flex: 0 0 auto;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  padding: 9px var(--space-6);
-  border: 0;
-  border-bottom: 1px solid var(--border);
-  border-radius: 0;
-  color: var(--danger);
-  background: var(--surface-soft);
-  box-shadow: none;
-  max-height: none;
-}
-.reply-error code,
-.reply-error a {
-  overflow-wrap: anywhere;
-}
-.message-stream {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  margin: 0;
-  padding: var(--space-6) max(6%, var(--space-6));
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-  max-height: none;
-  overflow-x: hidden;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-.day-separator {
-  align-self: center;
-  padding: 3px 9px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  color: var(--muted);
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
-  font-size: var(--text-xs);
-}
-.message-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 9px;
-  max-width: min(76%, 720px);
-}
-.message-row.system {
-  align-self: center;
-  max-width: min(86%, 720px);
-}
-.message-row.system .message-wrap {
-  justify-items: center;
-}
-.message-row.system .message-bubble {
-  padding: 7px 11px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--muted);
-  background: color-mix(in srgb, var(--surface) 82%, transparent);
-  box-shadow: none;
-  font-size: var(--text-sm);
-}
-.message-row.mine {
-  align-self: flex-end;
-  flex-direction: row-reverse;
-}
-.message-wrap {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-.message-row.mine .message-wrap {
-  justify-items: end;
-}
-.message-name,
-.message-time {
-  padding: 0 4px;
-  color: var(--faint);
-  font-size: var(--text-xs);
-}
-.message-row.mine .message-time {
-  text-align: right;
-}
-.message-bubble {
-  max-width: 620px;
-  padding: 12px 15px;
-  border-radius: 6px 16px 16px 16px;
-  color: var(--text);
-  background: var(--surface);
-  box-shadow: var(--shadow-sm);
-  font-size: var(--text-md);
-  line-height: 1.7;
-  overflow-wrap: anywhere;
-}
-.message-row.mine .message-bubble {
-  border-radius: 16px 6px 16px 16px;
-  color: var(--on-primary);
-  background: var(--primary);
-}
-.message-bubble p {
-  white-space: pre-wrap;
-}
-.message-bubble img {
-  display: block;
-  width: 100%;
-  max-width: 520px;
-  max-height: 430px;
-  border-radius: var(--radius-md);
-  object-fit: cover;
-}
-.sticker-message {
-  width: min(180px, 100%) !important;
-  max-height: 180px !important;
-  object-fit: contain !important;
-}
-.message-empty,
-.image-unavailable {
-  color: var(--muted);
-}
-.avatar {
-  display: grid;
-  place-items: center;
-  flex: 0 0 auto;
-  width: 34px;
-  height: 34px;
-  overflow: hidden;
-  border-radius: var(--radius-full);
-  font-size: var(--text-base);
-  font-weight: 700;
-}
-.avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.character-avatar {
-  color: var(--primary);
-  background: var(--primary-soft);
-}
-.user-avatar {
-  color: var(--on-primary);
-  background: var(--primary);
-}
-.compact {
-  width: 36px;
-  height: 36px;
-}
-.empty-chat {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
-.composer {
-  position: relative;
-  flex: 0 0 auto;
-  display: grid;
-  gap: 8px;
-  max-height: min(44vh, 360px);
-  margin: 0 var(--space-6) var(--space-5);
-  padding: 8px 10px 10px;
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  background: color-mix(in srgb, var(--surface) 96%, transparent);
-  box-shadow: var(--shadow-sm);
-  overflow: visible;
-}
-.file-input-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  clip-path: inset(50%);
-  border: 0;
-  white-space: nowrap;
-}
-.composer-toolbar {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0 2px 4px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  overscroll-behavior-inline: contain;
-  scrollbar-width: thin;
-}
-.composer-tool {
-  width: 34px;
-  height: 34px;
-  flex: 0 0 auto;
-  border-radius: var(--radius-full);
-}
-.composer-tool.active {
-  color: #ffe2d1;
-  background: #3c3835;
-  box-shadow: inset 0 0 0 1px rgb(255 226 209 / 24%);
-}
-.background-options {
-  min-height: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
-  gap: 8px;
-  overflow-x: hidden;
-  overflow-y: auto;
-  padding-right: 2px;
-}
-.background-option {
-  min-width: 0;
-  min-height: 58px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 30px;
-  align-items: center;
-  gap: 4px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--surface);
-  color: var(--text);
-}
-.background-option.active {
-  border-color: color-mix(in srgb, var(--primary) 48%, var(--border));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 28%, transparent);
-}
-.background-option button,
-.theme-option {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) 18px;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  height: 100%;
-  padding: 7px;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  font: inherit;
-  text-align: left;
-}
-.theme-option {
-  grid-column: 1 / -1;
-  grid-template-columns: 42px minmax(0, 1fr) 18px;
-}
-.background-thumb,
-.background-option img {
-  width: 42px;
-  height: 42px;
-  border-radius: var(--radius-sm);
-  object-fit: cover;
-}
-.theme-thumb {
-  border: 1px solid var(--border);
-  background-image: var(--chat-texture);
-  background-size: var(--chat-texture-size);
-}
-.background-option span:not(.background-thumb) {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.composer-popover {
-  position: absolute;
-  left: 0;
-  bottom: calc(100% + 10px);
-  z-index: 4;
-  width: min(680px, 100%);
-  max-height: min(54vh, 480px);
-  border-radius: 8px;
-}
-.sticker-picker {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  gap: 12px;
-  overflow: hidden;
-  padding: 14px;
-  border: 1px solid rgb(255 226 209 / 30%);
-  color: #fff4ec;
-  background: #2e2d2c;
-  box-shadow: 0 18px 44px rgb(0 0 0 / 24%);
-}
-.sticker-popover-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-.sticker-popover-head strong,
-.sticker-popover-head span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.sticker-popover-head strong {
-  color: #ffe2d1;
-  font-size: var(--text-base);
-}
-.sticker-popover-head span {
-  color: rgb(255 226 209 / 68%);
-  font-size: var(--text-xs);
-}
-.sticker-pack-tabs {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  margin: 0 -14px -14px;
-  padding: 10px 14px 12px;
-  border-top: 1px solid rgb(255 226 209 / 15%);
-  scrollbar-width: thin;
-}
-.sticker-pack-tab {
-  flex: 0 0 auto;
-  width: 46px;
-  height: 46px;
-  display: grid;
-  place-items: center;
-  padding: 6px;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  background: transparent;
-  color: #ffe2d1;
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--text-xs);
-}
-.sticker-pack-tab:hover,
-.sticker-pack-tab.active {
-  border-color: rgb(255 226 209 / 24%);
-  background: rgb(255 226 209 / 12%);
-}
-.sticker-pack-tab img,
-.sticker-pack-tab span {
-  width: 100%;
-  height: 100%;
-  border-radius: 6px;
-}
-.sticker-pack-tab img {
-  object-fit: cover;
-}
-.sticker-pack-tab span {
-  display: grid;
-  place-items: center;
-  background: rgb(255 226 209 / 10%);
-}
-.sticker-options {
-  min-height: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
-  gap: 12px;
-  overflow-x: hidden;
-  overflow-y: auto;
-  padding-right: 2px;
-}
-.sticker-choice {
-  display: grid;
-  place-items: center;
-  aspect-ratio: 1;
-  min-width: 0;
-  padding: 8px;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  background: rgb(255 255 255 / 5%);
-  color: #ffe2d1;
-  cursor: pointer;
-}
-.sticker-choice:hover {
-  border-color: rgb(255 226 209 / 28%);
-  background: rgb(255 226 209 / 10%);
-}
-.sticker-choice img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-.sticker-choice span {
-  max-width: 100%;
-  overflow: hidden;
-  color: #ffe2d1;
-  font-size: var(--text-xs);
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-  text-align: center;
-}
-.sticker-empty {
-  display: grid;
-  place-items: center;
-  min-height: 120px;
-  color: rgb(255 226 209 / 72%);
-  font-size: var(--text-xs);
-}
-.composer-main {
-  min-width: 0;
-  display: grid;
-  gap: 7px;
-}
-.composer-input-row {
-  min-width: 0;
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-}
-.composer-previews {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 6px;
-  max-height: 104px;
-  overflow-x: hidden;
-  overflow-y: auto;
-  padding-right: 2px;
-}
-.composer-preview {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) 28px;
-  align-items: center;
-  gap: 7px;
-  padding: 5px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--surface-soft);
-}
-.composer-preview.uploading {
-  border-color: var(--primary);
-}
-.composer-preview.failed {
-  border-color: var(--danger);
-}
-.composer-preview img {
-  width: 42px;
-  height: 42px;
-  border-radius: var(--radius-sm);
-  object-fit: cover;
-}
-.composer-preview div {
-  min-width: 0;
-  display: grid;
-  gap: 2px;
-}
-.composer-preview strong,
-.composer-preview span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.composer-preview strong {
-  color: var(--text-strong);
-  font-size: var(--text-xs);
-}
-.composer-preview span {
-  color: var(--muted);
-  font-size: 11px;
-}
-.composer-input {
-  min-width: 0;
-  min-height: 38px;
-  max-height: 150px;
-  padding: 8px 2px;
-  border-color: transparent;
-  background: transparent;
-  font-size: var(--text-base);
-  line-height: 1.45;
-  resize: none;
-  overflow-x: hidden;
-  overflow-y: auto;
-}
-.composer-input:focus {
-  border-color: transparent;
-  box-shadow: none;
-}
-.composer-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  color: var(--faint);
-  font-size: 11px;
-}
-.send-button {
-  flex: 0 0 auto;
-  border-radius: var(--radius-full);
-}
-.send-button {
-  width: 36px;
-  height: 36px;
-}
-.image-request-panel {
-  display: grid;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  border: 1px solid rgb(255 226 209 / 30%);
-  color: #fff4ec;
-  background: #2e2d2c;
-  box-shadow: 0 18px 44px rgb(0 0 0 / 24%);
-}
-.image-request-panel-head,
-.image-request-panel-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-.image-request-panel-head strong {
-  display: block;
-  color: #ffe2d1;
-  font-size: var(--text-lg);
-}
-.image-request-panel-head span,
-.image-request-status {
-  color: rgb(255 226 209 / 72%);
-  font-size: var(--text-xs);
-  line-height: 1.5;
-}
-.image-request-input {
-  border-color: rgb(255 226 209 / 20%);
-  color: #fff4ec;
-  background: rgb(255 255 255 / 6%);
-}
-.image-request-input:focus {
-  border-color: rgb(255 226 209 / 44%);
-  box-shadow: 0 0 0 3px rgb(255 226 209 / 12%);
-}
-.image-request-panel-actions {
-  justify-content: flex-end;
-}
-
-@media (max-width: 767px) {
-  .chat-layout {
-    flex-direction: column;
-    gap: var(--space-3);
-    padding: var(--space-3);
-  }
-  .conversation-panel {
-    width: 100%;
-    max-height: 28vh;
-    flex: 0 0 auto;
-  }
-  .chat-header {
-    min-height: 64px;
-    padding: 0 var(--space-4);
-  }
-  .chat-settings-drawer {
-    width: min(88vw, 360px);
-    padding: var(--space-3);
-  }
-  .settings-section {
-    padding: 10px;
-  }
-  .settings-section .background-options {
-    max-height: min(48vh, 360px);
-  }
-  .chat-status-strip {
-    padding: 0 var(--space-4);
-  }
-  .reply-error {
-    padding-inline: var(--space-4);
-  }
-  .message-stream {
-    padding: var(--space-4);
-  }
-  .message-row {
-    max-width: 92%;
-  }
-  .composer {
-    max-height: 42vh;
-    margin: 0 var(--space-3) var(--space-3);
-    border-radius: var(--radius-lg);
-  }
-  .composer-toolbar {
-    gap: 3px;
-    padding-bottom: 3px;
-  }
-  .composer-tool {
-    width: 33px;
-    height: 33px;
-  }
-  .composer-popover {
-    left: 0;
-    width: calc(100vw - 32px);
-    max-height: min(44vh, 360px);
-  }
-  .sticker-picker {
-    padding: 12px;
-  }
-  .sticker-options {
-    grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
-    gap: 8px;
-  }
-  .sticker-pack-tabs {
-    margin: 0 -12px -12px;
-    padding: 9px 12px 11px;
-  }
-  .composer-previews {
-    grid-template-columns: 1fr;
-  }
-}
-</style>
+<style src="./ChatView.css" scoped></style>

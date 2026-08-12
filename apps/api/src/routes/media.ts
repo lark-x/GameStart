@@ -2,7 +2,7 @@ import type { HandlerContext } from "../context.ts";
 import { trustedActor } from "../context.ts";
 import { ApiError, jsonResponse, withHeaders } from "../helpers.ts";
 import type { InteractionLogDto, InteractionLogQuery } from "@living-network/contracts";
-import { encodeInteractionLogCursor } from "@living-network/database";
+import { encodeInteractionLogCursor } from "@living-network/ports";
 
 export async function handleMedia(
   ctx: HandlerContext,

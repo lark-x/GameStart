@@ -31,8 +31,14 @@ import type {
   StoryEdge,
   PromptTemplate,
   MemoryCandidate,
+  WorldContextPolicy,
+  StoryGenerationJob,
+  StoryGenerationCandidate,
 } from "@living-network/domain";
 import type { OutboxEventRepository } from "./outbox.ts";
+import type { WorldContextPolicyRepository, StoryGenerationJobRepository, StoryGenerationCandidateRepository } from "./story-generation.ts";
+import type { RelationshipChangeCandidateRepository, RelationshipEventRepository } from "./relationship-feedback.ts";
+import type { SocialFeedEventRepository } from "./social-feed.ts";
 import type { DispatchRequestRepository, ExecutionDispatchRequest } from "./dispatch.ts";
 
 export interface StoryWorldRepository {
@@ -128,6 +134,7 @@ export interface MomentDraftRepository {
   getById(id: string): Promise<MomentDraft | undefined>;
   getByActionId(actionId: string): Promise<MomentDraft | undefined>;
   save(draft: MomentDraft): Promise<void>;
+  listByStoryWorld(storyWorldId: string): Promise<readonly MomentDraft[]>;
 }
 
 export interface ImageJobRepository {
@@ -237,6 +244,8 @@ export interface MomentInteractionWriteResult {
 
 export interface MomentInteractionRepository {
   listByMoment(momentId: string): Promise<readonly MomentInteraction[]>;
+  getByMomentAndActor(momentId: string, actorCharacterId: string, kind: string): Promise<MomentInteraction | undefined>;
+  delete(id: string): Promise<boolean>;
   save(interaction: MomentInteraction): Promise<MomentInteractionWriteResult>;
 }
 
@@ -273,6 +282,12 @@ export interface DomainRepositories {
   readonly comfyUiSettings?: ComfyUiSettingsRepository;
   readonly outboxEvents?: OutboxEventRepository;
   readonly dispatchRequests?: DispatchRequestRepository;
+  readonly worldContextPolicies?: WorldContextPolicyRepository;
+  readonly storyGenerationJobs?: StoryGenerationJobRepository;
+  readonly storyGenerationCandidates?: StoryGenerationCandidateRepository;
+  readonly relationshipChangeCandidates?: RelationshipChangeCandidateRepository;
+  readonly relationshipEvents?: RelationshipEventRepository;
+  readonly socialFeedEvents?: SocialFeedEventRepository;
 }
 
 export interface InMemoryRepositorySeed {
@@ -307,4 +322,7 @@ export interface InMemoryRepositorySeed {
   llmProviderProfiles?: readonly LlmProviderProfile[];
   comfyUiSettings?: ComfyUiSettings;
   dispatchRequests?: readonly ExecutionDispatchRequest[];
+  worldContextPolicies?: readonly WorldContextPolicy[];
+  storyGenerationJobs?: readonly StoryGenerationJob[];
+  storyGenerationCandidates?: readonly StoryGenerationCandidate[];
 }

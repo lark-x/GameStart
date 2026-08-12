@@ -46,6 +46,7 @@ export interface MomentInteraction {
   actorCharacterId: string;
   kind: MomentInteractionKind;
   text?: string;
+  replyToInteractionId?: string;
   createdAt: string;
   idempotencyKey: string;
 }
@@ -56,6 +57,7 @@ export interface MomentInteractionInput {
   actor: Character;
   kind: MomentInteractionKind;
   text?: string;
+  replyToInteractionId?: string;
   createdAt: string;
   idempotencyKey: string;
 }
@@ -176,6 +178,7 @@ export function createMomentInteraction(input: MomentInteractionInput): MomentIn
     idempotencyKey: input.idempotencyKey,
   };
   if (input.text !== undefined) interaction.text = input.text;
+  if (input.replyToInteractionId !== undefined) interaction.replyToInteractionId = input.replyToInteractionId;
   assertMomentInteraction(interaction);
   return interaction;
 }
@@ -190,6 +193,9 @@ export function assertMomentInteraction(interaction: MomentInteraction): void {
     assertNonEmptyString(interaction.text, "momentInteraction.text");
   } else if (interaction.text !== undefined) {
     throw new TypeError("LIKE interaction cannot include text");
+  }
+  if (interaction.replyToInteractionId !== undefined) {
+    assertNonEmptyString(interaction.replyToInteractionId, "momentInteraction.replyToInteractionId");
   }
   assertIsoTimestamp(interaction.createdAt, "momentInteraction.createdAt");
   assertNonEmptyString(interaction.idempotencyKey, "momentInteraction.idempotencyKey");

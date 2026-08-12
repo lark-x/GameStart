@@ -8,9 +8,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "vue-tsc -p tsconfig.json --noEmit",
-    "test": "node --test web-shell.test.ts src/api.test.ts src/lib/auto-reply.test.ts src/lib/chat-message.test.ts src/lib/chat-composer.test.ts src/lib/interaction-log.test.ts vite.test.ts",
+    "test": "node ../../scripts/run-tests.mjs . src",
     "dev:shell": "python3 -m http.server 4173 --directory .",
-    "lint": "eslint --config eslint.config.js src"
+    "lint": "eslint --config eslint.config.js src --max-warnings=0"
   },
   "dependencies": {
     "@lucide/vue": "^1.29.0",

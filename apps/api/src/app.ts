@@ -3,13 +3,12 @@ import { SecretCipher } from "@living-network/ai";
 import type { InteractionLogDto } from "@living-network/contracts";
 import {
   createInMemoryRepositories,
-  type DomainRepositories,
   type InMemoryRepositorySeed,
 } from "@living-network/database";
 import {
   InMemoryInteractionLogRepository,
-  type InteractionLogRepository,
 } from "@living-network/database";
+import type { DomainRepositories, InteractionLogRepository } from "@living-network/ports";
 import type {
   ConversationOrchestratorOptions,
   ConversationReply,
@@ -83,8 +82,12 @@ import { handleWorldContent } from "./routes/world-content.ts";
 import { handleVisualAssets } from "./routes/visual-assets.ts";
 import { handleMedia } from "./routes/media.ts";
 import { handleMoments } from "./routes/moments.ts";
+import { handleMomentDrafts, handleImageJobs } from "./routes/moment-drafts.ts";
+import { handleRelationshipFeedback } from "./routes/relationship-feedback.ts";
+import { handleSocialFeed } from "./routes/social-feed.ts";
 import { handleCreatorDispatch } from "./routes/creator-dispatch.ts";
 import { handleSettings } from "./routes/settings.ts";
+import { handleStoryGeneration } from "./routes/story-generation.ts";
 
 // --- Re-exports for backward compatibility ---
 export { ApiError } from "./helpers.ts";
@@ -495,6 +498,11 @@ export class ApiApplication {
         handleMoments,
         handleCreatorDispatch,
         handleSettings,
+        handleStoryGeneration,
+        handleMomentDrafts,
+        handleImageJobs,
+        handleRelationshipFeedback,
+        handleSocialFeed,
       ]) {
         const result = await handler(ctx, request, url, correlationId);
           if (result !== undefined) return result;

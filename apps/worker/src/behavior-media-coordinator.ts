@@ -25,7 +25,7 @@ import type {
   EventExecutionRepository,
   ImageJobRepository,
   MomentDraftRepository,
-} from "@living-network/database";
+} from "@living-network/ports";
 import type { ComfyUiClient, ComfyUiProgressClient, ComfyUiProgressEvent } from "./comfyui-types.ts";
 import type { ImageWorkflowResolver } from "./workflow-resolver.ts";
 import { ComfyUiError } from "./comfyui-client.ts";

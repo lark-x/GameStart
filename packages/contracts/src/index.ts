@@ -11,3 +11,7 @@ export * from "./moments.ts";
 export * from "./dispatch.ts";
 export * from "./schemas.ts";
 export * from "./interaction-log.ts";
+export * from "./story-generation.ts";
+export * from "./relationship-feedback.ts";
+export * from "./social-feed.ts";
+export * from "./v2/index.ts";

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
-const client = readFileSync(new URL("./src/api.js", import.meta.url), "utf8");
+const client = readFileSync(new URL("./src/api.ts", import.meta.url), "utf8");
 const main = readFileSync(new URL("./src/main-vue.ts", import.meta.url), "utf8");
 const styles = readFileSync(new URL("./src/tailwind.css", import.meta.url), "utf8");
 

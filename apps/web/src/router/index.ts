@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from "vue-router";
+import { v2Routes } from "../v2/index.ts";
 
 const routes = [
   { path: "/", redirect: "/feed" },
@@ -15,6 +16,7 @@ const routes = [
   { path: "/creator/logs", name: "creator-logs", component: () => import("../views/InteractionLogsView.vue") },
   { path: "/admin", redirect: "/creator/content" },
   { path: "/settings", redirect: "/creator/integrations" },
+  ...v2Routes,
 ];
 
 export const router = createRouter({

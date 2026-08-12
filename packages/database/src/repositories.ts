@@ -36,4 +36,7 @@ export type {
   MomentInteractionRepository,
   DomainRepositories,
   InMemoryRepositorySeed,
+  WorldContextPolicyRepository,
+  StoryGenerationJobRepository,
+  StoryGenerationCandidateRepository,
 } from "@living-network/ports";

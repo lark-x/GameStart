@@ -4,10 +4,10 @@ import type {
 } from "./conversation-orchestrator.ts";
 import type { ChatProvider } from "@living-network/ai";
 import type { SecretCipher } from "@living-network/ai";
-import type { InteractionLogRepository } from "@living-network/database";
+import type { InteractionLogRepository } from "@living-network/ports";
 import type { InteractionLogging } from "./interaction-logging.ts";
 import type { ApiMediaStore } from "./media-store.ts";
-import type { DomainRepositories } from "@living-network/database";
+import type { DomainRepositories } from "@living-network/ports";
 
 export type ApiStore = DomainRepositories;
 

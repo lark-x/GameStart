@@ -9,3 +9,4 @@ export * from "./conversation-orchestrator.ts";
 export * from "./creator-events.ts";
 export * from "./interaction-logging.ts";
 export * from "./auto-reply.ts";
+export * from "./v2/index.ts";

@@ -1,5 +1,5 @@
 ﻿import type { InteractionLogDto, InteractionLogQuery } from "@living-network/contracts";
-import { previewMessage, type InteractionLogInput, type InteractionLogRepository } from "@living-network/database";
+import { previewMessage, type InteractionLogInput, type InteractionLogRepository } from "@living-network/ports";
 import type { ChatContent, ChatObservationHook } from "@living-network/ai";
 
 export type LogSubscriber = (log: InteractionLogDto) => void;

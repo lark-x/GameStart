@@ -15,7 +15,7 @@ import {
   type ChatMessage,
   type ChatProvider,
 } from "@living-network/ai";
-import type { DomainRepositories } from "@living-network/database";
+import type { DomainRepositories } from "@living-network/ports";
 import type { ChatTraceContext } from "@living-network/contracts";
 
 export interface ResolvedMessageMedia {

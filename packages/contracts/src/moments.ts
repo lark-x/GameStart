@@ -66,6 +66,7 @@ export interface MomentInteractionDto {
   actorCharacterId: CharacterId;
   kind: MomentInteractionKind;
   text?: string;
+  replyToInteractionId?: MomentInteractionId;
   createdAt: string;
   idempotencyKey: string;
 }

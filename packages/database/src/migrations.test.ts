@@ -1,15 +1,72 @@
 import assert from "node:assert/strict";
+import { readdirSync, statSync } from "node:fs";
+import { join, resolve } from "node:path";
 import test from "node:test";
 
 import { applyMigrations, listMigrationFiles, type MigrationDatabase } from "./migrations.ts";
 
+const MIGRATIONS_DIR = resolve(import.meta.dirname, "../migrations");
+
+function diskSqlFiles(): string[] {
+  return readdirSync(MIGRATIONS_DIR)
+    .filter((f) => f.endsWith(".sql"))
+    .sort();
+}
+
+test("migration registry has continuous versions with no duplicates", () => {
+  const migrations = listMigrationFiles();
+  const versions = migrations.map((m) => m.version);
+  const names = migrations.map((m) => m.name);
+  assert.equal(new Set(versions).size, versions.length, "duplicate version detected");
+  assert.equal(new Set(names).size, names.length, "duplicate name detected");
+  for (let i = 0; i < versions.length; i++) {
+    assert.equal(versions[i], i + 1, `expected version ${i + 1} but got ${versions[i]}`);
+  }
+});
+
+test("every registered migration has both up and down files on disk", () => {
+  const migrations = listMigrationFiles();
+  for (const migration of migrations) {
+    const upPath = join(MIGRATIONS_DIR, `${migration.name}.sql`);
+    const downPath = join(MIGRATIONS_DIR, `${migration.name}.down.sql`);
+    assert.ok(statSync(upPath).isFile(), `missing up file: ${migration.name}.sql`);
+    assert.ok(statSync(downPath).isFile(), `missing down file: ${migration.name}.down.sql`);
+  }
+});
+
+test("no unregistered migration files exist on disk", () => {
+  const migrations = listMigrationFiles();
+  const registeredNames = new Set(migrations.map((m) => m.name));
+  const sqlFiles = diskSqlFiles();
+  for (const file of sqlFiles) {
+    const name = file.replace(/\.down\.sql$/, "").replace(/\.sql$/, "");
+    assert.ok(
+      registeredNames.has(name),
+      `unregistered migration file on disk: ${file} — add "${name}" to migrationNames`,
+    );
+  }
+});
+
 test("migration files are ordered and include reversible SQL", async () => {
   const migrations = listMigrationFiles();
-  assert.deepEqual(migrations.map((migration) => migration.version), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
-  const logMigration = migrations.find((migration) => migration.version === 17);
-  assert.ok(logMigration);
-  assert.match(await (await import("node:fs/promises")).readFile(logMigration.upPath, "utf8"), /CREATE TABLE interaction_logs[\s\S]*created_at[\s\S]*correlation_id[\s\S]*details/);
-  assert.match(await (await import("node:fs/promises")).readFile(logMigration.downPath, "utf8"), /DROP TABLE IF EXISTS interaction_logs/);
+  assert.deepEqual(
+    migrations.map((migration) => migration.version),
+    Array.from({ length: 24 }, (_, i) => i + 1),
+  );
+  const storyGraphMigration = migrations.find((migration) => migration.version === 20);
+  assert.ok(storyGraphMigration);
+  const storyGraphUp = await (await import("node:fs/promises")).readFile(storyGraphMigration.upPath, "utf8");
+  assert.match(storyGraphUp, /CREATE TABLE story_arcs/);
+  assert.match(storyGraphUp, /CREATE TABLE story_nodes/);
+  assert.match(storyGraphUp, /CREATE TABLE story_edges/);
+  assert.match(storyGraphUp, /CREATE TABLE prompt_templates/);
+  assert.match(storyGraphUp, /CREATE TABLE memory_candidates/);
+  const storyGraphDown = await (await import("node:fs/promises")).readFile(storyGraphMigration.downPath, "utf8");
+  assert.match(storyGraphDown, /DROP TABLE IF EXISTS memory_candidates/);
+  assert.match(storyGraphDown, /DROP TABLE IF EXISTS prompt_templates/);
+  assert.match(storyGraphDown, /DROP TABLE IF EXISTS story_edges/);
+  assert.match(storyGraphDown, /DROP TABLE IF EXISTS story_nodes/);
+  assert.match(storyGraphDown, /DROP TABLE IF EXISTS story_arcs/);
   for (const migration of migrations) {
     assert.match(await (await import("node:fs/promises")).readFile(migration.upPath, "utf8"), /(CREATE TABLE|ALTER TABLE|CREATE INDEX)/);
     assert.match(await (await import("node:fs/promises")).readFile(migration.downPath, "utf8"), /DROP/);

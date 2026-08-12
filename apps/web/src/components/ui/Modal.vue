@@ -44,7 +44,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
 .ui-modal-header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); padding: var(--space-5); border-bottom: 1px solid var(--border); }
 .ui-modal-header h2 { margin: 3px 0 4px; color: var(--text-strong); font-size: var(--text-xl); }
 .ui-modal-header p { margin: 0; color: var(--muted); font-size: var(--text-sm); line-height: 1.6; }
-.ui-modal-eyebrow { color: var(--primary) !important; font-size: var(--text-xs) !important; font-weight: 700; }
+.ui-modal-eyebrow { color: var(--primary); font-size: var(--text-xs); font-weight: 700; }
 .ui-modal-body { min-height: 0; overflow-y: auto; padding: var(--space-5); }
 .ui-modal-footer { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); padding: var(--space-3) var(--space-5); border-top: 1px solid var(--border); background: var(--surface); }
 @media (max-width: 640px) {

@@ -505,7 +505,7 @@ onUnmounted(() => clearStickerImportItems());
 .lightbox-dialog > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
 .lightbox-dialog > header span { color: var(--primary); font-size: var(--text-xs); font-weight: 700; }
 .lightbox-dialog > header h2 { color: var(--text-strong); font-size: var(--text-base); }
-.lightbox-media { display: grid; min-height: 240px; overflow: hidden; place-items: center; background: #111318; }
+.lightbox-media { display: grid; min-height: 240px; overflow: hidden; place-items: center; background: var(--surface); }
 .lightbox-media img { display: block; max-width: 100%; max-height: min(62vh, 720px); object-fit: contain; }
 .lightbox-details { padding: 14px; }
 .lightbox-details > p { color: var(--text); font-size: var(--text-sm); line-height: 1.65; white-space: pre-wrap; }

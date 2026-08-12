@@ -13,6 +13,7 @@ import type {
   ImageWorkflowTemplateDto,
   LlmProviderProfileDto,
   MomentDto,
+  MomentInteractionDto,
   RelationshipEdgeDto,
   StickerDto,
   StickerPackDto,
@@ -28,6 +29,7 @@ export type ApiAppearanceSettings = AppearanceSettingsDto;
 export type ApiCharacter = CharacterDto;
 export type ApiRelationship = RelationshipEdgeDto;
 export type ApiMoment = MomentDto;
+export type ApiMomentInteraction = MomentInteractionDto;
 export type ApiConversation = ConversationDetailDto;
 export type ApiCalendar = WorldCalendarDto;
 export type ApiEvent = WorldEventDefinitionDto;

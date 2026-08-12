@@ -8,12 +8,13 @@
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "pnpm -r --if-present test",
     "test:local": "node scripts/local-regression.mjs",
-    "test:coverage": "node --experimental-test-coverage --test --test-coverage-lines=100 --test-coverage-exclude=**/*.test.ts --test-coverage-exclude=apps/api/src/main.ts --test-coverage-exclude=apps/api/src/persistent-main.ts --test-coverage-exclude=apps/worker/src/persistent-main.ts packages/*/src/*.test.ts apps/api/src/*.test.ts apps/worker/src/*.test.ts apps/web/*.test.ts apps/web/src/*.test.ts integration/mvp-flow.test.ts infra/compose/*.test.ts .github/workflows/*.test.ts",
+    "test:coverage": "node --experimental-test-coverage --test --test-coverage-lines=100 --test-coverage-exclude=**/*.test.ts --test-coverage-exclude=apps/api/src/main.ts --test-coverage-exclude=apps/api/src/persistent-main.ts --test-coverage-exclude=apps/worker/src/persistent-main.ts packages/*/src/**/*.test.ts apps/api/src/**/*.test.ts apps/worker/src/**/*.test.ts apps/web/*.test.ts apps/web/src/**/*.test.ts integration/mvp-flow.test.ts infra/compose/*.test.ts .github/workflows/*.test.ts",
     "test:integration": "node --test integration/*.test.ts infra/compose/*.test.ts",
     "test:e2e": "playwright test",
     "test:all": "pnpm test && pnpm test:integration",
     "build": "pnpm -r --if-present build",
-    "check:boundaries": "node scripts/check-boundaries.mjs"
+    "check:boundaries": "node scripts/check-boundaries.mjs",
+    "verify": "pnpm check:boundaries && pnpm typecheck && pnpm test && pnpm --filter @living-network/web lint && pnpm build"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",

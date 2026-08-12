@@ -16,7 +16,7 @@ const relationshipsView = read("./src/views/RelationshipsView.vue");
 const feedView = read("./src/views/FeedView.vue");
 const visualView = read("./src/views/CreatorVisualView.vue");
 const logsView = read("./src/views/InteractionLogsView.vue");
-const apiTypes = read("./src/api.d.ts");
+const apiTypes = read("./src/api.ts");
 
 test("Vite configuration uses the ESM-safe root and Vue entry rewrite", () => {
   assert.match(config, /fileURLToPath/);
