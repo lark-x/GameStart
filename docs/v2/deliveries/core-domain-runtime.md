@@ -88,3 +88,63 @@ Explicit non-scope for this checkpoint:
 - Runtime play sessions, saves, release packaging, export manifest generation, and Candidate Review workflows.
 - LLM, ComfyUI, BullMQ worker, Redis, Qdrant, Web pages.
 - State persistence for player saves; this checkpoint only defines schema and preview semantics.
+
+## Checkpoint 3: Candidate Review + SQLite Core
+
+Status: implemented on this branch
+
+Implemented scope:
+
+- Core-owned Candidate Review contracts for scene candidate submission, review action, review response, and review audit DTOs.
+- Reused Gate 0 shared contract/domain content instead of redefining review vocabulary:
+  - `V2CandidateEnvelope`
+  - `V2SceneCandidatePayload`
+  - `V2CandidateStatus`
+  - shared `assertV2ReviewTransition`
+  - shared `CandidateSubmissionPort`
+- Pure domain rules for:
+  - Scene candidate creation as `pending`.
+  - Candidate provenance validation.
+  - Scene payload id/text validation.
+  - duplicate participant rejection.
+  - review transition enforcement.
+  - stale approval detection by `baseCanonRevision !== expectedRevision`.
+  - deterministic scene-candidate apply plan.
+- AI-1 ports for `V2CandidateReviewRepository` and `V2CandidateReviewUnitOfWork`.
+- SQLite migration `0003_v2_core_candidate_review` for:
+  - `v2_scene_candidates`
+  - `v2_candidate_review_audits`
+  - world/status and candidate/audit lookup indexes.
+- SQLite implementation of shared `CandidateSubmissionPort`, backed by the AI-1 candidate table and canon idempotency records.
+- Fastify core API routes under `/api/v2/core`:
+  - `GET /worlds/:storyWorldId/candidates/scenes`
+  - `POST /worlds/:storyWorldId/candidates/scenes`
+  - `GET /worlds/:storyWorldId/candidates/scenes/:candidateId`
+  - `POST /worlds/:storyWorldId/candidates/scenes/:candidateId/review`
+  - `GET /worlds/:storyWorldId/candidates/scenes/:candidateId/audits`
+
+Approval semantics:
+
+- `approve` checks review transition and stale revision before applying graph writes.
+- Approved scene candidates are applied atomically inside one SQLite transaction:
+  - validate referenced location, participants, and target scenes.
+  - create the proposed scene.
+  - create deterministic candidate-owned choices.
+  - advance world revision.
+  - update candidate review state.
+  - write review audit.
+- `reject` and `request_changes` also advance revision, update review state, and write audit.
+- Same idempotency key with the same review payload replays the original result; same key with a different payload returns `409 IDEMPOTENCY_CONFLICT` at API level.
+
+Reusable content added for later AI-1/AI-2 checkpoints:
+
+- `V2SqliteCandidateSubmissionPort` lets AI-2 submit pending scene candidates without reading AI-1 repositories or creating duplicate candidate tables.
+- Candidate review audit rows provide a durable source for AI-3 Review UI and later export/release diagnostics.
+- The apply plan creates deterministic choice IDs from candidate ID and choice index, making approval idempotent and reproducible.
+- Stale candidate detection is centralized in core domain, so generation and UI clients do not need to duplicate revision rules.
+
+Explicit non-scope for this checkpoint:
+
+- Asset candidate approval. Asset review remains AI-2-owned and must not write canon.
+- Release preflight/manifest, runtime play sessions, save/load, and export.
+- LLM/ComfyUI/BullMQ/Qdrant/Web page implementation.

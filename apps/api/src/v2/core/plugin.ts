@@ -1,6 +1,10 @@
 import type { FastifyPluginAsync } from "fastify";
-import type { V2StoryWorldId } from "@living-network/contracts";
-import { V2SqliteCanonUnitOfWork, V2SqliteGraphStateUnitOfWork } from "@living-network/database";
+import type { V2CandidateId, V2StoryWorldId } from "@living-network/contracts";
+import {
+  V2SqliteCanonUnitOfWork,
+  V2SqliteCandidateReviewUnitOfWork,
+  V2SqliteGraphStateUnitOfWork,
+} from "@living-network/database";
 
 import { toV2HttpError, V2HttpError } from "./errors.ts";
 import {
@@ -15,6 +19,8 @@ import {
   parseCreateTimelineEventBody,
   parseCreateWorldBody,
   parsePreviewStateDeltaBody,
+  parseReviewCandidateBody,
+  parseSubmitSceneCandidateBody,
 } from "./parsers.ts";
 import { createV2CoreUseCases, type V2CoreUseCases } from "./use-cases.ts";
 
@@ -28,6 +34,7 @@ export const v2CorePlugin: FastifyPluginAsync<V2CorePluginOptions> = async (app,
     ? createV2CoreUseCases(
       new V2SqliteCanonUnitOfWork(options.sqlite),
       new V2SqliteGraphStateUnitOfWork(options.sqlite),
+      new V2SqliteCandidateReviewUnitOfWork(options.sqlite),
     )
     : undefined);
   if (!useCases) {
@@ -114,6 +121,27 @@ export const v2CorePlugin: FastifyPluginAsync<V2CorePluginOptions> = async (app,
     const { storyWorldId } = getWorldParams(request.params);
     return useCases.previewStateDelta(storyWorldId, parsePreviewStateDeltaBody(request.body));
   });
+  app.get("/worlds/:storyWorldId/candidates/scenes", async (request) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    return useCases.listSceneCandidates(storyWorldId);
+  });
+  app.post("/worlds/:storyWorldId/candidates/scenes", async (request, reply) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    const result = await useCases.submitSceneCandidate(storyWorldId, parseSubmitSceneCandidateBody(request.body));
+    return reply.status(201).send(result);
+  });
+  app.get("/worlds/:storyWorldId/candidates/scenes/:candidateId", async (request) => {
+    const { storyWorldId, candidateId } = getCandidateParams(request.params);
+    return useCases.getSceneCandidate(storyWorldId, candidateId);
+  });
+  app.post("/worlds/:storyWorldId/candidates/scenes/:candidateId/review", async (request) => {
+    const { storyWorldId, candidateId } = getCandidateParams(request.params);
+    return useCases.reviewSceneCandidate(storyWorldId, candidateId, parseReviewCandidateBody(request.body));
+  });
+  app.get("/worlds/:storyWorldId/candidates/scenes/:candidateId/audits", async (request) => {
+    const { storyWorldId, candidateId } = getCandidateParams(request.params);
+    return useCases.listCandidateReviewAudits(storyWorldId, candidateId);
+  });
 };
 
 function getWorldParams(params: unknown): { readonly storyWorldId: V2StoryWorldId } {
@@ -125,4 +153,16 @@ function getWorldParams(params: unknown): { readonly storyWorldId: V2StoryWorldI
     throw new V2HttpError(400, "BAD_REQUEST", "storyWorldId must be a non-empty string");
   }
   return { storyWorldId: storyWorldId as V2StoryWorldId };
+}
+
+function getCandidateParams(params: unknown): {
+  readonly storyWorldId: V2StoryWorldId;
+  readonly candidateId: V2CandidateId;
+} {
+  const { storyWorldId } = getWorldParams(params);
+  const candidateId = (params as { readonly candidateId?: unknown }).candidateId;
+  if (typeof candidateId !== "string" || candidateId.trim().length === 0) {
+    throw new V2HttpError(400, "BAD_REQUEST", "candidateId must be a non-empty string");
+  }
+  return { storyWorldId, candidateId: candidateId as V2CandidateId };
 }

@@ -22,3 +22,11 @@ Graph + Typed State did not require additional shared-path changes beyond the pr
 The new SQLite migration is registered through AI-1-owned `packages/database/src/v2/core/migrations.ts`; the existing platform migration registry already imports the core migration list and did not need another shared edit.
 
 No blocking interface requests are open for the Graph + Typed State checkpoint.
+
+## Checkpoint 3 Notes
+
+Candidate Review + SQLite Core did not require shared contract changes. It reuses the Gate 0 shared candidate envelope, scene candidate payload, candidate status, review transition helper, and `CandidateSubmissionPort`.
+
+The implementation adds a core-owned SQLite implementation of `CandidateSubmissionPort` so AI-2 can submit scene candidates through the frozen shared port without direct access to AI-1 repositories.
+
+No blocking interface requests are open for the Candidate Review + SQLite Core checkpoint.

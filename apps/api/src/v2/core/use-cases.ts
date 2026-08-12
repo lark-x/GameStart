@@ -3,6 +3,9 @@ import { createHash } from "node:crypto";
 import type {
   V2CharacterDto,
   V2ArcDto,
+  V2CandidateId,
+  V2CandidateReviewAuditDto,
+  V2CandidateReviewResponse,
   V2ChoiceDto,
   V2CanonSnapshotDto,
   V2CanonWriteResponse,
@@ -25,15 +28,24 @@ import type {
   V2PreviewStateDeltaRequest,
   V2RuleDto,
   V2SceneDto,
+  V2ReviewCandidateRequest,
+  V2SceneCandidatePayload,
   V2StateDeltaPreviewDto,
   V2StateSnapshotDto,
   V2StateVariableDto,
   V2StoryWorldDto,
   V2StoryWorldId,
+  V2SubmitSceneCandidateRequest,
   V2TimelineEventDto,
+  V2SceneCandidateDto,
 } from "@living-network/contracts";
+import type {
+  V2CoreSceneCandidatePayload,
+} from "@living-network/domain";
 import {
+  buildV2SceneCandidateApplyPlan,
   buildV2InitialTypedState,
+  createV2SceneCandidate,
   createV2CanonCharacter,
   createV2CanonFact,
   createV2CanonLocation,
@@ -45,12 +57,16 @@ import {
   createV2GraphScene,
   createV2TypedStateVariable,
   previewV2TypedStateDelta,
+  reviewV2SceneCandidate,
   validateV2Graph,
 } from "@living-network/domain";
 import type {
   V2CanonMutationRecord,
   V2CanonRepository,
   V2CanonUnitOfWork,
+  V2CandidateReviewAuditRecord,
+  V2CandidateReviewRepository,
+  V2CandidateReviewUnitOfWork,
   V2GraphStateRepository,
   V2GraphStateUnitOfWork,
 } from "@living-network/ports";
@@ -75,17 +91,33 @@ export interface V2CoreUseCases {
   createStateVariable(storyWorldId: V2StoryWorldId, input: V2CreateStateVariableRequest): Promise<V2CanonWriteResponse<V2StateVariableDto>>;
   getInitialState(storyWorldId: V2StoryWorldId): Promise<V2StateSnapshotDto>;
   previewStateDelta(storyWorldId: V2StoryWorldId, input: V2PreviewStateDeltaRequest): Promise<V2StateDeltaPreviewDto>;
+  submitSceneCandidate(storyWorldId: V2StoryWorldId, input: V2SubmitSceneCandidateRequest): Promise<V2SceneCandidateDto>;
+  listSceneCandidates(storyWorldId: V2StoryWorldId): Promise<readonly V2SceneCandidateDto[]>;
+  getSceneCandidate(storyWorldId: V2StoryWorldId, candidateId: V2CandidateId): Promise<V2SceneCandidateDto>;
+  reviewSceneCandidate(
+    storyWorldId: V2StoryWorldId,
+    candidateId: V2CandidateId,
+    input: V2ReviewCandidateRequest,
+  ): Promise<V2CandidateReviewResponse>;
+  listCandidateReviewAudits(storyWorldId: V2StoryWorldId, candidateId: V2CandidateId): Promise<readonly V2CandidateReviewAuditDto[]>;
 }
 
 export function createV2CoreUseCases(
   unitOfWork: V2CanonUnitOfWork,
   graphStateUnitOfWork?: V2GraphStateUnitOfWork,
+  candidateReviewUnitOfWork?: V2CandidateReviewUnitOfWork,
 ): V2CoreUseCases {
   const requireGraphState = () => {
     if (!graphStateUnitOfWork) {
       throw new V2HttpError(503, "SERVICE_UNAVAILABLE", "V2 graph/state dependencies are not configured");
     }
     return graphStateUnitOfWork;
+  };
+  const requireCandidateReview = () => {
+    if (!candidateReviewUnitOfWork) {
+      throw new V2HttpError(503, "SERVICE_UNAVAILABLE", "V2 candidate review dependencies are not configured");
+    }
+    return candidateReviewUnitOfWork;
   };
   return {
     createWorld: (input) => unitOfWork.withCanonTransaction(async ({ canon }) =>
@@ -233,6 +265,84 @@ export function createV2CoreUseCases(
         deltas: input.deltas,
       });
     }),
+    submitSceneCandidate: (storyWorldId, input) => requireCandidateReview().withCandidateReviewTransaction(async ({ canon, candidateReview }) =>
+      withIdempotency(canon, "submitSceneCandidate", input.idempotencyKey, { storyWorldId, ...input }, async () => {
+        await requireWorld(canon, storyWorldId);
+        const item = await candidateReview.createSceneCandidate(createV2SceneCandidate({ storyWorldId, ...input }));
+        return toSceneCandidateDto(item);
+      }),
+    ),
+    listSceneCandidates: (storyWorldId) => requireCandidateReview().withCandidateReviewTransaction(async ({ canon, candidateReview }) => {
+      await requireWorld(canon, storyWorldId);
+      return (await candidateReview.listSceneCandidates(storyWorldId)).map(toSceneCandidateDto);
+    }),
+    getSceneCandidate: (storyWorldId, candidateId) => requireCandidateReview().withCandidateReviewTransaction(async ({ canon, candidateReview }) => {
+      await requireWorld(canon, storyWorldId);
+      return toSceneCandidateDto(await requireSceneCandidate(candidateReview, storyWorldId, candidateId));
+    }),
+    reviewSceneCandidate: (storyWorldId, candidateId, input) => requireCandidateReview().withCandidateReviewTransaction(async ({ canon, graphState, candidateReview }) =>
+      withIdempotency(canon, "reviewSceneCandidate", input.idempotencyKey, { storyWorldId, candidateId, ...input }, async () => {
+        await requireWorld(canon, storyWorldId);
+        const existing = await requireSceneCandidate(candidateReview, storyWorldId, candidateId);
+        const reviewed = reviewV2SceneCandidate({ candidate: existing, ...input });
+        let appliedChoiceIds: readonly string[] = [];
+        if (input.action === "approve") {
+          const plan = buildV2SceneCandidateApplyPlan(existing);
+          if (existing.payload.scene.locationId !== undefined) {
+            await requireLocation(canon, storyWorldId, existing.payload.scene.locationId);
+          }
+          for (const characterId of existing.payload.scene.participantCharacterIds) {
+            await requireCharacter(canon, storyWorldId, characterId);
+          }
+          for (const choice of plan.choices) {
+            if (choice.targetSceneId !== undefined) await requireScene(graphState, storyWorldId, choice.targetSceneId);
+          }
+          const createdScene = await graphState.createScene(createV2GraphScene({
+            storyWorldId,
+            sceneId: plan.scene.sceneId as V2SceneDto["sceneId"],
+            title: plan.scene.title,
+            body: plan.scene.body,
+          }));
+          const createdChoices = [];
+          for (const choice of plan.choices) {
+            createdChoices.push(await graphState.createChoice(createV2GraphChoice({
+              storyWorldId,
+              choiceId: choice.choiceId as V2ChoiceDto["choiceId"],
+              sourceScene: createdScene,
+              ...(choice.targetSceneId === undefined ? {} : { targetScene: await requireScene(graphState, storyWorldId, choice.targetSceneId) }),
+              label: choice.label,
+            })));
+          }
+          appliedChoiceIds = createdChoices.map((choice) => choice.choiceId);
+        }
+        const revision = await canon.advanceRevision(storyWorldId, input.expectedRevision);
+        const updated = await candidateReview.updateSceneCandidateReview({
+          candidate: reviewed,
+          reviewedAt: new Date().toISOString(),
+        });
+        await candidateReview.createAudit({
+          candidateId,
+          storyWorldId,
+          fromStatus: existing.status,
+          toStatus: updated.status,
+          action: input.action,
+          reviewer: input.reviewer,
+          ...(input.reason === undefined ? {} : { reason: input.reason }),
+          resultingRevision: revision,
+        });
+        return {
+          candidate: toSceneCandidateDto(updated),
+          revision,
+          ...(input.action === "approve" ? { appliedSceneId: existing.payload.scene.sceneId as V2SceneDto["sceneId"] } : {}),
+          appliedChoiceIds,
+        };
+      }),
+    ),
+    listCandidateReviewAudits: (storyWorldId, candidateId) => requireCandidateReview().withCandidateReviewTransaction(async ({ canon, candidateReview }) => {
+      await requireWorld(canon, storyWorldId);
+      await requireSceneCandidate(candidateReview, storyWorldId, candidateId);
+      return (await candidateReview.listAudits({ storyWorldId, candidateId })).map(toCandidateReviewAuditDto);
+    }),
   };
 }
 
@@ -269,6 +379,13 @@ async function requireLocation(canon: V2CanonRepository, storyWorldId: V2StoryWo
   return location;
 }
 
+async function requireCharacter(canon: V2CanonRepository, storyWorldId: V2StoryWorldId, characterId: unknown) {
+  if (typeof characterId !== "string") throw new V2HttpError(400, "BAD_REQUEST", "characterId must be a string");
+  const character = await canon.getCharacter({ storyWorldId, characterId: characterId as never });
+  if (!character) throw new V2HttpError(422, "VALIDATION_FAILED", "participantCharacterIds must reference existing characters in this story world");
+  return character;
+}
+
 async function requireArc(graphState: V2GraphStateRepository, storyWorldId: V2StoryWorldId, arcId: unknown) {
   if (typeof arcId !== "string") throw new V2HttpError(400, "BAD_REQUEST", "arcId must be a string");
   const arc = await graphState.getArc({ storyWorldId, arcId: arcId as never });
@@ -281,6 +398,17 @@ async function requireScene(graphState: V2GraphStateRepository, storyWorldId: V2
   const scene = await graphState.getScene({ storyWorldId, sceneId: sceneId as never });
   if (!scene) throw new V2HttpError(422, "VALIDATION_FAILED", "sceneId must reference an existing scene in this story world");
   return scene;
+}
+
+async function requireSceneCandidate(
+  candidateReview: V2CandidateReviewRepository,
+  storyWorldId: V2StoryWorldId,
+  candidateId: unknown,
+) {
+  if (typeof candidateId !== "string") throw new V2HttpError(400, "BAD_REQUEST", "candidateId must be a string");
+  const candidate = await candidateReview.getSceneCandidate({ storyWorldId, candidateId: candidateId as never });
+  if (!candidate) throw new V2HttpError(404, "NOT_FOUND", "Scene candidate not found");
+  return candidate;
 }
 
 async function buildSnapshot(canon: V2CanonRepository, storyWorldId: V2StoryWorldId): Promise<V2CanonSnapshotDto> {
@@ -408,6 +536,58 @@ function toStateVariableDto(variable: Awaited<ReturnType<V2GraphStateRepository[
     valueType: variable.valueType,
     defaultValue: variable.defaultValue,
     createdAt: variable.createdAt ?? "1970-01-01T00:00:00.000Z",
+  };
+}
+
+function toSceneCandidateDto(candidate: Awaited<ReturnType<V2CandidateReviewRepository["getSceneCandidate"]>> & {}): V2SceneCandidateDto {
+  const dto: V2SceneCandidateDto = {
+    candidateId: candidate.candidateId as V2SceneCandidateDto["candidateId"],
+    kind: "scene",
+    storyWorldId: candidate.storyWorldId as V2StoryWorldId,
+    baseCanonRevision: candidate.baseCanonRevision as V2Revision,
+    status: candidate.status,
+    payload: toSceneCandidatePayloadDto(candidate.payload),
+    provenance: candidate.provenance,
+    createdAt: (candidate.createdAt ?? "1970-01-01T00:00:00.000Z") as V2SceneCandidateDto["createdAt"],
+    ...(candidate.reviewedAt === undefined ? {} : { reviewedAt: candidate.reviewedAt as NonNullable<V2SceneCandidateDto["reviewedAt"]> }),
+    ...(candidate.reviewer === undefined ? {} : { reviewer: candidate.reviewer }),
+    ...(candidate.reviewReason === undefined ? {} : { reviewReason: candidate.reviewReason }),
+  };
+  return dto;
+}
+
+function toCandidateReviewAuditDto(audit: V2CandidateReviewAuditRecord): V2CandidateReviewAuditDto {
+  return {
+    auditId: audit.auditId ?? 0,
+    candidateId: audit.candidateId as V2CandidateId,
+    storyWorldId: audit.storyWorldId as V2StoryWorldId,
+    fromStatus: audit.fromStatus,
+    toStatus: audit.toStatus,
+    action: audit.action,
+    reviewer: audit.reviewer,
+    ...(audit.reason === undefined ? {} : { reason: audit.reason }),
+    resultingRevision: audit.resultingRevision as V2Revision,
+    createdAt: audit.createdAt ?? "1970-01-01T00:00:00.000Z",
+  };
+}
+
+function toSceneCandidatePayloadDto(payload: V2CoreSceneCandidatePayload): V2SceneCandidatePayload {
+  return {
+    scene: {
+      sceneId: payload.scene.sceneId as V2SceneCandidatePayload["scene"]["sceneId"],
+      title: payload.scene.title,
+      body: payload.scene.body,
+      ...(payload.scene.locationId === undefined ? {} : { locationId: payload.scene.locationId as NonNullable<V2SceneCandidatePayload["scene"]["locationId"]> }),
+      participantCharacterIds: payload.scene.participantCharacterIds.map((characterId) =>
+        characterId as V2SceneCandidatePayload["scene"]["participantCharacterIds"][number]
+      ),
+    },
+    choices: payload.choices.map((choice) => ({
+      label: choice.label,
+      ...(choice.targetSceneId === undefined ? {} : { targetSceneId: choice.targetSceneId as NonNullable<V2SceneCandidatePayload["choices"][number]["targetSceneId"]> }),
+      ...(choice.consequenceSummary === undefined ? {} : { consequenceSummary: choice.consequenceSummary }),
+    })),
+    validationNotes: payload.validationNotes,
   };
 }
 

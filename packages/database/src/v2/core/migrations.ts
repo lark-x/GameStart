@@ -196,4 +196,56 @@ export const v2CoreGraphStateMigration: V2SqliteMigration = {
   },
 };
 
-export const v2CoreCanonMigrations = [v2CoreCanonMigration, v2CoreGraphStateMigration] as const;
+export const v2CoreCandidateReviewMigration: V2SqliteMigration = {
+  id: "0003_v2_core_candidate_review",
+  up: (db) => {
+    db.exec(`
+      CREATE TABLE v2_scene_candidates (
+        candidate_id TEXT NOT NULL,
+        story_world_id TEXT NOT NULL REFERENCES v2_worlds(story_world_id) ON DELETE CASCADE,
+        base_canon_revision INTEGER NOT NULL CHECK (base_canon_revision >= 1),
+        status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'rejected', 'changes_requested')),
+        payload_json TEXT NOT NULL,
+        provenance_json TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        reviewed_at TEXT,
+        reviewer TEXT,
+        review_reason TEXT,
+        PRIMARY KEY (story_world_id, candidate_id)
+      );
+
+      CREATE TABLE v2_candidate_review_audits (
+        audit_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        candidate_id TEXT NOT NULL,
+        story_world_id TEXT NOT NULL,
+        from_status TEXT NOT NULL CHECK (from_status IN ('pending', 'approved', 'rejected', 'changes_requested')),
+        to_status TEXT NOT NULL CHECK (to_status IN ('pending', 'approved', 'rejected', 'changes_requested')),
+        action TEXT NOT NULL CHECK (action IN ('approve', 'reject', 'request_changes')),
+        reviewer TEXT NOT NULL CHECK (length(trim(reviewer)) > 0),
+        reason TEXT,
+        resulting_revision INTEGER NOT NULL CHECK (resulting_revision >= 1),
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        FOREIGN KEY (story_world_id, candidate_id)
+          REFERENCES v2_scene_candidates(story_world_id, candidate_id)
+          ON DELETE CASCADE
+      );
+
+      CREATE INDEX v2_scene_candidates_world_status_idx ON v2_scene_candidates(story_world_id, status, created_at);
+      CREATE INDEX v2_candidate_review_audits_candidate_idx ON v2_candidate_review_audits(story_world_id, candidate_id, created_at);
+    `);
+  },
+  down: (db) => {
+    db.exec(`
+      DROP INDEX IF EXISTS v2_candidate_review_audits_candidate_idx;
+      DROP INDEX IF EXISTS v2_scene_candidates_world_status_idx;
+      DROP TABLE IF EXISTS v2_candidate_review_audits;
+      DROP TABLE IF EXISTS v2_scene_candidates;
+    `);
+  },
+};
+
+export const v2CoreCanonMigrations = [
+  v2CoreCanonMigration,
+  v2CoreGraphStateMigration,
+  v2CoreCandidateReviewMigration,
+] as const;

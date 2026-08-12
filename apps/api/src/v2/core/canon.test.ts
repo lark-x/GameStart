@@ -277,3 +277,173 @@ test("V2 core API creates graph records, validates reachability, and previews ty
     cleanup();
   }
 });
+
+test("V2 core API reviews scene candidates and applies approved candidates atomically", async () => {
+  const { db, cleanup } = openV2TempSqliteConnection();
+  applyV2Migrations(db);
+  const app = createV2FastifyApp({ coreOptions: { sqlite: db } });
+  await app.ready();
+  try {
+    await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds",
+      payload: {
+        storyWorldId: "world_review_api",
+        name: "Review API World",
+        idempotencyKey: "key_world_review_api",
+      },
+    });
+    await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds/world_review_api/characters",
+      payload: {
+        characterId: "char_a",
+        name: "Ada",
+        expectedRevision: 1,
+        idempotencyKey: "key_review_char",
+      },
+    });
+    await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds/world_review_api/scenes",
+      payload: {
+        sceneId: "scene_existing",
+        title: "Existing",
+        isEntry: true,
+        expectedRevision: 2,
+        idempotencyKey: "key_review_existing_scene",
+      },
+    });
+
+    const submitted = await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds/world_review_api/candidates/scenes",
+      payload: {
+        candidateId: "candidate_scene_a",
+        baseCanonRevision: 3,
+        provenance: { source: "llm", jobId: "job_a" },
+        payload: {
+          scene: {
+            sceneId: "scene_new",
+            title: "New Scene",
+            body: "Candidate body",
+            participantCharacterIds: ["char_a"],
+          },
+          choices: [{ label: "Back", targetSceneId: "scene_existing" }],
+          validationNotes: [],
+        },
+        idempotencyKey: "key_submit_candidate",
+      },
+    });
+    assert.equal(submitted.statusCode, 201);
+    assert.equal(submitted.json().status, "pending");
+
+    const approved = await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds/world_review_api/candidates/scenes/candidate_scene_a/review",
+      payload: {
+        action: "approve",
+        reviewer: "creator",
+        expectedRevision: 3,
+        idempotencyKey: "key_approve_candidate",
+      },
+    });
+    assert.equal(approved.statusCode, 200);
+    assert.equal(approved.json().revision, 4);
+    assert.equal(approved.json().candidate.status, "approved");
+    assert.equal(approved.json().appliedSceneId, "scene_new");
+    assert.deepEqual(approved.json().appliedChoiceIds, ["candidate_scene_a:choice:1"]);
+
+    const graph = await app.inject({
+      method: "GET",
+      url: "/api/v2/core/worlds/world_review_api/graph",
+    });
+    assert.equal(graph.statusCode, 200);
+    assert.equal(graph.json().scenes.some((scene: { readonly sceneId: string }) => scene.sceneId === "scene_new"), true);
+    assert.equal(graph.json().choices[0].sourceSceneId, "scene_new");
+
+    const audits = await app.inject({
+      method: "GET",
+      url: "/api/v2/core/worlds/world_review_api/candidates/scenes/candidate_scene_a/audits",
+    });
+    assert.equal(audits.statusCode, 200);
+    assert.equal(audits.json()[0].toStatus, "approved");
+  } finally {
+    await app.close();
+    db.close();
+    cleanup();
+  }
+});
+
+test("V2 core API rejects stale scene candidate approvals without applying graph writes", async () => {
+  const { db, cleanup } = openV2TempSqliteConnection();
+  applyV2Migrations(db);
+  const app = createV2FastifyApp({ coreOptions: { sqlite: db } });
+  await app.ready();
+  try {
+    await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds",
+      payload: {
+        storyWorldId: "world_stale_api",
+        name: "Stale API World",
+        idempotencyKey: "key_world_stale_api",
+      },
+    });
+    await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds/world_stale_api/facts",
+      payload: {
+        factId: "fact_a",
+        text: "A later edit",
+        visibility: "player_visible",
+        expectedRevision: 1,
+        idempotencyKey: "key_stale_fact",
+      },
+    });
+    await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds/world_stale_api/candidates/scenes",
+      payload: {
+        candidateId: "candidate_stale",
+        baseCanonRevision: 1,
+        provenance: { source: "human" },
+        payload: {
+          scene: {
+            sceneId: "scene_new",
+            title: "New Scene",
+            body: "Candidate body",
+            participantCharacterIds: [],
+          },
+          choices: [],
+          validationNotes: [],
+        },
+        idempotencyKey: "key_submit_stale_candidate",
+      },
+    });
+
+    const stale = await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds/world_stale_api/candidates/scenes/candidate_stale/review",
+      payload: {
+        action: "approve",
+        reviewer: "creator",
+        expectedRevision: 2,
+        idempotencyKey: "key_approve_stale_candidate",
+      },
+    });
+    assert.equal(stale.statusCode, 409);
+    assert.equal(stale.json().error.code, "STALE_REVISION");
+
+    const graph = await app.inject({
+      method: "GET",
+      url: "/api/v2/core/worlds/world_stale_api/graph",
+    });
+    assert.equal(graph.statusCode, 200);
+    assert.equal(graph.json().scenes.length, 0);
+  } finally {
+    await app.close();
+    db.close();
+    cleanup();
+  }
+});

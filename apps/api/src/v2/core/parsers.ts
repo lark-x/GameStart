@@ -1,6 +1,7 @@
 import type {
   V2CharacterId,
   V2ArcId,
+  V2CandidateId,
   V2ChoiceId,
   V2CreateArcRequest,
   V2CreateCharacterRequest,
@@ -19,6 +20,7 @@ import type {
   V2Revision,
   V2RuleSeverity,
   V2SceneId,
+  V2SceneCandidatePayload,
   V2StateComparisonOperator,
   V2StateConsequenceOperation,
   V2StateDeltaDto,
@@ -26,6 +28,8 @@ import type {
   V2StateValue,
   V2StateValueType,
   V2StoryWorldId,
+  V2SubmitSceneCandidateRequest,
+  V2ReviewCandidateRequest,
 } from "@living-network/contracts";
 
 import { V2HttpError } from "./errors.ts";
@@ -165,6 +169,29 @@ export function parsePreviewStateDeltaBody(body: unknown): V2PreviewStateDeltaRe
   };
 }
 
+export function parseSubmitSceneCandidateBody(body: unknown): V2SubmitSceneCandidateRequest {
+  const value = requireBody(body);
+  assertKeys(value, ["candidateId", "baseCanonRevision", "payload", "provenance", "idempotencyKey"]);
+  return {
+    candidateId: requiredString(value.candidateId, "candidateId") as V2CandidateId,
+    baseCanonRevision: requiredRevision(value.baseCanonRevision),
+    payload: requiredSceneCandidatePayload(value.payload),
+    provenance: requiredCandidateProvenance(value.provenance),
+    idempotencyKey: requiredString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey,
+  };
+}
+
+export function parseReviewCandidateBody(body: unknown): V2ReviewCandidateRequest {
+  const value = requireRevisionedBody(body, ["action", "reviewer", "reason"]);
+  return {
+    action: requiredReviewAction(value.action),
+    reviewer: requiredString(value.reviewer, "reviewer"),
+    ...(value.reason === undefined ? {} : { reason: requiredString(value.reason, "reason") }),
+    expectedRevision: requiredRevision(value.expectedRevision),
+    idempotencyKey: requiredString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey,
+  };
+}
+
 function requireRevisionedBody(body: unknown, keys: readonly string[]): Record<string, unknown> {
   const value = requireBody(body);
   assertKeys(value, [...keys, "expectedRevision", "idempotencyKey"]);
@@ -278,4 +305,54 @@ function requiredRecord(value: unknown, field: string): Record<string, unknown> 
     throw new V2HttpError(400, "BAD_REQUEST", `${field} must be an object`);
   }
   return value as Record<string, unknown>;
+}
+
+function requiredSceneCandidatePayload(value: unknown): V2SceneCandidatePayload {
+  const payload = requiredRecord(value, "payload");
+  assertKeys(payload, ["scene", "choices", "validationNotes"]);
+  const scene = requiredRecord(payload.scene, "payload.scene");
+  assertKeys(scene, ["sceneId", "title", "body", "locationId", "participantCharacterIds"]);
+  return {
+    scene: {
+      sceneId: requiredString(scene.sceneId, "payload.scene.sceneId") as V2SceneId,
+      title: requiredString(scene.title, "payload.scene.title"),
+      body: requiredString(scene.body, "payload.scene.body"),
+      ...(scene.locationId === undefined ? {} : { locationId: requiredString(scene.locationId, "payload.scene.locationId") as V2LocationId }),
+      participantCharacterIds: requiredArray(scene.participantCharacterIds, "payload.scene.participantCharacterIds")
+        .map((item, index) => requiredString(item, `payload.scene.participantCharacterIds[${index}]`) as never),
+    },
+    choices: requiredArray(payload.choices, "payload.choices").map((item, index) => {
+      const choice = requiredRecord(item, `payload.choices[${index}]`);
+      assertKeys(choice, ["label", "targetSceneId", "consequenceSummary"]);
+      return {
+        label: requiredString(choice.label, `payload.choices[${index}].label`),
+        ...(choice.targetSceneId === undefined ? {} : { targetSceneId: requiredString(choice.targetSceneId, `payload.choices[${index}].targetSceneId`) as V2SceneId }),
+        ...(choice.consequenceSummary === undefined ? {} : { consequenceSummary: requiredString(choice.consequenceSummary, `payload.choices[${index}].consequenceSummary`) }),
+      };
+    }),
+    validationNotes: requiredArray(payload.validationNotes, "payload.validationNotes")
+      .map((item, index) => requiredString(item, `payload.validationNotes[${index}]`)),
+  };
+}
+
+function requiredCandidateProvenance(value: unknown): V2SubmitSceneCandidateRequest["provenance"] {
+  const provenance = requiredRecord(value, "provenance");
+  assertKeys(provenance, ["source", "jobId", "contextHash", "summary"]);
+  const source = provenance.source;
+  if (source !== "human" && source !== "llm" && source !== "comfyui" && source !== "import") {
+    throw new V2HttpError(400, "BAD_REQUEST", "provenance.source is not supported");
+  }
+  return {
+    source,
+    ...(provenance.jobId === undefined ? {} : { jobId: requiredString(provenance.jobId, "provenance.jobId") }),
+    ...(provenance.contextHash === undefined ? {} : { contextHash: requiredString(provenance.contextHash, "provenance.contextHash") }),
+    ...(provenance.summary === undefined ? {} : { summary: requiredString(provenance.summary, "provenance.summary") }),
+  };
+}
+
+function requiredReviewAction(value: unknown): V2ReviewCandidateRequest["action"] {
+  if (value !== "approve" && value !== "reject" && value !== "request_changes") {
+    throw new V2HttpError(400, "BAD_REQUEST", "review action is not supported");
+  }
+  return value;
 }

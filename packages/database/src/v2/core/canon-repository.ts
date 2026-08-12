@@ -1,13 +1,18 @@
+import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
 import type {
   V2CharacterId,
   V2ArcId,
+  V2CandidateEnvelope,
+  V2CandidateId,
+  V2CandidateStatus,
   V2FactVisibility,
   V2IdempotencyKey,
   V2LocationId,
   V2Revision,
   V2RuleSeverity,
+  V2SceneCandidatePayload,
   V2ChoiceId,
   V2SceneId,
   V2StoryWorldId,
@@ -19,11 +24,15 @@ import type {
   V2CanonRule,
   V2CanonTimelineEvent,
   V2CanonWorld,
+  V2CoreCandidateProvenance,
+  V2CoreSceneCandidate,
+  V2CoreSceneCandidatePayload,
   V2GraphArc,
   V2GraphChoice,
   V2GraphScene,
   V2GraphStateConsequence,
   V2GraphStateGate,
+  V2ReviewAction,
   V2TypedStateValue,
   V2TypedStateValueType,
   V2TypedStateVariable,
@@ -33,9 +42,13 @@ import type {
   V2CanonMutationRecord,
   V2CanonRepository,
   V2CanonUnitOfWork,
+  V2CandidateReviewAuditRecord,
+  V2CandidateReviewRepository,
+  V2CandidateReviewUnitOfWork,
   V2GraphStateRepository,
   V2GraphStateUnitOfWork,
 } from "@living-network/ports";
+import type { CandidateSubmissionPort } from "@living-network/ports";
 
 import { withV2SqliteAsyncTransaction } from "../platform/index.ts";
 
@@ -68,6 +81,68 @@ export class V2SqliteGraphStateUnitOfWork implements V2GraphStateUnitOfWork {
       canon: new V2SqliteCanonRepository(this.db),
       graphState: new V2SqliteGraphStateRepository(this.db),
     }));
+  }
+}
+
+export class V2SqliteCandidateReviewUnitOfWork implements V2CandidateReviewUnitOfWork {
+  private readonly db: DatabaseSync;
+
+  public constructor(db: DatabaseSync) {
+    this.db = db;
+  }
+
+  public async withCandidateReviewTransaction<T>(
+    fn: (repositories: {
+      readonly canon: V2CanonRepository;
+      readonly graphState: V2GraphStateRepository;
+      readonly candidateReview: V2CandidateReviewRepository;
+    }) => Promise<T>,
+  ): Promise<T> {
+    return withV2SqliteAsyncTransaction(this.db, () => fn({
+      canon: new V2SqliteCanonRepository(this.db),
+      graphState: new V2SqliteGraphStateRepository(this.db),
+      candidateReview: new V2SqliteCandidateReviewRepository(this.db),
+    }));
+  }
+}
+
+export class V2SqliteCandidateSubmissionPort implements CandidateSubmissionPort {
+  private readonly db: DatabaseSync;
+
+  public constructor(db: DatabaseSync) {
+    this.db = db;
+  }
+
+  public async submitSceneCandidate(input: {
+    readonly candidate: V2CandidateEnvelope<V2SceneCandidatePayload>;
+    readonly idempotencyKey: V2IdempotencyKey;
+  }): Promise<{
+    readonly candidateId: V2CandidateId;
+    readonly status: V2CandidateStatus;
+  }> {
+    const unit = new V2SqliteCandidateReviewUnitOfWork(this.db);
+    return unit.withCandidateReviewTransaction(async ({ canon, candidateReview }) => {
+      const payload = { candidate: input.candidate };
+      const operation = "submitSceneCandidate";
+      const existing = await canon.readMutation<{
+        readonly candidateId: V2CandidateId;
+        readonly status: V2CandidateStatus;
+      }>({ key: input.idempotencyKey, operation });
+      const payloadHash = hashV2SqliteCandidatePayload(payload);
+      if (existing) {
+        if (existing.payloadHash !== payloadHash) {
+          throw new V2DomainError("INVALID_INPUT", "Idempotency key was already used with a different candidate payload");
+        }
+        return existing.result;
+      }
+      await candidateReview.createSceneCandidate(input.candidate as unknown as V2CoreSceneCandidate);
+      const result = {
+        candidateId: input.candidate.candidateId,
+        status: input.candidate.status,
+      };
+      await canon.saveMutation({ key: input.idempotencyKey, operation, payloadHash, result });
+      return result;
+    });
   }
 }
 
@@ -364,6 +439,124 @@ export class V2SqliteGraphStateRepository implements V2GraphStateRepository {
   }
 }
 
+export class V2SqliteCandidateReviewRepository implements V2CandidateReviewRepository {
+  private readonly db: DatabaseSync;
+
+  public constructor(db: DatabaseSync) {
+    this.db = db;
+  }
+
+  public async getSceneCandidate(input: {
+    readonly storyWorldId: V2StoryWorldId;
+    readonly candidateId: V2CandidateId;
+  }): Promise<V2CoreSceneCandidate | undefined> {
+    const row = this.db.prepare("SELECT * FROM v2_scene_candidates WHERE story_world_id = ? AND candidate_id = ?")
+      .get(input.storyWorldId, input.candidateId);
+    return row === undefined ? undefined : mapSceneCandidate(row);
+  }
+
+  public async listSceneCandidates(storyWorldId: V2StoryWorldId): Promise<readonly V2CoreSceneCandidate[]> {
+    return this.db.prepare("SELECT * FROM v2_scene_candidates WHERE story_world_id = ? ORDER BY created_at, candidate_id")
+      .all(storyWorldId)
+      .map(mapSceneCandidate);
+  }
+
+  public async createSceneCandidate(input: V2CoreSceneCandidate): Promise<V2CoreSceneCandidate> {
+    this.db.prepare(`
+      INSERT INTO v2_scene_candidates (
+        candidate_id,
+        story_world_id,
+        base_canon_revision,
+        status,
+        payload_json,
+        provenance_json
+      )
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      input.candidateId,
+      input.storyWorldId,
+      input.baseCanonRevision,
+      input.status,
+      JSON.stringify(input.payload),
+      JSON.stringify(input.provenance),
+    );
+    const created = await this.getSceneCandidate({
+      storyWorldId: input.storyWorldId as V2StoryWorldId,
+      candidateId: input.candidateId as V2CandidateId,
+    });
+    if (!created) throw new Error("V2 scene candidate insert did not return a row");
+    return created;
+  }
+
+  public async updateSceneCandidateReview(input: {
+    readonly candidate: V2CoreSceneCandidate;
+    readonly reviewedAt: string;
+  }): Promise<V2CoreSceneCandidate> {
+    const result = this.db.prepare(`
+      UPDATE v2_scene_candidates
+      SET status = ?,
+          reviewed_at = ?,
+          reviewer = ?,
+          review_reason = ?
+      WHERE story_world_id = ? AND candidate_id = ?
+    `).run(
+      input.candidate.status,
+      input.reviewedAt,
+      input.candidate.reviewer ?? null,
+      input.candidate.reviewReason ?? null,
+      input.candidate.storyWorldId,
+      input.candidate.candidateId,
+    );
+    if (result.changes !== 1) throw new Error("V2 scene candidate review update did not affect one row");
+    const updated = await this.getSceneCandidate({
+      storyWorldId: input.candidate.storyWorldId as V2StoryWorldId,
+      candidateId: input.candidate.candidateId as V2CandidateId,
+    });
+    if (!updated) throw new Error("V2 scene candidate disappeared after review update");
+    return updated;
+  }
+
+  public async createAudit(input: V2CandidateReviewAuditRecord): Promise<V2CandidateReviewAuditRecord> {
+    const result = this.db.prepare(`
+      INSERT INTO v2_candidate_review_audits (
+        candidate_id,
+        story_world_id,
+        from_status,
+        to_status,
+        action,
+        reviewer,
+        reason,
+        resulting_revision
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      input.candidateId,
+      input.storyWorldId,
+      input.fromStatus,
+      input.toStatus,
+      input.action,
+      input.reviewer,
+      input.reason ?? null,
+      input.resultingRevision,
+    );
+    const auditId = Number(result.lastInsertRowid);
+    const row = this.db.prepare("SELECT * FROM v2_candidate_review_audits WHERE audit_id = ?").get(auditId);
+    if (row === undefined) throw new Error("V2 candidate review audit insert did not return a row");
+    return mapCandidateReviewAudit(row);
+  }
+
+  public async listAudits(input: {
+    readonly storyWorldId: V2StoryWorldId;
+    readonly candidateId: V2CandidateId;
+  }): Promise<readonly V2CandidateReviewAuditRecord[]> {
+    return this.db.prepare(`
+      SELECT * FROM v2_candidate_review_audits
+      WHERE story_world_id = ? AND candidate_id = ?
+      ORDER BY created_at, audit_id
+    `).all(input.storyWorldId, input.candidateId).map(mapCandidateReviewAudit);
+  }
+}
+
 function mapWorld(row: unknown): V2CanonWorld {
   const record = requireRecord(row);
   return {
@@ -482,10 +675,55 @@ function mapStateVariable(row: unknown): V2TypedStateVariable {
   };
 }
 
+function mapSceneCandidate(row: unknown): V2CoreSceneCandidate {
+  const record = requireRecord(row);
+  return {
+    candidateId: requireString(record.candidate_id, "candidate_id") as V2CandidateId,
+    kind: "scene",
+    storyWorldId: requireString(record.story_world_id, "story_world_id") as V2StoryWorldId,
+    baseCanonRevision: requireNumber(record.base_canon_revision, "base_canon_revision") as V2Revision,
+    status: requireString(record.status, "status") as V2CandidateStatus,
+    payload: parseJsonObject<V2CoreSceneCandidatePayload>(record.payload_json, "payload_json"),
+    provenance: parseJsonObject<V2CoreCandidateProvenance>(record.provenance_json, "provenance_json"),
+    createdAt: requireString(record.created_at, "created_at"),
+    ...(record.reviewed_at === null ? {} : { reviewedAt: requireString(record.reviewed_at, "reviewed_at") }),
+    ...(record.reviewer === null ? {} : { reviewer: requireString(record.reviewer, "reviewer") }),
+    ...(record.review_reason === null ? {} : { reviewReason: requireString(record.review_reason, "review_reason") }),
+  };
+}
+
+function mapCandidateReviewAudit(row: unknown): V2CandidateReviewAuditRecord {
+  const record = requireRecord(row);
+  return {
+    auditId: requireNumber(record.audit_id, "audit_id"),
+    candidateId: requireString(record.candidate_id, "candidate_id") as V2CandidateId,
+    storyWorldId: requireString(record.story_world_id, "story_world_id") as V2StoryWorldId,
+    fromStatus: requireString(record.from_status, "from_status") as V2CandidateStatus,
+    toStatus: requireString(record.to_status, "to_status") as V2CandidateStatus,
+    action: requireString(record.action, "action") as V2ReviewAction,
+    reviewer: requireString(record.reviewer, "reviewer"),
+    ...(record.reason === null ? {} : { reason: requireString(record.reason, "reason") }),
+    resultingRevision: requireNumber(record.resulting_revision, "resulting_revision") as V2Revision,
+    createdAt: requireString(record.created_at, "created_at"),
+  };
+}
+
 function parseJsonArray<T>(value: unknown, field: string): readonly T[] {
   const parsed = JSON.parse(requireString(value, field));
   if (!Array.isArray(parsed)) throw new Error(`Expected ${field} to be a JSON array`);
   return parsed as readonly T[];
+}
+
+function parseJsonObject<T>(value: unknown, field: string): T {
+  const parsed = JSON.parse(requireString(value, field));
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error(`Expected ${field} to be a JSON object`);
+  }
+  return parsed as T;
+}
+
+function hashV2SqliteCandidatePayload(value: unknown): string {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
 function parseStateValue(value: unknown): V2TypedStateValue {

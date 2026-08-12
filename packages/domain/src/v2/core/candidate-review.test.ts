@@ -1,0 +1,100 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { V2DomainError } from "../shared/index.ts";
+import {
+  buildV2SceneCandidateApplyPlan,
+  createV2SceneCandidate,
+  reviewV2SceneCandidate,
+} from "./candidate-review.ts";
+
+test("V2 candidate review creates pending scene candidates and deterministic apply plans", () => {
+  const candidate = createV2SceneCandidate({
+    candidateId: "candidate_a",
+    storyWorldId: "world_a",
+    baseCanonRevision: 3,
+    provenance: { source: "llm", jobId: "job_a" },
+    payload: {
+      scene: {
+        sceneId: "scene_new",
+        title: "New Scene",
+        body: "A newly proposed scene.",
+        participantCharacterIds: ["char_a"],
+      },
+      choices: [
+        { label: "Continue", targetSceneId: "scene_existing" },
+        { label: "Stay" },
+      ],
+      validationNotes: [],
+    },
+  });
+
+  assert.equal(candidate.status, "pending");
+  assert.deepEqual(buildV2SceneCandidateApplyPlan(candidate), {
+    scene: {
+      sceneId: "scene_new",
+      title: "New Scene",
+      body: "A newly proposed scene.",
+    },
+    choices: [
+      {
+        choiceId: "candidate_a:choice:1",
+        sourceSceneId: "scene_new",
+        targetSceneId: "scene_existing",
+        label: "Continue",
+      },
+      {
+        choiceId: "candidate_a:choice:2",
+        sourceSceneId: "scene_new",
+        label: "Stay",
+      },
+    ],
+  });
+});
+
+test("V2 candidate review enforces transitions and stale approvals", () => {
+  const candidate = createV2SceneCandidate({
+    candidateId: "candidate_a",
+    storyWorldId: "world_a",
+    baseCanonRevision: 2,
+    provenance: { source: "human" },
+    payload: {
+      scene: {
+        sceneId: "scene_new",
+        title: "New Scene",
+        body: "Body",
+        participantCharacterIds: [],
+      },
+      choices: [],
+      validationNotes: [],
+    },
+  });
+
+  assert.throws(
+    () => reviewV2SceneCandidate({
+      candidate,
+      action: "approve",
+      reviewer: "creator",
+      expectedRevision: 3,
+    }),
+    (error) => error instanceof V2DomainError && error.code === "STALE_REVISION",
+  );
+
+  const rejected = reviewV2SceneCandidate({
+    candidate,
+    action: "reject",
+    reviewer: "creator",
+    reason: "Not right",
+    expectedRevision: 2,
+  });
+  assert.equal(rejected.status, "rejected");
+  assert.throws(
+    () => reviewV2SceneCandidate({
+      candidate: rejected,
+      action: "approve",
+      reviewer: "creator",
+      expectedRevision: 2,
+    }),
+    (error) => error instanceof V2DomainError && error.code === "INVALID_CANDIDATE_TRANSITION",
+  );
+});
