@@ -2,7 +2,7 @@
 
 角色生活模拟与社交叙事系统。项目采用 pnpm workspace 管理的 TypeScript monorepo，包含 API、Web 界面、后台 Worker、领域模型、数据库适配器、LLM Provider 和本地基础设施。
 
-当前版本适合本地开发和 MVP 验收：可以运行角色世界、动态、聊天、SSE 回复、关系网、世界日历、视觉 Workflow 与表情包界面；持久化运行使用 PostgreSQL 和 Redis。LLM、ComfyUI 和对象存储是可注入的外部适配器，不配置时仍可使用开发 Seed 和测试替身。
+当前版本适合本地开发和 MVP 验收：可以运行角色世界、动态、聊天、SSE 回复、关系网、世界日历、Story Graph、视觉 Workflow 与表情包界面；持久化运行使用 PostgreSQL 和 Redis。LLM 与 ComfyUI 是可注入的外部适配器，当前媒体由本地文件适配器保存；不配置外部生成服务时仍可使用开发 Seed 和测试替身。
 
 ## 环境要求
 
@@ -65,6 +65,9 @@ API 和 Worker 进程不会自动读取 `.env` 文件。每个运行进程的终
 set -a
 . ./.env
 set +a
+
+# Vite 开发代理固定访问 127.0.0.1:3001；手动运行持久 API 时覆盖示例文件中的 Compose 宿主端口。
+export API_PORT=3001
 ```
 
 终端一：执行数据库迁移并写入开发 Seed：
@@ -91,7 +94,7 @@ pnpm --filter @living-network/worker start:postgres
 pnpm --filter @living-network/web dev
 ```
 
-默认服务地址：API `http://127.0.0.1:3001`、Web `http://127.0.0.1:4173`、PostgreSQL `127.0.0.1:5432`、Redis `127.0.0.1:6379`、MinIO API `127.0.0.1:9000`。部署或共享环境前请修改 `.env` 中的开发凭据，并设置明确的 `API_CORS_ORIGINS`。
+以上“宿主进程 + Vite”方式使用 API `http://127.0.0.1:3001` 和 Web `http://127.0.0.1:4173`。完整 Compose 默认从 `.env.example` 暴露 API `http://127.0.0.1:3000`，Web 仍为 `http://127.0.0.1:4173`，容器内部 API 端口为 3001。PostgreSQL、Redis 和 MinIO API 默认分别为 `5432`、`6379` 和 `9000`。部署或共享环境前请修改开发凭据，并设置明确的 `API_CORS_ORIGINS`。
 
 ### 启用本地 LLM、ComfyUI 与图片任务
 
@@ -198,7 +201,7 @@ COMFYUI_WORKFLOW_FILE=./path/to/workflow-api.json \
   node --test integration/comfyui-acceptance.test.ts
 ```
 
-Playwright 基线（API + 静态 Web）使用：
+Playwright 基线（内存 API + Vue/Vite Web）使用：
 
 ```sh
 pnpm exec playwright install chromium
@@ -208,24 +211,30 @@ pnpm test:e2e
 ## 仓库结构
 
 ```text
+AGENTS.md       模型与开发代理的根级执行契约
 apps/api/        TypeScript API 与开发/持久化启动入口
-apps/web/        无构建依赖的浏览器 Web MVP
+apps/web/        Vue 3 + Vite Web 应用
 apps/worker/     定时事件、队列、媒体和 Outbox Worker
 packages/domain/ 领域模型与业务规则
 packages/contracts/共享契约与校验
+packages/ports/  仓储、Outbox、派发和日志接口
 packages/database/内存仓储、PostgreSQL 适配器与迁移
-packages/ai/      OpenAI-compatible Provider 接口
+packages/ai/      OpenAI-compatible / Anthropic Provider
 packages/config/  环境变量解析与功能开关
 infra/compose/    PostgreSQL、Redis、MinIO 本地编排
 integration/      MVP 与真实服务集成测试
-docs/             开发计划、进度、发布验收和任务契约
+docs/             架构、规范、进度、发布验收、ADR 与历史归档
 ```
 
 ## 进一步文档
 
-- [开发说明](docs/DEVELOPMENT.md)
+- [文档索引](docs/README.md)
+- [当前系统架构](docs/architecture.md)
+- [开发原则](docs/DEVELOPMENT.md)
+- [前端开发规范](docs/frontend-development-standard.md)
 - [当前进度](docs/PROGRESS.md)
 - [发布候选验收](docs/RELEASE.md)
+- [架构决策](docs/decisions/README.md)
 - [本地基础设施](infra/compose/README.md)
 - [API 说明](apps/api/README.md)
 - [Web 说明](apps/web/README.md)
@@ -233,10 +242,11 @@ docs/             开发计划、进度、发布验收和任务契约
 
 ## 当前限制
 
-- Web 当前默认入口为 Vue/Vite，`pnpm --filter @living-network/web dev` 会启动 Vite；原生静态 Web 仅作为历史实现与验收证据保留，可通过 `pnpm --filter @living-network/web dev:shell` 单独运行。
+- Web 当前默认入口为 Vue/Vite，`pnpm --filter @living-network/web dev` 会启动 Vite；原生静态 Web 只保留为历史兼容入口。
 - 开发 API 使用内存 Seed；生产或持久化运行必须显式配置 PostgreSQL 仓储。
 - 未配置 LLM 或 ComfyUI 时，开发 Seed 与测试替身仍可运行；这不代表已连接真实供应商。图片任务泵默认关闭，只有 `IMAGE_GENERATION_ENABLED=true` 的持久化 Worker 才会访问 ComfyUI。
 - 项目默认是本地开发配置，不包含生产级认证、域名、TLS、密钥管理和监控部署方案。
+- Story Graph 已支持剧情弧、节点、边、Prompt 模板/预览和记忆候选审核；自动剧情生成与状态推进仍属于后续能力。
 
 ## 创作者事件派发说明（M7A）
 

@@ -1,141 +1,79 @@
 # Living Network 开发进度
 
-最后更新：2026-08-10
+最后核对：2026-08-12（`060beba`）
 
-这份文件是当前实现状态的唯一进度视图。`docs/tasks/` 保存任务契约和设计决策，不单独代表任务已经可以在真实运行环境中使用。
+本文是当前能力与验证状态的唯一进度视图。当前技术架构见 [architecture.md](./architecture.md)；[archive/](./archive/) 中的任务和报告只代表历史语境。
 
-## 当前阶段
+## 1. 当前阶段
 
-项目已形成可重复的本地 MVP 运行链，覆盖领域模型、API、持久化入口、Worker、SSE、动态、关系、日历和 Web 冒烟。`M1–M5` 用于记录本地能力的阶段性闭环；`0039–0055` 是里程碑代号，并非均已具备独立任务契约和完成证据。当前阶段从“本地 MVP 验收”进入“产品化补齐”。
+项目已经形成可重复的本地 MVP 和持久化运行链，当前重点从“搭建基础能力”转向“内容生成闭环、世界反馈、玩家互动和产品化验收”。
 
-M6 已完成文档校准、CI 分层验收、运行时内容编辑器、ComfyUI 进度适配器、原生 Web 的历史 Playwright 验收以及 Vue/Vite 的默认入口切换、本地构建和类型检查；LLM、ComfyUI 真实服务验收仍待完成，Playwright 尚未接入 CI 门禁。M7A 已完成创作者事件调度台实现，并通过真实本地 Compose PostgreSQL + Redis + Worker 派发链验收。
+最新 Story Graph 工作区已经加入剧情弧、节点、边、Prompt 模板/预览和记忆候选审核，并具备 Domain、Contracts、API、内存仓储、PostgreSQL migration/仓储与 Web 内容管理入口。它尚未自动调用模型生成剧情或推进节点状态。
 
-M7B 第一阶段已由 0066 落地：LLM/ComfyUI 日志收敛为重点内容记录，角色 Prompt 与聊天展示完成首轮质量优化。关系、日程和世界观自动注入仍需显式数据外发开关；结构化内容生成尚未完成。
+## 2. 当前能力矩阵
 
-## 已完成的能力边界
+| 能力 | 状态 | 当前证据与边界 |
+| --- | --- | --- |
+| 世界、角色、关系、ActorSession | 已实现 | Domain、Contracts、内存/SQL 仓储、API 与 Web；角色切换不是生产认证 |
+| 私聊、消息与 SSE | 已实现 | 消息幂等、成员校验、流式回复、自动回复失败保留和显式重试 |
+| 记忆 | 基础实现 | 可见性、来源、置信度、内存关键词和 PostgreSQL FTS；无 pgvector/RRF |
+| 世界资料 | 已实现 | 分类、标签、启用状态、全文检索和内容管理 |
+| Story Graph | 编辑工作区已实现 | Arc/Node/Edge、Prompt Template/Preview、Memory Candidate；自动剧情推进未实现 |
+| 事件、日程与执行 | 已实现 | 定义、Occurrence、Executor、状态、预算和日历；完整关系反馈闭环待补 |
+| 创作者事件派发 | 已实现 | 扫描、只读预览、PostgreSQL 请求、Worker Pump、BullMQ 与批次状态 |
+| 动态与媒体 | 基础闭环已实现 | 草稿、发布、图片任务、相册和互动 API；Feed 交互 UI/自动角色回复仍不完整 |
+| LLM | 协议与编排已实现 | OpenAI-compatible/Anthropic、超时、流式、日志和测试替身；真实供应商需显式验收 |
+| ComfyUI | 协议与 Worker 链路已实现 | HTTP、WebSocket、重试、本地媒体；真实实例需显式验收 |
+| Web | Vue/Vite 默认入口 | Vue Router、Pinia、创作中心、三主题和响应式基线；存在前端规范债务 |
+| PostgreSQL/Redis | 持久模式已实现 | migration、seed、API、Worker、Outbox、真实服务 CI；不是所有产品链路都已人工验收 |
+| CI/E2E | 已接入 | PR/main 执行 verify、PostgreSQL/Redis 集成和 Playwright 11 条核心路径 |
 
-| 能力 | 任务 | 状态 | 证据 |
-| --- | --- | --- | --- |
-| 领域模型与状态机 | 0001–0003、0010、0015、0017、0019、0020–0023 | 已完成 | `packages/domain/src/` 与对应测试 |
-| API application 与 SSE | 0004、0009、0011、0014、0021、0024、0027、0028、0035–0037 | 已完成 | `apps/api/src/` 与 API 测试 |
-| 内存/SQL 仓储与迁移 | 0005–0007、0012、0016 | 本地持久化入口完成 | 内存仓储、迁移与 `start:postgres` 已落地，真实集成验证已覆盖基础链路 |
-| 事件、行为与动态 | 0018–0021、0025–0026、0030 | MVP 闭环完成 | `apps/worker/src/` 与 `integration/mvp-flow.test.ts` |
-| LLM Provider | 0013、0059 | 编排完成，真实服务待验收 | Provider、SSE、对话回复持久化和可选记忆写入已测试；真实模型验收脚本已覆盖 API 链路 |
-| ComfyUI 与图片任务 | 0022–0025、0027、0037、0062 | HTTP/WebSocket 适配器与本地媒体存储完成，真实服务待验收 | Fake、HTTP client、WebSocket 进度、终态状态同步、重试、下载存储和 Worker 生命周期已测试；真实实例验收脚本待执行 |
-| Web MVP | 0032–0038、0058、0060、0061 | Vue/Vite 已作为默认入口；原生 shell 保留历史验收证据 | 原生 shell 曾覆盖主要 API 和内容管理，Playwright 8 个核心路径本地通过；当前 `pnpm --filter @living-network/web dev` 启动 Vue/Vite，Vue Router/Pinia 视图已通过 `vue-tsc` 和 `vite build` |
-| 本地基础设施与 CI | 0029、0031、0057 | 已完成 | Compose、CI 分层验收（PR 快速门禁 + main 真实服务）已落地 |
+## 3. 已验证的工程门槛
 
+仓库当前 CI 定义以下门槛：
 
-### M7A：创作者事件调度台（已实现）
+- 架构边界检查。
+- 严格 TypeScript 检查。
+- 工作区单元测试。
+- 100% 行覆盖率门槛（排除运行时装配入口）。
+- 全仓构建和 Web ESLint。
+- PostgreSQL 17 + Redis 7 真实服务集成测试。
+- Playwright Chromium E2E。
 
-- 新增双模式应用壳：玩家模式用于进入世界，创作模式用于事件调度、内容管理、视觉工作台和集成设置；`/admin`、`/settings` 保留兼容跳转。
-- 新增候选扫描、只读影响预览、批量确认、状态追踪和幂等派发；扫描不会自动执行事项，也不会调用 LLM 或 ComfyUI。
-- 候选规则覆盖逾期 `PENDING`、未来 7 天、`FAILED` 重试、超过 15 分钟的 `RUNNING`、启用的 `MANUAL` 事件，并排除 disabled、completed、cancelled 项。
-- 新增四个创作者调度接口：候选扫描、影响预览、批量派发、批次状态查询。
-- 新增持久化 dispatch request、attempts/last error、BullMQ job 幂等键和 Worker heartbeat；Redis 不可用时 request 保留为 `PENDING`。
-- 内存模式支持扫描和预览，但禁用正式派发；持久模式正式派发需要 PostgreSQL、Redis 和 Worker。
-- 本地契约、数据库、Worker、API 和 Web 检查已完成。2026-08-09 已在真实本地 Compose PostgreSQL + Redis + Worker 环境完成 `MANUAL` 候选 → preview → `PENDING_DISPATCH` → BullMQ → `COMPLETED` → 朋友圈 Moment，并清理验收数据；M7A 的真实 PostgreSQL/Redis 派发链已验收。真实 LLM、ComfyUI 仍未验收。
+2026-08-11 的一次性重构验证记录已归档至 [历史验证报告](./archive/validations/refactor-integration-validation.md)。它绑定当时提交，不能替代当前 CI 结果。
 
-### M7B-M7F：后续顺序
+真实 LLM 和真实 ComfyUI 默认不会被 CI 调用。只有设置 `RUN_LLM_ACCEPTANCE=1` 或 `RUN_COMFYUI_ACCEPTANCE=1` 并提供可用服务后，才能声明对应真实验收完成。
 
-1. M7B：内容生成质量。第一阶段已完成人设约束、既有可见记忆规则、LLM 对话审计和聊天展示；后续补充显式授权的世界观/关系/日程注入与结构化内容输出。
-2. M7C：图文动态闭环，共用 MomentDraft，图片完成后发布，失败进入可重试状态。
-3. M7D：世界反馈，按规则应用关系变化并记录审计；事件和互动写入可追溯记忆。
-4. M7E：玩家互动，补齐朋友圈点赞、评论、角色回复和实时刷新，使互动可继续触发事件。
-5. M7F：产品化验收，完善 Vue Playwright、CI、真实 PostgreSQL/Redis 扩展回归，以及真实 LLM、ComfyUI 验收，再评估 Tauri、备份恢复和发布。
-## 当前执行顺序
+## 4. 当前限制与风险
 
-### M6：产品化基础（进行中）
+### 产品能力
 
-- 0056：进度台账与开发运行手册（已完成）
-- 0057：CI 真实服务验收升级（已完成）
-- 0058：内容管理与角色/世界/关系/基础事件编辑器（已完成）
-- 0059：真实 LLM 联调与验收（脚本已完成，待真实配置）
-- 0060：Web 前端 Vue/Vite 迁移启动（已完成，`pnpm --filter @living-network/web dev` 默认启动 Vite）
-- 0061：浏览器 E2E 验收（本地 8/8 通过，待接入 CI 门禁）
-- 0062：真实 ComfyUI 图片链路验收（HTTP/WebSocket 与终态同步已完成，待真实实例）
-- 0066：重点交互日志与对话质量第一阶段（本地实现与验证完成）
+- Story Graph 目前是人工创作与上下文预览工作区，不自动生成正文或推进剧情。
+- 世界观、关系和日程尚未全部通过显式外发授权注入每次模型请求。
+- 动态点赞/评论 API 已有，但 Feed UI、角色自动回复和实时刷新尚未形成完整体验。
+- 关系变化和事件记忆尚未形成经过审核、可审计的完整世界反馈闭环。
+- 真实 LLM 与真实 ComfyUI 仍取决于使用者提供配置和单独验收。
 
-验收：进度文档与 README/RELEASE 口径一致；CI 具备 PostgreSQL/Redis 服务验证或明确分层；基础内容可在运行时创建与修改；至少一条真实 LLM 联调链路通过验收；前端完成 Vue/Vite 迁移并可独立启动；核心路径有 Playwright E2E 自动覆盖；真实 ComfyUI 图片生成链路可重复验收。
+### 工程治理
 
-### M1：本地可运行 MVP（实现与原生 Web 浏览器验收已落地）
+- API/Worker 尚未全部直接从 Ports 导入接口，Database 仍保留兼容导出。
+- `DomainRepositories` 仍是较大的可选 Repository Bag。
+- SQL、内存仓储、Contracts Schema、Parser 和部分 Vue 页面体积过大。
+- Web 存在裸交互元素、硬编码颜色、`!important` 等历史规范债务，当前 lint 不能完整阻止新增违规。
+- `api.js` 与 `api.d.ts` 仍需人工同步。
+- 生产级认证、TLS、秘密管理、对象存储适配和完整监控部署尚未完成。
 
-- 0039：进度台账与开发运行手册
-- 0040：API 可执行启动入口
-- 0041：开发 Seed 数据
-- 0042：Web/API 联调、CORS 或同源代理
+## 5. 后续优先顺序
 
-验收：`apps/api/src/main.ts` 和静态 Web 启动入口已落地；Playwright 已自动拉起开发 API 与静态 Web，世界、角色、动态、聊天、关系和内容管理路径已在本地 Chromium 验收通过。
+1. 内容生成质量：把 Story Graph、世界资料、关系、日程和可见记忆通过明确授权接入结构化生成与审核。
+2. 图文动态闭环：统一草稿、图片终态、发布与失败恢复，并完善 Feed 交互体验。
+3. 世界反馈：领域规则应用关系变化，事件和互动写入可追溯记忆，模型只提交候选。
+4. 玩家互动：完成点赞、评论、角色回复和实时刷新，使互动可继续触发事件。
+5. 架构治理自动化：增强 Ports、前端规范、依赖方向、migration 和文档同步门禁。
+6. 产品化验收：真实 LLM/ComfyUI、备份恢复、认证、安全部署和核心用户闭环。
 
-### M2：真实 PostgreSQL（适配器已落地，M7A 持久派发链已验收）
+## 6. 统一完成标准
 
-- 0043：真实 PostgreSQL Driver Adapter
-- 0044：Migration Runner
-- 0045：PostgreSQL Seed 与真实集成测试
+每项能力必须有明确范围、领域或 Contract 边界、失败模式、独立测试、退出码为 0 的验证命令和同步后的当前文档。涉及数据库迁移、事务一致性、外部数据发送、身份权限或自动状态变更的任务，在实现前需要单独风险审查。
 
-验收：真实 PostgreSQL 迁移、Seed、持久化 API、CORS 和重启读取路径已具备脚本；2026-08-09 的 M7A 验收已覆盖持久化 API 与派发所需 PostgreSQL 链路，其他数据库集成场景仍按各任务边界单独回归。
-
-### M3：Worker、队列与图片（Redis 派发链已验收，真实图片服务待验收）
-
-- 0046：Worker 可执行入口
-- 0047：Redis/BullMQ Adapter
-- 0048：Outbox 一致性
-- 0049：ComfyUI 进度、媒体存储与失败恢复
-
-验收：持久化 Worker、BullMQ、Outbox 和 Redis/ComfyUI 路径已有运行入口与测试；2026-08-09 的 M7A 验收已覆盖真实本地 Redis、BullMQ 和 Worker 派发链，真实 ComfyUI 与图片生成链仍待单独验收。
-
-### M4：对话、记忆与主动行为（本地编排已完成，真实模型验收待复跑）
-
-- 0050：Conversation Orchestrator 和 AI 回复持久化
-- 0051：记忆检索、Prompt 注入和异步写入
-- 0052：主动消息、图片意图和人工审核
-
-验收：SSE 生成完成后 AI Message 幂等持久化；记忆检索按可见性注入 Prompt，LLM 派生记忆带低置信度和来源；主动消息协调器支持结构化图片意图。
-
-### M5：安全与发布（能力已落地，本地浏览器基线通过）
-
-- 0053：可信 Actor Context 和认证边界
-- 0054：日志、健康检查、就绪检查和运行摘要
-- 0055：浏览器 E2E、Compose 验收和发布候选版本
-
-验收：可信 Actor 模式拒绝缺失/错配身份；`/ready` 区分依赖不可用；HTTP 响应带 request ID；动态人工审核开关生效；静态 Web 的 8 个 Playwright 核心路径已在本地通过，CI 自动执行仍待接入。
-
-## 验证记录
-
-- `pnpm test:local` 退出码为 `0`：249 个测试中 241 passed、8 skipped；它明确排除了本地端口、PostgreSQL driver 和 BullMQ 队列测试。
-- `pnpm test:e2e` 退出码为 `0`：8 个 Playwright 用例全部通过，覆盖世界、角色、动态、聊天、关系、内容管理以及关系/一次性事件的创建和修改。`@playwright/test` 已写入根依赖和锁文件，Chromium 本地运行时已安装。
-- `pnpm test:all` 退出码为 `0`：8 个工作区包共 249 个测试通过；集成测试 3 passed、8 skipped，跳过项为未启用的真实 LLM、ComfyUI、PostgreSQL/Redis 验收。
-- API/Contract/Web 关键测试均已通过；新增关系 CRUD、故事模式切换一致性、重复创建冲突和孤儿角色拒绝均有断言。
-- `pnpm typecheck` 退出码为 `0`：API、Web、Worker、AI、Config、Contracts、Database、Domain 的 TypeScript 检查均通过。
-- `pnpm install --frozen-lockfile` 退出码为 `0`：workspace 已明确将可选的 `msgpackr-extract` 原生构建设为不执行，BullMQ/pg/Playwright 工作区链接已恢复。
-- `pnpm --filter @living-network/web exec vue-tsc -p tsconfig.json --noEmit` 退出码为 `0`；`pnpm --filter @living-network/web build` 退出码为 `0`，Vue 入口已生成生产构建产物。Web workspace 使用独立 TypeScript 5.x 检查 Vue 文件，根 workspace 仍使用 TypeScript 7。
-- 2026-08-09 已在真实本地 Compose PostgreSQL + Redis + Worker 环境完成 M7A 派发链验收，并清理验收数据；该结果不等同于所有 PostgreSQL/Redis 集成场景均已验收。
-- 真实 LLM 和真实 ComfyUI 尚未在当前环境执行；ComfyUI WebSocket 进度适配器已由本地 Fake WebSocket 测试覆盖。
-- 当前所有 M6 代码和文档仍在未提交工作区；最新 Git 提交仍为 `7c9b06f test: add full module coverage`。
-
-发布候选启动、回滚和浏览器清单见 [RELEASE.md](./RELEASE.md)。
-
-## 统一完成标准
-
-每个任务都必须有明确范围、独立测试、退出码为 0 的验证命令、更新后的运行文档，并且不能依赖隐式内存存储。涉及数据库迁移、事务一致性或身份权限的任务，需要在实现前做单独的高风险审查。
-
-## 暂缓事项
-
-Vue/Vite 迁移、Fastify 替换、Drizzle、pgvector、微服务拆分、Tauri、复杂 RBAC 和完整 OpenTelemetry 不作为 M1–M4 的前置条件。
-
-### 交互可观测性与自动回复（已实现）
-
-- 新增 0017_interaction_logs、7 天清理、稳定游标、脱敏和 500 字符预览。
-- 新增 API/AI/Worker 全链路 correlation 日志、历史查询与实时 SSE。
-- USER → AI 私聊文本自动回复、确定性幂等、失败保留与显式重试已完成。
-- 创作中心交互日志页和模型档案“测试连接”已完成。
-- 2026-08-09 验收：pnpm typecheck、370 项本地回归（362 passed、8 skipped）、整仓 build、Playwright 11/11 通过；Compose 保留数据卷重建健康，迁移 0017 与真实 PostgreSQL/SSE 日志链已验证。
-- 自动验收未调用真实 LLM 或 ComfyUI；真实模型只允许用户主动点击“测试连接”。
-
-### 重点交互日志与对话质量第一阶段（已实现）
-
-- LLM 日志合并输入对话与完整回复预览，ComfyUI 日志包含提示词、Workflow、外部任务和媒体结果。
-- 创作中心默认只展示聊天、LLM、ComfyUI 和错误，过程日志可切换查看。
-- 角色 Prompt 增加身份、语气、事实和可见输出边界；聊天页显示正确的会话对方、日期时间和消息类型，并隐藏内部思考块。
-- 2026-08-10 验证：`pnpm test:local` 共 379 项，371 passed、8 个真实外部服务场景 skipped；AI 22 项、API 100 项、Worker 53 项、Web 18 项包级测试通过；`pnpm typecheck` 与 Web 生产构建通过。
-- 未新增关系、日程或世界资料的数据外发；真实 LLM/ComfyUI 仍未由自动验收调用。
+内存/Fake 测试、真实 PostgreSQL/Redis、真实 LLM 和真实 ComfyUI 是不同证据等级，交付时必须分别说明，不能互相替代。

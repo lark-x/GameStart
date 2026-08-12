@@ -1,382 +1,125 @@
-# 角色生活模拟与社交叙事系统开发文档
-
-状态：Draft 1（可进入基础设施开发）  
-参考项目：[icecranberry/galgame-with-comfyUI](https://github.com/icecranberry/galgame-with-comfyUI)
-
-## 1. 项目目标
-
-构建一个本地优先、可长期运行的 AI 角色生活模拟系统。系统中的角色拥有固定人设、关系网络、记忆、日程和视觉身份，能够在世界事件、现实节日、生日及剧情节点的驱动下产生行为、聊天、朋友圈动态和 ComfyUI 图片。
-
-用户本身也是世界中的一个角色。系统采用“切换当前用户角色”而非 SaaS 多租户：当前用户角色决定可见信息、私聊身份、群聊身份和互动权限。
-
-### 1.1 核心能力
-
-- 角色档案：姓名、生日、背景、性格、说话风格、视觉提示词、禁用提示词。
-- 关系网络：关系类型、初始强度、可见性、双向或单向关系、关系事件。
-- 故事模式开关：完整静态故事与动态生活模拟可以按故事独立选择。
-- 世界与日历：世界观日历、现实节日、生日、纪念日和剧情事件。
-- 生活模拟：角色日程、地点、活动、情绪、事件响应和自主行为。
-- 私聊与群聊：流式回复、主动消息、图片、表情包和系统事件。
-- 社交动态：朋友圈或小红书式卡片瀑布流、评论、点赞和角色回复。
-- 图片生成：根据角色视觉身份、地点、活动和镜头语言调用 ComfyUI。
-- 长短期记忆：会话上下文、滚动摘要、事件记忆和混合检索。
-- 模型适配：通过统一 API 接入 OpenAI-compatible 模型，不绑定单一供应商。
-
-### 1.2 非目标（MVP 阶段）
-
-- 不实现组织级多租户、计费和复杂 RBAC。
-- 不允许 LLM 直接修改关系、资产或世界状态；状态变化必须经过领域规则验证。
-- 不追求每天生成大量无意义对话；只有事件、计划或用户交互触发内容。
-- 不在第一阶段制作桌面启动器、移动客户端或完整剧情编辑器。
-- 不让角色自由调用任意工具或访问网络。
-
-## 2. 从参考项目继承与优化的内容
-
-参考项目已经验证了角色人格、VAD 情绪、混合记忆检索、朋友圈、ComfyUI 自动生图和流式对话的产品可行性。其实现采用 Vue 3、Express、SQLite/FTS5、FastAPI/ChromaDB 和 ComfyUI。
-
-本项目保留以下设计：
-
-- Vue 单页应用作为主要交互界面。
-- 主控后端统一处理聊天、人格、记忆和图片任务。
-- ComfyUI 使用 HTTP 提交任务、WebSocket 观察进度。
-- 角色动态、相册、聊天和角色管理作为一级功能。
-- 固定人设、动态情绪和记忆共同参与回复生成。
-
-主要优化：
-
-- 全栈 TypeScript，避免 Express JavaScript 主控层缺少类型边界。
-- 模块化单体加独立 Worker，业务边界清晰但避免过早微服务化。
-- PostgreSQL 同时承载关系数据、事件数据、全文检索和 pgvector，减少独立向量服务的运维负担。
-- Redis + BullMQ 承载延迟任务、重复任务、失败重试和并发控制。
-- 领域事件与 Outbox 保证状态写入和异步任务之间的一致性。
-- 所有 LLM 输出先经过结构化解析和领域校验，不让模型直接写数据库。
-- ComfyUI 工作流模板版本化；人物身份提示词与场景提示词分层组合。
-- 图片、聊天、事件任务统一使用幂等键，避免重试造成重复帖子或重复图片。
-
-## 3. 总体架构
-
-```text
-Vue Web App
-  ├─ Chat / Group Chat
-  ├─ Moments / Card Waterfall
-  ├─ Character & Relationship Editor
-  ├─ Calendar / World Events
-  └─ Settings / ComfyUI Workflows
-           │ HTTP + SSE + WebSocket
-           ▼
-TypeScript API (Fastify modular monolith)
-  ├─ Actor Context / Role Switching
-  ├─ Character & Relationship Domain
-  ├─ Story / World / Calendar Domain
-  ├─ Conversation Orchestrator
-  ├─ Memory Retrieval
-  ├─ Moment & Media Domain
-  ├─ LLM Provider Gateway
-  └─ Outbox Publisher
-           │
-           ├─ PostgreSQL + pgvector
-           ├─ Redis + BullMQ
-           └─ Object Storage (local / S3-compatible)
-                         │
-                         ▼
-TypeScript Worker
-  ├─ Scheduled Event Evaluation
-  ├─ Character Action Planning
-  ├─ LLM Generation Jobs
-  ├─ ComfyUI Workflow Jobs
-  ├─ Memory Summarization
-  └─ Moment Publishing
-                         │ HTTP + WebSocket
-                         ▼
-                      ComfyUI
-```
-
-### 3.1 架构原则
-
-- 先模块化单体，只有独立扩缩容或故障隔离确有需要时才拆服务。
-- PostgreSQL 是业务事实来源；Redis、向量索引和派生摘要均可重建。
-- API 不等待长时间图片生成，返回 Job ID，由前端订阅进度。
-- 定时任务只创建领域命令，不直接生成内容或修改最终状态。
-- 业务状态变化具备来源、因果链、幂等键和审计记录。
-- 静态剧情与动态关系共享数据结构，但使用不同状态推进策略。
-
-## 4. 技术栈
-
-| 层级 | 选择 | 用途与原因 |
-|---|---|---|
-| Monorepo | pnpm workspace + Turborepo | 统一脚本、缓存和共享类型 |
-| Web | Vue 3 + TypeScript + Vite | 延续参考项目结构，生态成熟、交互开发效率高 |
-| Web 状态 | Pinia + TanStack Query | Pinia 管本地 UI/当前角色；Query 管服务端缓存 |
-| 路由 | Vue Router | 页面和角色上下文路由 |
-| UI | Tailwind CSS + Headless/Radix 风格组件层 | 快速构建聊天、弹窗和瀑布流，同时保持可定制性 |
-| API | Node.js + TypeScript + Fastify | 比 Express 提供更好的性能、Schema 和插件边界 |
-| Schema | TypeBox + JSON Schema | API 校验、OpenAPI 和共享契约使用同一来源 |
-| ORM | Drizzle ORM | 类型安全、迁移透明、便于保留 SQL 控制权 |
-| 主数据库 | PostgreSQL | 角色、关系、聊天、事件、动态、任务和审计记录 |
-| 向量检索 | pgvector + PostgreSQL FTS | 语义与关键词混合检索，减少独立向量服务 |
-| 队列/调度 | Redis + BullMQ | 延迟任务、节日任务、生日任务、重试与并发限制 |
-| 实时通信 | SSE + WebSocket | SSE 用于 LLM 文本流；WebSocket 用于任务和图片进度 |
-| LLM | OpenAI-compatible Provider Adapter | 兼容 OpenAI、DeepSeek、MiMo 及其他 Base URL |
-| 图片 | ComfyUI HTTP + WebSocket | 提交工作流、查询历史和进度事件 |
-| 媒体存储 | 本地文件系统适配器；后续 S3/MinIO | MVP 易部署，接口允许无痛迁移 |
-| 日志 | Pino | Fastify 原生生态，结构化日志和请求关联 ID |
-| 可观测性 | OpenTelemetry（第二阶段） | 跨 API、Worker、LLM 与 ComfyUI 任务追踪 |
-| 单元/集成测试 | Vitest + Testcontainers | 领域规则测试和真实 PostgreSQL/Redis 集成测试 |
-| E2E | Playwright | 私聊、动态流、角色切换和图片任务端到端验证 |
-| 本地基础设施 | Docker Compose | PostgreSQL、Redis、MinIO 可重复启动 |
-| CI | GitHub Actions | lint、typecheck、test、build、migration check |
-| 桌面包装（后续） | Tauri | 复用 Web UI，避免再次维护 PySide 启动器界面 |
-
-所有依赖在实现时锁定具体版本；开发文档只约束技术方向，不把“最新版本”写死为长期架构要求。
-
-## 5. 仓库结构
-
-```text
-apps/
-  web/                 # Vue 前端
-  api/                 # Fastify API
-  worker/              # BullMQ Worker 与定时事件执行
-packages/
-  contracts/           # TypeBox API/事件 Schema
-  domain/              # 无框架领域模型和规则
-  database/            # Drizzle Schema、迁移、仓储实现
-  ai/                  # LLM Provider、Prompt、结构化输出
-  comfyui/             # ComfyUI Client、工作流模板和提示词编排
-  config/              # 环境变量 Schema 与共享配置
-  observability/       # 日志、Trace、请求上下文
-infra/
-  compose/             # PostgreSQL、Redis、MinIO
-  comfyui/             # 工作流模板、示例与版本说明
-docs/
-  DEVELOPMENT.md
-  decisions/           # ADR
-  tasks/               # Sol 发给 Luna 的有边界任务契约
-```
-
-## 6. 核心领域模型
-
-### 6.1 Actor 与角色切换
-
-- `UserProfile`：现实用户设置，不等同于登录租户。
-- `Character`：世界中的人物，包括用户扮演角色和 AI 角色。
-- `ActorSession`：当前正在扮演的角色、可见范围和会话上下文。
-- 所有写操作必须携带 `actorCharacterId`，服务端校验其是否允许执行操作。
-
-### 6.2 Story 与动态关系开关
-
-`StoryMode`：
-
-- `STATIC`：人物关系及关键剧情节点由作者预设；LLM 只能补充表现，不改变核心状态。
-- `DYNAMIC`：领域规则可以基于事件修改关系指标，LLM 只提出候选变化。
-
-每个 `StoryWorld` 保存独立的 `relationshipDynamicsEnabled`。关闭后：
-
-- 不执行关系增量计算。
-- 不写入动态关系快照。
-- 对话仍可读取预设关系和当前剧情节点。
-- 事件只能推进作者允许的剧情状态机。
-
-### 6.3 关系网络
-
-- `RelationshipEdge`：`sourceCharacterId`、`targetCharacterId`、关系类型、公开性和双向策略。
-- `RelationshipState`：信任、亲密、好感、冲突、依赖等可配置指标。
-- `RelationshipEvent`：导致变化的领域事件、前后值、规则版本和原因。
-- `RelationshipRuleSet`：变化上限、衰减、锁定条件和剧情保护条件。
-
-第一阶段采用关系表加领域查询，不引入图数据库。只有关系查询复杂度和规模被实际数据证明成为瓶颈后，才评估图数据库。
-
-### 6.4 事件与日程
-
-- `WorldEventDefinition`：事件模板、触发条件、目标角色、优先级和冷却。
-- `ScheduledOccurrence`：具体执行时间、时区、状态和幂等键。
-- `CharacterPlan`：角色在时间段内的地点、活动及可打断性。
-- `TriggerSource`：生日、现实节日、世界节日、剧情节点、用户互动、关系事件或手动触发。
-- `EventExecution`：一次执行的输入快照、规则版本、输出和失败原因。
-
-所有日期持久化为 UTC，同时保存事件所属时区。生日和节日按故事世界时区计算。
-
-### 6.5 对话与记忆
-
-- `Conversation`：私聊或群聊。
-- `ConversationMember`：成员、进入时间、离开时间和可见范围。
-- `Message`：文本、图片、表情包、系统事件或动作。
-- `MemoryItem`：事件事实、对话摘要、角色印象和用户偏好。
-- `MemoryVisibility`：本人、关系双方、群组、公开或系统私有。
-
-检索采用关键词、向量和实体关系三路召回，再用 RRF 或可配置权重融合。任何记忆写入都必须标记来源，不把模型猜测作为事实。
-
-### 6.6 动态与媒体
-
-- `Moment`：作者角色、文本、地点、可见范围、发布时间和生成来源。
-- `MomentMedia`：图片、缩略图、ComfyUI Job、Workflow 版本和 Seed。
-- `MomentInteraction`：点赞、评论和角色回复。
-- `StickerPack` / `Sticker`：导入包、标签、适用情绪和文件校验信息。
-
-## 7. 关键工作流
-
-### 7.1 定时生活事件
-
-1. Scheduler 生成带幂等键的 `ScheduledOccurrence`。
-2. Worker 读取角色、关系、世界和日程快照。
-3. 规则引擎判断是否触发、延后、合并或取消。
-4. 行为规划器生成结构化候选行动。
-5. 领域层校验行动是否符合角色、剧情和权限边界。
-6. 创建聊天消息、动态草稿或图片任务。
-7. 内容与图片完成后原子发布动态，或进入人工审核队列。
-
-### 7.2 私聊/群聊
-
-1. API 校验当前 ActorSession 和会话成员关系。
-2. 保存用户消息并生成请求幂等键。
-3. 检索角色人设、关系、最近消息和相关记忆。
-4. LLM 以结构化响应返回文本、动作、图片意图和记忆候选。
-5. 领域层校验后流式发送文本。
-6. 图片意图进入 BullMQ，不阻塞文本回复。
-7. 合格事实异步写入记忆；模型推测仅存为低置信候选。
-
-### 7.3 ComfyUI 图片
-
-1. 角色视觉档案提供稳定身份层：发型、瞳色、服装基线、LoRA、参考图和负面词。
-2. 事件提供场景层：地点、时间、动作、情绪、同框人物。
-3. 镜头模板提供构图层：景别、角度、光线和画幅。
-4. Prompt Builder 合并三层并记录版本。
-5. Worker 向 ComfyUI 提交版本化 Workflow JSON。
-6. WebSocket 记录节点进度；完成后校验输出文件。
-7. 媒体服务生成缩略图并关联聊天或动态。
-
-不得直接依靠一段自由文本维持角色一致性。核心角色至少需要视觉设定表；后续可增加参考图、IP-Adapter、ControlNet 或角色 LoRA。
-
-## 8. API 边界（首版）
-
-```text
-GET    /health
-GET    /v1/worlds
-POST   /v1/worlds
-PUT    /v1/worlds/:id
-GET    /v1/characters
-POST   /v1/characters
-PUT    /v1/characters/:id
-GET    /v1/relationships
-POST   /v1/relationships
-PUT    /v1/relationships/:id
-GET    /v1/world-events?storyWorldId=...
-POST   /v1/world-events
-PUT    /v1/world-events/:id
-POST   /v1/actor-sessions/switch
-GET    /v1/conversations
-POST   /v1/conversations/:id/messages
-GET    /v1/conversations/:id/stream
-GET    /v1/moments
-POST   /v1/moments/:id/comments
-GET    /v1/worlds/:id/calendar
-POST   /v1/events/:id/trigger
-GET    /v1/jobs/:id
-POST   /v1/comfyui/workflows/validate
-```
-
-共享 Contract 定义请求、响应、领域事件和 Job Payload。API、Worker 和 Web 不得分别复制类型。
-
-## 9. LLM 与 Prompt 设计
-
-- Provider 层只负责认证、Base URL、模型参数、流式协议和错误归一化。
-- Prompt 层分为系统规则、世界观、角色卡、关系上下文、记忆、当前事件和输出 Schema。
-- 所有行为规划使用结构化输出；普通聊天文本允许自然语言流式返回。
-- 每次生成记录 provider、model、promptVersion、输入摘要、token 用量和关联事件。
-- 敏感 Key 只从环境或本地秘密存储读取，不进入数据库日志和前端状态。
-- 为主动消息、动态和图片设置每日/每角色预算，避免无意义批量生成。
-
-## 10. 一致性、重试与安全
-
-- API 数据写入和 Outbox 事件在同一数据库事务提交。
-- Job Payload 只携带 ID 和版本，不携带无法追踪的大段可变状态。
-- 每个 Event、Message Generation、Moment Publish 和 Image Job 都有唯一幂等键。
-- Worker 使用有限指数退避；永久错误进入 dead-letter 状态，不无限重试。
-- ComfyUI 输出限制在配置目录；服务端验证文件路径、扩展名和大小。
-- 导入表情包时检查压缩包路径穿越、文件类型和数量上限。
-- 对话、Prompt 和日志进行 API Key、Authorization Header 等秘密脱敏。
-- 角色切换不是身份认证；远程部署前必须额外增加真正的认证层。
-
-## 11. 配置与 Feature Flags
-
-至少提供：
-
-- `relationshipDynamicsEnabled`
-- `autonomousEventsEnabled`
-- `proactiveMessagesEnabled`
-- `momentGenerationEnabled`
-- `imageGenerationEnabled`
-- `memoryWriteEnabled`
-- `memoryRetrievalEnabled`
-- `manualReviewBeforePublish`
-
-Feature Flag 按世界设置，可被系统级紧急开关覆盖。关闭功能后，已有数据保留，后台任务不得继续产生副作用。
-
-## 12. 测试策略
-
-- 领域单测：静态故事不改变关系；动态关系遵守阈值、锁定和衰减。
-- 契约测试：API、队列 Payload、LLM 结构化输出和 ComfyUI Workflow。
-- 集成测试：PostgreSQL 迁移、pgvector 检索、Redis 重试和 Outbox 发布。
-- E2E：切换用户角色、私聊、群聊、触发生日事件、发布带图动态。
-- 失败测试：LLM 超时、重复请求、ComfyUI 离线、任务重放、Worker 崩溃恢复。
-- Snapshot 仅用于稳定 Schema，不用来替代行为断言。
-
-## 13. 开发阶段
-
-### Phase 0：工程基础
-
-- pnpm monorepo、TypeScript、lint、format、test、build。
-- API、Worker、Web 最小启动入口。
-- 共享 Contract 与环境配置校验。
-- Docker Compose：PostgreSQL、Redis、MinIO。
-- CI 基础检查。
-
-### Phase 1：角色与关系 MVP
-
-- Character、StoryWorld、RelationshipEdge、ActorSession。
-- 静态/动态关系开关和领域测试。
-- 角色列表、编辑、关系网基础界面。
-
-### Phase 2：聊天与记忆
-
-- 私聊、群聊、SSE、Provider Adapter。
-- 消息幂等和结构化行为输出。
-- PostgreSQL FTS + pgvector 混合记忆。
-
-### Phase 3：日程与生活模拟
-
-- BullMQ Scheduler、生日、节日和剧情触发器。
-- CharacterPlan、EventExecution 和主动消息预算。
-
-### Phase 4：ComfyUI 与动态流
-
-- Workflow 模板、角色视觉身份、图片 Job。
-- 朋友圈/小红书式瀑布流、评论、点赞、相册。
-
-### Phase 5：体验与分发
-
-- Tauri 桌面包装、安装检查、备份恢复、可观测性和性能优化。
-
-## 14. MVP 验收闭环
-
-第一条完整链路必须做到：
-
-1. 创建两个角色并配置关系。
-2. 用户切换为其中一个角色。
-3. 创建一次可重复测试的生日或世界事件。
-4. Worker 生成另一个角色的结构化行动和动态草稿。
-5. 调用可替换的 Fake ComfyUI 或真实 ComfyUI 生成图片。
-6. 动态流展示卡片，包含人物、时间、正文和图片任务状态。
-7. 重放相同事件不会产生重复动态或图片。
-8. 关闭动态关系后，整条链路不得修改关系状态。
-
-## 15. 开发规则
-
-- 架构决定由 Sol 保留；Luna 只执行有边界、可测试、可回滚任务。
-- 每个 Phase 先写领域测试和 Contract，再接 UI 或外部服务。
-- 不为未出现的规模问题提前拆微服务。
-- 不在领域包中引用 Fastify、Vue、BullMQ、数据库驱动或供应商 SDK。
-- 不允许“顺手”引入新框架、生产依赖或重构无关区域。
-- 测试命令必须完成并报告退出状态，启动不等于通过。
-- 影响相同文件的 Luna 任务串行执行；独立只读探索或测试才可并行。
-
-首个实现任务见 `docs/tasks/0001-foundation.md`。
+# Living Network 开发原则
+
+状态：当前长期规范
+
+本文规定跨版本稳定的开发原则，不重复描述具体实现清单。当前架构与依赖以 [architecture.md](./architecture.md) 为准，当前完成状态以 [PROGRESS.md](./PROGRESS.md) 为准，模型执行规则以根目录 [AGENTS.md](../AGENTS.md) 为准。
+
+## 1. 产品与工程目标
+
+Living Network 是本地优先、可长期运行的 AI 角色生活模拟与社交叙事系统。角色拥有固定人设、关系、记忆、日程、视觉身份和故事上下文，能够由世界事件、现实节日、剧情节点和用户互动触发聊天、动态与图片。
+
+用户通过切换当前角色参与世界；这不是 SaaS 多租户，也不是生产级身份认证。
+
+工程目标是让状态变化可解释、可验证、可重放、可审计，同时保持本地开发和外部服务替换能力。
+
+## 2. 非目标与暂缓事项
+
+- 不因预期规模提前拆分微服务或引入图数据库。
+- 不把角色切换当作远程部署认证。
+- 不允许角色自由访问网络或调用任意工具。
+- 不追求无事件、无计划、无用户互动时的大量自动生成。
+- Fastify、ORM、向量检索、桌面包装、复杂 RBAC、完整遥测和对象存储迁移都必须由实际需求和独立 ADR 驱动。
+
+暂缓不等于禁止，但不得在无关任务中顺带引入。
+
+## 3. 架构原则
+
+- 保持模块化单体 API 与独立 Worker；先强化模块边界，再评估部署边界。
+- PostgreSQL 是持久模式下的业务事实来源；队列、缓存、索引和摘要应可从事实重建。
+- Domain 保存无框架业务规则，不依赖 HTTP、数据库、队列、UI 或供应商 SDK。
+- Contracts 是跨进程与前端共享类型来源；Ports 是应用所需能力接口；Adapters 实现 Ports。
+- HTTP 层只负责协议，Use Case 负责应用编排，Domain 负责业务不变量。
+- 长任务返回可追踪状态或 Job，不让请求无限等待图片、调度或批量生成。
+- 所有外部生成结果先解析和校验，再决定自动应用、进入候选或人工审核。
+- 静态剧情和动态模拟共享领域数据，但状态推进权限必须明确区分。
+
+架构决定及理由记录在 [decisions/](./decisions/)。
+
+## 4. 领域与身份边界
+
+- 所有业务对象必须属于明确的 StoryWorld；跨世界引用在 Domain 或 Use Case 中拒绝。
+- 持久模式写操作使用可信 Actor 上下文，服务端校验角色存在、世界归属、会话成员和可见性。
+- `actorCharacterId` 是世界内行为身份，不是外部用户认证。远程部署必须增加真实认证并将其映射到允许扮演的角色。
+- 关系、资产、世界状态、发布状态和审核状态只能通过领域规则改变。
+- LLM 可以提出关系变化、记忆、行动或内容候选，但不能直接写入最终状态。
+- 模型推测不能冒充事实；记忆必须记录来源、可见性、置信度和审核状态。
+
+## 5. 一致性、幂等与异步任务
+
+- 消息生成、事件执行、动态发布、图片任务和创作者派发必须有稳定幂等键。
+- 同一幂等键的相同请求可安全重放；冲突载荷必须显式失败。
+- 业务写入和相关 Outbox 事件应在同一事务边界完成。
+- Job Payload 只携带稳定 ID、版本和可审计快照，不携带无法追踪的大段可变状态。
+- Worker 使用有限重试和明确退避；永久错误进入可观察终态，不无限循环。
+- 定时任务创建领域命令或 Occurrence，不绕过领域规则直接发布最终内容。
+- 图片或外部服务失败不得破坏已完成的文本或用户输入；恢复路径必须可重试且不重复副作用。
+
+## 6. API 与 Contract 规则
+
+- API 请求遵循 Route → Parser → Use Case → Port → Adapter。
+- Route 不复制业务规则；Parser 拒绝未知字段、非法枚举和越界输入；Use Case 负责权限、事务和跨实体协调。
+- API、Worker 和 Web 共享 Contract，不分别维护同义 DTO。
+- 公共 Contract 变更必须检查所有生产者和消费者，并保留明确的错误返回。
+- 流式协议必须定义正常结束、错误、取消、空响应和重连行为。
+- 新接口必须具备成功、无权限、资源不存在、非法输入和幂等重放测试中适用的场景。
+
+## 7. 数据与迁移规则
+
+- PostgreSQL Schema 只通过顺序 migration 演进；每个 up migration 都必须有对应 down 文件和测试登记。
+- 服务启动只检查 Schema 是否匹配，不自动执行破坏性回滚。
+- 仓储映射必须验证数据库值，不能把无效行静默转换成领域对象。
+- 数据库级唯一约束、外键和 check constraint 应保护跨进程不变量；应用层仍需提供清晰错误。
+- Redis 不能成为不可重建业务状态的唯一来源。
+- 媒体输入必须校验类型、大小、路径和引用来源；压缩包必须防止路径穿越和数量滥用。
+
+## 8. LLM、Prompt 与 ComfyUI
+
+- Provider 只处理认证、端点、模型参数、协议、超时和错误归一化，不承载业务规则。
+- Prompt 按系统规则、世界、角色、关系、记忆、当前事件和输出要求组织，且只发送功能明确授权的数据。
+- 外发世界观、关系、日程或私密记忆前，必须有显式功能开关、可见性规则和日志边界。
+- 结构化输出必须经过严格解析和 Domain 校验；自然语言文本也要过滤内部思考和调试内容。
+- API Key、Authorization、Cookie、token、password 和密文不得进入前端状态、Prompt 记录或明文日志。
+- 图片生成将稳定身份、场景和镜头信息分层组合，并记录 Workflow 版本、seed 和关联任务。
+- 默认测试不调用真实 LLM 或 ComfyUI；真实验收必须由显式环境开关触发并单独报告。
+
+## 9. 前端规则
+
+前端详细规范见 [frontend-development-standard.md](./frontend-development-standard.md)。跨页面稳定要求包括：
+
+- 页面负责组合与页面级状态，基础组件和可复用业务组件不在页面重复实现。
+- 使用语义令牌、多主题和单一全局样式入口，不硬编码品牌视觉。
+- 覆盖加载、空、失败、成功、禁用和重试状态。
+- 最低支持 360px，避免页面级嵌套滚动和横向溢出。
+- 提供键盘焦点、可访问名称、图片替代文本和 reduced-motion 支持。
+- 新代码不得扩大已知规范债务；需要例外时在任务和评审中说明原因与清理计划。
+
+## 10. 安全与可观察性
+
+- 所有外部输入、文件路径、URL、分页和查询范围必须有边界。
+- 交互日志保留 correlation/request/job 标识，正文采用有限预览并递归脱敏。
+- 健康检查只说明进程存活；就绪检查验证持久模式关键依赖。
+- 功能开关关闭后应停止新副作用并保留已有数据。
+- 人工审核、安全边界和身份权限变更属于高风险任务，实施前需明确失败模式和回滚方式。
+
+## 11. 测试与完成标准
+
+按风险分层验证：
+
+- Domain：状态机、不变量、边界值、输入不可变和失败路径。
+- Contracts/API：解析、错误映射、权限、幂等和流式协议。
+- Database：迁移、约束、映射、事务和仓储重放。
+- Worker：调度、有限重试、故障恢复、Outbox 和重复任务。
+- Web：类型、单元/接口测试、构建、lint、桌面与 360px 核心交互。
+- 集成/E2E：真实 PostgreSQL/Redis 路径和用户核心闭环。
+- 外部服务：Fake/协议测试与真实供应商验收分开。
+
+完成任务必须满足：范围明确、测试退出码为 0、文档与行为同步、无无关改动、无隐式外部依赖，并清楚报告未执行的真实服务验证。Snapshot 只适合稳定结构，不能替代行为断言。
+
+## 12. 变更治理
+
+- 开始任务前读取根 `AGENTS.md` 和改动范围对应规范。
+- 不为局部需求引入新框架、生产依赖或跨模块重构。
+- 架构、公共接口、数据流或运行方式变化必须同步当前文档；重要取舍新增 ADR。
+- 历史任务与验证报告只归档，不作为当前技术事实。
+- 影响同一文件或同一状态机的任务串行实施；只读探索和互不重叠的验证可并行。
+- 测试命令必须真正完成并报告退出状态；“已启动”“理论可行”和“Fake 通过”不能替代对应验收。
