@@ -12,6 +12,10 @@
 
 `docs/archive/**` 是历史记录，不能作为当前技术选型或完成状态的依据。文档与实现冲突时，先以代码、依赖和测试核实事实，再在同一任务中更新当前文档；不得静默保留冲突。
 
+明确标记为 V2 replacement 的任务还必须读取 `docs/v2/common-baseline.md` 和对应 V2 任务文档。V2 replacement 任务以 ADR-0006 为目标边界；未标记为 V2 的维护任务仍以当前 V1 实现文档和 ADR-0001 至 ADR-0005 为准。
+
+三个 AI 并行执行 V2 replacement 时，`docs/v2/ai-parallel-master-plan.md` 是唯一实施计划；`docs/v2/three-ai-execution-plan.md` 已被替代，不得再用于分支分配。业务分支只能从已验收的 `V2_BOOTSTRAP_SHA` 创建，并遵守主计划中的 owner paths、共享文件只读规则和 Slice 集成门槛。
+
 ## 2. 当前架构边界
 
 - 系统保持 TypeScript monorepo、模块化单体 API 和独立 Worker，不因局部需求拆微服务。
@@ -23,6 +27,8 @@
 - API 请求遵循 Route → Parser → Use Case → Port；路由只处理协议分发，业务规则进入 Use Case 或 Domain。
 - PostgreSQL 是持久模式下的业务事实来源，也保存 Worker 心跳和派发状态。Redis 只承担 BullMQ 队列及其可重建运行数据，不保存不可重建的业务事实。
 - LLM 与 ComfyUI 是不可信外部适配器。其输出必须经过解析、领域校验、权限检查和幂等控制，不能直接修改关系、资产、世界状态或已发布内容。
+
+V2 replacement 分支的目标边界由 `docs/v2/common-baseline.md` 规定：Fastify、SQLite + FTS5 和 Qdrant 只在这些分支中可用，不能回流为 V1 维护任务的默认技术选型。
 
 ## 3. 按改动范围执行
 

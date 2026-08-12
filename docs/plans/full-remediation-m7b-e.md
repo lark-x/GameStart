@@ -1,6 +1,6 @@
 # Living Network 全面整改与 M7B–M7E 产品闭环计划
 
-状态：仅规划，未开始实施  
+状态：历史计划；部分内容已由后续提交实现，V2 replacement 以 `docs/v2/common-baseline.md` 和 `docs/v2/ai-parallel-master-plan.md` 为准
 实施基线：`codex/architecture-governance`  
 建议实施分支：`codex/full-remediation-m7b-e`
 

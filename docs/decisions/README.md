@@ -7,3 +7,4 @@ ADR 记录难以从代码局部推断、且容易被后续开发重新讨论的�
 - [ADR-0003：PostgreSQL、手写 SQL 与 Redis 职责](./0003-storage-and-queue-boundaries.md)
 - [ADR-0004：Ports 与依赖方向](./0004-ports-and-dependency-direction.md)
 - [ADR-0005：外部生成服务信任边界](./0005-external-generation-trust-boundary.md)
+- [ADR-0006：V2 本地创作者驱动互动游戏平台](./0006-v2-local-creator-game-platform.md)

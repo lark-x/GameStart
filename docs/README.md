@@ -14,6 +14,16 @@
 | [产品需求](./product-requirements.md) | 产品目标、功能优先级和体验愿景；状态需与进度文档一致 |
 | [核心业务流程](./user-flows.md) | 当前关键用户路径及系统交互 |
 
+## V2 替换计划
+
+| 文档 | 职责 |
+| --- | --- |
+| [V2 AI 并行开发主文档](./v2/ai-parallel-master-plan.md) | 唯一执行计划；包含 Gate 0、三个独立分支、复用、接口协作、分阶段集成和验收 |
+| [V2 公共开发基线](./v2/common-baseline.md) | Gate 0、三个 AI 分支和集成分支共同遵守的产品、架构、接口、复用和验收边界 |
+| [旧版三 AI 独立分支计划](./v2/three-ai-execution-plan.md) | 已替代，仅保留迁移说明并指向主计划 |
+| [V2 Interface Requests](./v2/INTERFACE_REQUESTS.md) | 每分支独立接口请求文件的格式和处理规则 |
+| [V2 三设备执行提示词](./v2/three-device-prompts.md) | 不同设备通过 GitHub 拉取、等待 Gate 0、创建独立分支和执行各自任务时直接使用 |
+
 根目录 [AGENTS.md](../AGENTS.md) 是模型和开发代理的强制执行入口。
 
 ## 架构决策

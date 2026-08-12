@@ -158,16 +158,21 @@ pnpm test:integration
 ```sh
 pnpm typecheck
 pnpm test
-pnpm test:coverage
 pnpm build
 pnpm --filter @living-network/web lint
+```
+
+覆盖率需独立执行：
+
+```sh
+pnpm test:coverage
 ```
 
 ### CI 质量门槛
 
 GitHub Actions CI 在每个 PR 和 main push 上运行三个 Job：
 
-1. **verify** — `pnpm typecheck`、`pnpm test`、`pnpm test:coverage`（100% 行覆盖率）、`pnpm build`、`pnpm --filter @living-network/web lint`
+1. **verify** — `pnpm check:boundaries`、`pnpm typecheck`、`pnpm test`、`pnpm build`、`pnpm --filter @living-network/web lint`
 2. **real-services** — PostgreSQL/Redis 真实集成测试（`RUN_REAL_INTEGRATION=1 pnpm test:integration`）
 3. **e2e** — Playwright 端到端测试（依赖 verify + real-services 通过）
 

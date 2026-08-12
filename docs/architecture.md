@@ -1,6 +1,6 @@
 # Living Network 当前系统架构
 
-最后核对：2026-08-12（`060beba`）
+最后核对：2026-08-12（`96130c5`）
 
 本文是当前实现架构的唯一文档事实来源。长期原则见 [DEVELOPMENT.md](./DEVELOPMENT.md)，能力完成状态见 [PROGRESS.md](./PROGRESS.md)，架构选择原因见 [decisions/](./decisions/)。
 
@@ -98,7 +98,9 @@ node:http server
 
 `app.ts` 负责上下文组装和路由分发，不应重新承载已提取的业务逻辑。共享请求/响应类型来自 Contracts；运行时解析仍由显式解析器和领域断言完成。
 
-主要 API 能力包括世界与角色、关系、ActorSession、聊天与 SSE、动态、事件与日历、视觉工作流、图片任务、贴纸、创作者派发、集成设置、交互日志，以及 Story Graph 内容管理。
+主要 API 能力包括世界与角色、关系、ActorSession、聊天与 SSE、动态、事件与日历、视觉工作流、图片任务、贴纸、创作者派发、集成设置、交互日志、Story Graph 内容管理、Story Generation Job/Candidate、Relationship Feedback 和 Social Feed。
+
+近期实现已经把部分 Parser、Contract Schema、SQL 仓储和内存仓储拆到业务域文件，并新增 Story Generation、Moment Draft Review、Relationship Feedback、Social Feed 和评论自动回复入口。但这些新增入口仍属于当前 V1 架构内的增量能力，不等于 V2 产品架构已经落地。
 
 ## 5. 领域与内容模型
 
@@ -109,8 +111,11 @@ node:http server
 - 事件与生活模拟：事件定义、Occurrence、Plan、Execution、Behavior Action 和主动消息预算。
 - 动态与媒体：Moment Draft、Moment、互动、Image Job、视觉身份、Workflow 和贴纸。
 - 故事图：Story Arc、Story Node、Story Edge、Prompt Template 和 Memory Candidate。
+- 生成与反馈：World Context Policy、Story Generation Job/Candidate、Relationship Change Candidate/Event、Social Feed Event 和评论自动回复触发。
 
 Story Graph 当前支持剧情弧、节点、边、Prompt 预览和记忆候选审核，并同时具备内存与 PostgreSQL 仓储。它属于内容管理能力，尚不意味着模型已经能自动推进完整剧情状态机。
+
+Story Generation 当前已有 Job/Candidate 的 Domain、Contracts、API 和仓储基础，但缺少 Worker 消费者来实际调用模型生成内容。Relationship Feedback、Moment Draft Review 与 Social Feed 的部分 Use Case 仍存在多次写入不在同一事务边界的问题，不能把它们视为已完成的强一致闭环。
 
 ## 6. 数据存储
 
@@ -187,9 +192,11 @@ API 使用 PostgreSQL 仓储，Worker 使用 PostgreSQL + Redis。正式创作�
 
 - Database 仍兼容导出部分 Ports 类型；API/Worker 业务代码尚未完全改为直接面向 Ports。
 - `DomainRepositories` 可选能力较多，Use Case 尚未全部收敛到最小能力接口。
-- SQL、内存仓储、Contracts Schema、Parser 和部分 Vue 页面体积过大。
+- SQL、内存仓储、Contracts Schema、Parser 和部分 Vue 页面已经开始拆分，但仍存在较大 façade、Repository Bag 和历史页面债务。
 - 前端规范中的基础组件和语义令牌要求尚未被自动门禁完整覆盖，且存在历史违规。
-- `api.js` 与 `api.d.ts` 仍需人工同步。
+- Web API 客户端已经统一为 `api.ts`，旧 `api.js` 与 `api.d.ts` 已删除；后续不得重新引入双份维护。
+- `pnpm verify` 当前不包含 `pnpm test:coverage`；覆盖率门槛不能被描述为 verify 已强制执行。
+- Story Generation 缺少 Worker 消费者；评论自动回复和部分候选审核路径仍需补强运行时校验、事务边界和专项测试。
 - 生产级认证、TLS、集中秘密管理、对象存储适配和完整可观测部署尚未完成。
 
 这些事项需要独立任务处理，不能在无关功能中顺带重构。
