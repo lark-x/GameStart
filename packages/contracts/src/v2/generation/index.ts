@@ -1,5 +1,6 @@
 import type {
   V2CandidateId,
+  V2AssetId,
   V2CharacterId,
   V2IdempotencyKey,
   V2IsoDateTime,
@@ -48,6 +49,22 @@ export interface V2ParsedSceneCandidate {
 }
 
 export type V2GenerationJobKind = "scene";
+export type V2AssetMediaKind = "image";
+export type V2AssetCandidateStatus = "pending" | "approved" | "rejected" | "changes_requested";
+
+export interface V2AssetCandidatePayload {
+  readonly asset: {
+    readonly assetId: V2AssetId;
+    readonly mediaKind: V2AssetMediaKind;
+    readonly mediaRef: string;
+    readonly prompt: string;
+    readonly workflowVersion: string;
+    readonly sourceJobId: V2JobId;
+    readonly seed?: number;
+  };
+  readonly validationNotes: readonly string[];
+}
+
 export type V2GenerationDispatchStatus = "pending" | "enqueued";
 
 export interface V2SceneGenerationJobRecord {
@@ -82,6 +99,56 @@ export interface V2GenerationDispatchRecord {
   readonly requestedAt: V2IsoDateTime;
   readonly enqueuedAt?: V2IsoDateTime;
   readonly lastError?: string;
+}
+
+export interface V2AssetGenerationJobRecord {
+  readonly jobId: V2JobId;
+  readonly storyWorldId: V2StoryWorldId;
+  readonly status: V2JobStatus;
+  readonly idempotencyKey: V2IdempotencyKey;
+  readonly prompt: string;
+  readonly workflowVersion: string;
+  readonly workflow: Record<string, unknown>;
+  readonly attempts: number;
+  readonly maxAttempts: number;
+  readonly createdAt: V2IsoDateTime;
+  readonly updatedAt: V2IsoDateTime;
+  readonly negativePrompt?: string;
+  readonly seed?: number;
+  readonly claimedAt?: V2IsoDateTime;
+  readonly leaseExpiresAt?: V2IsoDateTime;
+  readonly submittedAt?: V2IsoDateTime;
+  readonly completedAt?: V2IsoDateTime;
+  readonly cancelledAt?: V2IsoDateTime;
+  readonly externalJobId?: string;
+  readonly mediaRef?: string;
+  readonly candidateId?: V2CandidateId;
+  readonly failureReason?: string;
+}
+
+export interface V2CreateAssetGenerationJobInput {
+  readonly jobId: V2JobId;
+  readonly storyWorldId: V2StoryWorldId;
+  readonly idempotencyKey: V2IdempotencyKey;
+  readonly prompt: string;
+  readonly workflowVersion: string;
+  readonly workflow: Record<string, unknown>;
+  readonly createdAt: V2IsoDateTime;
+  readonly negativePrompt?: string;
+  readonly seed?: number;
+  readonly maxAttempts?: number;
+}
+
+export interface V2AssetCandidateRecord {
+  readonly candidateId: V2CandidateId;
+  readonly jobId: V2JobId;
+  readonly storyWorldId: V2StoryWorldId;
+  readonly status: V2AssetCandidateStatus;
+  readonly payload: V2AssetCandidatePayload;
+  readonly createdAt: V2IsoDateTime;
+  readonly reviewedAt?: V2IsoDateTime;
+  readonly reviewer?: string;
+  readonly reviewReason?: string;
 }
 
 export interface V2CreateSceneGenerationJobInput {

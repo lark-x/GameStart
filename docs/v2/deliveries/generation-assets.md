@@ -270,3 +270,85 @@ External Services:
 - Real LLM: not executed; API only creates job facts and context snapshots.
 - Real ComfyUI: not executed; Slice C scope.
 - Qdrant: not executed; Slice D optional scope.
+
+## Checkpoint 5: Asset Job + Fake ComfyUI Candidate
+
+Scope:
+
+- Added V2 asset generation contracts under `packages/contracts/src/v2/generation`.
+- Added AI-2 asset job, asset candidate, and asset queue payload ports under `packages/ports/src/v2/generation`.
+- Added domain validation for controlled asset media refs and asset candidate provenance inputs under `packages/domain/src/v2/generation`.
+- Added SQLite migration and repository under `packages/database/src/v2/generation`.
+- Added V2 asset worker use case under `apps/worker/src/v2`.
+- Asset worker consumes stable `V2AssetGenerationJobQueuePayload` facts, verifies workflow version against the stored SQLite job, and never treats queue payload as source of truth.
+- Asset worker uses an injected `ComfyUiClient`, persists external job id, resolves the media result, validates the controlled media ref, writes a pending asset candidate, and then marks the asset job succeeded.
+- Duplicate terminal consumption skips without creating duplicate asset candidates.
+- Expired claimed/running leases recover to `queued` before retrying.
+
+Non-scope:
+
+- No asset approval transaction yet.
+- No approved asset/media facts yet.
+- No release/save/canon writes.
+- No asset API yet.
+- No real BullMQ consumer startup wiring.
+- No Qdrant, Social Temp, Web, shared composition root, or lockfile changes.
+
+Contract:
+
+- `V2AssetGenerationJobRecord`
+- `V2CreateAssetGenerationJobInput`
+- `V2AssetCandidatePayload`
+- `V2AssetCandidateRecord`
+- `V2AssetGenerationJobRepository`
+- `V2AssetCandidateRepository`
+- `V2AssetGenerationJobQueuePayload`
+
+Migration:
+
+- `0101_asset_generation_jobs`
+- Creates `v2_asset_generation_jobs`, `v2_asset_generation_dispatches`, and `v2_asset_candidates`.
+- Adds lookup indexes for asset job status, external job id, asset dispatch status/request time, and asset candidate status.
+
+State Machine:
+
+- Asset job lifecycle: `queued -> claimed -> running -> succeeded|failed|cancelled`.
+- ComfyUI submission is recorded as `externalJobId`/`submittedAt` while the job remains `running`.
+- Retryable ComfyUI failures return `running -> queued` while attempts remain.
+- Retryable ComfyUI failures become terminal `failed` when attempts are exhausted.
+- Unsafe media refs and mismatched queue payloads are terminal `failed`.
+- Expired `claimed` or `running` leases recover to `queued`.
+- Terminal `succeeded`, `failed`, and `cancelled` jobs are skipped on duplicate consumption.
+- Asset candidates start as `pending`; approval is deliberately left for the next Slice C checkpoint.
+
+Verification:
+
+- `pnpm --filter @living-network/contracts typecheck`: exit 0
+- `pnpm --filter @living-network/ports typecheck`: exit 0
+- `pnpm --filter @living-network/domain test`: exit 0
+- `pnpm --filter @living-network/domain typecheck`: exit 0
+- `pnpm --filter @living-network/database test`: exit 0
+- `pnpm --filter @living-network/database typecheck`: exit 0
+- `pnpm --filter @living-network/worker test`: exit 0
+- `pnpm --filter @living-network/worker typecheck`: exit 0
+- `pnpm check:boundaries`: exit 0
+- `git diff --check`: exit 0
+
+Known validation note:
+
+- `git diff --check` reported only Git line-ending normalization warnings for existing Windows checkout behavior; no whitespace errors.
+
+Fake Service Evidence:
+
+- Fake ComfyUI success creates one pending asset candidate with controlled `media://fake-comfy/...` media ref.
+- Fake duplicate terminal consumption does not duplicate candidates.
+- Fake retryable ComfyUI timeout returns to `queued`, then becomes terminal `failed` after attempts are exhausted.
+- Fake unsafe media ref fails terminally without candidate creation.
+- Fake recovered external ComfyUI job resumes from persisted `externalJobId` without resubmitting.
+
+External Services:
+
+- Real Redis: not executed; queue consumer startup wiring is outside this checkpoint.
+- Real LLM: not executed; Slice C asset worker does not call LLM.
+- Real ComfyUI: not executed; worker tests use injected fake ComfyUI clients.
+- Qdrant: not executed; Slice D optional scope.
