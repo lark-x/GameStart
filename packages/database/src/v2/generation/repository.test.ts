@@ -178,3 +178,53 @@ test("tracks claim, running, success, retry, and cancel states", async () => {
     cleanup();
   }
 });
+
+test("recovers expired leases without reopening terminal failed jobs", async () => {
+  const { db, cleanup } = openV2TempSqliteConnection();
+  try {
+    applyV2Migrations(db, v2GenerationJobMigrations);
+    const repository = new V2SqliteGenerationJobRepository(db);
+    await repository.createSceneJob(input({ maxAttempts: 1 }));
+    await repository.markJobClaimed({
+      jobId: "job_scene_bridge" as V2JobId,
+      claimedAt: "2026-08-12T00:03:00.000Z",
+      leaseExpiresAt: "2026-08-12T00:04:00.000Z",
+    });
+    await repository.markJobRunning({
+      jobId: "job_scene_bridge" as V2JobId,
+      updatedAt: "2026-08-12T00:03:30.000Z",
+    });
+    const recovered = await repository.recoverExpiredJobLease({
+      jobId: "job_scene_bridge" as V2JobId,
+      recoveredAt: "2026-08-12T00:05:00.000Z",
+    });
+    assert.equal(recovered.status, "queued");
+    assert.equal(recovered.claimedAt, undefined);
+
+    await repository.markJobClaimed({
+      jobId: recovered.jobId,
+      claimedAt: "2026-08-12T00:06:00.000Z",
+      leaseExpiresAt: "2026-08-12T00:07:00.000Z",
+    });
+    await repository.markJobRunning({
+      jobId: recovered.jobId,
+      updatedAt: "2026-08-12T00:06:30.000Z",
+    });
+    const failed = await repository.markJobFailed({
+      jobId: recovered.jobId,
+      failedAt: "2026-08-12T00:07:00.000Z",
+      reason: "terminal provider failure",
+      retryable: true,
+    });
+    assert.equal(failed.status, "failed");
+    const claimAfterTerminalFailure = await repository.markJobClaimed({
+      jobId: recovered.jobId,
+      claimedAt: "2026-08-12T00:08:00.000Z",
+      leaseExpiresAt: "2026-08-12T00:09:00.000Z",
+    });
+    assert.equal(claimAfterTerminalFailure.status, "failed");
+  } finally {
+    db.close();
+    cleanup();
+  }
+});

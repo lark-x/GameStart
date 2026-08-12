@@ -11,7 +11,7 @@ export type V2GenerationJobStatus =
 const transitions: Record<V2GenerationJobStatus, readonly V2GenerationJobStatus[]> = {
   queued: ["claimed", "cancelled", "failed"],
   claimed: ["running", "queued", "cancelled", "failed"],
-  running: ["succeeded", "failed", "cancelled"],
+  running: ["succeeded", "queued", "failed", "cancelled"],
   succeeded: [],
   failed: ["queued"],
   cancelled: [],

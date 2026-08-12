@@ -172,7 +172,7 @@ export class V2SqliteGenerationJobRepository implements V2GenerationJobRepositor
     this.db.prepare(`
       UPDATE v2_generation_jobs
       SET status = 'claimed', claimed_at = ?, lease_expires_at = ?, updated_at = ?
-      WHERE job_id = ? AND status IN ('queued', 'failed')
+      WHERE job_id = ? AND status = 'queued'
     `).run(input.claimedAt, input.leaseExpiresAt, input.claimedAt, input.jobId);
     return getJobOrThrow(this.db, input.jobId);
   }
@@ -180,6 +180,19 @@ export class V2SqliteGenerationJobRepository implements V2GenerationJobRepositor
   public async markJobRunning(input: { readonly jobId: V2JobId; readonly updatedAt: string }): Promise<V2SceneGenerationJobRecord> {
     this.db.prepare("UPDATE v2_generation_jobs SET status = 'running', updated_at = ? WHERE job_id = ? AND status = 'claimed'")
       .run(input.updatedAt, input.jobId);
+    return getJobOrThrow(this.db, input.jobId);
+  }
+
+  public async recoverExpiredJobLease(input: { readonly jobId: V2JobId; readonly recoveredAt: string }): Promise<V2SceneGenerationJobRecord> {
+    this.db.prepare(`
+      UPDATE v2_generation_jobs
+      SET status = 'queued', claimed_at = NULL, lease_expires_at = NULL, updated_at = ?,
+          failure_reason = 'lease expired before worker completion'
+      WHERE job_id = ?
+        AND status IN ('claimed', 'running')
+        AND lease_expires_at IS NOT NULL
+        AND lease_expires_at <= ?
+    `).run(input.recoveredAt, input.jobId, input.recoveredAt);
     return getJobOrThrow(this.db, input.jobId);
   }
 

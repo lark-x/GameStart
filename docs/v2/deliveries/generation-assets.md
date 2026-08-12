@@ -122,3 +122,77 @@ External Services:
 - Real LLM: not executed; no provider call in checkpoint 2.
 - Real ComfyUI: not executed; Slice C scope.
 - Qdrant: not executed; Slice D optional scope.
+
+## Checkpoint 3: Worker + CandidateSubmissionPort
+
+Scope:
+
+- Added V2 scene generation worker use case under `apps/worker/src/v2`.
+- Worker consumes stable `V2GenerationJobQueuePayload` facts, verifies they match the stored SQLite job, and never treats queue payload as the source of truth.
+- Worker calls the injected V2 scene provider helper, strictly parses scene candidate JSON, and submits only through Gate 0 `CandidateSubmissionPort`.
+- Worker marks terminal success with submitted `candidateId`, provider response id, and bounded raw output preview.
+- Worker skips duplicate consumption after terminal success/failure/cancel.
+- Worker recovers expired claimed/running leases back to `queued` before retrying.
+- Adjusted generation job claim semantics so terminal `failed` jobs are not claimable.
+
+Non-scope:
+
+- No real BullMQ consumer startup wiring yet; this checkpoint provides the deterministic processor used by queue consumers.
+- No direct canon repository reads or writes.
+- No second canon candidate table.
+- No release/save writes.
+- No Generation API yet.
+- No ComfyUI, media, asset review, Qdrant, Social Temp, Web, or lockfile changes.
+
+Contract:
+
+- Reuses Gate 0 `CandidateSubmissionPort`.
+- Reuses `V2GenerationJobQueuePayload`.
+- Extends AI-2 `V2GenerationJobRepository` with `recoverExpiredJobLease`.
+
+Migration:
+
+- Reuses `0100_generation_jobs`.
+- No new migration in this checkpoint.
+
+State Machine:
+
+- Job lifecycle remains `queued -> claimed -> running -> succeeded|failed|cancelled`.
+- Retryable worker/provider failures return `running -> queued` while attempts remain.
+- Retryable worker/provider failures become terminal `failed` when attempts are exhausted.
+- Invalid LLM output and mismatched queue payload are terminal `failed`.
+- Expired `claimed` or `running` leases recover to `queued`.
+- Terminal `succeeded`, `failed`, and `cancelled` jobs are skipped on duplicate consumption.
+
+Verification:
+
+- `pnpm --filter @living-network/contracts typecheck`: exit 0
+- `pnpm --filter @living-network/ports typecheck`: exit 0
+- `pnpm --filter @living-network/domain test`: exit 0
+- `pnpm --filter @living-network/domain typecheck`: exit 0
+- `pnpm --filter @living-network/database test`: exit 0
+- `pnpm --filter @living-network/database typecheck`: exit 0
+- `pnpm --filter @living-network/ai typecheck`: exit 0
+- `pnpm --filter @living-network/worker test`: exit 0
+- `pnpm --filter @living-network/worker typecheck`: exit 0
+- `pnpm check:boundaries`: exit 0
+- `git diff --check`: exit 0
+
+Known validation note:
+
+- `git diff --check` reported only Git line-ending normalization warnings for existing Windows checkout behavior; no whitespace errors.
+
+Fake Service Evidence:
+
+- Fake LLM success submits one pending candidate through `CandidateSubmissionPort`.
+- Fake malformed/empty LLM output fails terminally without candidate submission.
+- Fake retryable provider timeout returns to `queued`, then becomes terminal `failed` after attempts are exhausted.
+- Duplicate consumption of a terminal job does not resubmit a candidate.
+- Expired lease recovery is covered by worker and SQLite repository tests.
+
+External Services:
+
+- Real Redis: not executed; queue consumer startup wiring is outside this checkpoint.
+- Real LLM: not executed; worker tests use injected fake provider.
+- Real ComfyUI: not executed; Slice C scope.
+- Qdrant: not executed; Slice D optional scope.
