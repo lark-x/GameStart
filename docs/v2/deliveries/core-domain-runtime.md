@@ -47,3 +47,44 @@ This checkpoint adds `coreOptions` to `createV2FastifyApp` so tests and runtime 
 ## Validation
 
 Validation commands and exit codes are reported in the handoff for the checkpoint commit.
+
+## Checkpoint 2: Graph + Typed State
+
+Status: implemented on this branch
+
+Implemented scope:
+
+- Graph contracts for Arc, Scene, Choice, Gate, Consequence, graph snapshot, graph validation diagnostics, and revisioned create commands.
+- Typed State contracts for state variables, initial-state snapshots, state deltas, delta preview diagnostics, and revisioned state-variable create commands.
+- Pure domain rules for:
+  - Arc/Scene/Choice construction and text/id validation.
+  - Cross-world graph reference rejection.
+  - Choice gate and consequence scalar validation.
+  - Graph validation with exactly-one-entry-scene errors, missing source/target errors, and unreachable scene warnings.
+  - Typed State schema creation, initial state assembly, delta preview, `set`, numeric `increment`, and delta-indexed diagnostics.
+- AI-1 ports for `V2GraphStateRepository` and `V2GraphStateUnitOfWork`, with Canon repository reused inside the same transaction for revision and idempotency.
+- SQLite migration `0002_v2_core_graph_state` for V2 arcs, scenes, choices, and typed state variables.
+- SQLite repository and transaction-backed unit of work for graph/state persistence, JSON scalar/array mapping, rollback, and cross-world foreign-key enforcement.
+- Fastify core API routes under `/api/v2/core`:
+  - `GET /worlds/:storyWorldId/graph`
+  - `GET /worlds/:storyWorldId/graph/validation`
+  - `POST /worlds/:storyWorldId/arcs`
+  - `POST /worlds/:storyWorldId/scenes`
+  - `POST /worlds/:storyWorldId/choices`
+  - `GET /worlds/:storyWorldId/state/variables`
+  - `POST /worlds/:storyWorldId/state/variables`
+  - `GET /worlds/:storyWorldId/state/initial`
+  - `POST /worlds/:storyWorldId/state/preview-delta`
+
+Reusable content added for later AI-1 checkpoints:
+
+- Choice `gates` and `consequences` share the same scalar state expression shape that Runtime can evaluate without changing graph storage.
+- `previewV2TypedStateDelta` is deterministic and side-effect free, so Runtime can reuse it before applying player choices or validating Candidate Review effects.
+- Graph validation returns structured diagnostics instead of throwing, so Release/Export can decide whether warnings block packaging.
+- The GraphState unit of work deliberately includes Canon repository access, keeping optimistic concurrency and idempotency behavior consistent for all later core writes.
+
+Explicit non-scope for this checkpoint:
+
+- Runtime play sessions, saves, release packaging, export manifest generation, and Candidate Review workflows.
+- LLM, ComfyUI, BullMQ worker, Redis, Qdrant, Web pages.
+- State persistence for player saves; this checkpoint only defines schema and preview semantics.

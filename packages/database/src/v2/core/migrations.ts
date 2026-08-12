@@ -118,4 +118,82 @@ export const v2CoreCanonMigration: V2SqliteMigration = {
   },
 };
 
-export const v2CoreCanonMigrations = [v2CoreCanonMigration] as const;
+export const v2CoreGraphStateMigration: V2SqliteMigration = {
+  id: "0002_v2_core_graph_state",
+  up: (db) => {
+    db.exec(`
+      CREATE TABLE v2_arcs (
+        arc_id TEXT NOT NULL,
+        story_world_id TEXT NOT NULL REFERENCES v2_worlds(story_world_id) ON DELETE CASCADE,
+        title TEXT NOT NULL CHECK (length(trim(title)) > 0),
+        summary TEXT,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        PRIMARY KEY (story_world_id, arc_id)
+      );
+
+      CREATE TABLE v2_scenes (
+        scene_id TEXT NOT NULL,
+        story_world_id TEXT NOT NULL REFERENCES v2_worlds(story_world_id) ON DELETE CASCADE,
+        arc_id TEXT,
+        title TEXT NOT NULL CHECK (length(trim(title)) > 0),
+        body TEXT,
+        is_entry INTEGER NOT NULL CHECK (is_entry IN (0, 1)),
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        PRIMARY KEY (story_world_id, scene_id),
+        FOREIGN KEY (story_world_id, arc_id)
+          REFERENCES v2_arcs(story_world_id, arc_id)
+          ON DELETE SET NULL
+      );
+
+      CREATE TABLE v2_choices (
+        choice_id TEXT NOT NULL,
+        story_world_id TEXT NOT NULL REFERENCES v2_worlds(story_world_id) ON DELETE CASCADE,
+        source_scene_id TEXT NOT NULL,
+        target_scene_id TEXT,
+        label TEXT NOT NULL CHECK (length(trim(label)) > 0),
+        gates_json TEXT NOT NULL DEFAULT '[]',
+        consequences_json TEXT NOT NULL DEFAULT '[]',
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        PRIMARY KEY (story_world_id, choice_id),
+        FOREIGN KEY (story_world_id, source_scene_id)
+          REFERENCES v2_scenes(story_world_id, scene_id)
+          ON DELETE CASCADE,
+        FOREIGN KEY (story_world_id, target_scene_id)
+          REFERENCES v2_scenes(story_world_id, scene_id)
+          ON DELETE SET NULL
+      );
+
+      CREATE TABLE v2_state_variables (
+        story_world_id TEXT NOT NULL REFERENCES v2_worlds(story_world_id) ON DELETE CASCADE,
+        key TEXT NOT NULL,
+        value_type TEXT NOT NULL CHECK (value_type IN ('string', 'number', 'boolean')),
+        default_json TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        PRIMARY KEY (story_world_id, key)
+      );
+
+      CREATE INDEX v2_arcs_world_idx ON v2_arcs(story_world_id);
+      CREATE INDEX v2_scenes_world_idx ON v2_scenes(story_world_id);
+      CREATE INDEX v2_scenes_world_entry_idx ON v2_scenes(story_world_id, is_entry);
+      CREATE INDEX v2_choices_world_source_idx ON v2_choices(story_world_id, source_scene_id);
+      CREATE INDEX v2_choices_world_target_idx ON v2_choices(story_world_id, target_scene_id);
+      CREATE INDEX v2_state_variables_world_idx ON v2_state_variables(story_world_id);
+    `);
+  },
+  down: (db) => {
+    db.exec(`
+      DROP INDEX IF EXISTS v2_state_variables_world_idx;
+      DROP INDEX IF EXISTS v2_choices_world_target_idx;
+      DROP INDEX IF EXISTS v2_choices_world_source_idx;
+      DROP INDEX IF EXISTS v2_scenes_world_entry_idx;
+      DROP INDEX IF EXISTS v2_scenes_world_idx;
+      DROP INDEX IF EXISTS v2_arcs_world_idx;
+      DROP TABLE IF EXISTS v2_state_variables;
+      DROP TABLE IF EXISTS v2_choices;
+      DROP TABLE IF EXISTS v2_scenes;
+      DROP TABLE IF EXISTS v2_arcs;
+    `);
+  },
+};
+
+export const v2CoreCanonMigrations = [v2CoreCanonMigration, v2CoreGraphStateMigration] as const;

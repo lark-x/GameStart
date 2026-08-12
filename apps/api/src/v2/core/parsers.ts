@@ -1,16 +1,30 @@
 import type {
   V2CharacterId,
+  V2ArcId,
+  V2ChoiceId,
+  V2CreateArcRequest,
   V2CreateCharacterRequest,
+  V2CreateChoiceRequest,
   V2CreateFactRequest,
   V2CreateLocationRequest,
   V2CreateRuleRequest,
+  V2CreateSceneRequest,
   V2CreateStoryWorldRequest,
+  V2CreateStateVariableRequest,
   V2CreateTimelineEventRequest,
   V2FactVisibility,
   V2IdempotencyKey,
   V2LocationId,
+  V2PreviewStateDeltaRequest,
   V2Revision,
   V2RuleSeverity,
+  V2SceneId,
+  V2StateComparisonOperator,
+  V2StateConsequenceOperation,
+  V2StateDeltaDto,
+  V2StateGateDto,
+  V2StateValue,
+  V2StateValueType,
   V2StoryWorldId,
 } from "@living-network/contracts";
 
@@ -92,6 +106,65 @@ export function parseCreateTimelineEventBody(body: unknown): V2CreateTimelineEve
   };
 }
 
+export function parseCreateArcBody(body: unknown): V2CreateArcRequest {
+  const value = requireRevisionedBody(body, ["arcId", "title", "summary"]);
+  return {
+    arcId: requiredString(value.arcId, "arcId") as V2ArcId,
+    title: requiredString(value.title, "title"),
+    ...(value.summary === undefined ? {} : { summary: requiredString(value.summary, "summary") }),
+    expectedRevision: requiredRevision(value.expectedRevision),
+    idempotencyKey: requiredString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey,
+  };
+}
+
+export function parseCreateSceneBody(body: unknown): V2CreateSceneRequest {
+  const value = requireRevisionedBody(body, ["sceneId", "arcId", "title", "body", "isEntry"]);
+  return {
+    sceneId: requiredString(value.sceneId, "sceneId") as V2SceneId,
+    ...(value.arcId === undefined ? {} : { arcId: requiredString(value.arcId, "arcId") as V2ArcId }),
+    title: requiredString(value.title, "title"),
+    ...(value.body === undefined ? {} : { body: requiredString(value.body, "body") }),
+    ...(value.isEntry === undefined ? {} : { isEntry: requiredBoolean(value.isEntry, "isEntry") }),
+    expectedRevision: requiredRevision(value.expectedRevision),
+    idempotencyKey: requiredString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey,
+  };
+}
+
+export function parseCreateChoiceBody(body: unknown): V2CreateChoiceRequest {
+  const value = requireRevisionedBody(body, ["choiceId", "sourceSceneId", "targetSceneId", "label", "gates", "consequences"]);
+  return {
+    choiceId: requiredString(value.choiceId, "choiceId") as V2ChoiceId,
+    sourceSceneId: requiredString(value.sourceSceneId, "sourceSceneId") as V2SceneId,
+    ...(value.targetSceneId === undefined ? {} : { targetSceneId: requiredString(value.targetSceneId, "targetSceneId") as V2SceneId }),
+    label: requiredString(value.label, "label"),
+    ...(value.gates === undefined ? {} : { gates: requiredGates(value.gates) }),
+    ...(value.consequences === undefined ? {} : { consequences: requiredDeltas(value.consequences, "consequences") }),
+    expectedRevision: requiredRevision(value.expectedRevision),
+    idempotencyKey: requiredString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey,
+  };
+}
+
+export function parseCreateStateVariableBody(body: unknown): V2CreateStateVariableRequest {
+  const value = requireRevisionedBody(body, ["key", "valueType", "defaultValue"]);
+  const valueType = requiredValueType(value.valueType);
+  return {
+    key: requiredString(value.key, "key"),
+    valueType,
+    defaultValue: requiredStateValue(value.defaultValue, "defaultValue"),
+    expectedRevision: requiredRevision(value.expectedRevision),
+    idempotencyKey: requiredString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey,
+  };
+}
+
+export function parsePreviewStateDeltaBody(body: unknown): V2PreviewStateDeltaRequest {
+  const value = requireBody(body);
+  assertKeys(value, ["currentValues", "deltas"]);
+  return {
+    ...(value.currentValues === undefined ? {} : { currentValues: requiredStateRecord(value.currentValues, "currentValues") }),
+    deltas: requiredDeltas(value.deltas, "deltas"),
+  };
+}
+
 function requireRevisionedBody(body: unknown, keys: readonly string[]): Record<string, unknown> {
   const value = requireBody(body);
   assertKeys(value, [...keys, "expectedRevision", "idempotencyKey"]);
@@ -119,9 +192,90 @@ function requiredString(value: unknown, field: string): string {
   return value;
 }
 
+function requiredBoolean(value: unknown, field: string): boolean {
+  if (typeof value !== "boolean") {
+    throw new V2HttpError(400, "BAD_REQUEST", `${field} must be a boolean`);
+  }
+  return value;
+}
+
 function requiredRevision(value: unknown): V2Revision {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1) {
     throw new V2HttpError(400, "BAD_REQUEST", "expectedRevision must be a positive integer");
   }
   return value as V2Revision;
+}
+
+function requiredValueType(value: unknown): V2StateValueType {
+  if (value !== "string" && value !== "number" && value !== "boolean") {
+    throw new V2HttpError(400, "BAD_REQUEST", "valueType must be string, number, or boolean");
+  }
+  return value;
+}
+
+function requiredStateValue(value: unknown, field: string): V2StateValue {
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
+  throw new V2HttpError(400, "BAD_REQUEST", `${field} must be a string, number, or boolean`);
+}
+
+function requiredStateRecord(value: unknown, field: string): Record<string, V2StateValue> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new V2HttpError(400, "BAD_REQUEST", `${field} must be an object`);
+  }
+  return Object.fromEntries(Object.entries(value).map(([key, recordValue]) => [
+    key,
+    requiredStateValue(recordValue, `${field}.${key}`),
+  ]));
+}
+
+function requiredGates(value: unknown): readonly V2StateGateDto[] {
+  return requiredArray(value, "gates").map((item, index) => {
+    const gate = requiredRecord(item, `gates[${index}]`);
+    assertKeys(gate, ["stateKey", "operator", "value"]);
+    return {
+      stateKey: requiredString(gate.stateKey, `gates[${index}].stateKey`),
+      operator: requiredComparisonOperator(gate.operator),
+      value: requiredStateValue(gate.value, `gates[${index}].value`),
+    };
+  });
+}
+
+function requiredDeltas(value: unknown, field: string): readonly V2StateDeltaDto[] {
+  return requiredArray(value, field).map((item, index) => {
+    const delta = requiredRecord(item, `${field}[${index}]`);
+    assertKeys(delta, ["stateKey", "operation", "value"]);
+    return {
+      stateKey: requiredString(delta.stateKey, `${field}[${index}].stateKey`),
+      operation: requiredConsequenceOperation(delta.operation),
+      value: requiredStateValue(delta.value, `${field}[${index}].value`),
+    };
+  });
+}
+
+function requiredComparisonOperator(value: unknown): V2StateComparisonOperator {
+  if (value !== "eq" && value !== "neq" && value !== "gt" && value !== "gte" && value !== "lt" && value !== "lte") {
+    throw new V2HttpError(400, "BAD_REQUEST", "gate operator is not supported");
+  }
+  return value;
+}
+
+function requiredConsequenceOperation(value: unknown): V2StateConsequenceOperation {
+  if (value !== "set" && value !== "increment") {
+    throw new V2HttpError(400, "BAD_REQUEST", "state operation is not supported");
+  }
+  return value;
+}
+
+function requiredArray(value: unknown, field: string): readonly unknown[] {
+  if (!Array.isArray(value)) {
+    throw new V2HttpError(400, "BAD_REQUEST", `${field} must be an array`);
+  }
+  return value;
+}
+
+function requiredRecord(value: unknown, field: string): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new V2HttpError(400, "BAD_REQUEST", `${field} must be an object`);
+  }
+  return value as Record<string, unknown>;
 }

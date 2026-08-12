@@ -14,3 +14,11 @@ Branch: `codex/v2-core-domain-runtime`
 - Compatibility: existing calls without `coreOptions` behave the same; `/api/v2/health` remains unchanged.
 
 No blocking requests are open for the Canon checkpoint.
+
+## Checkpoint 2 Notes
+
+Graph + Typed State did not require additional shared-path changes beyond the previously listed `coreOptions` composition-root hook.
+
+The new SQLite migration is registered through AI-1-owned `packages/database/src/v2/core/migrations.ts`; the existing platform migration registry already imports the core migration list and did not need another shared edit.
+
+No blocking interface requests are open for the Graph + Typed State checkpoint.

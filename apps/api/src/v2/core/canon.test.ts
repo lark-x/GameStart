@@ -150,3 +150,130 @@ test("V2 core API maps stale revisions, idempotency conflicts, and unknown field
     cleanup();
   }
 });
+
+test("V2 core API creates graph records, validates reachability, and previews typed state", async () => {
+  const { db, cleanup } = openV2TempSqliteConnection();
+  applyV2Migrations(db);
+  const app = createV2FastifyApp({ coreOptions: { sqlite: db } });
+  await app.ready();
+  try {
+    await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds",
+      payload: {
+        storyWorldId: "world_graph_api",
+        name: "Graph API World",
+        idempotencyKey: "key_world_graph_api",
+      },
+    });
+
+    const arc = await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds/world_graph_api/arcs",
+      payload: {
+        arcId: "arc_intro",
+        title: "Intro Arc",
+        expectedRevision: 1,
+        idempotencyKey: "key_arc_intro",
+      },
+    });
+    assert.equal(arc.statusCode, 201);
+    assert.equal(arc.json().revision, 2);
+
+    const entry = await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds/world_graph_api/scenes",
+      payload: {
+        sceneId: "scene_entry",
+        arcId: "arc_intro",
+        title: "Entry",
+        isEntry: true,
+        expectedRevision: 2,
+        idempotencyKey: "key_scene_entry",
+      },
+    });
+    assert.equal(entry.statusCode, 201);
+    assert.equal(entry.json().revision, 3);
+
+    const next = await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds/world_graph_api/scenes",
+      payload: {
+        sceneId: "scene_next",
+        arcId: "arc_intro",
+        title: "Next",
+        expectedRevision: 3,
+        idempotencyKey: "key_scene_next",
+      },
+    });
+    assert.equal(next.statusCode, 201);
+    assert.equal(next.json().revision, 4);
+
+    const choice = await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds/world_graph_api/choices",
+      payload: {
+        choiceId: "choice_go",
+        sourceSceneId: "scene_entry",
+        targetSceneId: "scene_next",
+        label: "Go",
+        gates: [{ stateKey: "Trust", operator: "gte", value: 1 }],
+        consequences: [{ stateKey: "Trust", operation: "increment", value: 1 }],
+        expectedRevision: 4,
+        idempotencyKey: "key_choice_go",
+      },
+    });
+    assert.equal(choice.statusCode, 201);
+    assert.equal(choice.json().revision, 5);
+
+    const variable = await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds/world_graph_api/state/variables",
+      payload: {
+        key: "Trust",
+        valueType: "number",
+        defaultValue: 0,
+        expectedRevision: 5,
+        idempotencyKey: "key_state_trust",
+      },
+    });
+    assert.equal(variable.statusCode, 201);
+    assert.equal(variable.json().revision, 6);
+
+    const graph = await app.inject({
+      method: "GET",
+      url: "/api/v2/core/worlds/world_graph_api/graph",
+    });
+    assert.equal(graph.statusCode, 200);
+    assert.equal(graph.json().scenes.length, 2);
+    assert.equal(graph.json().choices[0].consequences[0].stateKey, "Trust");
+
+    const validation = await app.inject({
+      method: "GET",
+      url: "/api/v2/core/worlds/world_graph_api/graph/validation",
+    });
+    assert.equal(validation.statusCode, 200);
+    assert.deepEqual(validation.json(), { valid: true, diagnostics: [] });
+
+    const initial = await app.inject({
+      method: "GET",
+      url: "/api/v2/core/worlds/world_graph_api/state/initial",
+    });
+    assert.equal(initial.statusCode, 200);
+    assert.deepEqual(initial.json(), { values: { Trust: 0 } });
+
+    const preview = await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds/world_graph_api/state/preview-delta",
+      payload: {
+        deltas: [{ stateKey: "Trust", operation: "increment", value: 3 }],
+      },
+    });
+    assert.equal(preview.statusCode, 200);
+    assert.deepEqual(preview.json(), { valid: true, values: { Trust: 3 }, diagnostics: [] });
+  } finally {
+    await app.close();
+    db.close();
+    cleanup();
+  }
+});

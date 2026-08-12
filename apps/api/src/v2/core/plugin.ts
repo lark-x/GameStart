@@ -1,15 +1,20 @@
 import type { FastifyPluginAsync } from "fastify";
 import type { V2StoryWorldId } from "@living-network/contracts";
-import { V2SqliteCanonUnitOfWork } from "@living-network/database";
+import { V2SqliteCanonUnitOfWork, V2SqliteGraphStateUnitOfWork } from "@living-network/database";
 
 import { toV2HttpError, V2HttpError } from "./errors.ts";
 import {
   parseCreateCharacterBody,
+  parseCreateArcBody,
+  parseCreateChoiceBody,
   parseCreateFactBody,
   parseCreateLocationBody,
   parseCreateRuleBody,
+  parseCreateSceneBody,
+  parseCreateStateVariableBody,
   parseCreateTimelineEventBody,
   parseCreateWorldBody,
+  parsePreviewStateDeltaBody,
 } from "./parsers.ts";
 import { createV2CoreUseCases, type V2CoreUseCases } from "./use-cases.ts";
 
@@ -19,7 +24,12 @@ export interface V2CorePluginOptions {
 }
 
 export const v2CorePlugin: FastifyPluginAsync<V2CorePluginOptions> = async (app, options) => {
-  const useCases = options.useCases ?? (options.sqlite ? createV2CoreUseCases(new V2SqliteCanonUnitOfWork(options.sqlite)) : undefined);
+  const useCases = options.useCases ?? (options.sqlite
+    ? createV2CoreUseCases(
+      new V2SqliteCanonUnitOfWork(options.sqlite),
+      new V2SqliteGraphStateUnitOfWork(options.sqlite),
+    )
+    : undefined);
   if (!useCases) {
     app.get("/status", async () => ({ available: false, reason: "V2 core dependencies are not configured" }));
     return;
@@ -63,6 +73,46 @@ export const v2CorePlugin: FastifyPluginAsync<V2CorePluginOptions> = async (app,
     const { storyWorldId } = getWorldParams(request.params);
     const result = await useCases.createTimelineEvent(storyWorldId, parseCreateTimelineEventBody(request.body));
     return reply.status(201).send(result);
+  });
+  app.get("/worlds/:storyWorldId/graph", async (request) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    return useCases.getGraph(storyWorldId);
+  });
+  app.get("/worlds/:storyWorldId/graph/validation", async (request) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    return useCases.validateGraph(storyWorldId);
+  });
+  app.post("/worlds/:storyWorldId/arcs", async (request, reply) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    const result = await useCases.createArc(storyWorldId, parseCreateArcBody(request.body));
+    return reply.status(201).send(result);
+  });
+  app.post("/worlds/:storyWorldId/scenes", async (request, reply) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    const result = await useCases.createScene(storyWorldId, parseCreateSceneBody(request.body));
+    return reply.status(201).send(result);
+  });
+  app.post("/worlds/:storyWorldId/choices", async (request, reply) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    const result = await useCases.createChoice(storyWorldId, parseCreateChoiceBody(request.body));
+    return reply.status(201).send(result);
+  });
+  app.get("/worlds/:storyWorldId/state/variables", async (request) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    return useCases.listStateVariables(storyWorldId);
+  });
+  app.post("/worlds/:storyWorldId/state/variables", async (request, reply) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    const result = await useCases.createStateVariable(storyWorldId, parseCreateStateVariableBody(request.body));
+    return reply.status(201).send(result);
+  });
+  app.get("/worlds/:storyWorldId/state/initial", async (request) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    return useCases.getInitialState(storyWorldId);
+  });
+  app.post("/worlds/:storyWorldId/state/preview-delta", async (request) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    return useCases.previewStateDelta(storyWorldId, parsePreviewStateDeltaBody(request.body));
   });
 };
 

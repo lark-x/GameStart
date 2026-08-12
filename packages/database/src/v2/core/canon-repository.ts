@@ -2,11 +2,14 @@ import type { DatabaseSync } from "node:sqlite";
 
 import type {
   V2CharacterId,
+  V2ArcId,
   V2FactVisibility,
   V2IdempotencyKey,
   V2LocationId,
   V2Revision,
   V2RuleSeverity,
+  V2ChoiceId,
+  V2SceneId,
   V2StoryWorldId,
 } from "@living-network/contracts";
 import type {
@@ -16,12 +19,22 @@ import type {
   V2CanonRule,
   V2CanonTimelineEvent,
   V2CanonWorld,
+  V2GraphArc,
+  V2GraphChoice,
+  V2GraphScene,
+  V2GraphStateConsequence,
+  V2GraphStateGate,
+  V2TypedStateValue,
+  V2TypedStateValueType,
+  V2TypedStateVariable,
 } from "@living-network/domain";
 import { V2DomainError } from "@living-network/domain";
 import type {
   V2CanonMutationRecord,
   V2CanonRepository,
   V2CanonUnitOfWork,
+  V2GraphStateRepository,
+  V2GraphStateUnitOfWork,
 } from "@living-network/ports";
 
 import { withV2SqliteAsyncTransaction } from "../platform/index.ts";
@@ -35,6 +48,26 @@ export class V2SqliteCanonUnitOfWork implements V2CanonUnitOfWork {
 
   public async withCanonTransaction<T>(fn: (repositories: { readonly canon: V2CanonRepository }) => Promise<T>): Promise<T> {
     return withV2SqliteAsyncTransaction(this.db, () => fn({ canon: new V2SqliteCanonRepository(this.db) }));
+  }
+}
+
+export class V2SqliteGraphStateUnitOfWork implements V2GraphStateUnitOfWork {
+  private readonly db: DatabaseSync;
+
+  public constructor(db: DatabaseSync) {
+    this.db = db;
+  }
+
+  public async withGraphStateTransaction<T>(
+    fn: (repositories: {
+      readonly canon: V2CanonRepository;
+      readonly graphState: V2GraphStateRepository;
+    }) => Promise<T>,
+  ): Promise<T> {
+    return withV2SqliteAsyncTransaction(this.db, () => fn({
+      canon: new V2SqliteCanonRepository(this.db),
+      graphState: new V2SqliteGraphStateRepository(this.db),
+    }));
   }
 }
 
@@ -203,6 +236,134 @@ export class V2SqliteCanonRepository implements V2CanonRepository {
   }
 }
 
+export class V2SqliteGraphStateRepository implements V2GraphStateRepository {
+  private readonly db: DatabaseSync;
+
+  public constructor(db: DatabaseSync) {
+    this.db = db;
+  }
+
+  public async getArc(input: {
+    readonly storyWorldId: V2StoryWorldId;
+    readonly arcId: V2ArcId;
+  }): Promise<V2GraphArc | undefined> {
+    const row = this.db.prepare("SELECT * FROM v2_arcs WHERE story_world_id = ? AND arc_id = ?")
+      .get(input.storyWorldId, input.arcId);
+    return row === undefined ? undefined : mapArc(row);
+  }
+
+  public async listArcs(storyWorldId: V2StoryWorldId): Promise<readonly V2GraphArc[]> {
+    return this.db.prepare("SELECT * FROM v2_arcs WHERE story_world_id = ? ORDER BY created_at, arc_id")
+      .all(storyWorldId)
+      .map(mapArc);
+  }
+
+  public async createArc(input: V2GraphArc): Promise<V2GraphArc> {
+    this.db.prepare(`
+      INSERT INTO v2_arcs (arc_id, story_world_id, title, summary)
+      VALUES (?, ?, ?, ?)
+    `).run(input.arcId, input.storyWorldId, input.title, input.summary ?? null);
+    const created = await this.getArc({
+      storyWorldId: input.storyWorldId as V2StoryWorldId,
+      arcId: input.arcId as V2ArcId,
+    });
+    if (!created) throw new Error("V2 arc insert did not return a row");
+    return created;
+  }
+
+  public async getScene(input: {
+    readonly storyWorldId: V2StoryWorldId;
+    readonly sceneId: V2SceneId;
+  }): Promise<V2GraphScene | undefined> {
+    const row = this.db.prepare("SELECT * FROM v2_scenes WHERE story_world_id = ? AND scene_id = ?")
+      .get(input.storyWorldId, input.sceneId);
+    return row === undefined ? undefined : mapScene(row);
+  }
+
+  public async listScenes(storyWorldId: V2StoryWorldId): Promise<readonly V2GraphScene[]> {
+    return this.db.prepare("SELECT * FROM v2_scenes WHERE story_world_id = ? ORDER BY created_at, scene_id")
+      .all(storyWorldId)
+      .map(mapScene);
+  }
+
+  public async createScene(input: V2GraphScene): Promise<V2GraphScene> {
+    this.db.prepare(`
+      INSERT INTO v2_scenes (scene_id, story_world_id, arc_id, title, body, is_entry)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(input.sceneId, input.storyWorldId, input.arcId ?? null, input.title, input.body ?? null, input.isEntry ? 1 : 0);
+    const created = await this.getScene({
+      storyWorldId: input.storyWorldId as V2StoryWorldId,
+      sceneId: input.sceneId as V2SceneId,
+    });
+    if (!created) throw new Error("V2 scene insert did not return a row");
+    return created;
+  }
+
+  public async getChoice(input: {
+    readonly storyWorldId: V2StoryWorldId;
+    readonly choiceId: V2ChoiceId;
+  }): Promise<V2GraphChoice | undefined> {
+    const row = this.db.prepare("SELECT * FROM v2_choices WHERE story_world_id = ? AND choice_id = ?")
+      .get(input.storyWorldId, input.choiceId);
+    return row === undefined ? undefined : mapChoice(row);
+  }
+
+  public async listChoices(storyWorldId: V2StoryWorldId): Promise<readonly V2GraphChoice[]> {
+    return this.db.prepare("SELECT * FROM v2_choices WHERE story_world_id = ? ORDER BY created_at, choice_id")
+      .all(storyWorldId)
+      .map(mapChoice);
+  }
+
+  public async createChoice(input: V2GraphChoice): Promise<V2GraphChoice> {
+    this.db.prepare(`
+      INSERT INTO v2_choices (choice_id, story_world_id, source_scene_id, target_scene_id, label, gates_json, consequences_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      input.choiceId,
+      input.storyWorldId,
+      input.sourceSceneId,
+      input.targetSceneId ?? null,
+      input.label,
+      JSON.stringify(input.gates),
+      JSON.stringify(input.consequences),
+    );
+    const created = await this.getChoice({
+      storyWorldId: input.storyWorldId as V2StoryWorldId,
+      choiceId: input.choiceId as V2ChoiceId,
+    });
+    if (!created) throw new Error("V2 choice insert did not return a row");
+    return created;
+  }
+
+  public async getStateVariable(input: {
+    readonly storyWorldId: V2StoryWorldId;
+    readonly key: string;
+  }): Promise<V2TypedStateVariable | undefined> {
+    const row = this.db.prepare("SELECT * FROM v2_state_variables WHERE story_world_id = ? AND key = ?")
+      .get(input.storyWorldId, input.key);
+    return row === undefined ? undefined : mapStateVariable(row);
+  }
+
+  public async listStateVariables(storyWorldId: V2StoryWorldId): Promise<readonly V2TypedStateVariable[]> {
+    return this.db.prepare("SELECT * FROM v2_state_variables WHERE story_world_id = ? ORDER BY created_at, key")
+      .all(storyWorldId)
+      .map(mapStateVariable);
+  }
+
+  public async createStateVariable(input: V2TypedStateVariable): Promise<V2TypedStateVariable> {
+    this.db.prepare(`
+      INSERT INTO v2_state_variables (story_world_id, key, value_type, default_json)
+      VALUES (?, ?, ?, ?)
+    `).run(input.storyWorldId, input.key, input.valueType, JSON.stringify(input.defaultValue));
+    const created = await this.getStateVariable({
+      storyWorldId: input.storyWorldId as V2StoryWorldId,
+      key: input.key,
+    });
+    if (!created) throw new Error("V2 state variable insert did not return a row");
+    return created;
+  }
+}
+
 function mapWorld(row: unknown): V2CanonWorld {
   const record = requireRecord(row);
   return {
@@ -270,6 +431,67 @@ function mapTimelineEvent(row: unknown): V2CanonTimelineEvent {
     ...(record.summary === null ? {} : { summary: requireString(record.summary, "summary") }),
     createdAt: requireString(record.created_at, "created_at"),
   };
+}
+
+function mapArc(row: unknown): V2GraphArc {
+  const record = requireRecord(row);
+  return {
+    arcId: requireString(record.arc_id, "arc_id") as V2ArcId,
+    storyWorldId: requireString(record.story_world_id, "story_world_id") as V2StoryWorldId,
+    title: requireString(record.title, "title"),
+    ...(record.summary === null ? {} : { summary: requireString(record.summary, "summary") }),
+    createdAt: requireString(record.created_at, "created_at"),
+  };
+}
+
+function mapScene(row: unknown): V2GraphScene {
+  const record = requireRecord(row);
+  return {
+    sceneId: requireString(record.scene_id, "scene_id") as V2SceneId,
+    storyWorldId: requireString(record.story_world_id, "story_world_id") as V2StoryWorldId,
+    ...(record.arc_id === null ? {} : { arcId: requireString(record.arc_id, "arc_id") as V2ArcId }),
+    title: requireString(record.title, "title"),
+    ...(record.body === null ? {} : { body: requireString(record.body, "body") }),
+    isEntry: requireNumber(record.is_entry, "is_entry") === 1,
+    createdAt: requireString(record.created_at, "created_at"),
+  };
+}
+
+function mapChoice(row: unknown): V2GraphChoice {
+  const record = requireRecord(row);
+  return {
+    choiceId: requireString(record.choice_id, "choice_id") as V2ChoiceId,
+    storyWorldId: requireString(record.story_world_id, "story_world_id") as V2StoryWorldId,
+    sourceSceneId: requireString(record.source_scene_id, "source_scene_id") as V2SceneId,
+    ...(record.target_scene_id === null ? {} : { targetSceneId: requireString(record.target_scene_id, "target_scene_id") as V2SceneId }),
+    label: requireString(record.label, "label"),
+    gates: parseJsonArray<V2GraphStateGate>(record.gates_json, "gates_json"),
+    consequences: parseJsonArray<V2GraphStateConsequence>(record.consequences_json, "consequences_json"),
+    createdAt: requireString(record.created_at, "created_at"),
+  };
+}
+
+function mapStateVariable(row: unknown): V2TypedStateVariable {
+  const record = requireRecord(row);
+  return {
+    storyWorldId: requireString(record.story_world_id, "story_world_id") as V2StoryWorldId,
+    key: requireString(record.key, "key"),
+    valueType: requireString(record.value_type, "value_type") as V2TypedStateValueType,
+    defaultValue: parseStateValue(record.default_json),
+    createdAt: requireString(record.created_at, "created_at"),
+  };
+}
+
+function parseJsonArray<T>(value: unknown, field: string): readonly T[] {
+  const parsed = JSON.parse(requireString(value, field));
+  if (!Array.isArray(parsed)) throw new Error(`Expected ${field} to be a JSON array`);
+  return parsed as readonly T[];
+}
+
+function parseStateValue(value: unknown): V2TypedStateValue {
+  const parsed = JSON.parse(requireString(value, "default_json")) as unknown;
+  if (typeof parsed === "string" || typeof parsed === "number" || typeof parsed === "boolean") return parsed;
+  throw new Error("Expected default_json to contain a typed state scalar");
 }
 
 function requireRecord(value: unknown): Record<string, unknown> {
