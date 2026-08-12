@@ -6,3 +6,4 @@ export * from "./migrations.ts";
 export * from "./outbox.ts";
 export * from "./dispatch.ts";
 export * from "./interaction-log.ts";
+export * from "./v2/index.ts";
