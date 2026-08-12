@@ -1,0 +1,16 @@
+# V2 AI-1 Core Domain Runtime Interface Requests
+
+Branch: `codex/v2-core-domain-runtime`
+
+## Requests
+
+### core-options-on-fastify-composition-root
+
+- Severity: integration
+- Owner requested: integration maintainer
+- File touched: `apps/api/src/v2/platform/app.ts`
+- Reason: Gate 0 froze the Fastify composition root but only exposed plugin replacement, not per-plugin runtime options. AI-1 needs to pass SQLite-backed core dependencies into the existing core plugin without replacing the plugin entirely in every runtime/test.
+- Implemented proposal: add optional `coreOptions?: Record<string, unknown>` to `createV2FastifyApp` and spread it into the core plugin registration.
+- Compatibility: existing calls without `coreOptions` behave the same; `/api/v2/health` remains unchanged.
+
+No blocking requests are open for the Canon checkpoint.

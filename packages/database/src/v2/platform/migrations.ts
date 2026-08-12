@@ -1,5 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 
+import { v2CoreCanonMigrations } from "../core/index.ts";
+
 export interface V2SqliteMigration {
   readonly id: string;
   readonly up: (db: DatabaseSync) => void;
@@ -10,7 +12,7 @@ export interface V2MigrationRegistry {
   readonly migrations: readonly V2SqliteMigration[];
 }
 
-export const v2CoreMigrations: V2MigrationRegistry = { migrations: [] };
+export const v2CoreMigrations: V2MigrationRegistry = { migrations: v2CoreCanonMigrations };
 export const v2GenerationMigrations: V2MigrationRegistry = { migrations: [] };
 
 export function getV2Migrations(): readonly V2SqliteMigration[] {

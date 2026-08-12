@@ -1,1 +1,1 @@
-export {};
+export * from "./canon-repository.ts";
