@@ -11,8 +11,8 @@ import type {
   V2IsoDateTime,
   V2ReviewAssetCandidateInput,
   V2SceneGenerationJobRecord,
-} from "@living-network/contracts";
-import type { V2JobId, V2JobStatus } from "@living-network/contracts";
+} from "@living-network/contracts/v2";
+import type { V2JobId, V2JobStatus } from "@living-network/contracts/v2";
 import type { ApprovedAssetReaderPort } from "../shared/index.ts";
 
 export interface V2GenerationJobCreateResult {

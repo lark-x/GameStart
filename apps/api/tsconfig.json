@@ -10,7 +10,5 @@
       "node"
     ]
   },
-  "include": [
-    "src/**/*.ts"
-  ]
+  "include": ["src/v2/**/*.ts"]
 }

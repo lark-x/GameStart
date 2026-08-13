@@ -3,10 +3,13 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "exports": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./v2": "./src/v2.ts"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "node ../../scripts/run-tests.mjs src",
+    "test": "node --test src/v2-scene-generation.test.ts",
     "typecheck": "tsc -p tsconfig.json"
   }
 }

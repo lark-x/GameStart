@@ -1,140 +1,114 @@
-# Living Network 当前核心业务流程
+# Living Network V2 当前核心业务流程
 
-最后核对：2026-08-12
+最后核对：2026-08-13
 
-本文描述当前已实现的主要用户路径。产品愿景见 [product-requirements.md](./product-requirements.md)，系统边界见 [architecture.md](./architecture.md)。图中的外部服务仅在显式配置后调用。
+本文描述当前 V2 已实现的创作者、生成审核、发布和游玩路径。系统边界以 [architecture.md](./architecture.md) 为准；外部服务只在显式配置后调用。旧 V1 社交模拟流程保留在归档资料中，不属于当前产品流程。
 
-## 1. 私聊与模型回复
-
-```mermaid
-sequenceDiagram
-    actor User as 用户
-    participant Web as ChatView
-    participant API as node:http API
-    participant UC as Conversation Use Case
-    participant DB as Repository
-    participant LLM as Active LLM Provider
-
-    User->>Web: 发送文本/图片/贴纸
-    Web->>API: POST /v1/conversations/:id/messages
-    API->>UC: 解析请求并校验可信 Actor
-    UC->>DB: 校验成员并幂等保存消息
-    API-->>Web: 返回已保存消息
-
-    Note over API,LLM: USER → AI 私聊文本可触发自动回复
-    API->>DB: 读取角色人设、关系、最近消息和可见记忆
-    API->>LLM: 组装 Prompt 并流式请求
-    LLM-->>API: 文本增量
-    API-->>Web: SSE 增量与结束事件
-    API->>DB: 幂等保存 AI 消息
-    API->>DB: 可选写入带来源和置信度的派生记忆
-```
-
-当前记忆检索使用内存关键词匹配或 PostgreSQL FTS，不包含 pgvector 或 RRF。模型不可用时保留用户消息并提供显式失败/重试路径；默认自动测试不访问真实模型。
-
-## 2. 定时事件与动态输出
-
-```mermaid
-flowchart TD
-    Trigger["定时窗口 / 创作者派发"] --> Occurrence["Scheduled Occurrence"]
-    Occurrence --> Queue["BullMQ Occurrence Queue"]
-    Queue --> Executor["Worker Executor"]
-    Executor --> Rule["领域规则与输入快照"]
-    Rule --> Output["Event Output Planning"]
-    Output --> Message["主动消息"]
-    Output --> Draft["Moment Draft"]
-    Output --> Image["Image Job"]
-    Message --> PG[(PostgreSQL)]
-    Draft --> Publish["Publication"]
-    Image --> ComfyUI["ComfyUI"]
-    ComfyUI --> Media["本地媒体存储"]
-    Media --> Publish
-    Publish --> PG
-    PG --> Feed["FeedView"]
-```
-
-Occurrence、Execution、消息、动态和图片任务分别持有幂等标识。是否立即发布、等待图片或进入人工审核由领域状态与功能开关决定；不能把规划中的“原子发布”当作所有输出都已具备同一事务的证明。
-
-## 3. 聊天与事件图片
+## 1. 创建和编辑本地世界
 
 ```mermaid
 sequenceDiagram
-    participant Source as 聊天/事件输出
-    participant DB as PostgreSQL
-    participant Worker as Image Job Pump
-    participant ComfyUI as ComfyUI
-    participant Store as MEDIA_ROOT
-    participant Target as 消息/动态/相册
+    actor Creator as 创作者
+    participant Web as Vue Web /v2
+    participant API as Fastify V2 API
+    participant UC as Core Use Case
+    participant Domain as Domain
+    participant DB as SQLite + FTS5
 
-    Source->>DB: 创建 QUEUED Image Job
-    Worker->>DB: 扫描可处理任务和设置
-    Worker->>ComfyUI: HTTP 提交版本化 Workflow
-    ComfyUI-->>Worker: WebSocket/历史终态
-    Worker->>Store: 下载并校验媒体
-    Worker->>DB: 更新成功或失败终态
-    DB-->>Target: 暴露 mediaRef 与任务状态
+    Creator->>Web: 创建 Starter World 或编辑 Canon
+    Web->>API: POST /api/v2/core/worlds/*
+    API->>API: Parser 校验 body、revision、idempotency key
+    API->>UC: 执行 Canon/Graph/State 命令
+    UC->>Domain: 校验不变量和并发版本
+    Domain-->>UC: 领域结果或冲突
+    UC->>DB: 事务写入 SQLite 事实
+    DB-->>Web: 返回当前 revision 和 snapshot
 ```
 
-角色视觉身份、场景 Prompt、负面词和 Workflow 绑定共同构成图片请求。Worker 校验协议与输出，失败进入可观察、可重试状态；浏览器不直接访问 ComfyUI。
+World Canon、角色、地点、事实、规则、Narrative Graph 和 Typed State 都写入同一个 SQLite 事实库。FTS5 只提供可重建的本地关键词检索；Redis 不参与业务事实写入。
 
-## 4. 创作者事件派发
-
-```mermaid
-flowchart TD
-    Creator["CreatorDispatchView"] --> Scan["扫描候选"]
-    Scan --> Preview["只读影响预览"]
-    Preview --> Confirm["确认批次"]
-    Confirm --> API["API Use Case"]
-    API -->|"事务写入"| Requests[(PostgreSQL Dispatch Requests)]
-    Requests --> Pump["Worker Dispatch Pump"]
-    Pump -->|"幂等 enqueue"| Redis[(BullMQ / Redis)]
-    Redis --> Executor["Worker Executor"]
-    Executor --> Result["更新执行与批次状态"]
-    Result --> Requests
-```
-
-内存模式支持扫描与预览，不允许正式派发。持久模式要求 PostgreSQL、Redis 和活跃 Worker；API 本身不直接调用 BullMQ，Redis 不可用时请求仍保留在 PostgreSQL 中等待恢复。
-
-## 5. 角色切换与可信 Actor
+## 2. 生成候选和审核应用
 
 ```mermaid
 sequenceDiagram
-    actor User as 用户
+    actor Creator as 创作者
     participant Web as Web
-    participant API as node:http API
-    participant DB as Repository
+    participant API as Fastify API
+    participant SQLite as SQLite
+    participant Redis as BullMQ / Redis
+    participant Worker as V2 Worker
+    participant AI as 可选 LLM
 
-    User->>Web: 选择目标角色
-    Web->>API: POST /v1/actor-sessions/switch
-    Note right of Web: actorSessionId + nextCharacterId
-    API->>DB: 读取 Session 与目标角色
-    API->>API: 校验世界归属和可信 Actor
-    API->>DB: 保存切换后的 ActorSession
-    API-->>Web: 返回 ActorSession
-
-    User->>Web: 后续读取或写入
-    Web->>API: x-actor-character-id
-    API->>API: 校验成员、可见性和操作权限
+    Creator->>Web: 预览上下文或创建场景 Job
+    Web->>API: POST /api/v2/generation/context-preview
+    API->>SQLite: 读取指定 canon revision
+    API-->>Web: 返回带来源和 hash 的上下文快照
+    Web->>API: POST /api/v2/generation/jobs/scene
+    API->>SQLite: Job + pending dispatch 同事务写入
+    Worker->>SQLite: 读取并校验 Job
+    Worker->>Redis: 幂等派发/消费
+    Worker->>AI: 请求结构化输出（显式启用时）
+    AI-->>Worker: 不可信原始输出
+    Worker->>Worker: 解析、领域校验、stale revision 检查
+    Worker->>SQLite: 只提交 pending Candidate
+    Creator->>Web: 查看 diff 并 approve/reject/request changes
+    Web->>API: POST /api/v2/core/worlds/:id/candidates/.../review
+    API->>SQLite: 审核审计；只有 approve 才应用 Canon
 ```
 
-角色切换只表达世界内身份。生产或远程部署仍需真实认证代理，并把外部用户映射到允许扮演的角色。
+LLM 未配置时，Core 编辑、Release 和已发布游玩仍可用；生成端点返回能力不可用或使用测试替身，不得绕过 Candidate/Review 边界直接写入 Canon。
 
-## 6. Story Graph 创作工作区
+## 3. 资产生成和受控媒体
 
 ```mermaid
 flowchart LR
-    Creator["ContentSettingsView"] --> API["Story Graph API"]
-    API --> UC["Story Graph Use Cases"]
-    UC --> Arc["Story Arc"]
-    UC --> Node["Story Node"]
-    UC --> Edge["Story Edge"]
-    UC --> Template["Prompt Template"]
-    UC --> Candidate["Memory Candidate"]
-    Arc & Node & Edge & Template & Candidate --> Store[(内存或 PostgreSQL)]
-    Node --> Preview["Prompt Context Preview"]
-    Template --> Preview
-    Candidate --> Review["批准/拒绝/合并"]
-    Review --> Memory["经审核的 Memory Item"]
+    Creator[创作者] --> AssetAPI[Asset Job API]
+    AssetAPI --> SQLite[(SQLite Job/Candidate)]
+    SQLite --> Pump[Dispatch Pump]
+    Pump --> Queue[BullMQ / Redis]
+    Queue --> Worker[V2 Asset Worker]
+    Worker --> Comfy[可选 ComfyUI]
+    Worker --> Media[内容哈希媒体根目录]
+    Worker --> Candidate[Asset Candidate]
+    Candidate --> Review[审核]
+    Review --> Library[Approved Asset]
+    Web[Web] -->|受控 media:// 引用| MediaAPI[API media route]
+    MediaAPI --> Media
 ```
 
-当前能力是编辑、校验、持久化、Prompt 上下文预览和记忆候选审核。预览不会调用模型；自动生成剧情正文、推进节点或把模型建议直接应用到世界状态尚未实现。
+资产输出必须经过协议、大小、内容类型、哈希和路径校验。Web 只访问 `/api/v2/media/assets/<hash>.<ext>`，不直接访问 ComfyUI；失败任务进入有限重试和明确终态。
+
+## 4. 发布、游玩、保存和导出
+
+```mermaid
+sequenceDiagram
+    actor Player as 玩家
+    participant Web as Web
+    participant API as Fastify API
+    participant Domain as Release/Runtime Domain
+    participant DB as SQLite
+
+    Web->>API: GET /api/v2/core/worlds/:id/releases/preflight
+    API->>Domain: 校验图、Typed State、候选和资源引用
+    Domain-->>Web: diagnostics + valid
+    Web->>API: POST /api/v2/core/worlds/:id/releases
+    API->>DB: 写入不可变 Release manifest/content hash
+    Player->>Web: 开始游玩
+    Web->>API: POST /api/v2/core/runtime/runs
+    API->>DB: 创建绑定 release version 的 Run
+    Player->>Web: 提交选择 / 保存
+    Web->>API: POST /api/v2/core/runtime/runs/:id/choices|saves
+    API->>Domain: 只读取 Release，校验 gate/consequence
+    API->>DB: 写入 Run、Choice History、Save
+    Web->>API: GET /api/v2/core/releases/:id/export
+    API-->>Web: JSON 或 Markdown 导出包
+```
+
+Pending Candidate 不会进入 Player Runtime。修改工作区不会改变旧 Release 或绑定该 Release 的 Save；运行时只接受固定 Release 版本。
+
+## 5. 外部能力和运行边界
+
+- API 启动时执行 V2 SQLite up migration；Worker 等待 `/api/v2/ready`，不执行 migration。
+- Redis 只保存可重建队列和派发状态，队列丢失后可从 SQLite pending dispatch 重建。
+- 场景生成、资产生成、LLM、ComfyUI 和 Qdrant 默认关闭或未接入；真实服务验收必须显式启用并单独记录。
+- V1 PostgreSQL、旧 `/v1` API、旧 Worker 和旧 Web 流程已冻结，不参与当前默认入口、Compose 或 CI。

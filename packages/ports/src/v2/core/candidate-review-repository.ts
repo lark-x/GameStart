@@ -4,11 +4,11 @@ import type {
   V2IdempotencyKey,
   V2Revision,
   V2StoryWorldId,
-} from "@living-network/contracts";
+} from "@living-network/contracts/v2";
 import type {
   V2CoreSceneCandidate,
   V2ReviewAction,
-} from "@living-network/domain";
+} from "@living-network/domain/v2";
 
 import type { V2CanonRepository } from "./canon-repository.ts";
 import type { V2GraphStateRepository } from "./graph-state-repository.ts";

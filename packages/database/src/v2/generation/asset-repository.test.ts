@@ -10,7 +10,7 @@ import type {
   V2JobId,
   V2ReleaseId,
   V2StoryWorldId,
-} from "@living-network/contracts";
+} from "@living-network/contracts/v2";
 import {
   applyV2Migrations,
   openV2TempSqliteConnection,
@@ -220,6 +220,21 @@ test("rejects or requests changes without creating approved asset facts", async 
   }
 });
 
+test("rejects approved asset identity collisions across candidates", async () => {
+  const { db, cleanup } = openV2TempSqliteConnection();
+  try {
+    applyV2Migrations(db, v2GenerationJobMigrations);
+    const repository = new V2SqliteAssetGenerationRepository(db);
+    const first = await createPendingAssetCandidate(repository, { candidateId: "candidate_collision_a" as V2CandidateId, jobId: "job_collision_a" as V2JobId, assetId: "asset_collision" as V2AssetId, idempotencyKey: "idem_collision_a" as V2IdempotencyKey });
+    await repository.reviewAssetCandidate({ candidateId: first.candidate.candidateId, action: "approve", reviewedAt: now, idempotencyKey: "review_collision_a" as V2IdempotencyKey });
+    const second = await createPendingAssetCandidate(repository, { candidateId: "candidate_collision_b" as V2CandidateId, jobId: "job_collision_b" as V2JobId, assetId: "asset_collision" as V2AssetId, idempotencyKey: "idem_collision_b" as V2IdempotencyKey });
+    await assert.rejects(() => repository.reviewAssetCandidate({ candidateId: second.candidate.candidateId, action: "approve", reviewedAt: now, idempotencyKey: "review_collision_b" as V2IdempotencyKey }), /different candidate/);
+  } finally {
+    db.close();
+    cleanup();
+  }
+});
+
 test("creates V2 asset job and dispatch facts atomically", async () => {
   const { db, cleanup } = openV2TempSqliteConnection();
   try {
@@ -229,6 +244,8 @@ test("creates V2 asset job and dispatch facts atomically", async () => {
     assert.equal(result.inserted, true);
     assert.equal(result.job.status, "queued");
     assert.equal(result.job.workflowVersion, "workflow-v1");
+    assert.equal(await repository.getAssetJob("missing" as V2JobId), undefined);
+    assert.deepEqual(await repository.listAssetJobsByStatus("queued", 10), [result.job]);
     const dispatch = db.prepare("SELECT * FROM v2_asset_generation_dispatches WHERE job_id = ?").get(result.job.jobId) as { status: string } | undefined;
     assert.equal(dispatch?.status, "pending");
   } finally {
@@ -258,6 +275,8 @@ test("asset dispatch failure remains pending and records retry details", async (
     });
     assert.equal(enqueued.status, "enqueued");
     assert.equal(enqueued.lastError, undefined);
+    await assert.rejects(() => repository.markAssetDispatchEnqueued({ dispatchId: "missing", enqueuedAt: now }), /dispatch not found/);
+    await assert.rejects(() => repository.recordAssetDispatchFailure({ dispatchId: "missing", error: "missing" }), /dispatch not found/);
   } finally {
     db.close();
     cleanup();
@@ -325,6 +344,8 @@ test("tracks asset job claim, submit, success, candidate persistence, and cancel
     });
     assert.equal(candidate.inserted, true);
     assert.equal(candidate.candidate.status, "pending");
+    const candidateReplay = await repository.createAssetCandidate(candidate.candidate);
+    assert.equal(candidateReplay.inserted, false);
     const succeeded = await repository.markAssetJobSucceeded({
       jobId: running.jobId,
       completedAt: "2026-08-12T02:05:00.000Z",

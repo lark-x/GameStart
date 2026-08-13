@@ -1,4 +1,4 @@
-import type { JsonObject } from "@living-network/domain";
+import type { V2JsonObject } from "@living-network/domain/v2";
 import type { ComfyUiProgressEvent, ComfyUiResult, ComfyUiSubmitRequest, ComfyUiSubmitResult, ComfyUiWebSocket, ComfyUiWebSocketFactory, ComfyUiClient, ComfyUiProgressClient } from "./comfyui-types.ts";
 
 export type ComfyUiFetchImplementation = (

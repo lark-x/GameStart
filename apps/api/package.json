@@ -5,16 +5,12 @@
   "type": "module",
   "exports": "./src/index.ts",
   "scripts": {
-    "dev": "node src/main.ts",
+    "dev": "node src/v2/main.ts",
     "dev:v2": "node src/v2/main.ts",
-    "start": "node src/main.ts",
+    "start": "node src/v2/main.ts",
     "start:v2": "node src/v2/main.ts",
-    "start:postgres": "node src/persistent-main.ts",
-    "migrate:postgres": "node src/migrate.ts",
-    "seed:postgres": "node src/seed.ts",
-    "bootstrap:postgres": "node src/migrate.ts && node src/seed.ts",
     "build": "tsc -p tsconfig.json",
-    "test": "node ../../scripts/run-tests.mjs src",
+    "test": "node ../../scripts/run-tests.mjs src/v2",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {

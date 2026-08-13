@@ -1,8 +1,8 @@
 # Playwright E2E
 
-端到端测试使用开发 API Seed 和原生静态 Web，避免依赖 PostgreSQL、Redis、LLM 或 ComfyUI。
+端到端测试覆盖 V2 `/v2` 工作区、旧入口重定向、Mock 创作闭环、空 SQLite HTTP 闭环和 360px 窄屏布局。
 
-依赖已在根锁文件中声明。首次运行先安装项目依赖和 Chromium：
+首次运行：
 
 ```sh
 pnpm install --frozen-lockfile
@@ -12,7 +12,7 @@ pnpm test:e2e
 
 Playwright 会自动启动：
 
-- API：`pnpm --filter @living-network/api dev`（`3001`）
-- Web：`pnpm --filter @living-network/web dev`（`4173`）
+- V2 API：`V2_API_PORT=4412`、临时 SQLite
+- V2 Web：`http://127.0.0.1:4473`，Mock 和 HTTP 场景分别由测试控制
 
-CI 中不复用已存在服务；本地开发可以先手动启动服务，再使用 `reuseExistingServer` 加快回归。
+测试不会复用既有服务，也不依赖 PostgreSQL、LLM 或 ComfyUI。

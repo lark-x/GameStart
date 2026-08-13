@@ -1,14 +1,22 @@
 import { pathToFileURL } from "node:url";
 
+import { loadV2RuntimeConfig } from "@living-network/config/v2";
+
 import { createV2ApiRuntime } from "./platform/index.ts";
 
 async function main(): Promise<void> {
-  const port = Number(process.env.V2_API_PORT ?? 3002);
-  if (!Number.isSafeInteger(port) || port < 1 || port > 65535) throw new Error("V2_API_PORT must be a valid port");
-  const runtime = createV2ApiRuntime({ sqlitePath: process.env.V2_SQLITE_PATH ?? ".data/living-network-v2.sqlite" });
+  const config = loadV2RuntimeConfig(process.env);
+  const runtime = createV2ApiRuntime({
+    sqlitePath: config.sqlitePath,
+    mediaRoot: config.mediaRoot,
+    capabilities: {
+      sceneGeneration: { enabled: config.scene.enabled },
+      assetGeneration: { enabled: config.asset.enabled },
+    },
+  });
   try {
-    await runtime.app.listen({ host: "127.0.0.1", port });
-    console.log(`Living Network V2 API listening on http://127.0.0.1:${port}`);
+    await runtime.app.listen({ host: config.api.host, port: config.api.port });
+    console.log(`Living Network V2 API listening on http://${config.api.host}:${config.api.port}`);
   } catch (error) {
     await runtime.close();
     throw error;

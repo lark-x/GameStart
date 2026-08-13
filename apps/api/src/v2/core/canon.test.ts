@@ -4,8 +4,12 @@ import test from "node:test";
 import {
   applyV2Migrations,
   openV2TempSqliteConnection,
-} from "@living-network/database";
+} from "@living-network/database/v2";
 import { createV2FastifyApp } from "../platform/index.ts";
+import { V2DomainError } from "@living-network/domain/v2";
+import { toV2HttpError, V2HttpError } from "./errors.ts";
+import { createV2CoreUseCases } from "./use-cases.ts";
+import { createV2GraphScene } from "@living-network/domain/v2";
 
 test("V2 core API creates canon records with revision and idempotent replay", async () => {
   const { db, cleanup } = openV2TempSqliteConnection();
@@ -70,11 +74,41 @@ test("V2 core API creates canon records with revision and idempotent replay", as
     assert.equal(snapshot.json().world.revision, 3);
     assert.equal(snapshot.json().locations.length, 1);
     assert.equal(snapshot.json().characters[0].homeLocationId, "loc_gate");
+
+    const timeline = await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds/world_api/timeline-events",
+      payload: {
+        timelineEventId: "event_first",
+        localDate: "2026-08-13",
+        title: "First release rehearsal",
+        summary: "The creator checks the entry scene.",
+        expectedRevision: 3,
+        idempotencyKey: "key_timeline",
+      },
+    });
+    assert.equal(timeline.statusCode, 201);
+    const withTimeline = await app.inject({ method: "GET", url: "/api/v2/core/worlds/world_api/canon" });
+    assert.equal(withTimeline.json().timelineEvents[0].timelineEventId, "event_first");
   } finally {
     await app.close();
     db.close();
     cleanup();
   }
+});
+
+test("V2 HTTP error mapping preserves domain, constraint, and unknown failures", () => {
+  const existing = new V2HttpError(418, "TEAPOT", "already mapped");
+  assert.equal(toV2HttpError(existing), existing);
+  const stale = toV2HttpError(new V2DomainError("STALE_REVISION", "stale"));
+  assert.deepEqual({ status: stale.statusCode, code: stale.code }, { status: 409, code: "STALE_REVISION" });
+  const crossWorld = toV2HttpError(new V2DomainError("CROSS_WORLD_REFERENCE", "cross world"));
+  assert.deepEqual({ status: crossWorld.statusCode, code: crossWorld.code }, { status: 422, code: "VALIDATION_FAILED" });
+  const genericDomain = toV2HttpError(new V2DomainError("INVALID_INPUT", "bad input"));
+  assert.equal(genericDomain.statusCode, 422);
+  const constraint = Object.assign(new Error("constraint"), { code: "ERR_SQLITE_CONSTRAINT_FOREIGNKEY" });
+  assert.equal(toV2HttpError(constraint).statusCode, 409);
+  assert.equal(toV2HttpError(new Error("unknown")).code, "INTERNAL_ERROR");
 });
 
 test("V2 core API maps stale revisions, idempotency conflicts, and unknown fields", async () => {
@@ -271,6 +305,12 @@ test("V2 core API creates graph records, validates reachability, and previews ty
     });
     assert.equal(preview.statusCode, 200);
     assert.deepEqual(preview.json(), { valid: true, values: { Trust: 3 }, diagnostics: [] });
+
+    const worlds = await app.inject({ method: "GET", url: "/api/v2/core/worlds" });
+    assert.equal(worlds.statusCode, 200);
+    assert.equal(worlds.json().length, 1);
+    const variables = await app.inject({ method: "GET", url: "/api/v2/core/worlds/world_graph_api/state/variables" });
+    assert.equal(variables.json()[0].key, "Trust");
   } finally {
     await app.close();
     db.close();
@@ -368,6 +408,13 @@ test("V2 core API reviews scene candidates and applies approved candidates atomi
     });
     assert.equal(audits.statusCode, 200);
     assert.equal(audits.json()[0].toStatus, "approved");
+    const candidate = await app.inject({
+      method: "GET",
+      url: "/api/v2/core/worlds/world_review_api/candidates/scenes/candidate_scene_a",
+    });
+    assert.equal(candidate.statusCode, 200);
+    const candidates = await app.inject({ method: "GET", url: "/api/v2/core/worlds/world_review_api/candidates/scenes" });
+    assert.equal(candidates.json().length, 1);
   } finally {
     await app.close();
     db.close();
@@ -577,6 +624,10 @@ test("V2 core API releases, runs, saves, and exports a playable graph", async ()
     assert.equal(preflight.statusCode, 200);
     assert.equal(preflight.json().valid, true);
 
+    const releasesBefore = await app.inject({ method: "GET", url: "/api/v2/core/worlds/world_release_api/releases" });
+    assert.equal(releasesBefore.statusCode, 200);
+    assert.deepEqual(releasesBefore.json(), []);
+
     const release = await app.inject({
       method: "POST",
       url: "/api/v2/core/worlds/world_release_api/releases",
@@ -592,6 +643,15 @@ test("V2 core API releases, runs, saves, and exports a playable graph", async ()
     assert.deepEqual(release.json().graph.arcs, []);
     assert.match(release.json().contentHash, /^[a-f0-9]{64}$/);
 
+    const releasesAfter = await app.inject({ method: "GET", url: "/api/v2/core/worlds/world_release_api/releases" });
+    assert.equal(releasesAfter.json().length, 1);
+    const staleRelease = await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds/world_release_api/releases",
+      payload: { releaseId: "release_stale", version: "1.0.1", sourceRevision: 4, idempotencyKey: "key_stale_release" },
+    });
+    assert.equal(staleRelease.statusCode, 409);
+
     const run = await app.inject({
       method: "POST",
       url: "/api/v2/core/runtime/runs",
@@ -604,6 +664,8 @@ test("V2 core API releases, runs, saves, and exports a playable graph", async ()
     assert.equal(run.statusCode, 201);
     assert.equal(run.json().scene.sceneId, "scene_entry");
     assert.equal(run.json().availableChoices[0].choiceId, "choice_go");
+    const runtimeScene = await app.inject({ method: "GET", url: "/api/v2/core/runtime/runs/run_api/scene" });
+    assert.equal(runtimeScene.statusCode, 200);
 
     const advanced = await app.inject({
       method: "POST",
@@ -627,6 +689,8 @@ test("V2 core API releases, runs, saves, and exports a playable graph", async ()
     });
     assert.equal(save.statusCode, 201);
     assert.equal(save.json().releaseVersion, "1.0.0");
+    const saved = await app.inject({ method: "GET", url: "/api/v2/core/runtime/saves/save_api" });
+    assert.equal(saved.statusCode, 200);
 
     const loaded = await app.inject({
       method: "POST",
@@ -647,6 +711,8 @@ test("V2 core API releases, runs, saves, and exports a playable graph", async ()
     });
     assert.equal(workspaceExport.statusCode, 200);
     assert.match(workspaceExport.json().markdown, /Release API World/);
+    const staleExport = await app.inject({ method: "GET", url: "/api/v2/core/worlds/world_release_api/export?revision=4" });
+    assert.equal(staleExport.statusCode, 409);
 
     const releaseExport = await app.inject({
       method: "GET",
@@ -658,5 +724,145 @@ test("V2 core API releases, runs, saves, and exports a playable graph", async ()
     await app.close();
     db.close();
     cleanup();
+  }
+});
+
+test("V2 core API rejects malformed parser inputs and unknown resources", async () => {
+  const { db, cleanup } = openV2TempSqliteConnection();
+  applyV2Migrations(db);
+  const app = createV2FastifyApp({ coreOptions: { sqlite: db } });
+  await app.ready();
+  try {
+    const malformedWorld = await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds",
+      payload: { storyWorldId: "world_parser", name: "Parser", idempotencyKey: "parser", extra: true },
+    });
+    assert.equal(malformedWorld.statusCode, 400);
+
+    const invalidFact = await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds/world_parser/facts",
+      payload: { factId: "fact", text: "Fact", visibility: "private", expectedRevision: 1, idempotencyKey: "fact" },
+    });
+    assert.equal(invalidFact.statusCode, 400);
+
+    const invalidRule = await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds/world_parser/rules",
+      payload: { ruleId: "rule", text: "Rule", severity: "hard", expectedRevision: 1, idempotencyKey: "rule" },
+    });
+    assert.equal(invalidRule.statusCode, 400);
+
+    const unknownWorld = await app.inject({ method: "GET", url: "/api/v2/core/worlds/does-not-exist/canon" });
+    assert.equal(unknownWorld.statusCode, 404);
+    const invalidParams = await app.inject({ method: "GET", url: "/api/v2/core/worlds/%20/canon" });
+    assert.equal(invalidParams.statusCode, 400);
+    const invalidRevision = await app.inject({ method: "GET", url: "/api/v2/core/worlds/world_parser/export?revision=nope" });
+    assert.equal(invalidRevision.statusCode, 400);
+    const invalidCandidate = await app.inject({ method: "GET", url: "/api/v2/core/worlds/world_parser/candidates/scenes/%20" });
+    assert.equal(invalidCandidate.statusCode, 400);
+    const invalidRun = await app.inject({ method: "GET", url: "/api/v2/core/runtime/runs/%20/scene" });
+    assert.equal(invalidRun.statusCode, 400);
+    const invalidSave = await app.inject({ method: "GET", url: "/api/v2/core/runtime/saves/%20" });
+    assert.equal(invalidSave.statusCode, 400);
+    const invalidRelease = await app.inject({ method: "GET", url: "/api/v2/core/releases/%20/export" });
+    assert.equal(invalidRelease.statusCode, 400);
+    const missingRelease = await app.inject({ method: "GET", url: "/api/v2/core/releases/missing/export" });
+    assert.equal(missingRelease.statusCode, 404);
+  } finally {
+    await app.close();
+    db.close();
+    cleanup();
+  }
+});
+
+test("V2 core use cases report missing optional dependency groups explicitly", async () => {
+  const useCases = createV2CoreUseCases({} as never);
+  assert.throws(() => useCases.getGraph("world" as never), (error) => error instanceof V2HttpError && error.statusCode === 503);
+  assert.throws(() => useCases.listSceneCandidates("world" as never), (error) => error instanceof V2HttpError && error.statusCode === 503);
+  assert.throws(() => useCases.listReleases("world" as never), (error) => error instanceof V2HttpError && error.statusCode === 503);
+});
+
+test("V2 core API maps graph diagnostics, candidate references, and release preflight failures", async () => {
+  const { db, cleanup } = openV2TempSqliteConnection();
+  applyV2Migrations(db);
+  const app = createV2FastifyApp({ coreOptions: { sqlite: db } });
+  await app.ready();
+  try {
+    await app.inject({ method: "POST", url: "/api/v2/core/worlds", payload: { storyWorldId: "world_edges", name: "Edges", idempotencyKey: "edges-world" } });
+    await app.inject({ method: "POST", url: "/api/v2/core/worlds/world_edges/scenes", payload: { sceneId: "entry", title: "Entry", isEntry: true, expectedRevision: 1, idempotencyKey: "entry" } });
+    await app.inject({ method: "POST", url: "/api/v2/core/worlds/world_edges/scenes", payload: { sceneId: "second-entry", title: "Second entry", isEntry: true, expectedRevision: 2, idempotencyKey: "second-entry" } });
+    await app.inject({ method: "POST", url: "/api/v2/core/worlds/world_edges/choices", payload: { choiceId: "bad-choice", sourceSceneId: "entry", targetSceneId: "second-entry", label: "Unknown state", gates: [{ stateKey: "Missing", operator: "eq", value: true }], expectedRevision: 3, idempotencyKey: "bad-choice" } });
+    const validation = await app.inject({ method: "GET", url: "/api/v2/core/worlds/world_edges/graph/validation" });
+    assert.equal(validation.statusCode, 200);
+    assert.equal(validation.json().diagnostics[0].sceneId, "entry");
+
+    const locationCandidate = await app.inject({ method: "POST", url: "/api/v2/core/worlds/world_edges/candidates/scenes", payload: {
+      candidateId: "candidate_location", baseCanonRevision: 4, provenance: { source: "human" },
+      payload: { scene: { sceneId: "candidate_scene", title: "Candidate", body: "Body", locationId: "missing_location", participantCharacterIds: [] }, choices: [], validationNotes: [] }, idempotencyKey: "candidate_location",
+    } });
+    assert.equal(locationCandidate.statusCode, 201);
+    const review = await app.inject({ method: "POST", url: "/api/v2/core/worlds/world_edges/candidates/scenes/candidate_location/review", payload: { action: "approve", reviewer: "creator", expectedRevision: 4, idempotencyKey: "review_location" } });
+    assert.equal(review.statusCode, 422);
+
+    const characterCandidate = await app.inject({ method: "POST", url: "/api/v2/core/worlds/world_edges/candidates/scenes", payload: {
+      candidateId: "candidate_character", baseCanonRevision: 4, provenance: { source: "human" },
+      payload: { scene: { sceneId: "candidate_character_scene", title: "Candidate", body: "Body", participantCharacterIds: ["missing_character"] }, choices: [], validationNotes: [] }, idempotencyKey: "candidate_character",
+    } });
+    assert.equal(characterCandidate.statusCode, 201);
+    const characterReview = await app.inject({ method: "POST", url: "/api/v2/core/worlds/world_edges/candidates/scenes/candidate_character/review", payload: { action: "approve", reviewer: "creator", expectedRevision: 4, idempotencyKey: "review_character" } });
+    assert.equal(characterReview.statusCode, 422);
+
+    const preflight = await app.inject({ method: "GET", url: "/api/v2/core/worlds/world_edges/releases/preflight" });
+    assert.equal(preflight.statusCode, 200);
+    assert.equal(preflight.json().diagnostics.some((item: { choiceId?: string }) => item.choiceId === "bad-choice"), true);
+    assert.equal(preflight.json().diagnostics.some((item: { choiceId?: string }) => item.choiceId === "bad-choice"), true);
+    await app.inject({ method: "POST", url: "/api/v2/core/worlds", payload: { storyWorldId: "world_invalid_release", name: "Invalid release", idempotencyKey: "invalid-world" } });
+    const release = await app.inject({ method: "POST", url: "/api/v2/core/worlds/world_invalid_release/releases", payload: { releaseId: "invalid_release", version: "1.0.0", sourceRevision: 1, idempotencyKey: "invalid_release" } });
+    assert.equal(release.statusCode, 422);
+  } finally {
+    await app.close();
+    db.close();
+    cleanup();
+  }
+});
+
+test("V2 core API applies a candidate with a validated location reference", async () => {
+  const { db, cleanup } = openV2TempSqliteConnection();
+  applyV2Migrations(db);
+  const app = createV2FastifyApp({ coreOptions: { sqlite: db } });
+  await app.ready();
+  try {
+    await app.inject({ method: "POST", url: "/api/v2/core/worlds", payload: { storyWorldId: "world_location_candidate", name: "Location candidate", idempotencyKey: "location-world" } });
+    await app.inject({ method: "POST", url: "/api/v2/core/worlds/world_location_candidate/locations", payload: { locationId: "location", name: "Location", expectedRevision: 1, idempotencyKey: "location" } });
+    const submitted = await app.inject({ method: "POST", url: "/api/v2/core/worlds/world_location_candidate/candidates/scenes", payload: {
+      candidateId: "candidate_with_location", baseCanonRevision: 2, provenance: { source: "human" },
+      payload: { scene: { sceneId: "scene_with_location", title: "Located scene", body: "Body", locationId: "location", participantCharacterIds: [] }, choices: [], validationNotes: [] }, idempotencyKey: "candidate_with_location",
+    } });
+    assert.equal(submitted.statusCode, 201);
+    const approved = await app.inject({ method: "POST", url: "/api/v2/core/worlds/world_location_candidate/candidates/scenes/candidate_with_location/review", payload: { action: "approve", reviewer: "creator", expectedRevision: 2, idempotencyKey: "review_with_location" } });
+    assert.equal(approved.statusCode, 200);
+    assert.equal(approved.json().appliedSceneId, "scene_with_location");
+  } finally {
+    await app.close();
+    db.close();
+    cleanup();
+  }
+});
+
+test("V2 core plugin exposes an explicit unavailable status without dependencies", async () => {
+  const app = createV2FastifyApp({
+    corePlugin: async (instance) => {
+      await instance.register((await import("./plugin.ts")).v2CorePlugin, {});
+    },
+  });
+  await app.ready();
+  try {
+    const status = await app.inject({ method: "GET", url: "/api/v2/core/status" });
+    assert.equal(status.statusCode, 200);
+    assert.deepEqual(status.json(), { available: false, reason: "V2 core dependencies are not configured" });
+  } finally {
+    await app.close();
   }
 });

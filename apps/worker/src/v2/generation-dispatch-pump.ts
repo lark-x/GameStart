@@ -1,7 +1,7 @@
 import type {
   V2GenerationDispatchRecord,
   V2IsoDateTime,
-} from "@living-network/contracts";
+} from "@living-network/contracts/v2";
 import type {
   V2AssetGenerationDispatchRepository,
   V2AssetGenerationJobQueuePayload,
@@ -9,10 +9,11 @@ import type {
   V2GenerationDispatchRepository,
   V2GenerationJobQueuePayload,
   V2GenerationJobRepository,
-} from "@living-network/ports";
+} from "@living-network/ports/v2";
+import type { QueueTaskOptions } from "../queue.ts";
 
 export interface V2GenerationDispatchQueue<Data extends object> {
-  enqueue(taskId: string, data: Data): Promise<void>;
+  enqueue(taskId: string, data: Data, options?: QueueTaskOptions): Promise<void>;
 }
 
 export interface V2SceneGenerationDispatchPumpDependencies {
@@ -70,12 +71,12 @@ async function enqueueSceneDispatch(
   try {
     const job = await dependencies.jobs.getJob(dispatch.jobId);
     if (job === undefined) throw new Error(`V2 generation job not found for dispatch: ${dispatch.jobId}`);
-    await dependencies.queue.enqueue(dispatch.dispatchId, {
+    await dependencies.queue.enqueue(`${dispatch.dispatchId}:attempt:${job.attempts}`, {
       jobId: job.jobId,
       kind: "scene",
       contextHash: job.contextHash,
       correlationId: dispatch.dispatchId,
-    });
+    }, { attempts: 1 });
     await dependencies.dispatches.markDispatchEnqueued({ dispatchId: dispatch.dispatchId, enqueuedAt });
     return true;
   } catch (error) {
@@ -95,12 +96,12 @@ async function enqueueAssetDispatch(
   try {
     const job = await dependencies.jobs.getAssetJob(dispatch.jobId);
     if (job === undefined) throw new Error(`V2 asset generation job not found for dispatch: ${dispatch.jobId}`);
-    await dependencies.queue.enqueue(dispatch.dispatchId, {
+    await dependencies.queue.enqueue(`${dispatch.dispatchId}:attempt:${job.attempts}`, {
       jobId: job.jobId,
       kind: "asset",
       workflowVersion: job.workflowVersion,
       correlationId: dispatch.dispatchId,
-    });
+    }, { attempts: 1 });
     await dependencies.dispatches.markAssetDispatchEnqueued({ dispatchId: dispatch.dispatchId, enqueuedAt });
     return true;
   } catch (error) {
@@ -116,9 +117,6 @@ export function createV2GenerationDispatchPump(
   dependencies: V2GenerationDispatchPumpDependencies,
   options: V2GenerationDispatchPumpOptions = {},
 ): { runOnce(): Promise<V2GenerationDispatchPumpResult> } {
-  if (dependencies.scene === undefined && dependencies.asset === undefined) {
-    throw new TypeError("at least one V2 generation dispatch dependency must be configured");
-  }
   const limit = batchSize(options.batchSize);
   const now = options.now ?? (() => new Date());
 

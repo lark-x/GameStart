@@ -25,6 +25,7 @@ const currentArea = ref<V2Area>("canon");
 const activeAreaLabel = computed(
   () => areas.find((area) => area.value === currentArea.value)?.label ?? "Canon",
 );
+const allowMock = import.meta.env.VITE_V2_ENABLE_MOCK === "true";
 
 onMounted(() => {
   void store.loadSnapshot();
@@ -133,6 +134,7 @@ onMounted(() => {
         :asset-candidate-status="store.assetCandidateStatus"
         :asset-library-count="store.assetLibraryCount"
         :current-scene-title="store.currentSceneTitle"
+        :allow-mock="allowMock"
         @refresh="store.loadSnapshot"
         @switch-mode="store.setMode"
       />

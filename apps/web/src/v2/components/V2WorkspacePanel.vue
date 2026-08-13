@@ -11,6 +11,7 @@ import Select from "../../components/ui/Select.vue";
 import Textarea from "../../components/ui/Textarea.vue";
 import type { V2WorkspaceSnapshot } from "../adapters";
 import type { V2CandidateReviewAction } from "../adapters/types";
+import { v2MediaRefToUrl } from "../adapters";
 
 type BadgeTone = "neutral" | "info" | "success" | "warning" | "danger";
 
@@ -101,6 +102,11 @@ function candidateTone(status: string): BadgeTone {
   if (status === "rejected") return "danger";
   if (status === "changes_requested") return "warning";
   return "warning";
+}
+
+function mediaUrl(mediaRef: string): string | undefined {
+  const env = (import.meta as ImportMeta & { readonly env?: Record<string, string | undefined> }).env ?? {};
+  return v2MediaRefToUrl(mediaRef, env.VITE_API_BASE || window.location.origin);
 }
 </script>
 
@@ -377,6 +383,12 @@ function candidateTone(status: string): BadgeTone {
               <dd>{{ snapshot.assets.candidate.thumbnailRef }}</dd>
             </div>
           </dl>
+          <img
+            v-if="mediaUrl(snapshot.assets.candidate.mediaRef)"
+            class="v2-asset-preview"
+            :src="mediaUrl(snapshot.assets.candidate.mediaRef)"
+            :alt="snapshot.assets.candidate.title"
+          />
           <p>{{ snapshot.assets.candidate.provenanceSummary }}</p>
           <ul class="v2-plain-list">
             <li v-for="note in snapshot.assets.candidate.validationNotes" :key="note">{{ note }}</li>
@@ -437,6 +449,12 @@ function candidateTone(status: string): BadgeTone {
               <Badge :tone="asset.approved ? 'success' : 'warning'">{{ asset.kind }}</Badge>
             </div>
             <p>{{ asset.mediaRef }}</p>
+            <img
+              v-if="mediaUrl(asset.mediaRef)"
+              class="v2-asset-preview"
+              :src="mediaUrl(asset.mediaRef)"
+              :alt="asset.title"
+            />
             <small>{{ asset.workflowVersion }} - seed {{ asset.seed }}</small>
           </article>
         </div>

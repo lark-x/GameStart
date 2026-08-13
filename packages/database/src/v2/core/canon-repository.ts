@@ -16,7 +16,7 @@ import type {
   V2ChoiceId,
   V2SceneId,
   V2StoryWorldId,
-} from "@living-network/contracts";
+} from "@living-network/contracts/v2";
 import type {
   V2CanonCharacter,
   V2CanonFact,
@@ -36,8 +36,8 @@ import type {
   V2TypedStateValue,
   V2TypedStateValueType,
   V2TypedStateVariable,
-} from "@living-network/domain";
-import { createV2SceneCandidate, V2DomainError } from "@living-network/domain";
+} from "@living-network/domain/v2";
+import { createV2SceneCandidate, V2DomainError } from "@living-network/domain/v2";
 import type {
   CanonSnapshotReaderPort,
   V2CanonMutationRecord,
@@ -48,8 +48,8 @@ import type {
   V2CandidateReviewUnitOfWork,
   V2GraphStateRepository,
   V2GraphStateUnitOfWork,
-} from "@living-network/ports";
-import type { CandidateSubmissionPort } from "@living-network/ports";
+} from "@living-network/ports/v2";
+import type { CandidateSubmissionPort } from "@living-network/ports/v2";
 
 import { withV2SqliteAsyncTransaction } from "../platform/index.ts";
 

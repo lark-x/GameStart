@@ -8,13 +8,13 @@ import type {
   V2GenerationDispatchStatus,
   V2GenerationJobKind,
   V2SceneGenerationJobRecord,
-} from "@living-network/contracts";
-import type { V2IdempotencyKey, V2IsoDateTime, V2JobId, V2JobStatus, V2Revision, V2StoryWorldId } from "@living-network/contracts";
+} from "@living-network/contracts/v2";
+import type { V2IdempotencyKey, V2IsoDateTime, V2JobId, V2JobStatus, V2Revision, V2StoryWorldId } from "@living-network/contracts/v2";
 import type {
   V2GenerationDispatchRepository,
   V2GenerationJobCreateResult,
   V2GenerationJobRepository,
-} from "@living-network/ports";
+} from "@living-network/ports/v2";
 import { withV2SqliteTransaction } from "../platform/index.ts";
 
 type JobRow = {

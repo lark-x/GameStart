@@ -1,4 +1,4 @@
-import { generateV2SceneCandidate, type ChatProvider } from "@living-network/ai";
+import { generateV2SceneCandidate, type ChatProvider } from "@living-network/ai/v2";
 import type {
   V2CandidateEnvelope,
   V2CandidateId,
@@ -12,13 +12,13 @@ import type {
   V2SceneCandidatePayload,
   V2SceneId,
   V2SceneGenerationJobRecord,
-} from "@living-network/contracts";
-import { parseV2SceneCandidateText } from "@living-network/domain";
+} from "@living-network/contracts/v2";
+import { parseV2SceneCandidateText } from "@living-network/domain/v2";
 import type {
   CandidateSubmissionPort,
   V2GenerationJobQueuePayload,
   V2GenerationJobRepository,
-} from "@living-network/ports";
+} from "@living-network/ports/v2";
 
 export type V2SceneGenerationWorkerResultKind =
   | "succeeded"

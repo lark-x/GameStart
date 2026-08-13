@@ -98,3 +98,28 @@ test("V2 candidate review enforces transitions and stale approvals", () => {
     (error) => error instanceof V2DomainError && error.code === "INVALID_CANDIDATE_TRANSITION",
   );
 });
+
+test("V2 candidate domain rejects malformed provenance, payload, and revisions", () => {
+  const base = {
+    candidateId: "candidate_invalid",
+    storyWorldId: "world_a",
+    baseCanonRevision: 1,
+    payload: {
+      scene: { sceneId: "scene", title: "Scene", body: "Body", participantCharacterIds: ["char"] },
+      choices: [{ label: "Stay", consequenceSummary: "" }],
+      validationNotes: [""],
+    },
+    provenance: { source: "human" as const },
+  };
+  assert.throws(() => createV2SceneCandidate({ ...base, baseCanonRevision: 0 }), /baseCanonRevision/);
+  assert.throws(() => createV2SceneCandidate({ ...base, candidateId: "" }), /candidateId/);
+  assert.throws(() => createV2SceneCandidate({ ...base, provenance: { source: "unknown" as never } }), /provenance source/);
+  assert.throws(() => createV2SceneCandidate({ ...base, payload: { ...base.payload, scene: { ...base.payload.scene, participantCharacterIds: ["char", "char"] } } }), /duplicate/);
+  assert.throws(() => createV2SceneCandidate({ ...base, payload: { ...base.payload, scene: { ...base.payload.scene, title: "" } } }), /scene.title/);
+  assert.throws(() => createV2SceneCandidate({ ...base, payload: { ...base.payload, choices: [{ label: "", consequenceSummary: "" }] } }), /choices\[0\]\.label/);
+  assert.throws(() => createV2SceneCandidate({ ...base, payload: { ...base.payload, validationNotes: ["x".repeat(1201)] } }), /validationNotes/);
+  assert.throws(() => reviewV2SceneCandidate({ candidate: createV2SceneCandidate(base), action: "approve", reviewer: "", expectedRevision: 1 }), /reviewer/);
+  assert.throws(() => reviewV2SceneCandidate({ candidate: createV2SceneCandidate(base), action: "approve", reviewer: "creator", reason: "x".repeat(1201), expectedRevision: 1 }), /reason/);
+  const approved = { ...createV2SceneCandidate(base), status: "approved" as const };
+  assert.throws(() => buildV2SceneCandidateApplyPlan(approved), /Cannot apply/);
+});

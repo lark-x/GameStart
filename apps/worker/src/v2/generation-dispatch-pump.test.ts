@@ -12,18 +12,20 @@ import type {
   V2JobId,
   V2Revision,
   V2StoryWorldId,
-} from "@living-network/contracts";
+} from "@living-network/contracts/v2";
 import {
   applyV2Migrations,
   openV2TempSqliteConnection,
   V2SqliteAssetGenerationRepository,
   V2SqliteGenerationJobRepository,
   v2GenerationJobMigrations,
-} from "@living-network/database";
+} from "@living-network/database/v2";
 import type {
   V2AssetGenerationJobQueuePayload,
   V2GenerationJobQueuePayload,
-} from "@living-network/ports";
+} from "@living-network/ports/v2";
+import type { V2GenerationDispatchRecord } from "@living-network/contracts/v2";
+import type { V2GenerationJobRepository } from "@living-network/ports/v2";
 import { createV2GenerationDispatchPump, type V2GenerationDispatchQueue } from "./generation-dispatch-pump.ts";
 
 const now = "2026-08-12T03:00:00.000Z" as V2IsoDateTime;
@@ -120,14 +122,14 @@ test("V2 generation dispatch pump enqueues scene and asset payloads from SQLite 
       assetEnqueued: 1,
       assetFailed: 0,
     });
-    assert.equal(sceneQueue.jobs[0]?.taskId, "generation-dispatch:job_scene_bridge");
+    assert.equal(sceneQueue.jobs[0]?.taskId, "generation-dispatch:job_scene_bridge:attempt:0");
     assert.deepEqual(sceneQueue.jobs[0]?.data, {
       jobId: "job_scene_bridge",
       kind: "scene",
       contextHash: "sha256:generation-context",
       correlationId: "generation-dispatch:job_scene_bridge",
     });
-    assert.equal(assetQueue.jobs[0]?.taskId, "asset-dispatch:job_asset_bridge");
+    assert.equal(assetQueue.jobs[0]?.taskId, "asset-dispatch:job_asset_bridge:attempt:0");
     assert.deepEqual(assetQueue.jobs[0]?.data, {
       jobId: asset.job.jobId,
       kind: "asset",
@@ -173,9 +175,61 @@ test("V2 generation dispatch pump keeps failed enqueue work pending", async () =
   }
 });
 
-test("V2 generation dispatch pump requires at least one configured lane", () => {
-  assert.throws(
-    () => createV2GenerationDispatchPump({}),
-    /at least one V2 generation dispatch dependency/,
-  );
+test("V2 generation dispatch pump reports missing jobs and queue failures", async () => {
+  const missingJobRepository = { getJob: async () => undefined } as unknown as V2GenerationJobRepository;
+  const queueJobRepository = { getJob: async () => ({ jobId: "job_queue", attempts: 0, contextHash: "hash", kind: "scene" }) } as unknown as V2GenerationJobRepository;
+  const noOpDispatch = (input: { readonly dispatchId: string; readonly enqueuedAt: string }): Promise<V2GenerationDispatchRecord> => Promise.resolve({
+    dispatchId: input.dispatchId,
+    jobId: "job" as V2JobId,
+    status: "enqueued",
+    attempts: 0,
+    requestedAt: now,
+    enqueuedAt: input.enqueuedAt as V2IsoDateTime,
+  });
+  const failedDispatch = (input: { readonly dispatchId: string; readonly error: string }): Promise<V2GenerationDispatchRecord> => {
+    assert.match(input.error, /not found|queue unavailable/);
+    return Promise.resolve({ dispatchId: input.dispatchId, jobId: "job" as V2JobId, status: "pending", attempts: 1, requestedAt: now, lastError: input.error });
+  };
+  const missing = createV2GenerationDispatchPump({
+    scene: {
+      dispatches: {
+        listPendingDispatches: async () => [{ dispatchId: "dispatch_missing", jobId: "missing" as V2JobId, status: "pending", attempts: 0, requestedAt: now }],
+        markDispatchEnqueued: noOpDispatch,
+        recordDispatchFailure: failedDispatch,
+      },
+      jobs: missingJobRepository,
+      queue: { enqueue: async () => undefined },
+    },
+  });
+  assert.deepEqual(await missing.runOnce(), { sceneScanned: 1, sceneEnqueued: 0, sceneFailed: 1, assetScanned: 0, assetEnqueued: 0, assetFailed: 0 });
+
+  const queueFailure = createV2GenerationDispatchPump({
+    scene: {
+      dispatches: {
+        listPendingDispatches: async () => [{ dispatchId: "dispatch_queue", jobId: "job_queue" as V2JobId, status: "pending", attempts: 0, requestedAt: now }],
+        markDispatchEnqueued: noOpDispatch,
+        recordDispatchFailure: failedDispatch,
+      },
+      jobs: queueJobRepository,
+      queue: { enqueue: async () => { throw new Error("queue unavailable"); } },
+    },
+  });
+  assert.equal((await queueFailure.runOnce()).sceneFailed, 1);
+});
+
+test("V2 generation dispatch pump allows both generation lanes to be disabled", () => {
+  const pump = createV2GenerationDispatchPump({});
+  return pump.runOnce().then((result) => assert.deepEqual(result, {
+    sceneScanned: 0,
+    sceneEnqueued: 0,
+    sceneFailed: 0,
+    assetScanned: 0,
+    assetEnqueued: 0,
+    assetFailed: 0,
+  }));
+});
+
+test("V2 generation dispatch pump validates batch size", () => {
+  assert.throws(() => createV2GenerationDispatchPump({}, { batchSize: 0 }), /batchSize/);
+  assert.throws(() => createV2GenerationDispatchPump({}, { batchSize: 1001 }), /batchSize/);
 });

@@ -3,10 +3,13 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "exports": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./v2": "./src/v2/index.ts"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "node ../../scripts/run-tests.mjs src",
+    "test": "node ../../scripts/run-tests.mjs src/v2",
     "typecheck": "tsc -p tsconfig.json"
   }
 }

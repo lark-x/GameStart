@@ -6,14 +6,14 @@ import type {
   V2CandidateId,
   V2IsoDateTime,
   V2JobId,
-} from "@living-network/contracts";
-import { assertV2AssetCandidateInput, assertV2AssetMediaRef, type JsonObject } from "@living-network/domain";
+} from "@living-network/contracts/v2";
+import { assertV2AssetCandidateInput, assertV2AssetMediaRef, type V2JsonObject } from "@living-network/domain/v2";
 import type {
   V2AssetCandidateRepository,
   V2AssetMediaStorePort,
   V2AssetGenerationJobQueuePayload,
   V2AssetGenerationJobRepository,
-} from "@living-network/ports";
+} from "@living-network/ports/v2";
 import { ComfyUiError } from "../comfyui-client.ts";
 import type { ComfyUiClient } from "../comfyui-types.ts";
 
@@ -208,7 +208,7 @@ export async function processV2AssetGenerationJob(
       jobId: job.jobId,
       workflowVersion: job.workflowVersion,
       prompt: job.prompt,
-      workflow: job.workflow as JsonObject,
+      workflow: job.workflow as V2JsonObject,
       ...(job.negativePrompt === undefined ? {} : { negativePrompt: job.negativePrompt }),
       ...(job.seed === undefined ? {} : { seed: job.seed }),
     })).externalJobId;

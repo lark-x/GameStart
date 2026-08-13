@@ -1,7 +1,8 @@
 import { expect, test } from "@playwright/test";
 
-test("V2 mock creator flow covers review, assets, release, runtime, save and export", async ({ page }) => {
-  await page.goto("/v2");
+test("V2 redirects retired V1 URLs and completes the mock creator loop", async ({ page }) => {
+  await page.goto("/feed");
+  await expect(page).toHaveURL(/\/v2$/);
   await expect(page.getByRole("heading", { name: "Creator Game Platform" })).toBeVisible();
 
   await page.getByRole("tab", { name: "Review" }).click();
@@ -18,14 +19,14 @@ test("V2 mock creator flow covers review, assets, release, runtime, save and exp
   await page.getByRole("tab", { name: "Release" }).click();
   await page.getByRole("button", { name: "Create Release" }).click();
   await page.getByRole("button", { name: "Start Player Run" }).click();
-  await page.getByRole("button", { name: "Export" }).click();
-  await expect(page.getByText(/Prepared .*\.json/)).toBeVisible();
-
   await page.getByRole("tab", { name: "Player" }).click();
-  await page.getByRole("button", { name: "Follow the stamped route to the Civic Archive" }).click();
   await page.getByRole("button", { name: "Save Run" }).click();
+  await expect(page.getByText(/Saved Station checkpoint/)).toBeVisible();
   await page.getByRole("button", { name: "Restore Save" }).click();
   await expect(page.getByText(/Restored Station checkpoint/)).toBeVisible();
+  await page.getByRole("tab", { name: "Release" }).click();
+  await page.getByRole("button", { name: "Export" }).click();
+  await expect(page.getByText(/Prepared .*\.json/)).toBeVisible();
 });
 
 test("V2 HTTP mode starts from empty SQLite and completes the offline release loop", async ({ page }) => {
@@ -38,18 +39,16 @@ test("V2 HTTP mode starts from empty SQLite and completes the offline release lo
   await page.getByRole("tab", { name: "Release" }).click();
   await expect(page.getByText("Valid", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Create Release" }).click();
-  await expect(page.getByText(/Release 0\.0\.2 is immutable/)).toBeVisible();
   await page.getByRole("button", { name: "Start Player Run" }).click();
-
   await page.getByRole("tab", { name: "Player" }).click();
   await expect(page.getByText("The first playable scene in this local story world.")).toBeVisible();
   await page.getByRole("button", { name: "Save Run" }).click();
+  await expect(page.getByText(/Saved Station checkpoint/)).toBeVisible();
   await page.getByRole("button", { name: "Restore Save" }).click();
-  await expect(page.getByText(/Restored Station checkpoint|Restored Local checkpoint/)).toBeVisible();
-
+  await expect(page.getByText(/Restored Station checkpoint/)).toBeVisible();
   await page.getByRole("tab", { name: "Release" }).click();
   await page.getByRole("button", { name: "Export" }).click();
-  await expect(page.getByText(/Prepared release:.*\.json/)).toBeVisible();
+  await expect(page.getByText(/Prepared .*\.json/)).toBeVisible();
 
   await page.setViewportSize({ width: 360, height: 800 });
   const widths = await page.evaluate(() => ({

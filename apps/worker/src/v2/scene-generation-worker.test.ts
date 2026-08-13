@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { ChatCompletionRequest, ChatCompletionResult, ChatDelta, ChatProvider } from "@living-network/ai";
+import type { ChatCompletionRequest, ChatCompletionResult, ChatDelta, ChatProvider } from "@living-network/ai/v2";
 import type {
   V2CandidateEnvelope,
   V2CandidateId,
@@ -20,13 +20,13 @@ import type {
   V2SceneCandidatePayload,
   V2SceneGenerationJobRecord,
   V2StoryWorldId,
-} from "@living-network/contracts";
+} from "@living-network/contracts/v2";
 import type {
   CandidateSubmissionPort,
   V2GenerationJobCreateResult,
   V2GenerationJobQueuePayload,
   V2GenerationJobRepository,
-} from "@living-network/ports";
+} from "@living-network/ports/v2";
 import { processV2SceneGenerationJob } from "./scene-generation-worker.ts";
 
 const createdAt = "2026-08-12T00:00:00.000Z" as V2IsoDateTime;

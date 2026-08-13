@@ -8,7 +8,7 @@ import type {
   V2JobRef,
   V2ReleasePreflightResponse,
   V2SceneCandidatePayload,
-} from "@living-network/contracts";
+} from "@living-network/contracts/v2";
 
 export type V2WorkspaceMode = "mock" | "http";
 

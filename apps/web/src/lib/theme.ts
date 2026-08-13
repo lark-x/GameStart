@@ -1,5 +1,4 @@
 import { computed, reactive, ref } from "vue";
-import type { ApiClient } from "../api";
 
 /**
  * 界面外观管理：皮肤主题 + 主题装饰 + 聊天背景。
@@ -75,10 +74,17 @@ const chatBackground = reactive<ChatBackgroundState>({ ...DEFAULT_BACKGROUND });
 /** none=未连接服务端 synced=已同步 loading=读取中 saving=保存中 error=同步失败（本地缓存仍生效） */
 const syncState = ref<"none" | "loading" | "synced" | "saving" | "error">("none");
 
-type AppearanceApi = Pick<
-  ApiClient,
-  "getAppearanceSettings" | "updateAppearanceSettings"
->;
+interface AppearanceResponse {
+  readonly data?: {
+    readonly themeId?: unknown;
+    readonly chatBackground?: unknown;
+  };
+}
+
+type AppearanceApi = {
+  getAppearanceSettings: (...args: never[]) => Promise<AppearanceResponse>;
+  updateAppearanceSettings: (payload: unknown) => Promise<unknown>;
+};
 
 let apiClient: AppearanceApi | null = null;
 /** 本地有未确认同步到服务端的改动时，不用服务端数据覆盖本地 */

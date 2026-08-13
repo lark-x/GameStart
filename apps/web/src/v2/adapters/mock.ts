@@ -3,7 +3,7 @@ import {
   type V2CreateSceneGenerationJobResponse,
   type V2IsoDateTime,
   type V2JobId,
-} from "@living-network/contracts";
+} from "@living-network/contracts/v2";
 
 import {
   v2WebFixtureAssets,

@@ -16,6 +16,7 @@ defineProps<{
   assetCandidateStatus: string;
   assetLibraryCount: number;
   currentSceneTitle: string;
+  allowMock: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -36,6 +37,7 @@ const emit = defineEmits<{
 
     <div class="v2-status-actions" aria-label="Adapter controls">
       <Button
+        v-if="allowMock"
         variant="secondary"
         size="sm"
         :disabled="mode === 'mock' || loading"

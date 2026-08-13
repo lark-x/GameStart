@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { openV2TempSqliteConnection } from "@living-network/database";
+import { openV2TempSqliteConnection } from "@living-network/database/v2";
 
 import { createV2ApiRuntime } from "./runtime.ts";
 
@@ -23,6 +23,8 @@ test("V2 API runtime applies core and generation migrations and wires both plugi
     ]);
     const health = await runtime.app.inject({ method: "GET", url: "/api/v2/health" });
     assert.equal(health.statusCode, 200);
+    const ready = await runtime.app.inject({ method: "GET", url: "/api/v2/ready" });
+    assert.equal(ready.statusCode, 200);
     const world = await runtime.app.inject({
       method: "POST",
       url: "/api/v2/core/worlds",

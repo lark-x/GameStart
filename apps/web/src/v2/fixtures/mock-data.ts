@@ -10,7 +10,7 @@ import type {
   V2SceneCandidatePayload,
   V2SceneId,
   V2StoryWorldId,
-} from "@living-network/contracts";
+} from "@living-network/contracts/v2";
 
 export const v2WebFixtureWorld = {
   storyWorldId: "world_v2_demo" as V2StoryWorldId,

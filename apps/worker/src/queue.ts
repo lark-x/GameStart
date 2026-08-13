@@ -12,7 +12,7 @@ export interface QueueTaskOptions {
   readonly delayMs?: number;
 }
 
-export interface TaskQueue<Data extends Record<string, unknown>> {
+export interface TaskQueue<Data extends object> {
   enqueue(taskId: string, data: Data, options?: QueueTaskOptions): Promise<void>;
   close(): Promise<void>;
 }
@@ -44,7 +44,7 @@ function defaultJobOptions(options: QueueTaskOptions = {}): JobsOptions {
   };
 }
 
-export class BullMqTaskQueue<Data extends Record<string, unknown>> implements TaskQueue<Data> {
+export class BullMqTaskQueue<Data extends object> implements TaskQueue<Data> {
   private readonly queue: Queue<Data, unknown, string, Data, unknown, string>;
 
   public constructor(name: string, config: RedisQueueConfig) {
@@ -75,7 +75,7 @@ export interface BullMqTaskWorkerOptions {
 }
 
 export class BullMqTaskWorker<
-  Data extends Record<string, unknown>,
+  Data extends object,
   Result = void,
 > {
   private readonly worker: Worker<Data, Result, string>;
@@ -102,7 +102,10 @@ export class BullMqTaskWorker<
       async (job) => {
         const jobId = job.id;
         const entityId = jobId ?? job.name;
-        const taskCorrelationId = typeof job.data.correlationId === "string" ? job.data.correlationId : undefined;
+        const taskCorrelationId = typeof job.data === "object" && job.data !== null &&
+          "correlationId" in job.data && typeof job.data.correlationId === "string"
+          ? job.data.correlationId
+          : undefined;
         const correlationId = taskCorrelationId ?? `worker:job:${entityId}`;
         const identity = { entityType: "job", entityId, ...(jobId === undefined ? {} : { jobId }) };
         await bestEffortLog(options.logger, { action: "queue.job", outcome: "RECEIVED", correlationId, ...identity });

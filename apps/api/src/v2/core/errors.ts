@@ -1,4 +1,4 @@
-import { V2DomainError } from "@living-network/domain";
+import { V2DomainError } from "@living-network/domain/v2";
 
 export class V2HttpError extends Error {
   public readonly statusCode: number;

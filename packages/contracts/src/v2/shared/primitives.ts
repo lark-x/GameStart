@@ -36,6 +36,7 @@ export interface V2ErrorEnvelope {
 }
 
 export type V2ErrorCode =
+  | "CAPABILITY_UNAVAILABLE"
   | "BAD_REQUEST"
   | "UNAUTHORIZED"
   | "FORBIDDEN"

@@ -16,6 +16,15 @@ export interface V2HealthResponse {
   readonly version: "v2";
 }
 
+export interface V2ReadyResponse extends V2HealthResponse {
+  readonly storage: "sqlite";
+}
+
+export interface V2CapabilitiesResponse {
+  readonly sceneGeneration: { readonly enabled: boolean };
+  readonly assetGeneration: { readonly enabled: boolean };
+}
+
 export interface V2CreateSceneGenerationJobRequest {
   readonly storyWorldId: V2StoryWorldId;
   readonly baseCanonRevision: V2Revision;

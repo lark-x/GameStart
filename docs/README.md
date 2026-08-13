@@ -14,7 +14,7 @@
 | [产品需求](./product-requirements.md) | 产品目标、功能优先级和体验愿景；状态需与进度文档一致 |
 | [核心业务流程](./user-flows.md) | 当前关键用户路径及系统交互 |
 
-## V2 替换计划
+## V2 替换计划与当前切换
 
 | 文档 | 职责 |
 | --- | --- |
@@ -23,6 +23,8 @@
 | [旧版三 AI 独立分支计划](./v2/three-ai-execution-plan.md) | 已替代，仅保留迁移说明并指向主计划 |
 | [V2 Interface Requests](./v2/INTERFACE_REQUESTS.md) | 每分支独立接口请求文件的格式和处理规则 |
 | [V2 三设备执行提示词](./v2/three-device-prompts.md) | 不同设备通过 GitHub 拉取、等待 Gate 0、创建独立分支和执行各自任务时直接使用 |
+
+V2 已在 `codex/v2-integration` 完成 Core/Generation/Assets/Web 集成，当前默认运行时、Compose、CI 和发布验收均以 V2 为准。V1 资料只在明确标记的归档、退役和历史 delivery 文档中保留。
 
 根目录 [AGENTS.md](../AGENTS.md) 是模型和开发代理的强制执行入口。
 
