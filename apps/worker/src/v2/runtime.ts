@@ -133,7 +133,6 @@ export async function startV2Worker(
     };
     await tick();
     timer = setInterval(() => void tick().catch((error: unknown) => console.error("V2 dispatch pump failed", error)), config.dispatchTickMs);
-    timer.unref();
     console.log(`Living Network V2 Worker started (scene=${config.scene.enabled}, asset=${config.asset.enabled})`);
     return {
       async stop(): Promise<void> {

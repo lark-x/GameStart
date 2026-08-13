@@ -12,6 +12,7 @@ import Textarea from "../../components/ui/Textarea.vue";
 import type { V2WorkspaceSnapshot } from "../adapters";
 import type { V2CandidateReviewAction } from "../adapters/types";
 import { v2MediaRefToUrl } from "../adapters";
+import { tr } from "../locale";
 
 type BadgeTone = "neutral" | "info" | "success" | "warning" | "danger";
 
@@ -71,19 +72,19 @@ const emit = defineEmits<{
 const areaMeta = computed(() => {
   switch (props.area) {
     case "canon":
-      return { icon: Boxes, title: "Canon Workspace", badge: "workspace revision" };
+      return { icon: Boxes, title: tr("Canon Workspace"), badge: "workspace revision" };
     case "graph":
-      return { icon: GitFork, title: "Narrative Graph", badge: "scene graph" };
+      return { icon: GitFork, title: tr("Narrative Graph"), badge: "scene graph" };
     case "review":
-      return { icon: Sparkles, title: "Candidate Review", badge: "pending candidate" };
+      return { icon: Sparkles, title: tr("Candidate Review"), badge: "pending candidate" };
     case "assets":
-      return { icon: ImageIcon, title: "Asset Workbench", badge: "candidate media" };
+      return { icon: ImageIcon, title: tr("Asset Workbench"), badge: "candidate media" };
     case "release":
-      return { icon: FileCheck2, title: "Release Desk", badge: "preflight" };
+      return { icon: FileCheck2, title: tr("Release Desk"), badge: "preflight" };
     case "player":
-      return { icon: PlayCircle, title: "Player Runtime", badge: "save bound" };
+      return { icon: PlayCircle, title: tr("Player Runtime"), badge: "save bound" };
     default:
-      return { icon: Boxes, title: "Operations", badge: "status" };
+      return { icon: Boxes, title: tr("Operations"), badge: "status" };
   }
 });
 
@@ -129,7 +130,7 @@ function mediaUrl(mediaRef: string): string | undefined {
 
     <EmptyState
       v-else-if="!snapshot"
-      title="No V2 snapshot loaded"
+      :title="tr('No V2 snapshot loaded')"
       description="Use refresh to load the typed adapter snapshot."
     >
       <template #icon>
@@ -140,42 +141,42 @@ function mediaUrl(mediaRef: string): string | undefined {
     <div v-else class="v2-panel-grid">
       <template v-if="area === 'canon'">
         <form class="v2-canon-form" aria-label="Canon draft preview" @submit.prevent="emit('previewCanonDraft')">
-          <Field label="World name" hint="Preview-only mock edit with optimistic revision guard.">
+          <Field :label="tr('World name')" hint="Preview-only mock edit with optimistic revision guard.">
             <Input
               :model-value="draftWorldName"
               :disabled="loading"
               id="v2-world-name"
-              aria-label="World name"
+              :aria-label="tr('World name')"
               @update:model-value="emit('update:draftWorldName', $event)"
             />
           </Field>
-          <Field label="Premise">
+          <Field :label="tr('Premise')">
             <Textarea
               :model-value="draftPremise"
               :disabled="loading"
               id="v2-world-premise"
-              aria-label="Premise"
+              :aria-label="tr('Premise')"
               :rows="4"
               @update:model-value="emit('update:draftPremise', $event)"
             />
           </Field>
-          <Field v-if="conflict" label="Expected revision" :error="conflict">
+          <Field v-if="conflict" :label="tr('Expected revision')" :error="conflict">
             <Input
               :model-value="expectedRevision"
               :disabled="loading"
               id="v2-expected-revision"
               type="number"
-              aria-label="Expected revision"
+              :aria-label="tr('Expected revision')"
               @update:model-value="emit('update:expectedRevision', Number($event))"
             />
           </Field>
-          <Field v-else label="Expected revision">
+          <Field v-else :label="tr('Expected revision')">
             <Input
               :model-value="expectedRevision"
               :disabled="loading"
               id="v2-expected-revision"
               type="number"
-              aria-label="Expected revision"
+              :aria-label="tr('Expected revision')"
               @update:model-value="emit('update:expectedRevision', Number($event))"
             />
           </Field>
@@ -191,12 +192,12 @@ function mediaUrl(mediaRef: string): string | undefined {
 
         <div class="v2-list-grid" aria-label="Canon facts and rules">
           <article class="v2-metric">
-            <span>Characters</span>
+            <span>{{ tr("Characters") }}</span>
             <strong>{{ snapshot.world.characters.length }}</strong>
             <small>{{ snapshot.world.characters.map((character) => character.name).join(", ") }}</small>
           </article>
           <article class="v2-metric">
-            <span>Locations</span>
+            <span>{{ tr("Locations") }}</span>
             <strong>{{ snapshot.world.locations.length }}</strong>
             <small>{{ snapshot.world.locations.map((location) => location.name).join(", ") }}</small>
           </article>
@@ -238,12 +239,12 @@ function mediaUrl(mediaRef: string): string | undefined {
 
       <template v-else-if="area === 'review'">
         <form class="v2-canon-form" aria-label="Generation job controls" @submit.prevent="emit('createGenerationJob')">
-          <Field label="Generation prompt" hint="Mock adapter creates a typed job without writing canon.">
+          <Field :label="tr('Generation prompt')" hint="Mock adapter creates a typed job without writing canon.">
             <Textarea
               :model-value="generationPrompt"
               :disabled="loading"
               id="v2-generation-prompt"
-              aria-label="Generation prompt"
+              :aria-label="tr('Generation prompt')"
               :rows="3"
               @update:model-value="emit('update:generationPrompt', $event)"
             />
@@ -284,21 +285,21 @@ function mediaUrl(mediaRef: string): string | undefined {
         </article>
 
         <form class="v2-canon-form" aria-label="Candidate review actions" @submit.prevent="emit('reviewCandidate', 'approve')">
-          <Field label="Reviewer">
+          <Field :label="tr('Reviewer')">
             <Input
               :model-value="reviewer"
               :disabled="loading || !canReviewCandidate"
               id="v2-reviewer"
-              aria-label="Reviewer"
+              :aria-label="tr('Reviewer')"
               @update:model-value="emit('update:reviewer', $event)"
             />
           </Field>
-          <Field label="Review reason">
+          <Field :label="tr('Review reason')">
             <Textarea
               :model-value="reviewReason"
               :disabled="loading || !canReviewCandidate"
               id="v2-review-reason"
-              aria-label="Review reason"
+              :aria-label="tr('Review reason')"
               :rows="3"
               @update:model-value="emit('update:reviewReason', $event)"
             />
@@ -338,12 +339,12 @@ function mediaUrl(mediaRef: string): string | undefined {
 
       <template v-else-if="area === 'assets'">
         <form class="v2-canon-form" aria-label="Asset job controls" @submit.prevent="emit('createAssetJob')">
-          <Field label="Asset prompt" hint="Mock adapter queues a local asset job without writing release assets.">
+          <Field :label="tr('Asset prompt')" hint="Mock adapter queues a local asset job without writing release assets.">
             <Textarea
               :model-value="assetPrompt"
               :disabled="loading"
               id="v2-asset-prompt"
-              aria-label="Asset prompt"
+              :aria-label="tr('Asset prompt')"
               :rows="3"
               @update:model-value="emit('update:assetPrompt', $event)"
             />
@@ -367,19 +368,19 @@ function mediaUrl(mediaRef: string): string | undefined {
           </div>
           <dl class="v2-detail-list">
             <div>
-              <dt>Workflow</dt>
+              <dt>{{ tr("Workflow") }}</dt>
               <dd>{{ snapshot.assets.job.workflowVersion }}</dd>
             </div>
             <div>
-              <dt>Seed</dt>
+              <dt>{{ tr("Seed") }}</dt>
               <dd>{{ snapshot.assets.job.seed }}</dd>
             </div>
             <div>
-              <dt>Media</dt>
+              <dt>{{ tr("Media") }}</dt>
               <dd>{{ snapshot.assets.candidate.mediaRef }}</dd>
             </div>
             <div>
-              <dt>Thumbnail</dt>
+              <dt>{{ tr("Thumbnail") }}</dt>
               <dd>{{ snapshot.assets.candidate.thumbnailRef }}</dd>
             </div>
           </dl>
@@ -408,12 +409,12 @@ function mediaUrl(mediaRef: string): string | undefined {
           aria-label="Asset review actions"
           @submit.prevent="emit('reviewAssetCandidate', 'approve')"
         >
-          <Field label="Asset review reason">
+          <Field :label="tr('Asset review reason')">
             <Textarea
               :model-value="assetReviewReason"
               :disabled="loading || !canReviewAssetCandidate"
               id="v2-asset-review-reason"
-              aria-label="Asset review reason"
+              :aria-label="tr('Asset review reason')"
               :rows="3"
               @update:model-value="emit('update:assetReviewReason', $event)"
             />
@@ -463,17 +464,17 @@ function mediaUrl(mediaRef: string): string | undefined {
       <template v-else-if="area === 'release'">
         <div class="v2-list-grid" aria-label="Release preflight">
           <article class="v2-metric">
-            <span>Preflight</span>
+            <span>{{ tr("Preflight") }}</span>
             <strong>{{ snapshot.release.valid ? "Valid" : "Blocked" }}</strong>
             <small>revision {{ snapshot.release.revision }}</small>
           </article>
           <article class="v2-metric">
-            <span>Release</span>
+            <span>{{ tr("Release") }}</span>
             <strong>{{ snapshot.releasePackage?.version ?? "not created" }}</strong>
             <small>{{ snapshot.releasePackage?.manifestHash ?? "Run preflight first" }}</small>
           </article>
           <article class="v2-metric">
-            <span>Immutability</span>
+            <span>{{ tr("Immutability") }}</span>
             <strong>{{ snapshot.releasePackage?.immutable ? "locked" : "not released" }}</strong>
             <small>{{ snapshot.releasePackage?.releaseId ?? snapshot.world.storyWorldId }}</small>
           </article>
@@ -491,10 +492,10 @@ function mediaUrl(mediaRef: string): string | undefined {
         <p v-if="releaseMessage" class="v2-feedback">{{ releaseMessage }}</p>
 
         <form class="v2-canon-form" aria-label="Release export controls" @submit.prevent="emit('exportRelease')">
-          <Field label="Export format">
+          <Field :label="tr('Export format')">
             <Select
               :model-value="exportFormat"
-              aria-label="Export format"
+              :aria-label="tr('Export format')"
               id="v2-export-format"
               @update:model-value="emit('update:exportFormat', $event === 'markdown' ? 'markdown' : 'json')"
             >
@@ -540,12 +541,12 @@ function mediaUrl(mediaRef: string): string | undefined {
         />
 
         <form class="v2-canon-form" aria-label="Save and restore controls" @submit.prevent="emit('saveRun')">
-          <Field label="Save label">
+          <Field :label="tr('Save label')">
             <Input
               :model-value="saveLabel"
               :disabled="loading"
               id="v2-save-label"
-              aria-label="Save label"
+              :aria-label="tr('Save label')"
               @update:model-value="emit('update:saveLabel', $event)"
             />
           </Field>
@@ -562,12 +563,12 @@ function mediaUrl(mediaRef: string): string | undefined {
 
         <div v-if="snapshot.save" class="v2-list-grid" aria-label="Save details">
           <article class="v2-metric">
-            <span>Save</span>
+            <span>{{ tr("Save") }}</span>
             <strong>{{ snapshot.save.label }}</strong>
             <small>{{ snapshot.save.saveId }}</small>
           </article>
           <article class="v2-metric">
-            <span>Scene</span>
+            <span>{{ tr("Scene") }}</span>
             <strong>{{ snapshot.save.currentSceneId }}</strong>
             <small>{{ snapshot.save.savedAt }}</small>
           </article>
@@ -594,22 +595,22 @@ function mediaUrl(mediaRef: string): string | undefined {
 
       <template v-else>
         <article class="v2-metric">
-          <span>Workspace</span>
+          <span>{{ tr("Workspace") }}</span>
           <strong>{{ snapshot.world.name }}</strong>
           <small>revision {{ snapshot.world.revision }}</small>
         </article>
         <article class="v2-metric">
-          <span>Graph</span>
+          <span>{{ tr("Graph") }}</span>
           <strong>{{ snapshot.sceneGraph.scenes.length }} scenes</strong>
           <small>{{ snapshot.sceneGraph.diagnostics.length }} diagnostics</small>
         </article>
         <article class="v2-metric">
-          <span>Candidate</span>
+          <span>{{ tr("Candidate") }}</span>
           <strong>{{ snapshot.candidate?.status ?? "none" }}</strong>
           <small>{{ snapshot.candidate?.provenance.source ?? "no candidate" }} source</small>
         </article>
         <article class="v2-metric">
-          <span>Runtime</span>
+          <span>{{ tr("Runtime") }}</span>
           <strong>{{ snapshot.run?.releaseVersion ?? "not started" }}</strong>
           <small>{{ snapshot.run?.currentSceneId ?? "no scene" }}</small>
         </article>

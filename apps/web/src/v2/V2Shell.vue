@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { Boxes, FileCheck2, GitFork, Image as ImageIcon, PlayCircle, Radio, Sparkles } from "@lucide/vue";
+import { Boxes, FileCheck2, GitFork, Globe2, Image as ImageIcon, PlayCircle, Radio, Sparkles } from "@lucide/vue";
 
 import Button from "../components/ui/Button.vue";
 import { useV2WorkspaceStore } from "./stores/workspace";
 import V2StatusRail from "./components/V2StatusRail.vue";
 import V2WorkspacePanel from "./components/V2WorkspacePanel.vue";
+import { setV2Locale, t, v2Locale } from "./locale";
 
 type V2Area = "canon" | "graph" | "review" | "assets" | "release" | "player" | "operations";
 
@@ -22,10 +23,10 @@ const areas: readonly { value: V2Area; label: string; icon: typeof Boxes }[] = [
 const store = useV2WorkspaceStore();
 const currentArea = ref<V2Area>("canon");
 
-const activeAreaLabel = computed(
-  () => areas.find((area) => area.value === currentArea.value)?.label ?? "Canon",
-);
 const allowMock = import.meta.env.VITE_V2_ENABLE_MOCK === "true";
+const localizedAreas = computed(() => areas.map((area) => ({ ...area, label: t(`area.${area.value}` as keyof typeof import("./locale").v2Messages) })));
+const localizedActiveAreaLabel = computed(() => localizedAreas.value.find((area) => area.value === currentArea.value)?.label ?? t("area.canon"));
+function toggleLocale(): void { setV2Locale(v2Locale.value === "en" ? "zh-CN" : "en"); }
 
 onMounted(() => {
   void store.loadSnapshot();
@@ -36,35 +37,22 @@ onMounted(() => {
   <section class="page v2-shell" aria-labelledby="v2-title">
     <header class="v2-shell-header">
       <div class="v2-shell-title">
-        <span class="v2-mode-pill">
-          <Radio :size="15" aria-hidden="true" />
-          V2 Web Product
-        </span>
-        <h1 id="v2-title">Creator Game Platform</h1>
-        <p>
-          Local creator workspace for canon editing, candidate review, immutable release checks, and
-          player runtime previews.
-        </p>
+        <span class="v2-mode-pill"><Radio :size="15" aria-hidden="true" />{{ t("app.product") }}</span>
+        <h1 id="v2-title">{{ t("app.title") }}</h1>
+        <p>{{ t("app.description") }}</p>
       </div>
-      <Button variant="primary" size="md" :loading="store.loading" @click="store.loadSnapshot">
-        Refresh Snapshot
-      </Button>
-      <Button
-        v-if="store.mode === 'http' && !store.hasSnapshot"
-        variant="secondary"
-        size="md"
-        :loading="store.loading"
-        @click="store.bootstrapWorkspace"
-      >
-        Create Starter World
-      </Button>
+      <div class="v2-shell-actions">
+        <Button variant="secondary" size="md" :aria-label="t('action.switchLanguage')" @click="toggleLocale"><Globe2 :size="17" aria-hidden="true" />{{ v2Locale === "en" ? "\u4e2d\u6587" : "English" }}</Button>
+        <Button variant="primary" size="md" :loading="store.loading" @click="store.loadSnapshot">{{ t("action.refresh") }}</Button>
+        <Button v-if="store.mode === 'http' && !store.hasSnapshot" variant="secondary" size="md" :loading="store.loading" @click="store.bootstrapWorkspace">{{ t("action.createWorld") }}</Button>
+      </div>
     </header>
 
     <div class="v2-shell-layout">
-      <main class="v2-workspace-main" :aria-label="`${activeAreaLabel} workspace`">
-        <div class="v2-area-tabs" role="tablist" aria-label="V2 workspace areas">
+      <main class="v2-workspace-main" :aria-label="`${localizedActiveAreaLabel} ${t('label.workspace')}`">
+        <div class="v2-area-tabs" role="tablist" :aria-label="t('label.workspaceAreas')">
           <Button
-            v-for="area in areas"
+            v-for="area in localizedAreas"
             :key="area.value"
             class="v2-area-tab"
             variant="secondary"
@@ -188,6 +176,13 @@ onMounted(() => {
   font-weight: 700;
 }
 
+.v2-shell-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
 .v2-shell-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
@@ -226,7 +221,14 @@ onMounted(() => {
     padding-top: var(--space-5);
   }
 
-  .v2-shell-layout {
+.v2-shell-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.v2-shell-layout {
     grid-template-columns: 1fr;
   }
 

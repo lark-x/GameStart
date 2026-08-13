@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
 import { initTheme } from './lib/theme'
+import { initV2Locale } from './v2/locale'
 import ThemeDecorations from './components/ui/ThemeDecorations.vue'
 
 onMounted(() => {
   initTheme()
+  initV2Locale()
 })
 </script>
 

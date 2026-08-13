@@ -4,6 +4,7 @@ import { CheckCircle2, CircleAlert, Clock3, Database, GitBranch, Wifi } from "@l
 import Badge from "../../components/ui/Badge.vue";
 import Button from "../../components/ui/Button.vue";
 import type { V2WorkspaceSnapshot } from "../adapters";
+import { tr } from "../locale";
 
 defineProps<{
   snapshot: V2WorkspaceSnapshot | null;
@@ -26,16 +27,16 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <aside class="v2-status-rail" aria-label="V2 workspace status">
+  <aside class="v2-status-rail" :aria-label="tr('V2 workspace status')">
     <div class="v2-status-rail-head">
       <div>
-        <p class="v2-panel-kicker">Adapter</p>
-        <h2>{{ mode === "mock" ? "Mock Fixture" : "HTTP API" }}</h2>
+        <p class="v2-panel-kicker">{{ tr("Adapter") }}</p>
+        <h2>{{ mode === "mock" ? tr("Mock Fixture") : "HTTP API" }}</h2>
       </div>
       <Badge :tone="mode === 'mock' ? 'info' : 'warning'">{{ mode }}</Badge>
     </div>
 
-    <div class="v2-status-actions" aria-label="Adapter controls">
+    <div class="v2-status-actions" :aria-label="tr('Adapter controls')">
       <Button
         v-if="allowMock"
         variant="secondary"
@@ -59,7 +60,7 @@ const emit = defineEmits<{
         variant="ghost"
         size="icon"
         :loading="loading"
-        aria-label="Refresh V2 snapshot"
+        :aria-label="tr('Refresh V2 snapshot')"
         @click="emit('refresh')"
       >
         <Clock3 v-if="!loading" :size="17" aria-hidden="true" />
@@ -73,49 +74,49 @@ const emit = defineEmits<{
 
     <dl v-if="snapshot" class="v2-status-list">
       <div>
-        <dt>Health</dt>
+        <dt>{{ tr("Health") }}</dt>
         <dd>
           <CheckCircle2 :size="16" aria-hidden="true" />
           {{ snapshot.health.version }}
         </dd>
       </div>
       <div>
-        <dt>Workspace</dt>
+        <dt>{{ tr("Workspace") }}</dt>
         <dd>{{ snapshot.world.name }}</dd>
       </div>
       <div>
-        <dt>Revision</dt>
+        <dt>{{ tr("Revision") }}</dt>
         <dd>
           <GitBranch :size="16" aria-hidden="true" />
           {{ snapshot.world.revision }}
         </dd>
       </div>
       <div>
-        <dt>Candidate</dt>
+        <dt>{{ tr("Candidate") }}</dt>
         <dd>{{ candidateStatus }}</dd>
       </div>
       <div>
-        <dt>Asset candidate</dt>
+        <dt>{{ tr("Asset candidate") }}</dt>
         <dd>{{ assetCandidateStatus }}</dd>
       </div>
       <div>
-        <dt>Asset library</dt>
+        <dt>{{ tr("Asset library") }}</dt>
         <dd>{{ assetLibraryCount }}</dd>
       </div>
       <div>
-        <dt>Release</dt>
+        <dt>{{ tr("Release") }}</dt>
         <dd>{{ snapshot.release.valid ? "preflight valid" : "blocked" }}</dd>
       </div>
       <div>
-        <dt>Graph diagnostics</dt>
+        <dt>{{ tr("Graph diagnostics") }}</dt>
         <dd>{{ graphIssueCount }}</dd>
       </div>
       <div>
-        <dt>State preview</dt>
+        <dt>{{ tr("State preview") }}</dt>
         <dd>{{ typedStatePreviewCount }}</dd>
       </div>
       <div>
-        <dt>Current scene</dt>
+        <dt>{{ tr("Current scene") }}</dt>
         <dd>{{ currentSceneTitle }}</dd>
       </div>
     </dl>

@@ -10,6 +10,7 @@ import type {
   V2WorkspaceSnapshot,
 } from "../adapters/types";
 import { v2WebDefaultGenerationRequest } from "../fixtures/mock-data.ts";
+import { formatV2Message, t } from "../locale.ts";
 
 const runtimeEnv = (import.meta as ImportMeta & { readonly env?: Record<string, string | undefined> }).env ?? {};
 
@@ -231,7 +232,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
           reviewReason: result.reviewReason,
         },
       };
-      reviewMessage.value = `Candidate marked ${result.status}.`;
+      reviewMessage.value = formatV2Message(t("feedback.candidateMarked"), { status: result.status });
     } catch (err) {
       error.value = operationErrorMessage(err, "Unknown V2 review error");
     } finally {
@@ -270,7 +271,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
         player,
         run: snapshot.value.run === null ? null : { ...snapshot.value.run, currentSceneId: player.sceneId },
       };
-      playerMessage.value = `Loaded scene ${player.sceneId}.`;
+      playerMessage.value = formatV2Message(t("feedback.sceneLoaded"), { sceneId: player.sceneId });
     } catch (err) {
       error.value = operationErrorMessage(err, "Unknown V2 runtime error");
     } finally {
@@ -286,7 +287,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     try {
       const result = await adapter.value.startRun();
       snapshot.value = { ...snapshot.value, run: result.run, player: result.player };
-      playerMessage.value = `Started run ${result.run.runId}.`;
+      playerMessage.value = formatV2Message(t("feedback.runStarted"), { runId: result.run.runId });
     } catch (err) {
       error.value = operationErrorMessage(err, "Unknown V2 runtime error");
     } finally {
@@ -302,7 +303,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     try {
       const save = await adapter.value.saveRun(saveLabel.value);
       snapshot.value = { ...snapshot.value, save };
-      playerMessage.value = `Saved ${save.label}.`;
+      playerMessage.value = formatV2Message(t("feedback.saved"), { label: save.label });
     } catch (err) {
       error.value = operationErrorMessage(err, "Unknown V2 save error");
     } finally {
@@ -323,7 +324,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
         player,
         run: snapshot.value.run === null ? null : { ...snapshot.value.run, currentSceneId: player.sceneId },
       };
-      playerMessage.value = `Restored ${save.label}.`;
+      playerMessage.value = formatV2Message(t("feedback.restored"), { label: save.label });
     } catch (err) {
       error.value = operationErrorMessage(err, "Unknown V2 restore error");
     } finally {
@@ -339,7 +340,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     try {
       const exportBundle = await adapter.value.exportRelease(exportFormat.value);
       snapshot.value = { ...snapshot.value, exportBundle };
-      exportMessage.value = `Prepared ${exportBundle.filename}.`;
+      exportMessage.value = formatV2Message(t("feedback.prepared"), { filename: exportBundle.filename });
     } catch (err) {
       error.value = operationErrorMessage(err, "Unknown V2 export error");
     } finally {
@@ -399,7 +400,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
             : snapshot.value.assets.library,
         },
       };
-      assetReviewMessage.value = `Asset candidate marked ${result.status}.`;
+      assetReviewMessage.value = formatV2Message(t("feedback.assetMarked"), { status: result.status });
     } catch (err) {
       error.value = operationErrorMessage(err, "Unknown V2 asset review error");
     } finally {
