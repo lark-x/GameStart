@@ -5,7 +5,7 @@ import {
   createV2CanonWorld,
   createV2ReleaseManifest,
   startV2RuntimeRun,
-} from "@living-network/domain";
+} from "@living-network/domain/v2";
 import {
   applyV2Migrations,
   openV2TempSqliteConnection,
@@ -113,6 +113,23 @@ test("V2 release/runtime SQLite repository rejects run and save release version 
         choiceHistory: run.choiceHistory,
       }));
     });
+  } finally {
+    db.close();
+    cleanup();
+  }
+});
+
+test("V2 release/runtime repository maps scalar and JSON shape failures explicitly", async () => {
+  const { db, cleanup } = openV2TempSqliteConnection();
+  try {
+    applyV2Migrations(db);
+    const repository = new (await import("./release-runtime-repository.ts")).V2SqliteReleaseRuntimeRepository(db);
+    db.prepare("INSERT INTO v2_worlds (story_world_id, name, summary, revision) VALUES (?, ?, ?, ?)").run("world", "World", null, 1);
+    db.prepare("INSERT INTO v2_releases (release_id, story_world_id, version, source_revision, content_hash, manifest_json) VALUES (?, ?, ?, ?, ?, ?)").run("bad", "world", "1.0.0", 1, "hash", "[]");
+    await assert.rejects(() => repository.getRelease("bad" as never), /JSON object/);
+    db.prepare("INSERT INTO v2_releases (release_id, story_world_id, version, source_revision, content_hash, manifest_json) VALUES (?, ?, ?, ?, ?, ?)").run("good", "world", "1.0.1", 1, "hash", JSON.stringify({ releaseId: "good", storyWorldId: "world", version: "1.0.1", sourceRevision: 1, contentHash: "hash", canon: {}, graph: { arcs: [], scenes: [], choices: [] }, stateSchema: [] }));
+    db.prepare("INSERT INTO v2_runtime_runs (run_id, release_id, release_version, current_scene_id, state_json, choice_history_json) VALUES (?, ?, ?, ?, ?, ?)").run("bad-run", "good", "1.0.1", "scene", JSON.stringify({ bad: [] }), JSON.stringify({}));
+    await assert.rejects(() => repository.getRun("bad-run" as never), /scalar|JSON array/);
   } finally {
     db.close();
     cleanup();

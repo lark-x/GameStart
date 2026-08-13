@@ -8,18 +8,18 @@ import type {
   V2IsoDateTime,
   V2JobId,
   V2StoryWorldId,
-} from "@living-network/contracts";
+} from "@living-network/contracts/v2";
 import type {
   V2AssetMediaStorePort,
   V2StoreGeneratedAssetMediaInput,
   V2StoredAssetMediaResult,
-} from "@living-network/ports";
+} from "@living-network/ports/v2";
 import {
   applyV2Migrations,
   openV2TempSqliteConnection,
   V2SqliteAssetGenerationRepository,
   v2GenerationJobMigrations,
-} from "@living-network/database";
+} from "@living-network/database/v2";
 import { ComfyUiError, FakeComfyUiClient } from "../comfyui-client.ts";
 import type { ComfyUiClient, ComfyUiResult, ComfyUiSubmitRequest, ComfyUiSubmitResult } from "../comfyui-types.ts";
 import { processV2AssetGenerationJob } from "./asset-generation-worker.ts";

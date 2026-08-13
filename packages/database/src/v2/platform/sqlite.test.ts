@@ -51,3 +51,31 @@ test("V2 SQLite platform runs migration up and down", () => {
     cleanup();
   }
 });
+
+test("V2 SQLite platform rolls back a failed migration and skips registered migrations", () => {
+  const { db, cleanup } = openV2TempSqliteConnection();
+  const failing: V2SqliteMigration = {
+    id: "0000_failed_probe",
+    up: (database) => {
+      database.exec("CREATE TABLE failed_probe (id TEXT PRIMARY KEY)");
+      throw new Error("migration failed");
+    },
+    down: () => undefined,
+  };
+  const good: V2SqliteMigration = {
+    id: "0001_good_probe",
+    up: (database) => database.exec("CREATE TABLE good_probe (id TEXT PRIMARY KEY)"),
+    down: (database) => database.exec("DROP TABLE good_probe"),
+  };
+  try {
+    assert.throws(() => applyV2Migrations(db, [failing]), /migration failed/);
+    assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE name = 'failed_probe'").get(), undefined);
+    applyV2Migrations(db, [good]);
+    applyV2Migrations(db, [good]);
+    revertV2Migrations(db, [failing, good]);
+    assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE name = 'good_probe'").get(), undefined);
+  } finally {
+    db.close();
+    cleanup();
+  }
+});

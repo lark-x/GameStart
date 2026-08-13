@@ -4,7 +4,7 @@ import type {
   V2CandidateStatus,
   V2IdempotencyKey,
   V2SceneCandidatePayload,
-} from "@living-network/contracts";
+} from "@living-network/contracts/v2";
 
 export interface CandidateSubmissionPort {
   submitSceneCandidate(input: {

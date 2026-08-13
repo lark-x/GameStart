@@ -3,13 +3,13 @@ import type {
   V2ChoiceId,
   V2SceneId,
   V2StoryWorldId,
-} from "@living-network/contracts";
+} from "@living-network/contracts/v2";
 import type {
   V2GraphArc,
   V2GraphChoice,
   V2GraphScene,
   V2TypedStateVariable,
-} from "@living-network/domain";
+} from "@living-network/domain/v2";
 
 import type { V2CanonRepository } from "./canon-repository.ts";
 

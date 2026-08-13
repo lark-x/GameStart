@@ -2,10 +2,9 @@
 
 The Compose file runs the complete persistent development stack:
 
-- PostgreSQL, Redis and MinIO with named data volumes;
-- a repeat-safe `migrate`/seed job;
-- API and Worker containers with restart policies and health checks;
-- an Nginx Web container that proxies `/v1`, `/health` and `/ready` to the API.
+- V2 SQLite, Redis and a reusable media volume;
+- V2 API and Worker containers sharing SQLite and media volumes;
+- an Nginx Web container that proxies `/api/v2` to the V2 API.
 
 ## Windows one-command workflow
 
@@ -16,13 +15,13 @@ Copy-Item .env.example .env
 .\scripts\persistent-up.ps1
 ```
 
-The first run builds the application image and applies all pending migrations. Check the stack with:
+The first run builds the application image and applies all pending V2 SQLite migrations through the API. Check the stack with:
 
 ```powershell
 .\scripts\persistent-status.ps1
 ```
 
-Open the application at <http://127.0.0.1:4173>. The API is also exposed at <http://127.0.0.1:3000>.
+Open the application at <http://127.0.0.1:4173>. The API is also exposed at <http://127.0.0.1:3002>.
 
 Stop the stack without deleting data:
 
@@ -30,10 +29,10 @@ Stop the stack without deleting data:
 .\scripts\persistent-down.ps1
 ```
 
-The scripts validate Docker Desktop, Compose and `.env` before doing anything. `down -v` is intentionally not used by the stop script because it deletes local databases, Redis data, MinIO objects and media files.
+The scripts validate Docker Desktop, Compose and `.env` before doing anything. `down -v` is intentionally not used by the stop script because it deletes SQLite, Redis data and media files.
 
 ## Configuration
 
-Keep `INTEGRATION_SECRET_KEY` stable. It encrypts model API keys saved through the settings page. Set `IMAGE_GENERATION_ENABLED=true` only after configuring a default workflow and ComfyUI connection in the Web settings. ComfyUI may run separately on the Windows host at `http://127.0.0.1:8188`; when ComfyUI is containerized, use `http://host.docker.internal:8188` from the application stack.
+Set `V2_SCENE_GENERATION_ENABLED=true` only after configuring `LLM_BASE_URL`, `LLM_MODEL` and the required protocol credentials. Set `V2_ASSET_GENERATION_ENABLED=true` only after configuring `COMFYUI_BASE_URL`. ComfyUI may run separately on the host; from the application stack use `http://host.docker.internal:8188` where required.
 
-The `migrate` service exits successfully after migrations and seed data are applied; API, Worker and Web wait for their required dependencies before starting.
+The API owns forward SQLite migrations; the Worker waits for API readiness and never migrates the database.

@@ -52,10 +52,10 @@ import type {
   V2SubmitSceneCandidateRequest,
   V2TimelineEventDto,
   V2SceneCandidateDto,
-} from "@living-network/contracts";
+} from "@living-network/contracts/v2";
 import type {
   V2CoreSceneCandidatePayload,
-} from "@living-network/domain";
+} from "@living-network/domain/v2";
 import {
   buildV2CoreExportMarkdown,
   buildV2ReleaseExportJson,
@@ -81,7 +81,7 @@ import {
   startV2RuntimeRun,
   submitV2RuntimeChoice,
   validateV2Graph,
-} from "@living-network/domain";
+} from "@living-network/domain/v2";
 import type {
   V2CanonMutationRecord,
   V2CanonRepository,
@@ -94,7 +94,7 @@ import type {
   V2ReleaseRuntimeRepository,
   V2ReleaseRuntimeUnitOfWork,
   V2RuntimeSaveRecord,
-} from "@living-network/ports";
+} from "@living-network/ports/v2";
 
 import { V2HttpError } from "./errors.ts";
 

@@ -9,7 +9,7 @@ import type {
   V2JobId,
   V2Revision,
   V2StoryWorldId,
-} from "@living-network/contracts";
+} from "@living-network/contracts/v2";
 import {
   applyV2Migrations,
   openV2TempSqliteConnection,
@@ -75,6 +75,8 @@ test("creates V2 scene job and dispatch facts atomically", async () => {
     const dispatches = await repository.listPendingDispatches(10);
     assert.equal(dispatches.length, 1);
     assert.equal(dispatches[0]?.jobId, result.job.jobId);
+    assert.equal((await repository.getJob("missing" as V2JobId)), undefined);
+    assert.deepEqual(await repository.listJobsByStatus("queued", 10), [result.job]);
   } finally {
     db.close();
     cleanup();
@@ -118,6 +120,8 @@ test("dispatch failure remains pending and records retry details", async () => {
     });
     assert.equal(enqueued.status, "enqueued");
     assert.equal(enqueued.lastError, undefined);
+    await assert.rejects(() => repository.markDispatchEnqueued({ dispatchId: "missing", enqueuedAt: now }), /dispatch not found/);
+    await assert.rejects(() => repository.recordDispatchFailure({ dispatchId: "missing", error: "missing" }), /dispatch not found/);
   } finally {
     db.close();
     cleanup();

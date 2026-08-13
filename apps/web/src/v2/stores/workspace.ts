@@ -1,6 +1,6 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
-import type { V2IdempotencyKey, V2IsoDateTime, V2Revision, V2StoryWorldId } from "@living-network/contracts";
+import type { V2IdempotencyKey, V2IsoDateTime, V2Revision, V2StoryWorldId } from "@living-network/contracts/v2";
 
 import { createV2HttpAdapter, createV2MockAdapter, V2AdapterError } from "../adapters/index.ts";
 import type {
@@ -11,19 +11,36 @@ import type {
 } from "../adapters/types";
 import { v2WebDefaultGenerationRequest } from "../fixtures/mock-data.ts";
 
-function createDefaultAdapter(): V2WorkspaceAdapter {
-  if (typeof window === "undefined") return createV2MockAdapter();
-  const mode = window.localStorage.getItem("living-network-v2-adapter");
-  if (mode === "http") {
-    return createV2HttpAdapter({
-      baseUrl: import.meta.env.VITE_API_BASE || window.location.origin,
-    });
+const runtimeEnv = (import.meta as ImportMeta & { readonly env?: Record<string, string | undefined> }).env ?? {};
+
+function operationErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof V2AdapterError) return `${error.code}: ${error.message}`;
+  if (error instanceof Error) return error.message;
+  return fallback;
+}
+
+interface V2BrowserAdapterContext {
+  readonly localStorage: Pick<Storage, "getItem">;
+  readonly location: Pick<Location, "origin">;
+}
+
+const browserAdapterContext = typeof window === "undefined" ? undefined : window;
+
+export function createV2DefaultAdapter(
+  environment: Record<string, string | undefined> = runtimeEnv,
+  browser: V2BrowserAdapterContext | undefined = browserAdapterContext,
+): V2WorkspaceAdapter {
+  const mockEnabled = environment.VITE_V2_ENABLE_MOCK === "true";
+  if (mockEnabled && browser?.localStorage.getItem("living-network-v2-adapter") !== "http") {
+    return createV2MockAdapter();
   }
-  return createV2MockAdapter();
+  return createV2HttpAdapter({
+    baseUrl: environment.VITE_API_BASE || (browser === undefined ? "http://127.0.0.1:3002" : browser.location.origin),
+  });
 }
 
 export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
-  const adapter = ref<V2WorkspaceAdapter>(createDefaultAdapter());
+  const adapter = ref<V2WorkspaceAdapter>(createV2DefaultAdapter());
   const snapshot = ref<V2WorkspaceSnapshot | null>(null);
   const loading = ref(false);
   const error = ref<string | null>(null);
@@ -80,12 +97,11 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
   }
 
   function setMode(nextMode: V2WorkspaceMode) {
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem("living-network-v2-adapter", nextMode);
-    }
+    if (nextMode === "mock" && runtimeEnv.VITE_V2_ENABLE_MOCK !== "true") return;
+    if (typeof window !== "undefined") window.localStorage.setItem("living-network-v2-adapter", nextMode);
     setAdapter(
       nextMode === "http"
-        ? createV2HttpAdapter({ baseUrl: import.meta.env.VITE_API_BASE || window.location.origin })
+        ? createV2HttpAdapter({ baseUrl: runtimeEnv.VITE_API_BASE || (typeof window === "undefined" ? "http://127.0.0.1:3002" : window.location.origin) })
         : createV2MockAdapter(),
     );
   }
@@ -110,13 +126,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       assetMessage.value = null;
       assetReviewMessage.value = null;
     } catch (err) {
-      if (err instanceof V2AdapterError) {
-        error.value = `${err.code}: ${err.message}`;
-      } else if (err instanceof Error) {
-        error.value = err.message;
-      } else {
-        error.value = "Unknown V2 adapter error";
-      }
+      error.value = operationErrorMessage(err, "Unknown V2 adapter error");
     } finally {
       loading.value = false;
     }
@@ -128,9 +138,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     try {
       await adapter.value.bootstrapWorkspace();
     } catch (err) {
-      if (err instanceof V2AdapterError) error.value = `${err.code}: ${err.message}`;
-      else if (err instanceof Error) error.value = err.message;
-      else error.value = "Unknown V2 bootstrap error";
+      error.value = operationErrorMessage(err, "Unknown V2 bootstrap error");
       loading.value = false;
       return;
     }
@@ -195,13 +203,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       };
       generationMessage.value = `Generation job ${response.job.jobId} is ${response.job.status}.`;
     } catch (err) {
-      if (err instanceof V2AdapterError) {
-        error.value = `${err.code}: ${err.message}`;
-      } else if (err instanceof Error) {
-        error.value = err.message;
-      } else {
-        error.value = "Unknown V2 generation error";
-      }
+      error.value = operationErrorMessage(err, "Unknown V2 generation error");
     } finally {
       loading.value = false;
     }
@@ -231,13 +233,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       };
       reviewMessage.value = `Candidate marked ${result.status}.`;
     } catch (err) {
-      if (err instanceof V2AdapterError) {
-        error.value = `${err.code}: ${err.message}`;
-      } else if (err instanceof Error) {
-        error.value = err.message;
-      } else {
-        error.value = "Unknown V2 review error";
-      }
+      error.value = operationErrorMessage(err, "Unknown V2 review error");
     } finally {
       loading.value = false;
     }
@@ -256,13 +252,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       };
       releaseMessage.value = `Release ${releasePackage.version} is immutable.`;
     } catch (err) {
-      if (err instanceof V2AdapterError) {
-        error.value = `${err.code}: ${err.message}`;
-      } else if (err instanceof Error) {
-        error.value = err.message;
-      } else {
-        error.value = "Unknown V2 release error";
-      }
+      error.value = operationErrorMessage(err, "Unknown V2 release error");
     } finally {
       loading.value = false;
     }
@@ -282,13 +272,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       };
       playerMessage.value = `Loaded scene ${player.sceneId}.`;
     } catch (err) {
-      if (err instanceof V2AdapterError) {
-        error.value = `${err.code}: ${err.message}`;
-      } else if (err instanceof Error) {
-        error.value = err.message;
-      } else {
-        error.value = "Unknown V2 runtime error";
-      }
+      error.value = operationErrorMessage(err, "Unknown V2 runtime error");
     } finally {
       loading.value = false;
     }
@@ -304,9 +288,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       snapshot.value = { ...snapshot.value, run: result.run, player: result.player };
       playerMessage.value = `Started run ${result.run.runId}.`;
     } catch (err) {
-      if (err instanceof V2AdapterError) error.value = `${err.code}: ${err.message}`;
-      else if (err instanceof Error) error.value = err.message;
-      else error.value = "Unknown V2 runtime error";
+      error.value = operationErrorMessage(err, "Unknown V2 runtime error");
     } finally {
       loading.value = false;
     }
@@ -322,13 +304,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       snapshot.value = { ...snapshot.value, save };
       playerMessage.value = `Saved ${save.label}.`;
     } catch (err) {
-      if (err instanceof V2AdapterError) {
-        error.value = `${err.code}: ${err.message}`;
-      } else if (err instanceof Error) {
-        error.value = err.message;
-      } else {
-        error.value = "Unknown V2 save error";
-      }
+      error.value = operationErrorMessage(err, "Unknown V2 save error");
     } finally {
       loading.value = false;
     }
@@ -349,13 +325,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       };
       playerMessage.value = `Restored ${save.label}.`;
     } catch (err) {
-      if (err instanceof V2AdapterError) {
-        error.value = `${err.code}: ${err.message}`;
-      } else if (err instanceof Error) {
-        error.value = err.message;
-      } else {
-        error.value = "Unknown V2 restore error";
-      }
+      error.value = operationErrorMessage(err, "Unknown V2 restore error");
     } finally {
       loading.value = false;
     }
@@ -371,13 +341,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       snapshot.value = { ...snapshot.value, exportBundle };
       exportMessage.value = `Prepared ${exportBundle.filename}.`;
     } catch (err) {
-      if (err instanceof V2AdapterError) {
-        error.value = `${err.code}: ${err.message}`;
-      } else if (err instanceof Error) {
-        error.value = err.message;
-      } else {
-        error.value = "Unknown V2 export error";
-      }
+      error.value = operationErrorMessage(err, "Unknown V2 export error");
     } finally {
       loading.value = false;
     }
@@ -400,13 +364,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       };
       assetMessage.value = `Asset job ${job.jobId} is ${job.status}.`;
     } catch (err) {
-      if (err instanceof V2AdapterError) {
-        error.value = `${err.code}: ${err.message}`;
-      } else if (err instanceof Error) {
-        error.value = err.message;
-      } else {
-        error.value = "Unknown V2 asset job error";
-      }
+      error.value = operationErrorMessage(err, "Unknown V2 asset job error");
     } finally {
       loading.value = false;
     }
@@ -443,13 +401,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       };
       assetReviewMessage.value = `Asset candidate marked ${result.status}.`;
     } catch (err) {
-      if (err instanceof V2AdapterError) {
-        error.value = `${err.code}: ${err.message}`;
-      } else if (err instanceof Error) {
-        error.value = err.message;
-      } else {
-        error.value = "Unknown V2 asset review error";
-      }
+      error.value = operationErrorMessage(err, "Unknown V2 asset review error");
     } finally {
       loading.value = false;
     }

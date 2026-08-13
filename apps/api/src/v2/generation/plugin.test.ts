@@ -23,7 +23,7 @@ import type {
   V2ReviewAssetCandidateInput,
   V2SceneGenerationJobRecord,
   V2StoryWorldId,
-} from "@living-network/contracts";
+} from "@living-network/contracts/v2";
 import type {
   CanonSnapshotReaderPort,
   V2AssetCandidateReviewResult,
@@ -35,7 +35,7 @@ import type {
   V2GenerationJobCreateResult,
   V2GenerationJobRepository,
   V2ApprovedAssetRef,
-} from "@living-network/ports";
+} from "@living-network/ports/v2";
 import { createV2FastifyApp } from "../platform/index.ts";
 import { createV2GenerationPlugin } from "./plugin.ts";
 
@@ -219,6 +219,7 @@ function sameAssetInput(left: V2AssetGenerationJobRecord, right: V2CreateAssetGe
 
 class FakeAssetStore implements V2AssetGenerationJobRepository, V2AssetCandidateRepository, V2AssetReviewRepository {
   public readonly created: V2CreateAssetGenerationJobInput[] = [];
+  public throwAssetReads = false;
   private readonly jobs = new Map<string, V2AssetGenerationJobRecord>();
   private readonly jobIdempotency = new Map<string, V2JobId>();
   private readonly candidates = new Map<string, V2AssetCandidateRecord>();
@@ -242,6 +243,7 @@ class FakeAssetStore implements V2AssetGenerationJobRepository, V2AssetCandidate
   }
 
   public async getAssetJob(jobId: V2JobId): Promise<V2AssetGenerationJobRecord | undefined> {
+    if (this.throwAssetReads) throw new Error("asset read failed");
     return this.jobs.get(jobId);
   }
 
@@ -316,6 +318,7 @@ class FakeAssetStore implements V2AssetGenerationJobRepository, V2AssetCandidate
   }
 
   public async cancelAssetJob(input: { readonly jobId: V2JobId; readonly cancelledAt: string; readonly reason?: string }): Promise<V2AssetGenerationJobRecord> {
+    if (this.throwAssetReads) throw new Error("asset cancel failed");
     const job = this.requireAssetJob(input.jobId);
     const updated = {
       ...job,
@@ -336,6 +339,7 @@ class FakeAssetStore implements V2AssetGenerationJobRepository, V2AssetCandidate
   }
 
   public async getAssetCandidate(candidateId: V2CandidateId): Promise<V2AssetCandidateRecord | undefined> {
+    if (this.throwAssetReads) throw new Error("asset candidate read failed");
     return this.candidates.get(candidateId);
   }
 
@@ -462,6 +466,7 @@ function createApp() {
       assetReviews: assets,
       now: () => new Date(now),
       defaultTokenBudget: 900,
+      capabilities: { sceneGenerationEnabled: true, assetGenerationEnabled: true },
     }),
   });
   return { app, canonSnapshots, jobs, assets };
@@ -476,9 +481,20 @@ function createAppWithoutAssets() {
       jobs,
       now: () => new Date(now),
       defaultTokenBudget: 900,
+      capabilities: { sceneGenerationEnabled: true, assetGenerationEnabled: true },
     }),
   });
   return { app };
+}
+
+function createAppWithCapabilities(capabilities: { sceneGenerationEnabled: boolean; assetGenerationEnabled: boolean }) {
+  const canonSnapshots = new FakeCanonSnapshots();
+  const jobs = new FakeGenerationJobs();
+  const assets = new FakeAssetStore();
+  const app = createV2FastifyApp({
+    generationPlugin: createV2GenerationPlugin({ canonSnapshots, jobs, assetJobs: assets, assetCandidates: assets, assetReviews: assets, capabilities }),
+  });
+  return { app, jobs };
 }
 
 test("V2 generation context preview reads canon snapshot for the requested revision", async () => {
@@ -773,10 +789,68 @@ test("V2 asset API reports validation, missing record, and missing dependency er
         workflow: { "1": { class_type: "KSampler" } },
       },
     });
-    assert.equal(missingDependency.statusCode, 501);
+    assert.equal(missingDependency.statusCode, 503);
     assert.match((missingDependency.json() as { error: { message: string } }).error.message, /asset generation repository/);
+    const missingAssetJob = await missingDepsApp.inject({ method: "GET", url: "/api/v2/generation/assets/jobs/job_missing" });
+    assert.equal(missingAssetJob.statusCode, 503);
+    const missingAssetCancel = await missingDepsApp.inject({ method: "POST", url: "/api/v2/generation/assets/jobs/job_missing/cancel", payload: {} });
+    assert.equal(missingAssetCancel.statusCode, 503);
+    const missingAssetCandidate = await missingDepsApp.inject({ method: "GET", url: "/api/v2/generation/assets/candidates/candidate_missing" });
+    assert.equal(missingAssetCandidate.statusCode, 503);
+    const missingAssetReview = await missingDepsApp.inject({ method: "POST", url: "/api/v2/generation/assets/candidates/candidate_missing/review", payload: { action: "approve", idempotencyKey: "missing" } });
+    assert.equal(missingAssetReview.statusCode, 503);
   } finally {
     await missingDepsApp.close();
+  }
+});
+
+test("V2 generation API returns explicit capability-unavailable responses", async () => {
+  const { app } = createAppWithCapabilities({ sceneGenerationEnabled: false, assetGenerationEnabled: false });
+  await app.ready();
+  try {
+    const scene = await app.inject({ method: "POST", url: "/api/v2/generation/jobs/scene", payload: { storyWorldId: "world", baseCanonRevision: 1, idempotencyKey: "scene", prompt: "prompt" } });
+    assert.equal(scene.statusCode, 503);
+    assert.equal(scene.json().error.code, "CAPABILITY_UNAVAILABLE");
+    const asset = await app.inject({ method: "POST", url: "/api/v2/generation/assets/jobs", payload: { storyWorldId: "world", idempotencyKey: "asset", prompt: "prompt", workflowVersion: "v1", workflow: {} } });
+    assert.equal(asset.statusCode, 503);
+    assert.equal(asset.json().error.code, "CAPABILITY_UNAVAILABLE");
+  } finally {
+    await app.close();
+  }
+});
+
+test("V2 asset API maps configured asset repository failures", async () => {
+  const { app, assets } = createApp();
+  assets.throwAssetReads = true;
+  await app.ready();
+  try {
+    const read = await app.inject({ method: "GET", url: "/api/v2/generation/assets/jobs/job" });
+    assert.equal(read.statusCode, 500);
+    const cancel = await app.inject({ method: "POST", url: "/api/v2/generation/assets/jobs/job/cancel", payload: {} });
+    assert.equal(cancel.statusCode, 500);
+    const candidate = await app.inject({ method: "GET", url: "/api/v2/generation/assets/candidates/candidate" });
+    assert.equal(candidate.statusCode, 500);
+  } finally {
+    await app.close();
+  }
+});
+
+test("V2 generation API covers optional fields and asset repository read/review errors", async () => {
+  const { app } = createApp();
+  await app.ready();
+  try {
+    const preview = await app.inject({ method: "POST", url: "/api/v2/generation/context-preview", payload: { storyWorldId: "world_generation", baseCanonRevision: 7, prompt: "prompt", tokenBudget: 100 } });
+    assert.equal(preview.statusCode, 200);
+    const invalid = await app.inject({ method: "POST", url: "/api/v2/generation/context-preview", payload: { storyWorldId: "world_generation", baseCanonRevision: 1, prompt: "", tokenBudget: 0 } });
+    assert.equal(invalid.statusCode, 422);
+    const invalidBody = await app.inject({ method: "POST", url: "/api/v2/generation/assets/jobs", payload: { storyWorldId: "world", idempotencyKey: "asset-invalid", prompt: "prompt", workflowVersion: "v1", workflow: [], negativePrompt: "" } });
+    assert.equal(invalidBody.statusCode, 422);
+    const invalidParams = await app.inject({ method: "GET", url: "/api/v2/generation/jobs/%20" });
+    assert.equal(invalidParams.statusCode, 422);
+    const cancelMissing = await app.inject({ method: "POST", url: "/api/v2/generation/jobs/missing/cancel", payload: {} });
+    assert.equal(cancelMissing.statusCode, 500);
+  } finally {
+    await app.close();
   }
 });
 

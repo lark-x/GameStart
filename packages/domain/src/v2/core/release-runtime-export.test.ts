@@ -51,6 +51,10 @@ test("V2 release domain preflights graph and creates stable content hashes", () 
     graph: { arcs: [], scenes: [entry], choices: [] },
     stateSchema: [],
   }).contentHash, manifest.contentHash);
+  const incompatible = createV2GraphChoice({ storyWorldId: "world_a", choiceId: "choice_type", sourceScene: entry, label: "Type", gates: [{ stateKey: "Trust", operator: "gt", value: true }] });
+  const typed = createV2TypedStateVariable({ storyWorldId: "world_a", key: "Trust", valueType: "string", defaultValue: "zero" });
+  const invalidPreflight = buildV2ReleasePreflight({ world, scenes: [entry], choices: [incompatible], stateSchema: [typed] });
+  assert.equal(invalidPreflight.diagnostics.some((diagnostic) => diagnostic.code === "INVALID_GATE_STATE_TYPE"), true);
 });
 
 test("V2 runtime domain starts at entry scene and applies gated choice consequences", () => {
@@ -110,6 +114,17 @@ test("V2 runtime domain starts at entry scene and applies gated choice consequen
   });
   assert.equal(loaded.currentSceneId, "scene_next");
   assert.equal(loaded.stateValues.Trust, 3);
+  assert.throws(() => startV2RuntimeRun({ runId: "run", releaseId: "release", releaseVersion: "1.0.0", scenes: [next], stateSchema: [] }), /no entry/);
+  assert.throws(() => getV2RuntimeScene({ run: { ...run, currentSceneId: "missing" }, scenes: [entry, next], choices: [] }), /missing/);
+  assert.throws(() => submitV2RuntimeChoice({ run, choice: { ...choice, sourceSceneId: "other" }, scenes: [entry, next], stateSchema }), /not available/);
+  assert.throws(() => submitV2RuntimeChoice({ run, choice: { ...choice, gates: [{ stateKey: "Trust", operator: "gte", value: 99 }] }, scenes: [entry, next], stateSchema }), /gates/);
+  assert.throws(() => submitV2RuntimeChoice({ run, choice: { ...choice, targetSceneId: "missing" }, scenes: [entry, next], stateSchema }), /missing/);
+  assert.throws(() => startV2RuntimeRun({ runId: "", releaseId: "release", releaseVersion: "1.0.0", scenes: [entry], stateSchema: [] }), /runId/);
+  const gateValues = { eq: 1, neq: 0, gt: 0, gte: 1, lt: 2, lte: 1 } as const;
+  for (const operator of ["eq", "neq", "gt", "gte", "lt", "lte"] as const) {
+    const gated = { ...choice, gates: [{ stateKey: "Trust", operator, value: gateValues[operator] }] };
+    assert.equal(getV2RuntimeScene({ run, scenes: [entry, next], choices: [gated] }).availableChoices.length, 1);
+  }
 });
 
 test("V2 release preflight rejects unknown or incompatible typed state references", () => {
@@ -132,6 +147,14 @@ test("V2 release preflight rejects unknown or incompatible typed state reference
   assert.equal(preflight.valid, false);
   assert.equal(preflight.diagnostics.some((diagnostic) => diagnostic.code === "UNKNOWN_GATE_STATE_KEY"), true);
   assert.equal(preflight.diagnostics.some((diagnostic) => diagnostic.code === "UNKNOWN_STATE_KEY"), true);
+});
+
+test("V2 release domain rejects invalid manifest identity and source revision", () => {
+  const valid = { releaseId: "release", storyWorldId: "world", version: "1.0.0", sourceRevision: 1, canon: {}, graph: { arcs: [], scenes: [], choices: [] }, stateSchema: [] };
+  assert.throws(() => createV2ReleaseManifest({ ...valid, releaseId: "" }), /releaseId/);
+  assert.throws(() => createV2ReleaseManifest({ ...valid, version: "not-semver" }), /version/);
+  assert.throws(() => createV2ReleaseManifest({ ...valid, sourceRevision: 0 }), /sourceRevision/);
+  assert.equal(buildV2ReleasePreflight({ world: { storyWorldId: "world", name: "World", revision: 0 }, scenes: [], choices: [], stateSchema: [] }).valid, false);
 });
 
 test("V2 export domain renders release JSON and readable markdown", () => {

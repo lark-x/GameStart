@@ -6,13 +6,13 @@ import type {
   V2RunId,
   V2SaveId,
   V2StoryWorldId,
-} from "@living-network/contracts";
+} from "@living-network/contracts/v2";
 import {
   V2SqliteCanonUnitOfWork,
   V2SqliteCandidateReviewUnitOfWork,
   V2SqliteGraphStateUnitOfWork,
   V2SqliteReleaseRuntimeUnitOfWork,
-} from "@living-network/database";
+} from "@living-network/database/v2";
 
 import { toV2HttpError, V2HttpError } from "./errors.ts";
 import {
@@ -67,7 +67,7 @@ export const v2CorePlugin: FastifyPluginAsync<V2CorePluginOptions> = async (app,
     return reply.status(201).send(result);
   });
   app.get("/worlds/:storyWorldId/canon", async (request) => {
-    const { storyWorldId } = getWorldParams(request.params);
+    const { storyWorldId } = getWorldParams(request.params as Record<string, unknown>);
     return useCases.getSnapshot(storyWorldId);
   });
   app.post("/worlds/:storyWorldId/locations", async (request, reply) => {
@@ -206,10 +206,8 @@ export const v2CorePlugin: FastifyPluginAsync<V2CorePluginOptions> = async (app,
 };
 
 function getWorldParams(params: unknown): { readonly storyWorldId: V2StoryWorldId } {
-  if (typeof params !== "object" || params === null || Array.isArray(params)) {
-    throw new V2HttpError(400, "BAD_REQUEST", "Route params must be an object");
-  }
-  const storyWorldId = (params as { readonly storyWorldId?: unknown }).storyWorldId;
+  const record = params as Record<string, unknown>;
+  const storyWorldId = record.storyWorldId;
   if (typeof storyWorldId !== "string" || storyWorldId.trim().length === 0) {
     throw new V2HttpError(400, "BAD_REQUEST", "storyWorldId must be a non-empty string");
   }
@@ -221,7 +219,7 @@ function getCandidateParams(params: unknown): {
   readonly candidateId: V2CandidateId;
 } {
   const { storyWorldId } = getWorldParams(params);
-  const candidateId = (params as { readonly candidateId?: unknown }).candidateId;
+  const candidateId = (params as Record<string, unknown>).candidateId;
   if (typeof candidateId !== "string" || candidateId.trim().length === 0) {
     throw new V2HttpError(400, "BAD_REQUEST", "candidateId must be a non-empty string");
   }
@@ -229,10 +227,7 @@ function getCandidateParams(params: unknown): {
 }
 
 function getRunParams(params: unknown): { readonly runId: V2RunId } {
-  if (typeof params !== "object" || params === null || Array.isArray(params)) {
-    throw new V2HttpError(400, "BAD_REQUEST", "Route params must be an object");
-  }
-  const runId = (params as { readonly runId?: unknown }).runId;
+  const runId = (params as Record<string, unknown>).runId;
   if (typeof runId !== "string" || runId.trim().length === 0) {
     throw new V2HttpError(400, "BAD_REQUEST", "runId must be a non-empty string");
   }
@@ -240,10 +235,7 @@ function getRunParams(params: unknown): { readonly runId: V2RunId } {
 }
 
 function getSaveParams(params: unknown): { readonly saveId: V2SaveId } {
-  if (typeof params !== "object" || params === null || Array.isArray(params)) {
-    throw new V2HttpError(400, "BAD_REQUEST", "Route params must be an object");
-  }
-  const saveId = (params as { readonly saveId?: unknown }).saveId;
+  const saveId = (params as Record<string, unknown>).saveId;
   if (typeof saveId !== "string" || saveId.trim().length === 0) {
     throw new V2HttpError(400, "BAD_REQUEST", "saveId must be a non-empty string");
   }
@@ -251,10 +243,7 @@ function getSaveParams(params: unknown): { readonly saveId: V2SaveId } {
 }
 
 function getReleaseParams(params: unknown): { readonly releaseId: V2ReleaseId } {
-  if (typeof params !== "object" || params === null || Array.isArray(params)) {
-    throw new V2HttpError(400, "BAD_REQUEST", "Route params must be an object");
-  }
-  const releaseId = (params as { readonly releaseId?: unknown }).releaseId;
+  const releaseId = (params as Record<string, unknown>).releaseId;
   if (typeof releaseId !== "string" || releaseId.trim().length === 0) {
     throw new V2HttpError(400, "BAD_REQUEST", "releaseId must be a non-empty string");
   }
@@ -262,10 +251,7 @@ function getReleaseParams(params: unknown): { readonly releaseId: V2ReleaseId } 
 }
 
 function getRevisionQuery(query: unknown): V2Revision {
-  if (typeof query !== "object" || query === null || Array.isArray(query)) {
-    throw new V2HttpError(400, "BAD_REQUEST", "Query must be an object");
-  }
-  const revision = (query as { readonly revision?: unknown }).revision;
+  const revision = (query as Record<string, unknown>).revision;
   const parsed = typeof revision === "string" ? Number(revision) : revision;
   if (typeof parsed !== "number" || !Number.isSafeInteger(parsed) || parsed < 1) {
     throw new V2HttpError(400, "BAD_REQUEST", "revision query must be a positive integer");

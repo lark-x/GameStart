@@ -7,10 +7,10 @@
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
     "preview": "vite preview",
-    "typecheck": "vue-tsc -p tsconfig.json --noEmit",
-    "test": "node ../../scripts/run-tests.mjs . src",
+    "typecheck": "vue-tsc -p tsconfig.v2.json --noEmit",
+    "test": "node ../../scripts/run-tests.mjs src/v2",
     "dev:shell": "python3 -m http.server 4173 --directory .",
-    "lint": "eslint --config eslint.config.js src --max-warnings=0"
+    "lint": "eslint --config eslint.config.js src/v2 src/App.vue src/main-vue.ts src/router/index.ts src/lib/theme.ts src/components/ui --max-warnings=0"
   },
   "dependencies": {
     "@lucide/vue": "^1.29.0",

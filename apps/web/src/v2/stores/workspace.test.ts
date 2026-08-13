@@ -4,7 +4,8 @@ import test from "node:test";
 import { createPinia, setActivePinia } from "pinia";
 
 import { createV2MockAdapter, type V2WorkspaceAdapter } from "../adapters/index.ts";
-import { useV2WorkspaceStore } from "./workspace.ts";
+import { V2AdapterError } from "../adapters/types.ts";
+import { createV2DefaultAdapter, useV2WorkspaceStore } from "./workspace.ts";
 
 test("V2 workspace store loads snapshot through injected adapter", async () => {
   setActivePinia(createPinia());
@@ -105,6 +106,8 @@ test("V2 workspace store handles release creation and export", async () => {
   await store.loadSnapshot();
 
   await store.createRelease();
+  await store.startRun();
+  assert.match(store.playerMessage ?? "", /Started run/);
   store.exportFormat = "markdown";
   await store.exportRelease();
 
@@ -150,4 +153,110 @@ test("V2 workspace store creates an asset job and approves the asset candidate",
   assert.equal(store.snapshot?.assets.library.length, 2);
   assert.equal(store.assetLibraryCount, 2);
   assert.equal(store.canReviewAssetCandidate, false);
+});
+
+test("V2 workspace store covers bootstrap, reset, mock gating, and typed failures", async () => {
+  setActivePinia(createPinia());
+  const store = useV2WorkspaceStore();
+  let bootstrapCount = 0;
+  const base = createV2MockAdapter();
+  store.setAdapter({
+    ...base,
+    async bootstrapWorkspace() { bootstrapCount += 1; },
+  });
+  await store.bootstrapWorkspace();
+  assert.equal(bootstrapCount, 1);
+  assert.equal(store.hasSnapshot, true);
+  store.draftWorldName = "";
+  store.draftPremise = "";
+  store.resetCanonDraft();
+  assert.equal(store.hasDraftChanges, false);
+  store.setMode("mock");
+  store.setMode("http");
+  assert.equal(store.mode, "http");
+
+  const errorStore = useV2WorkspaceStore();
+  errorStore.setAdapter({
+    ...createV2MockAdapter(),
+    async bootstrapWorkspace() { throw new Error("bootstrap failed"); },
+  });
+  await errorStore.bootstrapWorkspace();
+  assert.equal(errorStore.error, "bootstrap failed");
+});
+
+test("V2 workspace store maps operation errors and no-op guards", async () => {
+  setActivePinia(createPinia());
+  const store = useV2WorkspaceStore();
+  const base = createV2MockAdapter();
+  store.setAdapter({
+    ...base,
+    async getSnapshot() { return base.getSnapshot(); },
+    async createSceneGenerationJob() { throw new Error("generation failed"); },
+    async reviewCandidate() { throw new Error("review failed"); },
+    async createRelease() { throw new Error("release failed"); },
+    async submitChoice() { throw new Error("choice failed"); },
+    async startRun() { throw new Error("run failed"); },
+    async saveRun() { throw new Error("save failed"); },
+    async restoreSave() { throw new Error("restore failed"); },
+    async exportRelease() { throw new Error("export failed"); },
+    async createAssetJob() { throw new Error("asset failed"); },
+    async reviewAssetCandidate() { throw new Error("asset review failed"); },
+  });
+  await store.loadSnapshot();
+  await store.createGenerationJob();
+  await store.reviewCandidate("approve");
+  await store.createRelease();
+  await store.submitChoice("choice");
+  await store.startRun();
+  await store.saveRun();
+  await store.restoreSave();
+  await store.exportRelease();
+  await store.createAssetJob();
+  await store.reviewAssetCandidate("approve");
+  assert.equal(store.error, "asset review failed");
+});
+
+test("V2 workspace store maps adapter-specific and unknown operation failures", async () => {
+  setActivePinia(createPinia());
+  const store = useV2WorkspaceStore();
+  const base = createV2MockAdapter();
+  const adapter: V2WorkspaceAdapter = {
+    ...base,
+    async getSnapshot() { return base.getSnapshot(); },
+    async createSceneGenerationJob() { throw new V2AdapterError({ code: "FAIL", message: "generation" }); },
+    async reviewCandidate() { throw "review"; },
+    async createRelease() { throw new V2AdapterError({ code: "FAIL", message: "release" }); },
+    async submitChoice() { throw "choice"; },
+    async startRun() { throw new V2AdapterError({ code: "FAIL", message: "run" }); },
+    async saveRun() { throw "save"; },
+    async restoreSave() { throw new V2AdapterError({ code: "FAIL", message: "restore" }); },
+    async exportRelease() { throw "export"; },
+    async createAssetJob() { throw new V2AdapterError({ code: "FAIL", message: "asset" }); },
+    async reviewAssetCandidate() { throw "asset review"; },
+  };
+  store.setAdapter(adapter);
+  await store.loadSnapshot();
+  await store.createGenerationJob();
+  await store.reviewCandidate("approve");
+  await store.createRelease();
+  await store.startRun();
+  await store.submitChoice("choice");
+  await store.saveRun();
+  await store.restoreSave();
+  await store.exportRelease();
+  await store.createAssetJob();
+  await store.reviewAssetCandidate("approve");
+  assert.equal(store.error, "Unknown V2 asset review error");
+});
+
+test("V2 default adapter selects HTTP by default and mock only when explicitly enabled", () => {
+  assert.equal(createV2DefaultAdapter({}).mode, "http");
+  assert.equal(createV2DefaultAdapter({ VITE_V2_ENABLE_MOCK: "true" }, {
+    localStorage: { getItem: () => "mock" },
+    location: { origin: "http://localhost:4173" },
+  }).mode, "mock");
+  assert.equal(createV2DefaultAdapter({ VITE_V2_ENABLE_MOCK: "true" }, {
+    localStorage: { getItem: () => "http" },
+    location: { origin: "http://localhost:4173" },
+  }).mode, "http");
 });

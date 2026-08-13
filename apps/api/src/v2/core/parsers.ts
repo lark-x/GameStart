@@ -38,7 +38,7 @@ import type {
   V2SaveId,
   V2StartRuntimeRunRequest,
   V2SubmitRuntimeChoiceRequest,
-} from "@living-network/contracts";
+} from "@living-network/contracts/v2";
 
 import { V2HttpError } from "./errors.ts";
 

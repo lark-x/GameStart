@@ -2,60 +2,55 @@
 
 本文件是本仓库中面向编码模型和自动化开发代理的根级强制规则。任何任务开始前都必须先确认工作区状态、任务范围与本文件要求；目录内存在更具体的 `AGENTS.md` 时，局部规则在不冲突的前提下补充本文件。
 
-## 1. 权威文档与必读顺序
+## 1. 文档读取与事实来源
 
-1. `docs/architecture.md`：当前实现架构的唯一文档事实来源。
-2. `docs/DEVELOPMENT.md`：长期开发原则、质量标准和变更纪律。
-3. `docs/frontend-development-standard.md`：修改 `apps/web/**` 时必须阅读。
-4. `docs/PROGRESS.md`：当前能力、验证状态和待办，不替代代码与测试证据。
-5. `docs/decisions/`：已接受的架构决策；变更决策前必须新增或替代 ADR。
+- 每个任务先读本文件，并只补读与改动直接相关的当前文档；不要默认通读全部架构、进度、ADR 和历史计划。
+- `docs/architecture.md` 是当前实现架构的事实来源，`docs/DEVELOPMENT.md` 规定长期开发原则，`docs/PROGRESS.md` 记录当前完成状态。
+- 修改 `apps/web/**` 时读取 `docs/frontend-development-standard.md`；触及具体架构决策时读取对应 ADR。
+- `docs/archive/**` 和已完成的阶段计划只用于追溯，不作为普通任务的执行清单。
+- 文档与实现冲突时，以代码、依赖和测试核实；只有本次改动会使当前文档变得不真实时才同步更新。
 
-`docs/archive/**` 是历史记录，不能作为当前技术选型或完成状态的依据。文档与实现冲突时，先以代码、依赖和测试核实事实，再在同一任务中更新当前文档；不得静默保留冲突。
+`docs/v2/ai-parallel-master-plan.md` 中的 Gate 0、bootstrap SHA、owner paths、共享文件冻结和 interface request 是三 AI 并行建设期规则。该阶段已经结束；除非新任务明确重新启用并行计划，否则集成后的普通开发不再执行这些临时流程。
 
-明确标记为 V2 replacement 的任务还必须读取 `docs/v2/common-baseline.md` 和对应 V2 任务文档。V2 replacement 任务以 ADR-0006 为目标边界；未标记为 V2 的维护任务仍以当前 V1 实现文档和 ADR-0001 至 ADR-0005 为准。
+## 2. 稳定边界与效率原则
 
-三个 AI 并行执行 V2 replacement 时，`docs/v2/ai-parallel-master-plan.md` 是唯一实施计划；`docs/v2/three-ai-execution-plan.md` 已被替代，不得再用于分支分配。业务分支只能从已验收的 `V2_BOOTSTRAP_SHA` 创建，并遵守主计划中的 owner paths、共享文件只读规则和 Slice 集成门槛。
+- 当前技术形态以 `docs/architecture.md` 为准；普通功能不得反复重新论证已接受的架构。
+- 保持 TypeScript monorepo、模块化单体 API、独立 Worker，以及 Contracts → Domain/Ports → Adapters 的依赖方向。自动边界检查通过且依赖方向未改变时，不再做额外人工边界审计。
+- `packages/domain` 保存无框架业务规则；`packages/contracts` 保存跨进程共享类型；`packages/ports` 描述应用需要的最小能力；运行时入口组装具体适配器。
+- LLM、ComfyUI 和其他外部输出是不可信输入，不能绕过审核和领域规则写入 Canon、Release 或 Save。
+- 先实现用户可见结果和最短业务闭环，再补与实际风险对应的防线。不得为没有现实入口、历史故障或验收要求的假设性风险增加分支、兼容层或抽象。
+- 同一规则只设一个主要校验层：协议形状在 Parser，业务不变量在 Domain，持久一致性在数据库，流程协调在 Use Case。除安全纵深和数据库约束外，不跨层重复同一判断。
+- 仓库能够回答的问题只检查一次；结论未被新证据推翻时直接继续实现，不反复搜索、论证或汇报。
 
-## 2. 当前架构边界
+## 3. 风险分级执行
 
-- 系统保持 TypeScript monorepo、模块化单体 API 和独立 Worker，不因局部需求拆微服务。
-- API 使用原生 `node:http`。Fastify、Drizzle、TypeBox、pgvector、Turborepo 和完整 OpenTelemetry 都不是当前既定技术；引入前必须有独立 ADR 和任务授权。
-- 依赖方向为：应用层依赖 Contracts、Domain 和 Ports；Database 实现 Ports；运行时入口负责组装 Database、AI 和其他适配器。
-- `packages/domain` 不得依赖 Vue、HTTP 框架、数据库、队列、供应商 SDK 或 `packages/ports`。
-- `packages/contracts` 不得依赖 Domain、Ports、Database 或应用包。
-- `packages/ports` 只定义应用需要的接口，可依赖 Domain/Contracts 类型，不得依赖具体适配器。
-- API 请求遵循 Route → Parser → Use Case → Port；路由只处理协议分发，业务规则进入 Use Case 或 Domain。
-- PostgreSQL 是持久模式下的业务事实来源，也保存 Worker 心跳和派发状态。Redis 只承担 BullMQ 队列及其可重建运行数据，不保存不可重建的业务事实。
-- LLM 与 ComfyUI 是不可信外部适配器。其输出必须经过解析、领域校验、权限检查和幂等控制，不能直接修改关系、资产、世界状态或已发布内容。
+先根据实际改动定级，再匹配审查和验证力度；文件位于 Domain、Ports 或 V2 目录不自动构成高风险。
 
-V2 replacement 分支的目标边界由 `docs/v2/common-baseline.md` 规定：Fastify、SQLite + FTS5 和 Qdrant 只在这些分支中可用，不能回流为 V1 维护任务的默认技术选型。
+- **低风险**：文案、文档、样式、局部无状态 UI、测试修正、内部等价重构。直接实施，只检查受影响内容。
+- **中风险（默认）**：既有架构内的普通业务功能、向后兼容的 API 增量、页面状态、局部仓储或适配器变更。检查受影响 Contract 和调用方，运行相关包验证；无需完整架构审计。
+- **高风险**：migration、事实库、不兼容公共 Contract、Canon/Candidate/Release/Save 不变量、认证与秘密、外部副作用、Worker 幂等或事务、删除数据、引入框架或改变依赖方向。必须明确失败模式、回滚/恢复、边界影响和集成验证。
 
-## 3. 按改动范围执行
-
-- 修改 API、共享契约或前端调用时，必须同步检查请求/响应类型、解析校验、错误状态和调用方；共享类型优先来自 `packages/contracts`。
-- 修改数据库时，必须提供顺序迁移、对应 down migration、仓储实现和迁移/行为测试；服务启动不得自动执行 down migration。
-- 修改 Worker 或异步链路时，必须说明幂等键、重试上限、终态、失败恢复和 Outbox/事务边界。
-- 修改前端时，必须复用基础组件和语义令牌，覆盖加载、空、失败、禁用、窄屏和无障碍状态；不得新增裸交互控件、硬编码品牌色或 `!important`。
-- 修改外部服务调用时，必须保持超时、错误归一化、秘密脱敏、可测试替身和默认测试不访问真实供应商。
-- 修改架构、数据流、公共接口、运行方式或完成状态时，必须同步对应的当前文档或 ADR。
+只有长期改变事实来源、部署边界、主要框架、依赖方向或公共兼容策略时才新增/替代 ADR。普通 API 增量、内部数据流调整、bug 修复和既有架构内实现不需要 ADR。
 
 ## 4. 任务与变更纪律
 
 - 开始前检查未提交改动并保护用户已有工作；只修改任务明确涉及的范围。
 - 不顺手引入框架、生产依赖、无关重构或格式化整个仓库。
 - 不用 `any`、重复 DTO、跨包相对导入或 Database 兼容导出来规避正确边界。
-- 不通过删除测试、弱化断言、降低覆盖率、增加忽略项或把错误改成 warning 来让门禁通过。
-- 新功能先明确领域规则、Contract、失败模式和验收标准，再接 UI 或外部服务。
+- 不通过删除有效测试、弱化关键断言、任意排除关键模块或把错误改成 warning 来让门禁通过。
+- 新功能先明确用户结果、核心规则和验收路径；只为真实失败模式设计防御和测试。
+- 优先复用现有模式；只有重复已经出现且抽象能明显降低复杂度时才提取公共机制。
+- 普通任务不得顺带做全面架构审计、历史债务清理或边界重构。
+- 低影响细节采用仓库惯例直接推进；只有会改变产品语义、数据兼容或不可逆结果的选择才停下来请求确认。
 - 大文件中的新增能力优先按既有业务模块落位；不得继续把无关职责堆入公共巨型文件。
 
 ## 5. 验证与交付
 
-按变更范围至少执行相关检查，并报告实际退出状态：
+按风险和改动范围执行最小充分验证，并报告实际退出状态：
 
-- 通用：`pnpm check:boundaries`、`pnpm typecheck`、相关包测试。
-- 跨包或发布相关：`pnpm test`、`pnpm build`。
-- 前端：`pnpm --filter @living-network/web lint`、`typecheck`、`test`、`build`；交互改动补 Playwright 核心路径。
-- 数据库/队列：相关迁移测试和集成测试；真实服务未运行时必须明确说明，不能声称已验收。
-- 纯文档：检查链接、术语一致性、`git diff --check` 和变更范围。
+- 低风险：相关测试或 lint/typecheck；纯文档检查链接、术语、`git diff --check` 和变更范围。
+- 中风险：受影响包测试与 typecheck；Web 改动增加 lint/build，关键交互增加针对性 Playwright。边界脚本仅在涉及跨包导入时运行。
+- 高风险：`pnpm check:boundaries`、全仓 typecheck、相关及全仓测试、build，并按风险运行 migration、真实服务或 E2E。
+- 发布、主分支合并和架构切换节点执行完整验证集；普通任务不因惯例重复跑无关包和全仓覆盖率。
 
-“服务能启动”不等于测试通过；Fake/内存测试通过不等于真实 PostgreSQL、Redis、LLM 或 ComfyUI 已验收。交付说明必须区分已执行、跳过和无法执行的验证。
+“服务能启动”不等于测试通过；Fake/内存测试通过不等于真实 Redis、LLM、ComfyUI 或其他外部依赖已验收。只报告与本次改动有关的证据，并区分已执行、跳过和无法执行的验证。

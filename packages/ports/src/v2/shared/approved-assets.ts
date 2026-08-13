@@ -2,7 +2,7 @@ import type {
   V2AssetId,
   V2ReleaseId,
   V2StoryWorldId,
-} from "@living-network/contracts";
+} from "@living-network/contracts/v2";
 
 export interface V2ApprovedAssetRef {
   readonly assetId: V2AssetId;

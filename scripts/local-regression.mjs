@@ -1,30 +1,29 @@
 import { readdir } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
-import { dirname, join, relative, sep } from "node:path";
+import { dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const roots = [
   ".github/workflows",
-  "packages/domain/src",
-  "packages/contracts/src",
   "packages/config/src",
+  "packages/domain/src/v2",
+  "packages/contracts/src/v2",
   "packages/ai/src",
-  "packages/database/src",
-  "apps/api/src",
-  "apps/web",
-  "apps/web/src",
-  "apps/worker/src",
+  "packages/database/src/v2",
+  "apps/api/src/v2",
+  "apps/web/src/v2",
+  "apps/worker/src/v2",
   "integration",
   "infra/compose",
 ];
 
-const excluded = new Map([
-  ["apps/api/src/runtime.test.ts", "sandbox forbids local port binding"],
-  ["apps/api/src/server.test.ts", "sandbox forbids local port binding"],
-  ["packages/database/src/postgres.test.ts", "pg package is an external runtime dependency"],
-  ["apps/worker/src/queue.test.ts", "bullmq package is an external runtime dependency"],
-]);
+const explicitTests = [
+  "packages/config/src/v2.test.ts",
+  "packages/ai/src/v2-scene-generation.test.ts",
+  ".github/workflows/ci.test.ts",
+  "infra/compose/compose.test.ts",
+];
 
 async function collectTests(directory) {
   const absolute = join(root, directory);
@@ -41,10 +40,10 @@ async function collectTests(directory) {
   return files;
 }
 
-const discovered = (await Promise.all(roots.map(collectTests))).flat().sort();
-const tests = discovered.filter((file) => !excluded.has(file));
+const discovered = (await Promise.all(roots.map(collectTests))).flat();
+const v2Discovered = discovered.filter((file) => /(?:^|\/)v2(?:[./-]|\/)/.test(file));
+const tests = [...new Set([...explicitTests, ...v2Discovered])].sort();
 console.log(`Running ${tests.length} local regression files.`);
-for (const [file, reason] of excluded) console.log(`Excluded ${file}: ${reason}.`);
 
 const result = spawnSync(process.execPath, ["--test", ...tests], {
   cwd: root,

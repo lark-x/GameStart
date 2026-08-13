@@ -1,37 +1,23 @@
-# Worker
+# `@living-network/worker`
 
-The worker currently exposes dependency-free scheduler and execution
-boundaries. It materializes enabled one-shot and annual event definitions into
-idempotent `ScheduledOccurrence` records, then coordinates a bounded execution
-start using character plans and proactive-message budgets. The media boundary
-includes a deterministic Fake ComfyUI client and an injected-fetch HTTP client
-for ComfyUI `/prompt` submission plus `/history/:promptId` result lookup.
-When configured, `RepositoryImageWorkflowResolver` loads a character visual
-identity and a versioned template, compiles the scene prompt, and supplies the
-workflow JSON to that HTTP client. `ComfyUiHttpClient.watchProgress()` consumes
-the ComfyUI WebSocket protocol; `BehaviorMediaCoordinator.watchImageJobProgress()`
-maps terminal progress events to `ImageJob` success/failure and promotes or
-rejects the linked moment draft. `StoringComfyUiClient` forwards progress while
-keeping the existing local media download adapter.
+V2 独立 Worker 负责 SQLite outbox 派发、BullMQ/Redis 消费、场景/资产生成、有限重试、租约恢复、候选提交和本地媒体落盘。
 
-The development worker shell is available with:
+## 本地启动
 
 ```sh
-pnpm --filter @living-network/worker dev
+pnpm --filter @living-network/worker start:v2
 ```
 
-It is intentionally a no-op without an injected repository and story world.
-The production process will inject the PostgreSQL repositories and queue
-adapter instead of silently using this in-memory shell.
+Worker 使用 `V2_SQLITE_PATH` 打开的 SQLite 文件，并先检查 API 已完成全部 V2 migrations；schema 不完整时直接失败，不自行迁移。只有场景或资产能力显式开启时才创建对应 Redis 队列和消费者。
 
-With PostgreSQL and Redis running, the persistent worker can be started with:
+任务必须保持稳定幂等键、有限 attempts、明确终态和租约恢复。LLM/ComfyUI 输出先经过解析和领域校验，再通过 Candidate port 提交，不能直接写入 Canon。
+
+## 验证
 
 ```sh
-DATABASE_URL=postgresql://living_network:living_network_dev_only@127.0.0.1:5432/living_network \
-REDIS_URL=redis://127.0.0.1:6379 \
-  pnpm --filter @living-network/worker start:postgres
+pnpm --filter @living-network/worker typecheck
+pnpm --filter @living-network/worker test
+pnpm --filter @living-network/worker build
 ```
 
-The process materializes due occurrences, enqueues deterministic occurrence IDs,
-processes them with BullMQ, and publishes pending outbox events. Every queue
-consumer is idempotent at the domain/repository boundary.
+默认测试使用 Fake provider、Fake queue 或 SQLite 替身。真实 Redis 通过根目录 `RUN_V2_REAL_INTEGRATION=1 pnpm test:integration` 单独验收。

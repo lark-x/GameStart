@@ -20,9 +20,9 @@ import type {
   V2ReleaseId,
   V2ReviewAssetCandidateInput,
   V2StoryWorldId,
-} from "@living-network/contracts";
-import type { V2ReviewAction, V2ReviewStatus } from "@living-network/domain";
-import { assertV2ReviewTransition } from "@living-network/domain";
+} from "@living-network/contracts/v2";
+import type { V2ReviewAction, V2ReviewStatus } from "@living-network/domain/v2";
+import { assertV2ReviewTransition } from "@living-network/domain/v2";
 import type {
   V2ApprovedAssetRef,
   V2AssetCandidateRepository,
@@ -31,7 +31,7 @@ import type {
   V2AssetGenerationJobCreateResult,
   V2AssetGenerationJobRepository,
   V2AssetReviewRepository,
-} from "@living-network/ports";
+} from "@living-network/ports/v2";
 import { withV2SqliteTransaction } from "../platform/index.ts";
 
 type AssetJobRow = {

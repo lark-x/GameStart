@@ -5,7 +5,6 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = dirname(fileURLToPath(import.meta.url));
-const v1ApiTarget = process.env.V1_API_PROXY_TARGET ?? "http://127.0.0.1:3001";
 const v2ApiTarget = process.env.V2_API_PROXY_TARGET ?? "http://127.0.0.1:3002";
 
 export default defineConfig({
@@ -31,9 +30,6 @@ export default defineConfig({
   server: {
     port: 4173,
     proxy: {
-      "/v1": v1ApiTarget,
-      "/health": v1ApiTarget,
-      "/ready": v1ApiTarget,
       "/api/v2": v2ApiTarget,
     },
   },

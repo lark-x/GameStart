@@ -8,5 +8,12 @@
     "allowImportingTsExtensions": true,
     "types": ["node"]
   },
-  "include": ["src/**/*.ts"]
+  "include": [
+    "src/v2.ts",
+    "src/v2-scene-generation.ts",
+    "src/provider.ts",
+    "src/anthropic.ts",
+    "src/observability.ts",
+    "src/read-timeout.ts"
+  ]
 }

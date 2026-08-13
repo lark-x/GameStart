@@ -3,11 +3,11 @@ import type {
   V2RunId,
   V2SaveId,
   V2StoryWorldId,
-} from "@living-network/contracts";
+} from "@living-network/contracts/v2";
 import type {
   V2ReleaseManifest,
   V2RuntimeRun,
-} from "@living-network/domain";
+} from "@living-network/domain/v2";
 
 import type { V2CanonRepository } from "./canon-repository.ts";
 import type { V2CandidateReviewRepository } from "./candidate-review-repository.ts";

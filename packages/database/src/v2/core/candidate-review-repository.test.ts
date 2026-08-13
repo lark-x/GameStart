@@ -4,7 +4,7 @@ import test from "node:test";
 import {
   createV2CanonWorld,
   createV2SceneCandidate,
-} from "@living-network/domain";
+} from "@living-network/domain/v2";
 import {
   applyV2Migrations,
   openV2TempSqliteConnection,
@@ -12,6 +12,7 @@ import {
   V2SqliteCandidateReviewRepository,
   V2SqliteCandidateReviewUnitOfWork,
   V2SqliteCandidateSubmissionPort,
+  V2SqliteCanonSnapshotReader,
 } from "../index.ts";
 
 test("V2 candidate review SQLite repository persists candidates and audits", async () => {
@@ -151,6 +152,62 @@ test("V2 candidate submission port rejects reviewed or stale envelopes", async (
       candidate: candidate as never,
       idempotencyKey: "key_stale" as never,
     }), /current revision is 2/);
+  } finally {
+    db.close();
+    cleanup();
+  }
+});
+
+test("V2 SQLite snapshot reader validates world revisions and maps canon rows", async () => {
+  const { db, cleanup } = openV2TempSqliteConnection();
+  try {
+    applyV2Migrations(db);
+    const unit = new V2SqliteCandidateReviewUnitOfWork(db);
+    await unit.withCandidateReviewTransaction(async ({ canon, graphState }) => {
+      await canon.createWorld(createV2CanonWorld({ storyWorldId: "world_snapshot" as never, name: "Snapshot" }));
+      await canon.createFact({ factId: "fact", storyWorldId: "world_snapshot", text: "Fact", visibility: "player_visible" });
+      await canon.createCharacter({ characterId: "char", storyWorldId: "world_snapshot", name: "Character" });
+      await graphState.createScene({ storyWorldId: "world_snapshot", sceneId: "scene", title: "Scene", isEntry: true });
+    });
+    const reader = new V2SqliteCanonSnapshotReader(db);
+    const snapshot = await reader.getCanonSnapshot({ storyWorldId: "world_snapshot" as never, revision: 1 as never });
+    assert.equal(snapshot.facts[0]?.id, "fact");
+    assert.equal(snapshot.characters[0]?.characterId, "char");
+    assert.equal(snapshot.scenes[0]?.sceneId, "scene");
+    await assert.rejects(() => reader.getCanonSnapshot({ storyWorldId: "world_snapshot" as never, revision: 2 as never }), /current revision/);
+    await assert.rejects(() => reader.getCanonSnapshot({ storyWorldId: "missing" as never, revision: 1 as never }), /does not exist/);
+  } finally {
+    db.close();
+    cleanup();
+  }
+});
+
+test("V2 candidate submission port rejects conflicting idempotent payloads", async () => {
+  const { db, cleanup } = openV2TempSqliteConnection();
+  try {
+    applyV2Migrations(db);
+    const unit = new V2SqliteCandidateReviewUnitOfWork(db);
+    await unit.withCandidateReviewTransaction(async ({ canon }) => {
+      await canon.createWorld(createV2CanonWorld({ storyWorldId: "world_conflict" as never, name: "Conflict" }));
+    });
+    const port = new V2SqliteCandidateSubmissionPort(db);
+    const base = createV2SceneCandidate({ candidateId: "candidate_conflict", storyWorldId: "world_conflict", baseCanonRevision: 1, provenance: { source: "human" }, payload: { scene: { sceneId: "scene", title: "Scene", body: "Body", participantCharacterIds: [] }, choices: [], validationNotes: [] } });
+    await port.submitSceneCandidate({ candidate: base as never, idempotencyKey: "conflict-key" as never });
+    await assert.rejects(() => port.submitSceneCandidate({ candidate: { ...base, payload: { ...base.payload, scene: { ...base.payload.scene, body: "Different" } } } as never, idempotencyKey: "conflict-key" as never }), /different candidate payload/);
+  } finally {
+    db.close();
+    cleanup();
+  }
+});
+
+test("V2 candidate repository rejects malformed persisted candidate JSON", async () => {
+  const { db, cleanup } = openV2TempSqliteConnection();
+  try {
+    applyV2Migrations(db);
+    db.prepare("INSERT INTO v2_worlds (story_world_id, name, revision) VALUES (?, ?, ?)").run("world_bad_candidate", "Bad", 1);
+    db.prepare("INSERT INTO v2_scene_candidates (candidate_id, story_world_id, base_canon_revision, status, payload_json, provenance_json) VALUES (?, ?, ?, ?, ?, ?)").run("candidate_bad", "world_bad_candidate", 1, "pending", "[]", JSON.stringify({ source: "human" }));
+    const repository = new V2SqliteCandidateReviewRepository(db);
+    await assert.rejects(() => repository.getSceneCandidate({ storyWorldId: "world_bad_candidate" as never, candidateId: "candidate_bad" as never }), /payload_json/);
   } finally {
     db.close();
     cleanup();

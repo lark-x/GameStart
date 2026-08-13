@@ -19,15 +19,15 @@ import type {
   V2ReviewAssetCandidateApiResponse,
   V2StoryWorldId,
   V2CandidateId,
-} from "@living-network/contracts";
-import { buildV2GenerationContextSnapshot } from "@living-network/domain";
+} from "@living-network/contracts/v2";
+import { buildV2GenerationContextSnapshot } from "@living-network/domain/v2";
 import type {
   CanonSnapshotReaderPort,
   V2AssetCandidateRepository,
   V2AssetGenerationJobRepository,
   V2AssetReviewRepository,
   V2GenerationJobRepository,
-} from "@living-network/ports";
+} from "@living-network/ports/v2";
 
 export const v2GenerationPlugin: FastifyPluginAsync = async () => {
   // Gate 0 freezes the module hook. AI-2 owns generation routes after bootstrap approval.
@@ -41,6 +41,10 @@ export interface V2GenerationPluginDependencies {
   readonly assetReviews?: V2AssetReviewRepository;
   readonly now?: () => Date;
   readonly defaultTokenBudget?: number;
+  readonly capabilities?: {
+    readonly sceneGenerationEnabled: boolean;
+    readonly assetGenerationEnabled: boolean;
+  };
 }
 
 type JsonRecord = Record<string, unknown>;
@@ -187,7 +191,7 @@ async function replyWithError(reply: FastifyReply, error: unknown): Promise<neve
 }
 
 function replyMissingCapability(reply: FastifyReply, capability: string): FastifyReply {
-  return reply.code(501).send({ error: { message: `${capability} is not configured` } });
+  return reply.code(503).send({ error: { code: "CAPABILITY_UNAVAILABLE", message: `${capability} is not configured` } });
 }
 
 export function createV2GenerationPlugin(
@@ -195,6 +199,7 @@ export function createV2GenerationPlugin(
 ): FastifyPluginAsync {
   const now = dependencies.now ?? (() => new Date());
   const defaultTokenBudget = dependencies.defaultTokenBudget ?? 4096;
+  const capabilities = dependencies.capabilities ?? { sceneGenerationEnabled: false, assetGenerationEnabled: false };
 
   return async (app) => {
     app.post("/context-preview", async (request, reply) => {
@@ -218,6 +223,7 @@ export function createV2GenerationPlugin(
 
     app.post("/jobs/scene", async (request, reply) => {
       try {
+        if (!capabilities.sceneGenerationEnabled) return replyMissingCapability(reply, "scene generation");
         const input = parseCreateJobRequest(request.body);
         const requestedAt = now().toISOString() as V2IsoDateTime;
         const snapshot = await dependencies.canonSnapshots.getCanonSnapshot({
@@ -272,6 +278,7 @@ export function createV2GenerationPlugin(
 
     app.post("/assets/jobs", async (request, reply) => {
       try {
+        if (!capabilities.assetGenerationEnabled) return replyMissingCapability(reply, "asset generation");
         if (dependencies.assetJobs === undefined) return replyMissingCapability(reply, "asset generation repository");
         const input = parseCreateAssetJobRequest(request.body);
         const createdAt = now().toISOString() as V2IsoDateTime;

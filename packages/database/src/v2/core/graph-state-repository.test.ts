@@ -6,7 +6,7 @@ import {
   createV2GraphChoice,
   createV2GraphScene,
   createV2TypedStateVariable,
-} from "@living-network/domain";
+} from "@living-network/domain/v2";
 import {
   applyV2Migrations,
   openV2TempSqliteConnection,

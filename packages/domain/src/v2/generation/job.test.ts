@@ -19,4 +19,5 @@ test("V2 generation job retry guard respects retryability and attempt limits", (
   assert.equal(shouldRetryV2GenerationJob({ attempts: 3, maxAttempts: 3, retryable: true }), false);
   assert.equal(shouldRetryV2GenerationJob({ attempts: 1, maxAttempts: 3, retryable: false }), false);
   assert.throws(() => shouldRetryV2GenerationJob({ attempts: -1, maxAttempts: 3, retryable: true }), /attempts/);
+  assert.throws(() => shouldRetryV2GenerationJob({ attempts: 0, maxAttempts: 0, retryable: true }), /maxAttempts/);
 });

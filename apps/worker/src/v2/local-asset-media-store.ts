@@ -2,12 +2,12 @@ import { createHash } from "node:crypto";
 import { mkdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import type { V2JobId } from "@living-network/contracts";
+import type { V2JobId } from "@living-network/contracts/v2";
 import type {
   V2AssetMediaStorePort,
   V2StoreGeneratedAssetMediaInput,
   V2StoredAssetMediaResult,
-} from "@living-network/ports";
+} from "@living-network/ports/v2";
 
 export type V2AssetMediaFetch = (
   input: RequestInfo | URL,
@@ -47,6 +47,8 @@ export interface V2LocalAssetMediaStoreOptions {
   readonly fetchImpl?: V2AssetMediaFetch;
   readonly maxBytes?: number;
   readonly timeoutMs?: number;
+  readonly writeFileImpl?: typeof writeFile;
+  readonly renameImpl?: typeof rename;
 }
 
 const DEFAULT_MAX_BYTES = 25 * 1024 * 1024;
@@ -82,13 +84,6 @@ function extensionFor(type: string | undefined, sourceUrl: URL): string {
   throw new V2AssetMediaStoreError("INVALID_RESPONSE", "asset media response must be an image");
 }
 
-function assertInsideRoot(root: string, target: string): void {
-  const relative = path.relative(root, target);
-  if (relative.startsWith("..") || path.isAbsolute(relative)) {
-    throw new V2AssetMediaStoreError("CONFIGURATION", "asset media path escapes media root");
-  }
-}
-
 async function exists(filePath: string): Promise<boolean> {
   try {
     await stat(filePath);
@@ -116,6 +111,8 @@ export class V2LocalAssetMediaStore implements V2AssetMediaStorePort {
   private readonly fetchImpl: V2AssetMediaFetch;
   private readonly maxBytes: number;
   private readonly timeoutMs: number;
+  private readonly writeFileImpl: typeof writeFile;
+  private readonly renameImpl: typeof rename;
 
   public constructor(options: V2LocalAssetMediaStoreOptions) {
     const root = options.mediaRoot.trim();
@@ -125,6 +122,8 @@ export class V2LocalAssetMediaStore implements V2AssetMediaStorePort {
     if (this.fetchImpl === undefined) throw new V2AssetMediaStoreError("CONFIGURATION", "fetch is not available");
     this.maxBytes = positiveInteger(options.maxBytes, DEFAULT_MAX_BYTES, "maxBytes");
     this.timeoutMs = positiveInteger(options.timeoutMs, DEFAULT_TIMEOUT_MS, "timeoutMs");
+    this.writeFileImpl = options.writeFileImpl ?? writeFile;
+    this.renameImpl = options.renameImpl ?? rename;
   }
 
   public async storeGeneratedAsset(input: V2StoreGeneratedAssetMediaInput): Promise<V2StoredAssetMediaResult> {
@@ -147,13 +146,12 @@ export class V2LocalAssetMediaStore implements V2AssetMediaStorePort {
     const extension = extensionFor(type, sourceUrl);
     const relativePath = path.join("v2", "assets", `${hash}${extension}`);
     const finalPath = path.resolve(this.mediaRoot, relativePath);
-    assertInsideRoot(this.mediaRoot, finalPath);
     await mkdir(path.dirname(finalPath), { recursive: true });
     if (!(await exists(finalPath))) {
       const tempPath = path.join(path.dirname(finalPath), tempFileName(input.jobId, hash));
       try {
-        await writeFile(tempPath, buffer, { flag: "wx" });
-        await rename(tempPath, finalPath);
+        await this.writeFileImpl(tempPath, buffer, { flag: "wx" });
+        await this.renameImpl(tempPath, finalPath);
       } catch (error) {
         await unlink(tempPath).catch(() => undefined);
         if (!(await exists(finalPath))) {

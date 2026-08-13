@@ -1,5 +1,7 @@
 # `@living-network/database`
 
-本包定义异步领域仓储端口，并提供仅用于开发和测试的 `InMemoryRepositories`。`migrations/0001_initial.sql` 定义 StoryWorld、Character、RelationshipEdge 和 ActorSession，`migrations/0002_chat.sql` 定义 Conversation、成员、Message、幂等键和作者约束。
+当前默认数据库实现是 `src/v2` 下的 Node `node:sqlite` + FTS5 适配器：连接、顺序 migration、事务、Canon/Graph/State、Candidate、Release/Runtime、Generation 和 Asset 仓储均在 V2 命名空间中。
 
-`PostgresSqlClient` 是唯一的 PostgreSQL 驱动边界；它通过惰性加载的 `pg` Pool 提供参数化查询和事务。`applyMigrations` 只执行缺失的 up migration，从不在运行时隐式执行 down migration。API 仍然必须显式注入 `DomainRepositories`。
+API 负责执行缺失的 V2 up migration；Worker 只检查 schema 是否完整。任何 down migration 都必须由显式维护任务调用，服务启动不得自动回滚。
+
+旧 PostgreSQL client、migration 和仓储仍保留在冻结 V1 工作树中，不是 V2 运行时的事实来源，也不应成为新 V2 代码的导入路径。

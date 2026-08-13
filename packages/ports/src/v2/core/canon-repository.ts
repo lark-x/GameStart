@@ -4,7 +4,7 @@ import type {
   V2LocationId,
   V2Revision,
   V2StoryWorldId,
-} from "@living-network/contracts";
+} from "@living-network/contracts/v2";
 import type {
   V2CanonCharacter,
   V2CanonFact,
@@ -12,7 +12,7 @@ import type {
   V2CanonRule,
   V2CanonTimelineEvent,
   V2CanonWorld,
-} from "@living-network/domain";
+} from "@living-network/domain/v2";
 
 export interface V2CanonMutationRecord<TResult> {
   readonly key: V2IdempotencyKey;

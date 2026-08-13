@@ -5,12 +5,12 @@ import type {
   V2RunId,
   V2SaveId,
   V2StoryWorldId,
-} from "@living-network/contracts";
+} from "@living-network/contracts/v2";
 import type {
   V2ReleaseManifest,
   V2RuntimeRun,
   V2TypedStateValue,
-} from "@living-network/domain";
+} from "@living-network/domain/v2";
 import type {
   V2CandidateReviewRepository,
   V2CanonRepository,
@@ -18,7 +18,7 @@ import type {
   V2ReleaseRuntimeRepository,
   V2ReleaseRuntimeUnitOfWork,
   V2RuntimeSaveRecord,
-} from "@living-network/ports";
+} from "@living-network/ports/v2";
 
 import {
   V2SqliteCandidateReviewRepository,

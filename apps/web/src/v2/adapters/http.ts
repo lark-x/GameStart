@@ -17,7 +17,7 @@ import type {
   V2StateSnapshotDto,
   V2StateVariableDto,
   V2StoryWorldDto,
-} from "@living-network/contracts";
+} from "@living-network/contracts/v2";
 
 import {
   V2AdapterError,
@@ -93,6 +93,11 @@ function toRun(runtime: V2RuntimeSceneDto): V2RunSummary {
     releaseVersion: runtime.run.releaseVersion,
     currentSceneId: runtime.run.currentSceneId,
   };
+}
+
+export function v2MediaRefToUrl(mediaRef: string, baseUrl: string): string | undefined {
+  const match = /^media:\/\/local\/v2\/assets\/([a-f0-9]{64}\.(?:png|jpg|jpeg|webp|gif))$/i.exec(mediaRef);
+  return match?.[1] === undefined ? undefined : `${baseUrl.replace(/\/$/, "")}/api/v2/media/assets/${match[1]}`;
 }
 
 export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceAdapter {

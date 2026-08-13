@@ -1,10 +1,10 @@
-import type { JsonObject } from "@living-network/domain";
+import type { V2JsonObject } from "@living-network/domain/v2";
 
 export interface ComfyUiSubmitRequest {
   jobId: string;
   workflowVersion: string;
   prompt: string;
-  workflow?: JsonObject;
+  workflow?: V2JsonObject;
   negativePrompt?: string;
   seed?: number;
 }

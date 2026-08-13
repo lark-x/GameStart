@@ -2,7 +2,7 @@ import type {
   V2CharacterId,
   V2Revision,
   V2StoryWorldId,
-} from "@living-network/contracts";
+} from "@living-network/contracts/v2";
 
 export interface V2CanonSnapshot {
   readonly storyWorldId: V2StoryWorldId;

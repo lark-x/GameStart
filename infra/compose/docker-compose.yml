@@ -1,23 +1,6 @@
 name: living-network
 
 services:
-  postgres:
-    image: postgres:16.4-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-living_network}
-      POSTGRES_USER: ${POSTGRES_USER:-living_network}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-living_network_dev_only}
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
-      interval: 5s
-      timeout: 5s
-      retries: 12
-
   redis:
     image: redis:7.2-alpine
     restart: unless-stopped
@@ -32,43 +15,6 @@ services:
       timeout: 3s
       retries: 12
 
-  minio:
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z-cpuv1
-    restart: unless-stopped
-    command: ["server", "/data", "--console-address", ":9001"]
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-living_network}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-living_network_dev_only}
-    ports:
-      - "${MINIO_API_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
-    volumes:
-      - minio_data:/data
-
-  migrate:
-    image: living-network-app:local
-    build:
-      context: ../..
-      dockerfile: infra/compose/Dockerfile
-      target: app-runtime
-    restart: "no"
-    env_file:
-      - ../../.env
-    environment: &app-environment
-      NODE_ENV: production
-      API_HOST: 0.0.0.0
-      API_PORT: 3001
-      API_CORS_ORIGINS: ${API_CORS_ORIGINS:-http://localhost:4173,http://127.0.0.1:4173}
-      DATABASE_URL: postgresql://${POSTGRES_USER:-living_network}:${POSTGRES_PASSWORD:-living_network_dev_only}@postgres:5432/${POSTGRES_DB:-living_network}
-      REDIS_URL: redis://redis:6379
-      MEDIA_ROOT: /app/data/media
-    command: ["pnpm", "--filter", "@living-network/api", "bootstrap:postgres"]
-    depends_on:
-      postgres:
-        condition: service_healthy
-    volumes:
-      - media_data:/app/data/media
-
   api:
     image: living-network-app:local
     build:
@@ -78,17 +24,27 @@ services:
     restart: unless-stopped
     env_file:
       - ../../.env
-    environment: *app-environment
-    command: ["pnpm", "--filter", "@living-network/api", "start:postgres"]
+    environment: &v2-environment
+      NODE_ENV: production
+      V2_API_HOST: 0.0.0.0
+      V2_API_PORT: 3002
+      V2_SQLITE_PATH: /app/data/sqlite/living-network-v2.sqlite
+      V2_MEDIA_ROOT: /app/data/media
+      REDIS_URL: redis://redis:6379
+      V2_QUEUE_PREFIX: living-network-v2
+      V2_SCENE_GENERATION_ENABLED: ${V2_SCENE_GENERATION_ENABLED:-false}
+      V2_ASSET_GENERATION_ENABLED: ${V2_ASSET_GENERATION_ENABLED:-false}
+    command: ["pnpm", "--filter", "@living-network/api", "start:v2"]
     ports:
-      - "${API_PORT:-3001}:3001"
+      - "${API_PORT:-3002}:3002"
     depends_on:
-      migrate:
-        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
     volumes:
       - media_data:/app/data/media
+      - sqlite_data:/app/data/sqlite
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/ready').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3002/api/v2/ready').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 10s
       timeout: 3s
       retries: 12
@@ -103,21 +59,16 @@ services:
     restart: unless-stopped
     env_file:
       - ../../.env
-    environment: *app-environment
-    command: ["pnpm", "--filter", "@living-network/worker", "start:postgres"]
+    environment: *v2-environment
+    command: ["pnpm", "--filter", "@living-network/worker", "start:v2"]
     depends_on:
-      migrate:
-        condition: service_completed_successfully
+      api:
+        condition: service_healthy
       redis:
         condition: service_healthy
     volumes:
       - media_data:/app/data/media
-    healthcheck:
-      test: ["CMD", "node", "-e", "process.kill(1, 0)"]
-      interval: 10s
-      timeout: 3s
-      retries: 12
-      start_period: 15s
+      - sqlite_data:/app/data/sqlite
 
   web:
     build:
@@ -138,7 +89,6 @@ services:
       start_period: 5s
 
 volumes:
-  postgres_data:
   redis_data:
-  minio_data:
+  sqlite_data:
   media_data:

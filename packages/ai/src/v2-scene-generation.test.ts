@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { generateV2SceneCandidate, type ChatProvider, type ChatCompletionRequest, type V2GenerationContextSnapshot } from "./index.ts";
+import { createV2ChatProvider, generateV2SceneCandidate, type ChatProvider, type ChatCompletionRequest, type V2GenerationContextSnapshot } from "./v2.ts";
 
 const context: V2GenerationContextSnapshot = {
   storyWorldId: "world_v2",
@@ -53,4 +53,12 @@ test("generateV2SceneCandidate returns raw malformed output for downstream stric
   };
   const result = await generateV2SceneCandidate(provider, { context });
   assert.equal(result.content, "{}");
+});
+
+test("V2 provider factory selects configured protocols and validates Anthropic credentials", () => {
+  const openai = createV2ChatProvider({ protocol: "openai-compatible", baseUrl: "https://llm.example", model: "model" });
+  assert.equal(openai.constructor.name, "OpenAICompatibleProvider");
+  const anthropic = createV2ChatProvider({ protocol: "anthropic", baseUrl: "https://api.anthropic.com", apiKey: "key", model: "claude" });
+  assert.equal(anthropic.constructor.name, "AnthropicProvider");
+  assert.throws(() => createV2ChatProvider({ protocol: "anthropic", baseUrl: "https://api.anthropic.com", model: "claude" }), /API key/);
 });
