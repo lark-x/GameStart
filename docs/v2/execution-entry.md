@@ -1,6 +1,6 @@
 # Living Network V2 执行入口说明
 
-状态：V2 正式切换已完成（2026-08-13，`codex/v2-integration`）
+状态：V2 正式切换已完成；平台配置与工作区重构已在 2026-08-14 的 `codex/v2-platform-workspace` 分支完成本地验收
 
 适用范围：所有 V2 replacement、集成、验收和后续维护任务。
 
@@ -49,4 +49,4 @@ pnpm test:e2e
 
 真实 Redis、LLM、ComfyUI、Qdrant 必须单独报告。未运行不得写成“已验收”。
 
-本次切换的本地证据：V2 coverage 148 tests/100% production line，显式真实 Redis round-trip 6/6，Playwright 2/2；真实 LLM、ComfyUI、Qdrant 未执行。
+当前本地证据：workspace tests 162/162、coverage tests 161/161 且 V2 production line 100%、显式真实 Redis round-trip 6/6、Playwright 2/2；真实 LLM、ComfyUI、Qdrant 未执行。

@@ -12,14 +12,16 @@ test("V2 runtime config defaults to disabled external lanes and SQLite", () => {
   assert.match(config.sqlitePath, /living-network-v2\.sqlite$/);
 });
 
-test("V2 runtime config requires complete enabled lane configuration", () => {
+test("V2 runtime config permits UI-configured lanes and validates environment fallbacks", () => {
+  assert.equal(loadV2RuntimeConfig({ V2_SCENE_GENERATION_ENABLED: "true" }).scene.enabled, true);
+  assert.equal(loadV2RuntimeConfig({ V2_ASSET_GENERATION_ENABLED: "true" }).asset.enabled, true);
   assert.throws(
-    () => loadV2RuntimeConfig({ V2_SCENE_GENERATION_ENABLED: "true" }),
-    (error) => error instanceof V2ConfigError && error.field === "LLM_BASE_URL",
+    () => loadV2RuntimeConfig({ V2_SCENE_GENERATION_ENABLED: "true", LLM_BASE_URL: "https://llm.example" }),
+    (error) => error instanceof V2ConfigError && error.field === "LLM_MODEL",
   );
   assert.throws(
-    () => loadV2RuntimeConfig({ V2_ASSET_GENERATION_ENABLED: "true" }),
-    (error) => error instanceof V2ConfigError && error.field === "COMFYUI_BASE_URL",
+    () => loadV2RuntimeConfig({ V2_SCENE_GENERATION_ENABLED: "true", LLM_MODEL: "model" }),
+    (error) => error instanceof V2ConfigError && error.field === "LLM_BASE_URL",
   );
 });
 

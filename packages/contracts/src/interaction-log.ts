@@ -8,5 +8,13 @@ export interface InteractionLogDto { id: string; createdAt: string; level: Inter
 export interface InteractionLogQuery { cursor?: string; limit?: number; level?: InteractionLogLevel; source?: InteractionLogSource; category?: InteractionLogCategory; action?: string; outcome?: string; requestId?: string; correlationId?: string; worldId?: string; actorId?: string; conversationId?: string; entityType?: string; entityId?: string; query?: string; createdAfter?: string; createdBefore?: string; }
 export interface InteractionLogPageDto { items: InteractionLogDto[]; nextCursor?: string; }
 export interface ProviderConnectionTestResultDto { success: boolean; ok: boolean; profileId?: string; protocol?: string; model?: string; latencyMs?: number; preview?: string; error?: { code?: string; message: string; retryable?: boolean; status?: number }; correlationId?: string; }
-export interface ChatTraceContext { requestId?: string; correlationId: string; worldId?: string; actorId?: string; conversationId?: string; }
-
+export interface ChatTraceContext {
+  requestId?: string;
+  correlationId: string;
+  worldId?: string;
+  storyWorldId?: string;
+  jobId?: string;
+  capability?: string;
+  actorId?: string;
+  conversationId?: string;
+}

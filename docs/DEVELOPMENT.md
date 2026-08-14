@@ -46,6 +46,7 @@ V1 的 PostgreSQL、旧 `node:http` API 和旧 `/v1` Contract 已冻结，仅作
 - LLM/ComfyUI 默认测试使用 Fake/注入 Fetch；真实验收必须显式开关并单独报告。
 - 关闭 LLM、ComfyUI 或 Qdrant 时，Core 编辑、发布和已发布游玩仍应可用。
 - 秘密不能进入前端状态、候选正文、Prompt 记录或明文日志。
+- 模型 API 档案由 V2 Platform 边界统一管理；API 密钥只能通过 `INTEGRATION_SECRET_KEY` 加密后进入 SQLite，Web 只能提交新密钥或看到 `hasApiKey`。模型调用日志默认保留 30 天，写入前必须脱敏并限制请求/响应大小。
 
 ## 6. Web
 

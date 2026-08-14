@@ -1,0 +1,213 @@
+<script setup lang="ts">
+import { onMounted, ref } from "vue";
+import { Image as ImageIcon, Save, TestTube2 } from "@lucide/vue";
+import Badge from "../../components/ui/Badge.vue";
+import Button from "../../components/ui/Button.vue";
+import Field from "../../components/ui/Field.vue";
+import Input from "../../components/ui/Input.vue";
+import PageHeader from "../../components/layout/PageHeader.vue";
+import { platformErrorMessage, v2PlatformClient } from "./platform.ts";
+
+const client = v2PlatformClient();
+interface ImageForm {
+  baseUrl: string;
+  timeoutMs: string;
+  defaultWorkflowVersion: string;
+}
+
+const settings = ref<ImageForm>({ baseUrl: "", timeoutMs: "30000", defaultWorkflowVersion: "" });
+const loading = ref(false);
+const saving = ref(false);
+const error = ref<string | null>(null);
+const message = ref<string | null>(null);
+
+async function load(): Promise<void> {
+  loading.value = true;
+  error.value = null;
+  try {
+    const loaded = await client.getImageServiceSettings();
+    settings.value = {
+      baseUrl: loaded.baseUrl,
+      timeoutMs: String(loaded.timeoutMs),
+      defaultWorkflowVersion: loaded.defaultWorkflowVersion ?? "",
+    };
+  } catch (err) {
+    error.value = platformErrorMessage(err, "无法读取图片服务设置");
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function save(): Promise<void> {
+  saving.value = true;
+  error.value = null;
+  message.value = null;
+  try {
+    const saved = await client.saveImageServiceSettings({
+      baseUrl: settings.value.baseUrl.trim(),
+      timeoutMs: Number(settings.value.timeoutMs),
+      ...(settings.value.defaultWorkflowVersion.trim() ? { defaultWorkflowVersion: settings.value.defaultWorkflowVersion.trim() } : {}),
+    });
+    settings.value = {
+      baseUrl: saved.baseUrl,
+      timeoutMs: String(saved.timeoutMs),
+      defaultWorkflowVersion: saved.defaultWorkflowVersion ?? "",
+    };
+    message.value = "图片服务设置已保存。Worker 会在下一次任务执行时读取。";
+  } catch (err) {
+    error.value = platformErrorMessage(err, "保存图片服务设置失败");
+  } finally {
+    saving.value = false;
+  }
+}
+
+onMounted(() => {
+  void load();
+});
+</script>
+
+<template>
+  <div class="v2-image-settings">
+    <PageHeader
+      eyebrow="平台配置 / 图片"
+      title="图片服务"
+      description="为素材生成配置 ComfyUI。地址为空时，素材生成功能保持未配置，不会误发起外部请求。"
+    >
+      <template #actions>
+        <Badge :tone="settings.baseUrl ? 'success' : 'warning'">{{ settings.baseUrl ? "已配置" : "未配置" }}</Badge>
+      </template>
+    </PageHeader>
+
+    <div v-if="error" class="v2-image-message v2-image-error" role="alert">{{ error }}</div>
+    <div v-if="message" class="v2-image-message v2-image-success" role="status">{{ message }}</div>
+
+    <section class="v2-image-card" aria-labelledby="v2-image-service-title">
+      <div class="v2-image-card-icon"><ImageIcon :size="24" aria-hidden="true" /></div>
+      <div class="v2-image-card-copy">
+        <p class="v2-section-kicker">ComfyUI 连接</p>
+        <h2 id="v2-image-service-title">本地或远程图片生成服务</h2>
+        <p>配置会持久化到 V2 SQLite。密钥以外的连接信息会显示在这里，便于确认 Worker 实际使用的地址。</p>
+      </div>
+    </section>
+
+    <form class="v2-image-form" @submit.prevent="save">
+      <Field for-id="v2-image-base-url" label="ComfyUI 地址" hint="例如 http://127.0.0.1:8188；留空表示暂不启用素材生成。">
+        <Input id="v2-image-base-url" v-model="settings.baseUrl" placeholder="http://127.0.0.1:8188" :disabled="loading" />
+      </Field>
+      <Field for-id="v2-image-timeout" label="请求超时（毫秒）">
+        <Input id="v2-image-timeout" v-model="settings.timeoutMs" type="number" min="1" :disabled="loading" />
+      </Field>
+      <Field for-id="v2-image-workflow" label="默认工作流版本" hint="仅作为平台默认提示，具体任务仍以任务自身版本为准。">
+        <Input id="v2-image-workflow" v-model="settings.defaultWorkflowVersion" placeholder="local-default@1" :disabled="loading" />
+      </Field>
+      <div class="v2-image-actions">
+        <Button variant="primary" size="md" type="submit" :loading="saving">
+          <Save :size="16" aria-hidden="true" />
+          保存设置
+        </Button>
+        <Button variant="secondary" size="md" type="button" :disabled="loading" @click="load">
+          <TestTube2 :size="16" aria-hidden="true" />
+          重新读取
+        </Button>
+      </div>
+    </form>
+  </div>
+</template>
+
+<style scoped>
+.v2-image-settings {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.v2-image-card,
+.v2-image-form {
+  padding: var(--space-6);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.v2-image-card {
+  display: flex;
+  gap: var(--space-4);
+  align-items: flex-start;
+}
+
+.v2-image-card-icon {
+  display: grid;
+  flex: 0 0 auto;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border-radius: var(--radius-md);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.v2-image-card-copy {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.v2-section-kicker {
+  margin: 0;
+  color: var(--primary);
+  font-size: var(--text-xs);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.v2-image-card h2 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: var(--text-lg);
+}
+
+.v2-image-card p:last-child {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+
+.v2-image-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(180px, 0.5fr);
+  gap: var(--space-5);
+}
+
+.v2-image-form > :nth-child(3),
+.v2-image-actions {
+  grid-column: 1 / -1;
+}
+
+.v2-image-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.v2-image-message {
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+}
+
+.v2-image-error {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.v2-image-success {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+@media (max-width: 640px) {
+  .v2-image-form {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

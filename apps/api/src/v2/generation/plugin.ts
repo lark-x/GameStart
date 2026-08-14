@@ -45,6 +45,10 @@ export interface V2GenerationPluginDependencies {
     readonly sceneGenerationEnabled: boolean;
     readonly assetGenerationEnabled: boolean;
   };
+  readonly capabilitiesProvider?: () => Promise<{
+    readonly sceneGeneration: { readonly enabled: boolean; readonly configured: boolean };
+    readonly assetGeneration: { readonly enabled: boolean; readonly configured: boolean };
+  }>;
 }
 
 type JsonRecord = Record<string, unknown>;
@@ -201,6 +205,21 @@ export function createV2GenerationPlugin(
   const defaultTokenBudget = dependencies.defaultTokenBudget ?? 4096;
   const capabilities = dependencies.capabilities ?? { sceneGenerationEnabled: false, assetGenerationEnabled: false };
 
+  const sceneCapabilityAvailable = async (): Promise<boolean> => {
+    if (dependencies.capabilitiesProvider !== undefined) {
+      const current = await dependencies.capabilitiesProvider();
+      return current.sceneGeneration.enabled && current.sceneGeneration.configured;
+    }
+    return capabilities.sceneGenerationEnabled;
+  };
+  const assetCapabilityAvailable = async (): Promise<boolean> => {
+    if (dependencies.capabilitiesProvider !== undefined) {
+      const current = await dependencies.capabilitiesProvider();
+      return current.assetGeneration.enabled && current.assetGeneration.configured;
+    }
+    return capabilities.assetGenerationEnabled;
+  };
+
   return async (app) => {
     app.post("/context-preview", async (request, reply) => {
       try {
@@ -223,7 +242,7 @@ export function createV2GenerationPlugin(
 
     app.post("/jobs/scene", async (request, reply) => {
       try {
-        if (!capabilities.sceneGenerationEnabled) return replyMissingCapability(reply, "scene generation");
+        if (!await sceneCapabilityAvailable()) return replyMissingCapability(reply, "scene generation");
         const input = parseCreateJobRequest(request.body);
         const requestedAt = now().toISOString() as V2IsoDateTime;
         const snapshot = await dependencies.canonSnapshots.getCanonSnapshot({
@@ -278,7 +297,7 @@ export function createV2GenerationPlugin(
 
     app.post("/assets/jobs", async (request, reply) => {
       try {
-        if (!capabilities.assetGenerationEnabled) return replyMissingCapability(reply, "asset generation");
+        if (!await assetCapabilityAvailable()) return replyMissingCapability(reply, "asset generation");
         if (dependencies.assetJobs === undefined) return replyMissingCapability(reply, "asset generation repository");
         const input = parseCreateAssetJobRequest(request.body);
         const createdAt = now().toISOString() as V2IsoDateTime;

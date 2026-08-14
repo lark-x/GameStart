@@ -3,7 +3,7 @@ import { computed, reactive, ref } from "vue";
 /**
  * 界面外观管理：皮肤主题 + 主题装饰 + 聊天背景。
  * 皮肤令牌定义在 src/tailwind.css 的 [data-theme] 块中；
- * 外观设置通过 /v1/appearance-settings 持久化到服务端数据库，
+ * 外观主题通过 /api/v2/platform/appearance 持久化到 V2 SQLite，
  * localStorage 仅作为首屏防闪烁缓存。
  */
 export type ThemeDecoration =
@@ -76,6 +76,10 @@ const syncState = ref<"none" | "loading" | "synced" | "saving" | "error">("none"
 
 interface AppearanceResponse {
   readonly data?: {
+    readonly themeId?: unknown;
+    readonly chatBackground?: unknown;
+  };
+  readonly settings?: {
     readonly themeId?: unknown;
     readonly chatBackground?: unknown;
   };
@@ -225,7 +229,7 @@ async function pullFromServer(): Promise<void> {
   syncState.value = "loading";
   try {
     const result = await apiClient.getAppearanceSettings();
-    const data = result?.data;
+    const data = result?.data ?? result?.settings;
     if (data && !localDirty) {
       applyState(
         themeExists(data.themeId) ? data.themeId : DEFAULT_THEME,

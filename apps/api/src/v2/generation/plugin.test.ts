@@ -835,6 +835,38 @@ test("V2 asset API maps configured asset repository failures", async () => {
   }
 });
 
+test("V2 generation API rechecks live platform capability configuration", async () => {
+  const canonSnapshots = new FakeCanonSnapshots();
+  const jobs = new FakeGenerationJobs();
+  const assets = new FakeAssetStore();
+  let configured = false;
+  const app = createV2FastifyApp({
+    generationPlugin: createV2GenerationPlugin({
+      canonSnapshots,
+      jobs,
+      assetJobs: assets,
+      assetCandidates: assets,
+      assetReviews: assets,
+      capabilitiesProvider: async () => ({
+        sceneGeneration: { enabled: true, configured },
+        assetGeneration: { enabled: true, configured },
+      }),
+    }),
+  });
+  await app.ready();
+  try {
+    const unavailable = await app.inject({ method: "POST", url: "/api/v2/generation/jobs/scene", payload: { storyWorldId: "world", baseCanonRevision: 1, idempotencyKey: "live-scene", prompt: "scene" } });
+    assert.equal(unavailable.statusCode, 503);
+    configured = true;
+    const scene = await app.inject({ method: "POST", url: "/api/v2/generation/jobs/scene", payload: { storyWorldId: "world_generation", baseCanonRevision: 7, idempotencyKey: "live-scene", prompt: "scene" } });
+    assert.equal(scene.statusCode, 201);
+    const asset = await app.inject({ method: "POST", url: "/api/v2/generation/assets/jobs", payload: { storyWorldId: "world", idempotencyKey: "live-asset", prompt: "asset", workflowVersion: "v1", workflow: {} } });
+    assert.equal(asset.statusCode, 201);
+  } finally {
+    await app.close();
+  }
+});
+
 test("V2 generation API covers optional fields and asset repository read/review errors", async () => {
   const { app } = createApp();
   await app.ready();

@@ -2,6 +2,7 @@ import type { ChatProvider } from "./provider.ts";
 
 export interface V2SceneGenerationRequest {
   readonly context: V2GenerationContextSnapshot;
+  readonly jobId?: string;
   readonly model?: string;
   readonly temperature?: number;
 }
@@ -61,6 +62,9 @@ export async function generateV2SceneCandidate(
     ],
     trace: {
       correlationId: `v2:generation:${request.context.contextHash}`,
+      storyWorldId: request.context.storyWorldId,
+      capability: "scene_generation",
+      ...(request.jobId === undefined ? {} : { jobId: request.jobId }),
     },
   });
   return {

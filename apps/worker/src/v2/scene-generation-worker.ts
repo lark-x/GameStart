@@ -178,6 +178,7 @@ export async function processV2SceneGenerationJob(
   try {
     const generated = await generateV2SceneCandidate(dependencies.provider, {
       context: job.context as V2GenerationContextSnapshot,
+      jobId: job.jobId,
       ...(options.model === undefined ? {} : { model: options.model }),
       ...(options.temperature === undefined ? {} : { temperature: options.temperature }),
     });

@@ -1,12 +1,13 @@
 import type { DatabaseSync } from "node:sqlite";
 
-import { createV2ChatProvider } from "@living-network/ai/v2";
+import { SecretCipher } from "@living-network/ai";
 import {
   getV2Migrations,
   openV2SqliteConnection,
   V2SqliteAssetGenerationRepository,
   V2SqliteCandidateSubmissionPort,
   V2SqliteGenerationJobRepository,
+  V2SqlitePlatformRepository,
 } from "@living-network/database/v2";
 import { loadV2RuntimeConfig, type V2RuntimeConfig } from "@living-network/config/v2";
 import type {
@@ -15,11 +16,12 @@ import type {
 } from "@living-network/ports/v2";
 
 import { BullMqTaskQueue, BullMqTaskWorker, type TaskQueue } from "../queue.ts";
-import { ComfyUiHttpClient } from "../comfyui-client.ts";
 import { createV2GenerationDispatchPump } from "./generation-dispatch-pump.ts";
 import { V2LocalAssetMediaStore } from "./local-asset-media-store.ts";
 import { processV2AssetGenerationJob } from "./asset-generation-worker.ts";
 import { processV2SceneGenerationJob } from "./scene-generation-worker.ts";
+import { V2DynamicComfyUiClient } from "./dynamic-comfyui-client.ts";
+import { V2DynamicModelProvider } from "./model-provider.ts";
 
 export interface V2WorkerProcess {
   stop(): Promise<void>;
@@ -45,6 +47,10 @@ function assetQueue(config: V2RuntimeConfig): TaskQueue<V2AssetGenerationJobQueu
   });
 }
 
+const MODEL_LOG_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+const MODEL_LOG_INTERRUPTION_MS = 10 * 60 * 1000;
+const MODEL_LOG_MAINTENANCE_MS = 5 * 60 * 1000;
+
 export async function startV2Worker(
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ): Promise<V2WorkerProcess> {
@@ -59,15 +65,34 @@ export async function startV2Worker(
     const sceneJobs = new V2SqliteGenerationJobRepository(db);
     const assetJobs = new V2SqliteAssetGenerationRepository(db);
     const candidateSubmission = new V2SqliteCandidateSubmissionPort(db);
+    const platformRepository = new V2SqlitePlatformRepository(db);
+    const secretCipher = config.integrationSecretKey === undefined ? undefined : new SecretCipher(config.integrationSecretKey);
+    let lastModelLogMaintenance = 0;
+    const maintainModelLogs = async (): Promise<void> => {
+      const current = new Date();
+      await platformRepository.markInterruptedModelCalls(
+        new Date(current.getTime() - MODEL_LOG_INTERRUPTION_MS).toISOString(),
+        current.toISOString(),
+      );
+      await platformRepository.deleteModelCallLogsBefore(
+        new Date(current.getTime() - MODEL_LOG_RETENTION_MS).toISOString(),
+      );
+      lastModelLogMaintenance = current.getTime();
+    };
+    await maintainModelLogs();
 
     const scene = config.scene.enabled
       ? (() => {
-        const provider = createV2ChatProvider({
-          protocol: config.scene.protocol,
-          baseUrl: config.scene.baseUrl!,
-          ...(config.scene.apiKey === undefined ? {} : { apiKey: config.scene.apiKey }),
-          model: config.scene.model!,
-          timeoutMs: config.scene.timeoutMs,
+        const provider = new V2DynamicModelProvider({
+          repository: platformRepository,
+          ...(secretCipher === undefined ? {} : { secretCipher }),
+          fallback: {
+            protocol: config.scene.protocol,
+            ...(config.scene.baseUrl === undefined ? {} : { baseUrl: config.scene.baseUrl }),
+            ...(config.scene.apiKey === undefined ? {} : { apiKey: config.scene.apiKey }),
+            ...(config.scene.model === undefined ? {} : { model: config.scene.model }),
+            timeoutMs: config.scene.timeoutMs,
+          },
         });
         const queue = sceneQueue(config);
         queues.push(queue);
@@ -104,9 +129,12 @@ export async function startV2Worker(
             const result = await processV2AssetGenerationJob(payload, {
               jobs: assetJobs,
               candidates: assetJobs,
-              comfyUi: new ComfyUiHttpClient({
-                baseUrl: config.asset.baseUrl!,
-                timeoutMs: config.asset.timeoutMs,
+              comfyUi: new V2DynamicComfyUiClient({
+                repository: platformRepository,
+                fallback: {
+                  ...(config.asset.baseUrl === undefined ? {} : { baseUrl: config.asset.baseUrl }),
+                  timeoutMs: config.asset.timeoutMs,
+                },
               }),
               mediaStore: new V2LocalAssetMediaStore({ mediaRoot: config.mediaRoot }),
             });
@@ -130,6 +158,9 @@ export async function startV2Worker(
     const tick = async (): Promise<void> => {
       if (stopped) return;
       await pump.runOnce();
+      if (Date.now() - lastModelLogMaintenance >= MODEL_LOG_MAINTENANCE_MS) {
+        await maintainModelLogs();
+      }
     };
     await tick();
     timer = setInterval(() => void tick().catch((error: unknown) => console.error("V2 dispatch pump failed", error)), config.dispatchTickMs);
