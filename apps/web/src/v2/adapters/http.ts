@@ -136,12 +136,25 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
       });
       revision = 2;
     },
+    async createStoryWorld(input: { readonly name: string; readonly summary?: string }): Promise<V2StoryWorldDto> {
+      const suffix = crypto.randomUUID();
+      const created = await post<{ item: V2StoryWorldDto }>("/api/v2/core/worlds", {
+        storyWorldId: `world:${suffix}`,
+        name: input.name,
+        ...(input.summary !== undefined && input.summary.trim() !== "" ? { summary: input.summary.trim() } : {}),
+        idempotencyKey: `create-world:${suffix}`,
+      });
+      // 新世界成为当前工作区，下一次 getSnapshot 优先加载它
+      worldId = created.item.storyWorldId;
+      revision = created.item.revision;
+      return created.item;
+    },
     async getSnapshot(): Promise<V2WorkspaceSnapshot> {
       const [health, worlds] = await Promise.all([
         get<V2HealthResponse>("/api/v2/health"),
         get<readonly V2StoryWorldDto[]>("/api/v2/core/worlds"),
       ]);
-      const world = worlds[0];
+      const world = worlds.find((candidate) => candidate.storyWorldId === worldId) ?? worlds[0];
       if (!world) {
         throw new V2AdapterError({ code: "NOT_FOUND", message: "No V2 story world exists. Create one through the Core API first." });
       }

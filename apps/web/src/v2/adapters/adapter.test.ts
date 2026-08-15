@@ -234,3 +234,56 @@ test("V2 HTTP adapter maps optional snapshot values and player choices", async (
   const run = await adapter.startRun().catch((error: unknown) => error);
   assert.ok(run instanceof V2AdapterError);
 });
+
+test("V2 mock adapter creates story worlds with generated ids", async () => {
+  const adapter = createV2MockAdapter();
+  const first = await adapter.createStoryWorld({ name: "故事甲" });
+  const second = await adapter.createStoryWorld({ name: "故事乙", summary: "  前提乙  " });
+
+  assert.equal(first.name, "故事甲");
+  assert.ok(first.storyWorldId.startsWith("world:mock-"));
+  assert.equal(first.revision, 1);
+  assert.equal(second.summary, "前提乙");
+});
+
+test("V2 http adapter creates a story world and prefers it on the next snapshot", async () => {
+  const calls: Array<{ url: string; method: string; body?: Record<string, unknown> }> = [];
+  const oldWorld = { storyWorldId: "world:old", name: "Old World", revision: 3, createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" };
+  let createdRef: { storyWorldId: string; name: string; revision: number } | null = null;
+  const fetchImpl = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const url = String(input);
+    const method = init?.method ?? "GET";
+    if (method === "POST" && url.endsWith("/worlds")) {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      calls.push({ url, method, body });
+      createdRef = { storyWorldId: String(body.storyWorldId), name: String(body.name), revision: 1 };
+      return Response.json({ item: { ...createdRef, createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" } });
+    }
+    if (url.endsWith("/health")) return Response.json({ ok: true, version: "v2" });
+    if (url.endsWith("/core/worlds")) return Response.json(createdRef === null ? [oldWorld] : [oldWorld, createdRef]);
+    if (url.endsWith("/canon")) return Response.json({ storyWorldId: createdRef?.storyWorldId ?? "world:new", revision: 1, world: createdRef === null ? { storyWorldId: "world:new", name: "新世界", summary: "前提", revision: 1, createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" } : { ...createdRef, summary: "前提" }, locations: [], characters: [], facts: [], rules: [], timelineEvents: [] });
+    if (url.endsWith("/graph")) return Response.json({ arcs: [], scenes: [], choices: [] });
+    if (url.endsWith("/graph/validation")) return Response.json({ valid: true, diagnostics: [] });
+    if (url.endsWith("/state/variables")) return Response.json([]);
+    if (url.endsWith("/state/initial")) return Response.json({ values: {} });
+    if (url.endsWith("/candidates/scenes")) return Response.json([]);
+    if (url.endsWith("/releases/preflight")) return Response.json({ valid: true, diagnostics: [] });
+    if (url.endsWith("/releases")) return Response.json([]);
+    throw new Error(`unhandled ${method} ${url}`);
+  };
+
+  const adapter = createV2HttpAdapter({ baseUrl: "http://localhost", fetchImpl });
+  const created = await adapter.createStoryWorld({ name: "新世界", summary: "前提" });
+
+  assert.equal(created.name, "新世界");
+  assert.equal(calls[0]?.method, "POST");
+  assert.equal(calls[0]?.body?.name, "新世界");
+  assert.equal(calls[0]?.body?.summary, "前提");
+  assert.ok(String(calls[0]?.body?.storyWorldId).startsWith("world:"));
+  assert.ok(String(calls[0]?.body?.idempotencyKey).startsWith("create-world:"));
+
+  // 创建后即使 worlds[0] 是旧世界，下一次快照也要加载新世界
+  const snapshot = await adapter.getSnapshot();
+  assert.equal(snapshot.world.storyWorldId, createdRef?.storyWorldId);
+  assert.equal(snapshot.world.name, "新世界");
+});

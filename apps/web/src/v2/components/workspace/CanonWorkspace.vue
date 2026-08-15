@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { User, MapPin, BookOpen, ShieldAlert } from "@lucide/vue";
+import { Plus, User, MapPin, BookOpen, ShieldAlert } from "@lucide/vue";
 import Badge from "../../../components/ui/Badge.vue";
 import Button from "../../../components/ui/Button.vue";
 import Field from "../../../components/ui/Field.vue";
 import Input from "../../../components/ui/Input.vue";
+import Modal from "../../../components/ui/Modal.vue";
 import Textarea from "../../../components/ui/Textarea.vue";
 import type { V2WorkspaceSnapshot } from "../../adapters";
+import { useV2WorkspaceStore } from "../../stores/workspace";
 
 const props = defineProps<{
-  snapshot: V2WorkspaceSnapshot;
+  snapshot: V2WorkspaceSnapshot | null;
   loading: boolean;
   draftWorldName: string;
   draftPremise: string;
@@ -26,28 +28,65 @@ const emit = defineEmits<{
   resetCanonDraft: [];
 }>();
 
+const store = useV2WorkspaceStore();
+
 const activeTab = ref<"all" | "characters" | "locations" | "facts" | "rules">("all");
 const searchQuery = ref("");
 
+const createDialogOpen = ref(false);
+const newStoryName = ref("");
+const newStoryPremise = ref("");
+const createError = ref<string | null>(null);
+const creatingStory = computed(() => store.creatingStory);
+
+function openCreateDialog(): void {
+  createError.value = null;
+  newStoryName.value = "";
+  newStoryPremise.value = "";
+  createDialogOpen.value = true;
+}
+
+async function submitCreateStory(): Promise<void> {
+  const name = newStoryName.value.trim();
+  if (!name) {
+    createError.value = "请填写故事名称。";
+    return;
+  }
+  createError.value = null;
+  try {
+    const input: { name: string; summary?: string } = { name };
+    const premise = newStoryPremise.value.trim();
+    if (premise) input.summary = premise;
+    await store.createStoryWorld(input);
+    createDialogOpen.value = false;
+  } catch {
+    createError.value = store.error;
+  }
+}
+
 const filteredCharacters = computed(() => {
+  if (!props.snapshot) return [];
   if (!searchQuery.value.trim()) return props.snapshot.world.characters;
   const q = searchQuery.value.toLowerCase();
   return props.snapshot.world.characters.filter(c => c.name.toLowerCase().includes(q) || c.role.toLowerCase().includes(q));
 });
 
 const filteredLocations = computed(() => {
+  if (!props.snapshot) return [];
   if (!searchQuery.value.trim()) return props.snapshot.world.locations;
   const q = searchQuery.value.toLowerCase();
   return props.snapshot.world.locations.filter(l => l.name.toLowerCase().includes(q) || l.tags.some(t => t.toLowerCase().includes(q)));
 });
 
 const filteredFacts = computed(() => {
+  if (!props.snapshot) return [];
   if (!searchQuery.value.trim()) return props.snapshot.world.facts;
   const q = searchQuery.value.toLowerCase();
   return props.snapshot.world.facts.filter(f => f.text.toLowerCase().includes(q));
 });
 
 const filteredRules = computed(() => {
+  if (!props.snapshot) return [];
   if (!searchQuery.value.trim()) return props.snapshot.world.rules;
   const q = searchQuery.value.toLowerCase();
   return props.snapshot.world.rules.filter(r => r.text.toLowerCase().includes(q));
@@ -64,12 +103,33 @@ function ruleSeverityLabel(severity: string): string {
 
 <template>
   <div class="canon-workspace">
-    <!-- Top Configuration & Revision Controls -->
-    <div class="canon-card config-card">
-      <div class="card-header">
-        <h3>正典修订与设定基线</h3>
-        <Badge tone="neutral">版本 v{{ snapshot.world.revision }}</Badge>
+    <div v-if="!snapshot && loading" class="canon-loading">正在加载工作区快照...</div>
+
+    <!-- 空库：还没有任何故事世界，从这里创建第一个故事 -->
+    <div v-else-if="!snapshot" class="canon-card canon-empty">
+      <div class="canon-empty-copy">
+        <h3>还没有故事世界</h3>
+        <p>从一个故事空间开始：填写名称与世界观前提，创建后即可在总览中编辑正典设定。</p>
       </div>
+      <Button variant="primary" size="md" @click="openCreateDialog">
+        <Plus :size="16" aria-hidden="true" />
+        新建故事
+      </Button>
+    </div>
+
+    <template v-else>
+      <!-- Top Configuration & Revision Controls -->
+      <div class="canon-card config-card">
+        <div class="card-header">
+          <h3>正典修订与设定基线</h3>
+          <div class="card-actions">
+            <Badge tone="neutral">版本 v{{ snapshot.world.revision }}</Badge>
+            <Button variant="secondary" size="sm" @click="openCreateDialog">
+              <Plus :size="14" aria-hidden="true" />
+              新建故事
+            </Button>
+          </div>
+        </div>
 
       <form class="v2-canon-form" aria-label="故事设定预览" @submit.prevent="emit('previewCanonDraft')">
         <div class="form-row">
@@ -246,6 +306,28 @@ function ruleSeverityLabel(severity: string): string {
         </article>
       </template>
     </div>
+    </template>
+
+    <Modal
+      :open="createDialogOpen"
+      title="新建故事"
+      description="创建一个新的故事世界空间，之后可以在总览中继续编辑正典设定。"
+      @close="createDialogOpen = false"
+    >
+      <form class="create-story-form" @submit.prevent="submitCreateStory">
+        <Field for-id="v2-new-story-name" label="故事名称" required hint="例如：雾港回声">
+          <Input id="v2-new-story-name" v-model="newStoryName" placeholder="故事名称" autofocus />
+        </Field>
+        <Field for-id="v2-new-story-premise" label="故事前提 / 世界观背景" hint="一句话说明这个世界发生了什么；可留空稍后补充。">
+          <Textarea id="v2-new-story-premise" v-model="newStoryPremise" :rows="3" placeholder="可留空，稍后在故事总览中补充。" />
+        </Field>
+        <p v-if="createError" class="create-story-error" role="alert">{{ createError }}</p>
+      </form>
+      <template #footer>
+        <Button variant="secondary" size="md" :disabled="creatingStory" @click="createDialogOpen = false">取消</Button>
+        <Button variant="primary" size="md" :loading="creatingStory" @click="submitCreateStory">创建故事</Button>
+      </template>
+    </Modal>
   </div>
 </template>
 
@@ -274,6 +356,54 @@ function ruleSeverityLabel(severity: string): string {
   font-weight: 700;
   color: var(--text-strong);
   margin: 0;
+}
+
+.card-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.canon-loading {
+  padding: var(--space-6);
+  color: var(--muted);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+.canon-empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.canon-empty-copy h3 {
+  margin: 0 0 var(--space-1);
+  color: var(--text-strong);
+  font-size: var(--text-lg);
+}
+
+.canon-empty-copy p {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+
+.create-story-form {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.create-story-error {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: var(--text-xs);
 }
 
 .form-row {

@@ -3,6 +3,9 @@ import {
   type V2CreateSceneGenerationJobResponse,
   type V2IsoDateTime,
   type V2JobId,
+  type V2Revision,
+  type V2StoryWorldDto,
+  type V2StoryWorldId,
 } from "@living-network/contracts/v2";
 
 import {
@@ -50,9 +53,24 @@ export function createV2MockSnapshot(): V2WorkspaceSnapshot {
 }
 
 export function createV2MockAdapter(): V2WorkspaceAdapter {
+  // Mock 只记录创建的世界；快照仍返回固定 fixture（world_v2_demo），
+  // 真实创建链路以 HTTP adapter + Core API 为准。
+  const createdWorlds: V2StoryWorldDto[] = [];
   return {
     mode: "mock",
     async bootstrapWorkspace(): Promise<void> {},
+    async createStoryWorld(input: { readonly name: string; readonly summary?: string }): Promise<V2StoryWorldDto> {
+      const world: V2StoryWorldDto = {
+        storyWorldId: `world:mock-${createdWorlds.length + 1}` as V2StoryWorldId,
+        name: input.name,
+        ...(input.summary !== undefined && input.summary.trim() !== "" ? { summary: input.summary.trim() } : {}),
+        revision: 1 as V2Revision,
+        createdAt: now,
+        updatedAt: now,
+      };
+      createdWorlds.push(world);
+      return world;
+    },
     async getSnapshot(): Promise<V2WorkspaceSnapshot> {
       return createV2MockSnapshot();
     },
