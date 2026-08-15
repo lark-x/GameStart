@@ -88,8 +88,6 @@
       ],
       "ownedPaths": [
         "apps/web/src/v2/views/V2AppearanceSettingsView.vue",
-        "apps/web/src/v2/views/V2ImageSettingsView.vue",
-        "apps/web/src/v2/views/V2ModelLogsView.vue",
         "apps/web/src/v2/views/platform.ts",
         "packages/ports/src/v2/platform/**",
         "packages/database/src/v2/platform/repository*.ts"
@@ -104,7 +102,6 @@
       "ownedPaths": [
         "apps/web/src/v2/components/V2StatusRail.vue",
         "apps/web/src/v2/sentinel.test.ts",
-        "apps/web/src/v2/views/V2AutomationView.vue",
         "apps/web/src/v2/views/V2SettingsHomeView.vue"
       ]
     },
@@ -175,7 +172,10 @@
         "pnpm-lock.yaml",
         "pnpm-workspace.yaml",
         "scripts/**",
-        "tsconfig*.json"
+        "tsconfig*.json",
+        "apps/web/src/v2/views/V2ImageSettingsView.vue",
+        "apps/web/src/v2/views/V2ModelLogsView.vue",
+        "apps/web/src/v2/views/V2AutomationView.vue"
       ]
     }
   }

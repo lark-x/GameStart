@@ -15,6 +15,9 @@
     "apps/web/src/v2/adapters/platform.test.ts",
     "apps/web/src/v2/adapters/platform.ts",
     "apps/web/src/v2/views/V2ModelSettingsView.vue",
+    "apps/web/src/v2/views/V2ImageSettingsView.vue",
+    "apps/web/src/v2/views/V2ModelLogsView.vue",
+    "apps/web/src/v2/views/V2AutomationView.vue",
     "docs/tasks/20260815-integration-v2-model-settings-ux.json",
     "packages/contracts/src/v2/platform/index.ts"
   ],
