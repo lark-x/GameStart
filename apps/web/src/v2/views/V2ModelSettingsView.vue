@@ -334,45 +334,42 @@ onMounted(() => {
           </div>
           <Badge v-if="selectedProfile?.hasApiKey" tone="success">密钥已保存</Badge>
         </div>
-                <form class="v2-editor-form" @submit.prevent="save">
-          <!-- Step 1: Provider Connection -->
-          <div class="form-block">
-            <h3 class="form-block-title">1. \u670d\u52a1\u5546\u8fde\u63a5\u4e0e\u9274\u6743</h3>
-            <div class="form-row-2">
-              <Field for-id="v2-model-protocol" label="\u534f\u8bae" hint="Anthropic \u4f1a\u4f7f\u7528\u5bf9\u5e94\u6d88\u606f\u534f\u8bae\u3002">
-                <Select id="v2-model-protocol" v-model="form.protocol">
-                  <option value="openai-compatible">OpenAI \u517c\u5bb9</option>
-                  <option value="anthropic">Anthropic</option>
-                </Select>
-              </Field>
-              <Field for-id="v2-model-base-url" label="API \u5730\u5740" required hint="\u4f8b\u5982 https://api.example.com/v1">
-                <Input id="v2-model-base-url" v-model="form.baseUrl" placeholder="https://..." required />
-              </Field>
-            </div>
-            <Field for-id="v2-model-api-key" label="API \u5bc6\u94a5" hint="\u7559\u7a7a\u8868\u793a\u4fdd\u6301\u5df2\u6709\u5bc6\u94a5\uff1b\u65b0\u5efa\u6863\u6848\u65f6\u7559\u7a7a\u8868\u793a\u65e0\u5bc6\u94a5\u3002">
-              <Input id="v2-model-api-key" v-model="form.apiKey" type="password" placeholder="sk-..." autocomplete="new-password" />
-            </Field>
-          </div>
+                        <form class="v2-form-grid" @submit.prevent="save">
+          <Field for-id="v2-model-name" label="\u6863\u6848\u540d\u79f0" required hint="\u4f8b\u5982\uff1a\u4e3b\u521b\u4f5c\u6a21\u578b">
+            <Input id="v2-model-name" v-model="form.name" placeholder="\u4f8b\u5982\uff1a\u4e3b\u521b\u4f5c\u6a21\u578b" required />
+          </Field>
+          <Field for-id="v2-model-protocol" label="\u534f\u8bae" hint="Anthropic \u4f1a\u4f7f\u7528\u5bf9\u5e94\u6d88\u606f\u534f\u8bae\u3002">
+            <Select id="v2-model-protocol" v-model="form.protocol">
+              <option value="openai-compatible">OpenAI \u517c\u5bb9</option>
+              <option value="anthropic">Anthropic</option>
+            </Select>
+          </Field>
+          <Field for-id="v2-model-base-url" label="API \u5730\u5740" required hint="\u4f8b\u5982 https://api.example.com/v1">
+            <Input id="v2-model-base-url" v-model="form.baseUrl" placeholder="https://..." required />
+          </Field>
+          <Field for-id="v2-model-name-value" label="\u6a21\u578b\u540d\u79f0" required hint="\u53ef\u70b9\u51fb\u53f3\u4fa7\u83b7\u53d6\u6a21\u578b\u5217\u8868\u6216\u624b\u52a8\u8f93\u5165">
+            <template #label>
+              <div class="model-field-label">
+                <span>\u6a21\u578b\u540d\u79f0</span>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  type="button"
+                  class="btn-fetch-models"
+                  :loading="fetchingModels"
+                  :disabled="!form.baseUrl.trim()"
+                  @click="fetchModels"
+                >
+                  <Download :size="13" aria-hidden="true" />
+                  \u83b7\u53d6\u6a21\u578b
+                </Button>
+              </div>
+            </template>
+            <Input id="v2-model-name-value" v-model="form.model" placeholder="\u6a21\u578b ID" required />
+          </Field>
 
-          <!-- Step 2: Model Selection & Discovery -->
-          <div class="form-block">
-            <div class="model-select-header">
-              <h3 class="form-block-title">2. \u6a21\u578b\u9009\u62e9\u4e0e\u83b7\u53d6</h3>
-              <Button
-                variant="secondary"
-                size="sm"
-                type="button"
-                :loading="fetchingModels"
-                :disabled="!form.baseUrl.trim()"
-                @click="fetchModels"
-              >
-                <Download :size="14" aria-hidden="true" />
-                \u83b7\u53d6\u53ef\u7528\u6a21\u578b\u5217\u8868
-              </Button>
-            </div>
-            <Field for-id="v2-model-name-value" label="\u6a21\u578b\u540d\u79f0 (ID)" required hint="\u53ef\u70b9\u51fb\u4e0a\u65b9\u201c\u83b7\u53d6\u201d\u81ea\u52a8\u62c9\u53d6\uff0c\u6216\u76f4\u63a5\u624b\u52a8\u8f93\u5165\u6a21\u578b ID">
-              <Input id="v2-model-name-value" v-model="form.model" placeholder="\u4f8b\u5982 mimo-v2.5, gpt-4o, claude-3-5-sonnet" required />
-            </Field>
+          <!-- Discovered Models Picker (if any) -->
+          <div v-if="fetchModelError || discoveredModels.length > 0" class="v2-discovery-area">
             <div v-if="fetchModelError" class="v2-model-fetch-error" role="alert">
               {{ fetchModelError }}
             </div>
@@ -398,28 +395,18 @@ onMounted(() => {
             </div>
           </div>
 
-          <!-- Step 3: Profile Name & Runtime Parameters -->
-          <div class="form-block">
-            <h3 class="form-block-title">3. \u6863\u6848\u4fe1\u606f\u4e0e\u8fd0\u884c\u53c2\u6570</h3>
-            <div class="form-row-2">
-              <Field for-id="v2-model-name" label="\u6863\u6848\u540d\u79f0" required hint="\u7528\u4e8e\u5728\u7cfb\u7edf\u4e2d\u8bc6\u522b\u672c\u6a21\u578b\u914d\u7f6e">
-                <Input id="v2-model-name" v-model="form.name" placeholder="\u4f8b\u5982\uff1a\u4e3b\u521b\u4f5c\u6a21\u578b" required />
-              </Field>
-              <Field for-id="v2-model-timeout" label="\u8d85\u65f6\uff08\u6beb\u79d2\uff09">
-                <Input id="v2-model-timeout" v-model="form.timeoutMs" type="number" min="1" />
-              </Field>
-            </div>
-            <div class="form-row-2">
-              <Field for-id="v2-model-max-tokens" label="\u6700\u5927\u8f93\u51fa Token">
-                <Input id="v2-model-max-tokens" v-model="form.maxTokens" type="number" min="1" />
-              </Field>
-              <Field for-id="v2-model-temperature" label="\u6e29\u5ea6\uff080 - 2\uff09">
-                <Input id="v2-model-temperature" v-model="form.temperature" type="number" min="0" max="2" step="0.1" />
-              </Field>
-            </div>
-          </div>
-
-          <!-- Action Bar -->
+          <Field for-id="v2-model-api-key" label="API \u5bc6\u94a5" hint="\u7559\u7a7a\u8868\u793a\u4fdd\u6301\u5df2\u6709\u5bc6\u94a5\uff1b\u65b0\u5efa\u6863\u6848\u65f6\u7559\u7a7a\u8868\u793a\u65e0\u5bc6\u94a5\u3002">
+            <Input id="v2-model-api-key" v-model="form.apiKey" type="password" placeholder="sk-..." autocomplete="new-password" />
+          </Field>
+          <Field for-id="v2-model-timeout" label="\u8d85\u65f6\uff08\u6beb\u79d2\uff09">
+            <Input id="v2-model-timeout" v-model="form.timeoutMs" type="number" min="1" />
+          </Field>
+          <Field for-id="v2-model-max-tokens" label="\u6700\u5927\u8f93\u51fa Token">
+            <Input id="v2-model-max-tokens" v-model="form.maxTokens" type="number" min="1" />
+          </Field>
+          <Field for-id="v2-model-temperature" label="\u6e29\u5ea6\uff080 - 2\uff09">
+            <Input id="v2-model-temperature" v-model="form.temperature" type="number" min="0" max="2" step="0.1" />
+          </Field>
           <div class="v2-form-actions v2-form-actions-wide">
             <Button variant="primary" size="md" type="submit" :loading="saving">
               <Save :size="16" aria-hidden="true" />
@@ -603,6 +590,9 @@ onMounted(() => {
 .model-chip:hover { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
 .model-chip.active { border-color: var(--primary); background: var(--primary); color: var(--on-primary); font-weight: 700; }
 .v2-model-fetch-error { padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); background: var(--danger-soft); color: var(--danger); font-size: var(--text-xs); }
+.model-field-label { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); width: 100%; }
+.btn-fetch-models { font-size: 11px; padding: 0 var(--space-2); min-height: 24px; height: 24px; }
+.v2-discovery-area { grid-column: 1 / -1; display: grid; gap: var(--space-2); }
 .v2-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
