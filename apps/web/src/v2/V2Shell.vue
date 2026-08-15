@@ -183,6 +183,9 @@ onMounted(() => {
   background: var(--surface-soft);
   position: sticky;
   top: var(--page-pad-y);
+  /* 与外壳卡片的圆角对齐：侧栏不透明背景若为直角会盖掉卡片左侧圆角，
+     出现“左方右圆”的边框错位；左侧两角取外壳圆角减边框宽度 */
+  border-radius: calc(var(--radius-xl) - 1px) 0 0 calc(var(--radius-xl) - 1px);
   /* 高度 = 视口高度 − 页面上下内边距 − 页面底部额外留白（.page 的 padding-bottom 多出 --space-6）。
      sticky 的移动范围 = 网格区高度 − 自身高度，只有在该范围内不小于整页滚动距离时，
      侧栏才能在整段滚动中保持固定；直接减去底部留白使两者恰好相等。 */
@@ -366,6 +369,8 @@ onMounted(() => {
     z-index: 30;
     inset: 0 auto 0 0;
     width: min(286px, 84vw);
+    /* 抽屉模式贴屏幕左缘，恢复直角；圆角只属于桌面卡片内嵌场景 */
+    border-radius: 0;
     transform: translateX(-105%);
     transition: transform var(--motion-base);
     box-shadow: var(--shadow-md);
