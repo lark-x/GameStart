@@ -65,7 +65,7 @@
     "branch": "codex/integration/ai-scope-governance",
     "baseSha": "c0ec95150092184384cfb6b4ed5464e32f2902ca",
     "pullRequest": null,
-    "commits": [],
+    "commits": ["9ce9c79da0ea3abf407230465497096790102fb1"],
     "results": [
       { "command": "pnpm check:scope", "exitCode": 0, "note": "21-file Integration scope accepted; exact-path policy enforced." },
       { "command": "pnpm test:governance", "exitCode": 0, "note": "15 governance tests passed." },
