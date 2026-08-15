@@ -148,7 +148,9 @@ docker compose --env-file .env -f infra/compose/docker-compose.yml down
 
 默认情况下，外部生成能力关闭，Core 编辑、发布和已发布游玩仍可用。
 
-场景生成需要 `V2_SCENE_GENERATION_ENABLED=true`、`LLM_BASE_URL` 和 `LLM_MODEL`；资产生成需要 `V2_ASSET_GENERATION_ENABLED=true` 和 `COMFYUI_BASE_URL`。在 Compose 中，将这些变量写入未提交的 `.env`。
+场景生成需要 `V2_SCENE_GENERATION_ENABLED=true`，然后在 Web 的“平台配置 → 模型与能力”中保存模型档案并绑定“场景生成”。也可以用完整的 `LLM_BASE_URL`、`LLM_MODEL`（Anthropic 还需要 `LLM_API_KEY`）作为环境变量兜底。资产生成需要 `V2_ASSET_GENERATION_ENABLED=true`，然后在“平台配置 → 图片服务”中填写 ComfyUI 地址，或使用 `COMFYUI_BASE_URL` 环境变量兜底。保存 API 密钥前需要设置 `INTEGRATION_SECRET_KEY`。
+
+Web 的“诊断与自动化 → 模型调用日志”会展示脱敏后的请求、响应、耗时、Token 用量和错误上下文；日志默认保留 30 天。当前 Web 为中文单语言界面，暂不提供语言切换功能。
 
 ```sh
 VITE_V2_ENABLE_MOCK=true pnpm --filter @living-network/web dev

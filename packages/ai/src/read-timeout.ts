@@ -22,9 +22,10 @@ export async function readBodyWithTimeout(
   const chunks: Uint8Array[] = [];
   let totalBytes = 0;
   let timedOut = false;
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
 
   const timeout = new Promise<never>((_resolve, reject) => {
-    setTimeout(() => {
+    timeoutHandle = setTimeout(() => {
       timedOut = true;
       void reader.cancel().catch(() => { /* ignore cancel errors */ });
       reject(new ProviderError("TIMEOUT", "LLM response body read timed out", { retryable: true }));
@@ -46,6 +47,7 @@ export async function readBodyWithTimeout(
       chunks.push(result.value);
     }
   } finally {
+    if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
     try { reader.releaseLock(); } catch { /* already released */ }
   }
 

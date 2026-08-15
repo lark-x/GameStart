@@ -17,7 +17,7 @@ test("V2 workspace store loads snapshot through injected adapter", async () => {
   assert.equal(store.error, null);
   assert.equal(store.hasSnapshot, true);
   assert.equal(store.snapshot?.world.name, "Gate 0 Demo World");
-  assert.equal(store.revisionLabel, "Revision 2");
+  assert.equal(store.revisionLabel, "版本 2");
   assert.equal(store.graphIssueCount, 2);
   assert.equal(store.typedStatePreviewCount, 2);
 });
@@ -79,7 +79,7 @@ test("V2 workspace store creates a generation job through the adapter", async ()
   store.generationPrompt = "Create an archive scene candidate.";
   await store.createGenerationJob();
 
-  assert.match(store.generationMessage ?? "", /Generation job/);
+  assert.match(store.generationMessage ?? "", /生成任务已创建/);
   assert.equal(store.snapshot?.generation.job.status, "queued");
   assert.equal(store.snapshot?.generation.job.promptPreview, "Create an archive scene candidate.");
 });
@@ -93,7 +93,7 @@ test("V2 workspace store applies candidate review result to mock state", async (
   store.reviewReason = "Approved for mock review.";
   await store.reviewCandidate("approve");
 
-  assert.equal(store.reviewMessage, "Candidate marked approved.");
+  assert.equal(store.reviewMessage, "候选内容已通过。");
   assert.equal(store.snapshot?.candidate.status, "approved");
   assert.equal(store.snapshot?.candidate.reviewReason, "Approved for mock review.");
   assert.equal(store.canReviewCandidate, false);
@@ -107,14 +107,14 @@ test("V2 workspace store handles release creation and export", async () => {
 
   await store.createRelease();
   await store.startRun();
-  assert.match(store.playerMessage ?? "", /Started run/);
+  assert.equal(store.playerMessage, "已启动运行预览。");
   store.exportFormat = "markdown";
   await store.exportRelease();
 
-  assert.equal(store.releaseMessage, "Release 0.1.0 is immutable.");
+  assert.equal(store.releaseMessage, "发布版本 0.1.0 已锁定。");
   assert.equal(store.snapshot?.releasePackage.immutable, true);
   assert.equal(store.snapshot?.exportBundle.format, "markdown");
-  assert.match(store.exportMessage ?? "", /Prepared/);
+  assert.match(store.exportMessage ?? "", /已准备导出文件/);
 });
 
 test("V2 workspace store handles player choice save and restore", async () => {
@@ -128,7 +128,7 @@ test("V2 workspace store handles player choice save and restore", async () => {
   await store.saveRun();
   await store.restoreSave();
 
-  assert.equal(store.playerMessage, "Restored Archive checkpoint.");
+  assert.equal(store.playerMessage, "已恢复“Archive checkpoint”。");
   assert.equal(store.snapshot?.save.label, "Archive checkpoint");
   assert.equal(store.snapshot?.player.sceneId, "scene_opening");
   assert.equal(store.currentSceneTitle, "Opening Scene");
@@ -145,10 +145,10 @@ test("V2 workspace store creates an asset job and approves the asset candidate",
   store.assetReviewReason = "Approved for the local asset library.";
   await store.reviewAssetCandidate("approve");
 
-  assert.match(store.assetMessage ?? "", /Asset job/);
+  assert.match(store.assetMessage ?? "", /素材任务已创建/);
   assert.equal(store.snapshot?.assets.job.status, "queued");
   assert.equal(store.snapshot?.assets.job.promptPreview, "Generate a Rain Station background.");
-  assert.equal(store.assetReviewMessage, "Asset candidate marked approved.");
+  assert.equal(store.assetReviewMessage, "素材候选已通过。");
   assert.equal(store.snapshot?.assets.candidate.status, "approved");
   assert.equal(store.snapshot?.assets.library.length, 2);
   assert.equal(store.assetLibraryCount, 2);
@@ -246,7 +246,7 @@ test("V2 workspace store maps adapter-specific and unknown operation failures", 
   await store.exportRelease();
   await store.createAssetJob();
   await store.reviewAssetCandidate("approve");
-  assert.equal(store.error, "Unknown V2 asset review error");
+  assert.equal(store.error, "审核素材候选失败");
 });
 
 test("V2 default adapter selects HTTP by default and mock only when explicitly enabled", () => {

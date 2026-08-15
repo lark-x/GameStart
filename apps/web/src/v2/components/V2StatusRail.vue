@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CheckCircle2, CircleAlert, Clock3, Database, GitBranch, Wifi } from "@lucide/vue";
+import { CheckCircle2, CircleAlert, Clock3, GitBranch } from "@lucide/vue";
 
 import Badge from "../../components/ui/Badge.vue";
 import Button from "../../components/ui/Button.vue";
@@ -16,50 +16,43 @@ defineProps<{
   assetCandidateStatus: string;
   assetLibraryCount: number;
   currentSceneTitle: string;
-  allowMock: boolean;
 }>();
 
 const emit = defineEmits<{
   refresh: [];
-  switchMode: [mode: "mock" | "http"];
 }>();
+
+function statusLabel(status: string): string {
+  return {
+    none: "无",
+    queued: "排队中",
+    running: "执行中",
+    succeeded: "已完成",
+    pending: "待审核",
+    approved: "已通过",
+    changes_requested: "要求修改",
+    rejected: "已驳回",
+    failed: "失败",
+  }[status] ?? status;
+}
 </script>
 
 <template>
-  <aside class="v2-status-rail" aria-label="V2 workspace status">
+  <aside class="v2-status-rail" aria-label="V2 工作区状态">
     <div class="v2-status-rail-head">
       <div>
-        <p class="v2-panel-kicker">Adapter</p>
-        <h2>{{ mode === "mock" ? "Mock Fixture" : "HTTP API" }}</h2>
+        <p class="v2-panel-kicker">运行连接</p>
+        <h2>{{ mode === "mock" ? "本地演示数据" : "V2 服务端" }}</h2>
       </div>
-      <Badge :tone="mode === 'mock' ? 'info' : 'warning'">{{ mode }}</Badge>
+      <Badge :tone="mode === 'mock' ? 'info' : 'success'">{{ mode === "mock" ? "演示" : "已连接" }}</Badge>
     </div>
 
-    <div class="v2-status-actions" aria-label="Adapter controls">
-      <Button
-        v-if="allowMock"
-        variant="secondary"
-        size="sm"
-        :disabled="mode === 'mock' || loading"
-        @click="emit('switchMode', 'mock')"
-      >
-        <Database :size="15" aria-hidden="true" />
-        Mock
-      </Button>
-      <Button
-        variant="secondary"
-        size="sm"
-        :disabled="mode === 'http' || loading"
-        @click="emit('switchMode', 'http')"
-      >
-        <Wifi :size="15" aria-hidden="true" />
-        HTTP
-      </Button>
+    <div class="v2-status-actions" aria-label="运行状态操作">
       <Button
         variant="ghost"
         size="icon"
         :loading="loading"
-        aria-label="Refresh V2 snapshot"
+        aria-label="刷新 V2 状态"
         @click="emit('refresh')"
       >
         <Clock3 v-if="!loading" :size="17" aria-hidden="true" />
@@ -73,49 +66,49 @@ const emit = defineEmits<{
 
     <dl v-if="snapshot" class="v2-status-list">
       <div>
-        <dt>Health</dt>
+        <dt>服务健康</dt>
         <dd>
           <CheckCircle2 :size="16" aria-hidden="true" />
           {{ snapshot.health.version }}
         </dd>
       </div>
       <div>
-        <dt>Workspace</dt>
+        <dt>故事空间</dt>
         <dd>{{ snapshot.world.name }}</dd>
       </div>
       <div>
-        <dt>Revision</dt>
+        <dt>版本修订</dt>
         <dd>
           <GitBranch :size="16" aria-hidden="true" />
           {{ snapshot.world.revision }}
         </dd>
       </div>
       <div>
-        <dt>Candidate</dt>
-        <dd>{{ candidateStatus }}</dd>
+        <dt>候选状态</dt>
+        <dd>{{ statusLabel(candidateStatus) }}</dd>
       </div>
       <div>
-        <dt>Asset candidate</dt>
-        <dd>{{ assetCandidateStatus }}</dd>
+        <dt>素材候选</dt>
+        <dd>{{ statusLabel(assetCandidateStatus) }}</dd>
       </div>
       <div>
-        <dt>Asset library</dt>
+        <dt>素材库</dt>
         <dd>{{ assetLibraryCount }}</dd>
       </div>
       <div>
-        <dt>Release</dt>
-        <dd>{{ snapshot.release.valid ? "preflight valid" : "blocked" }}</dd>
+        <dt>发布检查</dt>
+        <dd>{{ snapshot.release.valid ? "通过" : "阻塞" }}</dd>
       </div>
       <div>
-        <dt>Graph diagnostics</dt>
+        <dt>结构诊断</dt>
         <dd>{{ graphIssueCount }}</dd>
       </div>
       <div>
-        <dt>State preview</dt>
+        <dt>状态预览</dt>
         <dd>{{ typedStatePreviewCount }}</dd>
       </div>
       <div>
-        <dt>Current scene</dt>
+        <dt>当前场景</dt>
         <dd>{{ currentSceneTitle }}</dd>
       </div>
     </dl>

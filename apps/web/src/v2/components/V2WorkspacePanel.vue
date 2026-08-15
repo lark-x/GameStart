@@ -71,19 +71,19 @@ const emit = defineEmits<{
 const areaMeta = computed(() => {
   switch (props.area) {
     case "canon":
-      return { icon: Boxes, title: "Canon Workspace", badge: "workspace revision" };
+      return { icon: Boxes, title: "故事总览", badge: "工作区修订" };
     case "graph":
-      return { icon: GitFork, title: "Narrative Graph", badge: "scene graph" };
+      return { icon: GitFork, title: "故事结构", badge: "场景图" };
     case "review":
-      return { icon: Sparkles, title: "Candidate Review", badge: "pending candidate" };
+      return { icon: Sparkles, title: "候选审核", badge: "待审核候选" };
     case "assets":
-      return { icon: ImageIcon, title: "Asset Workbench", badge: "candidate media" };
+      return { icon: ImageIcon, title: "素材工作台", badge: "候选素材" };
     case "release":
-      return { icon: FileCheck2, title: "Release Desk", badge: "preflight" };
+      return { icon: FileCheck2, title: "发布检查", badge: "发布前检查" };
     case "player":
-      return { icon: PlayCircle, title: "Player Runtime", badge: "save bound" };
+      return { icon: PlayCircle, title: "运行预览", badge: "存档运行" };
     default:
-      return { icon: Boxes, title: "Operations", badge: "status" };
+      return { icon: Boxes, title: "运行状态", badge: "状态" };
   }
 });
 
@@ -94,7 +94,19 @@ const statusTone = {
 } as const;
 
 function formatValue(value: boolean | number | string) {
-  return typeof value === "boolean" ? (value ? "true" : "false") : String(value);
+  return typeof value === "boolean" ? (value ? "是" : "否") : String(value);
+}
+
+function areaLabel(area: string): string {
+  return {
+    canon: "故事总览",
+    graph: "故事结构",
+    review: "候选审核",
+    assets: "素材工作台",
+    release: "发布检查",
+    player: "运行预览",
+    operations: "运行状态",
+  }[area] ?? area;
 }
 
 function candidateTone(status: string): BadgeTone {
@@ -102,6 +114,39 @@ function candidateTone(status: string): BadgeTone {
   if (status === "rejected") return "danger";
   if (status === "changes_requested") return "warning";
   return "warning";
+}
+
+function statusLabel(status: string): string {
+  return {
+    none: "无",
+    idle: "空闲",
+    queued: "排队中",
+    running: "执行中",
+    claimed: "已领取",
+    succeeded: "已完成",
+    approved: "已通过",
+    pending: "待审核",
+    changes_requested: "要求修改",
+    rejected: "已驳回",
+    failed: "失败",
+    cancelled: "已取消",
+  }[status] ?? status;
+}
+
+function sourceLabel(kind: string): string {
+  return { world: "故事空间", character: "角色", location: "地点", fact: "事实", scene: "场景" }[kind] ?? kind;
+}
+
+function severityLabel(severity: string): string {
+  return { info: "提示", warning: "警告", danger: "严重", error: "错误" }[severity] ?? severity;
+}
+
+function visibilityLabel(visibility: string): string {
+  return visibility === "creator" ? "创作者可见" : "玩家可见";
+}
+
+function ruleSeverityLabel(severity: string): string {
+  return severity === "hard" ? "硬约束" : "软约束";
 }
 
 function mediaUrl(mediaRef: string): string | undefined {
@@ -116,7 +161,7 @@ function mediaUrl(mediaRef: string): string | undefined {
       <div class="v2-panel-title">
         <component :is="areaMeta.icon" :size="20" aria-hidden="true" />
         <div>
-          <p class="v2-panel-kicker">{{ area }}</p>
+          <p class="v2-panel-kicker">{{ areaLabel(area) }}</p>
           <h2 :id="`v2-${area}-title`">{{ areaMeta.title }}</h2>
         </div>
       </div>
@@ -124,13 +169,13 @@ function mediaUrl(mediaRef: string): string | undefined {
     </div>
 
     <div v-if="loading" class="v2-loading" role="status" aria-live="polite">
-      Loading V2 workspace snapshot
+      正在加载 V2 工作区状态
     </div>
 
     <EmptyState
       v-else-if="!snapshot"
-      title="No V2 snapshot loaded"
-      description="Use refresh to load the typed adapter snapshot."
+      title="尚未加载工作区"
+      description="点击右上角刷新状态，读取当前故事空间。"
     >
       <template #icon>
         <Boxes :size="24" aria-hidden="true" />
@@ -139,73 +184,73 @@ function mediaUrl(mediaRef: string): string | undefined {
 
     <div v-else class="v2-panel-grid">
       <template v-if="area === 'canon'">
-        <form class="v2-canon-form" aria-label="Canon draft preview" @submit.prevent="emit('previewCanonDraft')">
-          <Field label="World name" hint="Preview-only mock edit with optimistic revision guard.">
+        <form class="v2-canon-form" aria-label="故事设定预览" @submit.prevent="emit('previewCanonDraft')">
+          <Field label="故事空间名称" hint="先预览修订，并使用版本号检查避免覆盖他人修改。">
             <Input
               :model-value="draftWorldName"
               :disabled="loading"
               id="v2-world-name"
-              aria-label="World name"
+              aria-label="故事空间名称"
               @update:model-value="emit('update:draftWorldName', $event)"
             />
           </Field>
-          <Field label="Premise">
+          <Field label="故事前提">
             <Textarea
               :model-value="draftPremise"
               :disabled="loading"
               id="v2-world-premise"
-              aria-label="Premise"
+              aria-label="故事前提"
               :rows="4"
               @update:model-value="emit('update:draftPremise', $event)"
             />
           </Field>
-          <Field v-if="conflict" label="Expected revision" :error="conflict">
+          <Field v-if="conflict" label="期望版本" :error="conflict">
             <Input
               :model-value="expectedRevision"
               :disabled="loading"
               id="v2-expected-revision"
               type="number"
-              aria-label="Expected revision"
+              aria-label="期望版本"
               @update:model-value="emit('update:expectedRevision', Number($event))"
             />
           </Field>
-          <Field v-else label="Expected revision">
+          <Field v-else label="期望版本">
             <Input
               :model-value="expectedRevision"
               :disabled="loading"
               id="v2-expected-revision"
               type="number"
-              aria-label="Expected revision"
+              aria-label="期望版本"
               @update:model-value="emit('update:expectedRevision', Number($event))"
             />
           </Field>
           <div class="v2-form-actions">
             <Button variant="primary" size="md" type="submit" :disabled="!hasDraftChanges || loading">
-              Preview Revision
+              预览修订
             </Button>
             <Button variant="secondary" size="md" :disabled="loading" @click="emit('resetCanonDraft')">
-              Reset Draft
+              重置草稿
             </Button>
           </div>
         </form>
 
-        <div class="v2-list-grid" aria-label="Canon facts and rules">
+        <div class="v2-list-grid" aria-label="故事事实与规则">
           <article class="v2-metric">
-            <span>Characters</span>
+            <span>角色</span>
             <strong>{{ snapshot.world.characters.length }}</strong>
             <small>{{ snapshot.world.characters.map((character) => character.name).join(", ") }}</small>
           </article>
           <article class="v2-metric">
-            <span>Locations</span>
+            <span>地点</span>
             <strong>{{ snapshot.world.locations.length }}</strong>
             <small>{{ snapshot.world.locations.map((location) => location.name).join(", ") }}</small>
           </article>
           <article v-for="fact in snapshot.world.facts" :key="fact.factId" class="v2-record">
-            <Badge :tone="fact.visibility === 'creator' ? 'warning' : 'info'">{{ fact.visibility }}</Badge>
+            <Badge :tone="fact.visibility === 'creator' ? 'warning' : 'info'">{{ visibilityLabel(fact.visibility) }}</Badge>
             <p>{{ fact.text }}</p>
           </article>
           <article v-for="rule in snapshot.world.rules" :key="rule.ruleId" class="v2-record">
-            <Badge :tone="rule.severity === 'hard' ? 'danger' : 'neutral'">{{ rule.severity }}</Badge>
+            <Badge :tone="rule.severity === 'hard' ? 'danger' : 'neutral'">{{ ruleSeverityLabel(rule.severity) }}</Badge>
             <p>{{ rule.text }}</p>
           </article>
         </div>
@@ -217,64 +262,64 @@ function mediaUrl(mediaRef: string): string | undefined {
             <div class="v2-record-head">
               <strong>{{ scene.title }}</strong>
               <Badge :tone="scene.reachable ? 'success' : 'warning'">
-                {{ scene.reachable ? "reachable" : "unreachable" }}
+                {{ scene.reachable ? "可到达" : "不可到达" }}
               </Badge>
             </div>
-            <p>{{ scene.choiceCount }} choices - {{ scene.stateDeltaPreview.length }} state previews</p>
+            <p>{{ scene.choiceCount }} 个选项 · {{ scene.stateDeltaPreview.length }} 个状态预览</p>
           </article>
         </div>
 
-        <div class="v2-diagnostics" aria-label="Graph diagnostics">
+        <div class="v2-diagnostics" aria-label="结构诊断">
           <article
             v-for="diagnostic in snapshot.sceneGraph.diagnostics"
             :key="`${diagnostic.code}-${diagnostic.targetId}`"
             class="v2-record"
           >
-            <Badge :tone="statusTone[diagnostic.severity]">{{ diagnostic.severity }}</Badge>
+            <Badge :tone="statusTone[diagnostic.severity]">{{ severityLabel(diagnostic.severity) }}</Badge>
             <p>{{ diagnostic.message }}</p>
           </article>
         </div>
       </template>
 
       <template v-else-if="area === 'review'">
-        <form class="v2-canon-form" aria-label="Generation job controls" @submit.prevent="emit('createGenerationJob')">
-          <Field label="Generation prompt" hint="Mock adapter creates a typed job without writing canon.">
+        <form class="v2-canon-form" aria-label="生成任务控制" @submit.prevent="emit('createGenerationJob')">
+          <Field label="生成提示词" hint="生成结果会先作为候选，不会直接写入 Canon。">
             <Textarea
               :model-value="generationPrompt"
               :disabled="loading"
               id="v2-generation-prompt"
-              aria-label="Generation prompt"
+              aria-label="生成提示词"
               :rows="3"
               @update:model-value="emit('update:generationPrompt', $event)"
             />
           </Field>
           <div class="v2-form-actions">
             <Button variant="primary" size="md" type="submit" :loading="loading">
-              Create Job
+              创建生成任务
             </Button>
-            <Badge tone="info">{{ snapshot.generation.job?.status ?? "idle" }}</Badge>
+            <Badge tone="info">{{ statusLabel(snapshot.generation.job?.status ?? "idle") }}</Badge>
           </div>
           <p v-if="generationMessage" class="v2-feedback">{{ generationMessage }}</p>
         </form>
 
-        <div class="v2-list-grid" aria-label="Generation context sources">
+        <div class="v2-list-grid" aria-label="生成上下文来源">
           <article v-for="source in snapshot.generation.context.sources" :key="source.id" class="v2-record">
             <div class="v2-record-head">
               <strong>{{ source.label }}</strong>
-              <Badge tone="neutral">{{ source.kind }}</Badge>
+              <Badge tone="neutral">{{ sourceLabel(source.kind) }}</Badge>
             </div>
             <p>{{ source.id }}</p>
           </article>
         </div>
 
-        <article v-if="snapshot.candidate" class="v2-record" aria-label="Candidate diff">
+        <article v-if="snapshot.candidate" class="v2-record" aria-label="候选差异">
           <div class="v2-record-head">
             <strong>{{ snapshot.generation.diff.title }}</strong>
             <Badge :tone="snapshot.candidate.status === 'pending' ? 'warning' : 'success'">
-              {{ snapshot.candidate.status }}
+              {{ statusLabel(snapshot.candidate.status) }}
             </Badge>
           </div>
-          <p>Base revision {{ snapshot.candidate.baseCanonRevision }} - {{ snapshot.generation.context.contextHash }}</p>
+          <p>基础版本 {{ snapshot.candidate.baseCanonRevision }} · {{ snapshot.generation.context.contextHash }}</p>
           <ul class="v2-plain-list">
             <li v-for="addition in snapshot.generation.diff.additions" :key="addition">{{ addition }}</li>
           </ul>
@@ -283,29 +328,29 @@ function mediaUrl(mediaRef: string): string | undefined {
           </ul>
         </article>
 
-        <form class="v2-canon-form" aria-label="Candidate review actions" @submit.prevent="emit('reviewCandidate', 'approve')">
-          <Field label="Reviewer">
+        <form class="v2-canon-form" aria-label="候选审核操作" @submit.prevent="emit('reviewCandidate', 'approve')">
+          <Field label="审核人">
             <Input
               :model-value="reviewer"
               :disabled="loading || !canReviewCandidate"
               id="v2-reviewer"
-              aria-label="Reviewer"
+              aria-label="审核人"
               @update:model-value="emit('update:reviewer', $event)"
             />
           </Field>
-          <Field label="Review reason">
+          <Field label="审核意见">
             <Textarea
               :model-value="reviewReason"
               :disabled="loading || !canReviewCandidate"
               id="v2-review-reason"
-              aria-label="Review reason"
+              aria-label="审核意见"
               :rows="3"
               @update:model-value="emit('update:reviewReason', $event)"
             />
           </Field>
           <div class="v2-form-actions">
             <Button variant="primary" size="md" type="submit" :disabled="!canReviewCandidate" :loading="loading">
-              Approve
+              通过
             </Button>
             <Button
               variant="secondary"
@@ -313,7 +358,7 @@ function mediaUrl(mediaRef: string): string | undefined {
               :disabled="!canReviewCandidate || loading"
               @click="emit('reviewCandidate', 'request_changes')"
             >
-              Request Changes
+              要求修改
             </Button>
             <Button
               variant="danger"
@@ -321,7 +366,7 @@ function mediaUrl(mediaRef: string): string | undefined {
               :disabled="!canReviewCandidate || loading"
               @click="emit('reviewCandidate', 'reject')"
             >
-              Reject
+              驳回
             </Button>
           </div>
           <p v-if="reviewMessage" class="v2-feedback">{{ reviewMessage }}</p>
@@ -331,55 +376,55 @@ function mediaUrl(mediaRef: string): string | undefined {
         </form>
         <EmptyState
           v-if="!snapshot.candidate"
-          title="No candidate awaiting review"
-          description="Create and process a generation job before reviewing canon changes."
+          title="没有待审核候选"
+          description="创建并完成生成任务后，候选内容会出现在这里。"
         />
       </template>
 
       <template v-else-if="area === 'assets'">
-        <form class="v2-canon-form" aria-label="Asset job controls" @submit.prevent="emit('createAssetJob')">
-          <Field label="Asset prompt" hint="Mock adapter queues a local asset job without writing release assets.">
+        <form class="v2-canon-form" aria-label="素材任务控制" @submit.prevent="emit('createAssetJob')">
+          <Field label="素材提示词" hint="素材生成结果会先进入候选审核，不会直接进入发布素材库。">
             <Textarea
               :model-value="assetPrompt"
               :disabled="loading"
               id="v2-asset-prompt"
-              aria-label="Asset prompt"
+              aria-label="素材提示词"
               :rows="3"
               @update:model-value="emit('update:assetPrompt', $event)"
             />
           </Field>
           <div class="v2-form-actions">
             <Button variant="primary" size="md" type="submit" :loading="loading">
-              Create Asset Job
+              创建素材任务
             </Button>
             <Badge tone="info">{{ snapshot.assets.workflowName }}</Badge>
-            <Badge :tone="candidateTone(snapshot.assets.job?.status ?? 'idle')">{{ snapshot.assets.job?.status ?? "idle" }}</Badge>
+            <Badge :tone="candidateTone(snapshot.assets.job?.status ?? 'idle')">{{ statusLabel(snapshot.assets.job?.status ?? "idle") }}</Badge>
           </div>
           <p v-if="assetMessage" class="v2-feedback">{{ assetMessage }}</p>
         </form>
 
-        <article v-if="snapshot.assets.candidate && snapshot.assets.job" class="v2-record" aria-label="Asset candidate">
+        <article v-if="snapshot.assets.candidate && snapshot.assets.job" class="v2-record" aria-label="素材候选">
           <div class="v2-record-head">
             <strong>{{ snapshot.assets.candidate.title }}</strong>
             <Badge :tone="candidateTone(snapshot.assets.candidate.status)">
-              {{ snapshot.assets.candidate.status }}
+              {{ statusLabel(snapshot.assets.candidate.status) }}
             </Badge>
           </div>
           <dl class="v2-detail-list">
             <div>
-              <dt>Workflow</dt>
+              <dt>工作流</dt>
               <dd>{{ snapshot.assets.job.workflowVersion }}</dd>
             </div>
             <div>
-              <dt>Seed</dt>
+              <dt>随机种子</dt>
               <dd>{{ snapshot.assets.job.seed }}</dd>
             </div>
             <div>
-              <dt>Media</dt>
+              <dt>媒体地址</dt>
               <dd>{{ snapshot.assets.candidate.mediaRef }}</dd>
             </div>
             <div>
-              <dt>Thumbnail</dt>
+              <dt>缩略图</dt>
               <dd>{{ snapshot.assets.candidate.thumbnailRef }}</dd>
             </div>
           </dl>
@@ -399,28 +444,28 @@ function mediaUrl(mediaRef: string): string | undefined {
         </article>
         <EmptyState
           v-else
-          title="No asset candidate"
-          description="Create and process an asset job before approving media."
+          title="没有素材候选"
+          description="创建并完成素材任务后，候选媒体会出现在这里。"
         />
 
         <form
           class="v2-canon-form"
-          aria-label="Asset review actions"
+          aria-label="素材审核操作"
           @submit.prevent="emit('reviewAssetCandidate', 'approve')"
         >
-          <Field label="Asset review reason">
+          <Field label="素材审核意见">
             <Textarea
               :model-value="assetReviewReason"
               :disabled="loading || !canReviewAssetCandidate"
               id="v2-asset-review-reason"
-              aria-label="Asset review reason"
+              aria-label="素材审核意见"
               :rows="3"
               @update:model-value="emit('update:assetReviewReason', $event)"
             />
           </Field>
           <div class="v2-form-actions">
             <Button variant="primary" size="md" type="submit" :disabled="!canReviewAssetCandidate" :loading="loading">
-              Approve Asset
+              通过素材
             </Button>
             <Button
               variant="secondary"
@@ -428,7 +473,7 @@ function mediaUrl(mediaRef: string): string | undefined {
               :disabled="!canReviewAssetCandidate || loading"
               @click="emit('reviewAssetCandidate', 'request_changes')"
             >
-              Request Asset Changes
+              要求修改素材
             </Button>
             <Button
               variant="danger"
@@ -436,17 +481,17 @@ function mediaUrl(mediaRef: string): string | undefined {
               :disabled="!canReviewAssetCandidate || loading"
               @click="emit('reviewAssetCandidate', 'reject')"
             >
-              Reject Asset
+              驳回素材
             </Button>
           </div>
           <p v-if="assetReviewMessage" class="v2-feedback">{{ assetReviewMessage }}</p>
         </form>
 
-        <div class="v2-list-grid" aria-label="Approved asset library">
+        <div class="v2-list-grid" aria-label="已通过素材库">
           <article v-for="asset in snapshot.assets.library" :key="asset.assetId" class="v2-record">
             <div class="v2-record-head">
               <strong>{{ asset.title }}</strong>
-              <Badge :tone="asset.approved ? 'success' : 'warning'">{{ asset.kind }}</Badge>
+              <Badge :tone="asset.approved ? 'success' : 'warning'">{{ asset.kind === "scene_background" ? "场景背景" : asset.kind === "character_sprite" ? "角色立绘" : "道具" }}</Badge>
             </div>
             <p>{{ asset.mediaRef }}</p>
             <img
@@ -461,50 +506,50 @@ function mediaUrl(mediaRef: string): string | undefined {
       </template>
 
       <template v-else-if="area === 'release'">
-        <div class="v2-list-grid" aria-label="Release preflight">
+        <div class="v2-list-grid" aria-label="发布前检查">
           <article class="v2-metric">
-            <span>Preflight</span>
-            <strong>{{ snapshot.release.valid ? "Valid" : "Blocked" }}</strong>
-            <small>revision {{ snapshot.release.revision }}</small>
+            <span>发布检查</span>
+            <strong>{{ snapshot.release.valid ? "通过" : "阻塞" }}</strong>
+            <small>版本 {{ snapshot.release.revision }}</small>
           </article>
           <article class="v2-metric">
-            <span>Release</span>
-            <strong>{{ snapshot.releasePackage?.version ?? "not created" }}</strong>
-            <small>{{ snapshot.releasePackage?.manifestHash ?? "Run preflight first" }}</small>
+            <span>发布版本</span>
+            <strong>{{ snapshot.releasePackage?.version ?? "尚未创建" }}</strong>
+            <small>{{ snapshot.releasePackage?.manifestHash ?? "请先运行发布检查" }}</small>
           </article>
           <article class="v2-metric">
-            <span>Immutability</span>
-            <strong>{{ snapshot.releasePackage?.immutable ? "locked" : "not released" }}</strong>
+            <span>不可变性</span>
+            <strong>{{ snapshot.releasePackage?.immutable ? "已锁定" : "尚未发布" }}</strong>
             <small>{{ snapshot.releasePackage?.releaseId ?? snapshot.world.storyWorldId }}</small>
           </article>
         </div>
 
         <div class="v2-form-actions">
           <Button variant="primary" size="md" :disabled="!releaseReady || loading" :loading="loading" @click="emit('createRelease')">
-            Create Release
+            创建发布版本
           </Button>
           <Button variant="secondary" size="md" :disabled="!snapshot.releasePackage || loading" @click="emit('startRun')">
-            Start Player Run
+            启动运行预览
           </Button>
-          <Badge :tone="releaseReady ? 'success' : 'warning'">{{ releaseReady ? "ready" : "blocked" }}</Badge>
+          <Badge :tone="releaseReady ? 'success' : 'warning'">{{ releaseReady ? "可发布" : "待处理" }}</Badge>
         </div>
         <p v-if="releaseMessage" class="v2-feedback">{{ releaseMessage }}</p>
 
-        <form class="v2-canon-form" aria-label="Release export controls" @submit.prevent="emit('exportRelease')">
-          <Field label="Export format">
+        <form class="v2-canon-form" aria-label="发布导出控制" @submit.prevent="emit('exportRelease')">
+          <Field label="导出格式">
             <Select
               :model-value="exportFormat"
-              aria-label="Export format"
+              aria-label="导出格式"
               id="v2-export-format"
               @update:model-value="emit('update:exportFormat', $event === 'markdown' ? 'markdown' : 'json')"
             >
               <option value="json">JSON</option>
-              <option value="markdown">Markdown</option>
+              <option value="markdown">Markdown 文档</option>
             </Select>
           </Field>
           <div class="v2-form-actions">
             <Button variant="secondary" size="md" type="submit" :loading="loading">
-              Export
+              导出
             </Button>
             <Badge tone="info">{{ snapshot.exportBundle?.format ?? exportFormat }}</Badge>
           </div>
@@ -514,7 +559,7 @@ function mediaUrl(mediaRef: string): string | undefined {
       </template>
 
       <template v-else-if="area === 'player'">
-        <article v-if="snapshot.player && snapshot.run" class="v2-record" aria-label="Player scene">
+        <article v-if="snapshot.player && snapshot.run" class="v2-record" aria-label="运行场景">
           <div class="v2-record-head">
             <strong>{{ snapshot.player.title }}</strong>
             <Badge tone="info">{{ snapshot.run.releaseVersion }}</Badge>
@@ -535,39 +580,39 @@ function mediaUrl(mediaRef: string): string | undefined {
         </article>
         <EmptyState
           v-else
-          title="No run started"
-          description="Create a release, then start a player run from that immutable version."
+          title="尚未启动运行"
+          description="先创建不可变发布版本，再从该版本启动运行预览。"
         />
 
-        <form class="v2-canon-form" aria-label="Save and restore controls" @submit.prevent="emit('saveRun')">
-          <Field label="Save label">
+        <form class="v2-canon-form" aria-label="存档与恢复控制" @submit.prevent="emit('saveRun')">
+          <Field label="存档名称">
             <Input
               :model-value="saveLabel"
               :disabled="loading"
               id="v2-save-label"
-              aria-label="Save label"
+              aria-label="存档名称"
               @update:model-value="emit('update:saveLabel', $event)"
             />
           </Field>
           <div class="v2-form-actions">
             <Button variant="primary" size="md" type="submit" :disabled="!snapshot.run" :loading="loading">
-              Save Run
+              保存运行
             </Button>
             <Button variant="secondary" size="md" :disabled="loading || !snapshot.save" @click="emit('restoreSave')">
-              Restore Save
+              恢复存档
             </Button>
           </div>
           <p v-if="playerMessage" class="v2-feedback">{{ playerMessage }}</p>
         </form>
 
-        <div v-if="snapshot.save" class="v2-list-grid" aria-label="Save details">
+        <div v-if="snapshot.save" class="v2-list-grid" aria-label="存档详情">
           <article class="v2-metric">
-            <span>Save</span>
+            <span>存档</span>
             <strong>{{ snapshot.save.label }}</strong>
             <small>{{ snapshot.save.saveId }}</small>
           </article>
           <article class="v2-metric">
-            <span>Scene</span>
+            <span>场景</span>
             <strong>{{ snapshot.save.currentSceneId }}</strong>
             <small>{{ snapshot.save.savedAt }}</small>
           </article>
@@ -584,7 +629,7 @@ function mediaUrl(mediaRef: string): string | undefined {
             <p>{{ variable.key }} = {{ formatValue(variable.value) }}</p>
           </article>
         </div>
-        <div class="v2-diagnostics" aria-label="Typed state delta preview">
+        <div class="v2-diagnostics" aria-label="类型化状态变化预览">
           <article v-for="delta in snapshot.typedState.preview" :key="delta.key" class="v2-record">
             <Badge tone="info">{{ delta.sourceSceneId }}</Badge>
             <p>{{ delta.key }}: {{ formatValue(delta.before) }} -> {{ formatValue(delta.after) }}</p>
@@ -594,24 +639,24 @@ function mediaUrl(mediaRef: string): string | undefined {
 
       <template v-else>
         <article class="v2-metric">
-          <span>Workspace</span>
+          <span>故事空间</span>
           <strong>{{ snapshot.world.name }}</strong>
-          <small>revision {{ snapshot.world.revision }}</small>
+          <small>版本 {{ snapshot.world.revision }}</small>
         </article>
         <article class="v2-metric">
-          <span>Graph</span>
-          <strong>{{ snapshot.sceneGraph.scenes.length }} scenes</strong>
-          <small>{{ snapshot.sceneGraph.diagnostics.length }} diagnostics</small>
+          <span>故事结构</span>
+          <strong>{{ snapshot.sceneGraph.scenes.length }} 个场景</strong>
+          <small>{{ snapshot.sceneGraph.diagnostics.length }} 条诊断</small>
         </article>
         <article class="v2-metric">
-          <span>Candidate</span>
-          <strong>{{ snapshot.candidate?.status ?? "none" }}</strong>
-          <small>{{ snapshot.candidate?.provenance.source ?? "no candidate" }} source</small>
+          <span>候选内容</span>
+          <strong>{{ snapshot.candidate?.status ?? "无" }}</strong>
+          <small>{{ snapshot.candidate?.provenance.source ?? "暂无候选" }}</small>
         </article>
         <article class="v2-metric">
-          <span>Runtime</span>
-          <strong>{{ snapshot.run?.releaseVersion ?? "not started" }}</strong>
-          <small>{{ snapshot.run?.currentSceneId ?? "no scene" }}</small>
+          <span>运行预览</span>
+          <strong>{{ snapshot.run?.releaseVersion ?? "未启动" }}</strong>
+          <small>{{ snapshot.run?.currentSceneId ?? "暂无场景" }}</small>
         </article>
       </template>
     </div>

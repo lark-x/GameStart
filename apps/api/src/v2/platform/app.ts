@@ -15,6 +15,9 @@ export interface CreateV2FastifyAppOptions {
   readonly generationOptions?: Record<string, unknown>;
   readonly ready?: () => boolean | Promise<boolean>;
   readonly capabilities?: V2CapabilitiesResponse;
+  readonly capabilitiesProvider?: () => V2CapabilitiesResponse | Promise<V2CapabilitiesResponse>;
+  readonly platformPlugin?: FastifyPluginAsync;
+  readonly platformOptions?: Record<string, unknown>;
   readonly mediaRoot?: string;
 }
 
@@ -48,7 +51,7 @@ export function createV2FastifyApp(options: CreateV2FastifyAppOptions = {}): Fas
       }
       return { ok: true, version: "v2", storage: "sqlite" } satisfies V2ReadyResponse;
     });
-    v2.get("/capabilities", async () => options.capabilities ?? {
+    v2.get("/capabilities", async () => options.capabilitiesProvider?.() ?? options.capabilities ?? {
       sceneGeneration: { enabled: false },
       assetGeneration: { enabled: false },
     });
@@ -80,6 +83,9 @@ export function createV2FastifyApp(options: CreateV2FastifyAppOptions = {}): Fas
       prefix: "/generation",
       ...(options.generationOptions ?? {}),
     });
+    if (options.platformPlugin !== undefined) {
+      await v2.register(options.platformPlugin, { prefix: "/platform", ...(options.platformOptions ?? {}) });
+    }
   }, { prefix: "/api/v2" });
   return app;
 }

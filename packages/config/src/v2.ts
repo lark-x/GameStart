@@ -10,6 +10,7 @@ export interface V2RuntimeConfig {
   readonly redisUrl: string;
   readonly queuePrefix: string;
   readonly dispatchTickMs: number;
+  readonly integrationSecretKey?: string;
   readonly scene: {
     readonly enabled: boolean;
     readonly protocol: V2LlmProtocol;
@@ -100,15 +101,13 @@ export function loadV2RuntimeConfig(env: V2EnvironmentInput = process.env): V2Ru
   const sceneBaseUrl = urlValue(env, "LLM_BASE_URL", ["http:", "https:"]);
   const sceneApiKey = stringValue(env, "LLM_API_KEY");
   const sceneModel = stringValue(env, "LLM_MODEL");
-  if (sceneEnabled) {
-    if (sceneBaseUrl === undefined) throw new V2ConfigError("LLM_BASE_URL", "is required when scene generation is enabled");
-    if (sceneModel === undefined) throw new V2ConfigError("LLM_MODEL", "is required when scene generation is enabled");
-    if (protocol === "anthropic" && sceneApiKey === undefined) throw new V2ConfigError("LLM_API_KEY", "is required for Anthropic");
+  if (sceneEnabled && (sceneBaseUrl !== undefined || sceneModel !== undefined)) {
+    if (sceneBaseUrl === undefined) throw new V2ConfigError("LLM_BASE_URL", "must be provided together with LLM_MODEL");
+    if (sceneModel === undefined) throw new V2ConfigError("LLM_MODEL", "must be provided together with LLM_BASE_URL");
+    if (protocol === "anthropic" && sceneApiKey === undefined) throw new V2ConfigError("LLM_API_KEY", "is required for Anthropic environment fallback");
   }
   const assetBaseUrl = urlValue(env, "COMFYUI_BASE_URL", ["http:", "https:"]);
-  if (assetEnabled && assetBaseUrl === undefined) {
-    throw new V2ConfigError("COMFYUI_BASE_URL", "is required when asset generation is enabled");
-  }
+  const integrationSecretKey = stringValue(env, "INTEGRATION_SECRET_KEY");
   return Object.freeze({
     api: Object.freeze({
       host: requiredString(env, "V2_API_HOST", env.API_HOST ?? "127.0.0.1"),
@@ -119,6 +118,7 @@ export function loadV2RuntimeConfig(env: V2EnvironmentInput = process.env): V2Ru
     redisUrl: urlValue(env, "REDIS_URL", ["redis:", "rediss:"], "redis://127.0.0.1:6379")!,
     queuePrefix: requiredString(env, "V2_QUEUE_PREFIX", "living-network-v2"),
     dispatchTickMs: positiveInteger(env, "V2_DISPATCH_TICK_MS", 1000),
+    ...(integrationSecretKey === undefined ? {} : { integrationSecretKey }),
     scene: Object.freeze({
       enabled: sceneEnabled,
       protocol,

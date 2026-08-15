@@ -13,6 +13,11 @@ async function main(): Promise<void> {
       sceneGeneration: { enabled: config.scene.enabled },
       assetGeneration: { enabled: config.asset.enabled },
     },
+    ...(config.integrationSecretKey === undefined ? {} : { integrationSecretKey: config.integrationSecretKey }),
+    environmentSceneConfigured: config.scene.baseUrl !== undefined &&
+      config.scene.model !== undefined &&
+      (config.scene.protocol !== "anthropic" || config.scene.apiKey !== undefined),
+    environmentAssetConfigured: config.asset.baseUrl !== undefined,
   });
   try {
     await runtime.app.listen({ host: config.api.host, port: config.api.port });

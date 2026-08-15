@@ -5,12 +5,13 @@ const props = defineProps<{
   hint?: string;
   required?: boolean;
   disabled?: boolean;
+  forId?: string;
 }>();
 </script>
 
 <template>
   <div class="ui-field" :class="{ disabled: props.disabled, error: props.error }">
-    <label v-if="props.label || $slots.label" class="ui-field-label">
+    <label v-if="props.label || $slots.label" class="ui-field-label" :for="props.forId">
       <slot name="label">{{ props.label }}</slot>
       <span v-if="props.required" class="ui-field-required">*</span>
     </label>

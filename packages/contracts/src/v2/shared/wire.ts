@@ -21,8 +21,18 @@ export interface V2ReadyResponse extends V2HealthResponse {
 }
 
 export interface V2CapabilitiesResponse {
-  readonly sceneGeneration: { readonly enabled: boolean };
-  readonly assetGeneration: { readonly enabled: boolean };
+  readonly sceneGeneration: {
+    readonly enabled: boolean;
+    readonly configured?: boolean;
+    readonly source?: "profile" | "environment" | "none";
+    readonly reason?: "disabled_by_environment" | "profile_missing" | "secret_unavailable";
+  };
+  readonly assetGeneration: {
+    readonly enabled: boolean;
+    readonly configured?: boolean;
+    readonly source?: "settings" | "environment" | "none";
+    readonly reason?: "disabled_by_environment" | "settings_missing";
+  };
 }
 
 export interface V2CreateSceneGenerationJobRequest {
