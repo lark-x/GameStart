@@ -86,7 +86,7 @@ function assetKindLabel(kind: string): string {
         </Field>
         <div class="form-actions">
           <Button variant="primary" size="md" type="submit" :loading="loading">
-            <Sparkles :size="16" /> 发送素材生成任务
+            <Sparkles :size="16" /> 创建素材任务
           </Button>
           <span v-if="assetMessage" class="feedback-msg">{{ assetMessage }}</span>
         </div>

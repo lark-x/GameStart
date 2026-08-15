@@ -78,7 +78,7 @@ function sourceLabel(kind: string): string {
 
         <div class="gen-actions">
           <Button variant="primary" size="md" type="submit" :loading="loading">
-            <Sparkles :size="16" /> 发送生成任务
+            <Sparkles :size="16" /> 创建生成任务
           </Button>
           <span v-if="generationMessage" class="feedback-msg">{{ generationMessage }}</span>
         </div>
@@ -140,7 +140,7 @@ function sourceLabel(kind: string): string {
                 :loading="loading"
                 @click="emit('reviewCandidate', 'approve')"
               >
-                <Check :size="14" /> 通过入库
+                <Check :size="14" /> 通过
               </Button>
               <Button
                 variant="secondary"

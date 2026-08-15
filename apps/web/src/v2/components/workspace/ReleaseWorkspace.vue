@@ -71,7 +71,7 @@ function copyExport() {
           :loading="loading"
           @click="emit('createRelease')"
         >
-          <Lock :size="16" /> 生成不可变发布包 (Release)
+          <Lock :size="16" /> 创建发布版本
         </Button>
         <span v-if="releaseMessage" class="feedback-msg">{{ releaseMessage }}</span>
       </div>
@@ -94,7 +94,7 @@ function copyExport() {
         <p class="pkg-desc">此发布版本已封包固化，可安全地分发、离线导出或启动游玩沙箱体验。</p>
         <div class="pkg-actions">
           <Button variant="secondary" size="md" :disabled="loading" @click="emit('startRun')">
-            <Play :size="16" /> 从此版本启动游玩预览
+            <Play :size="16" /> 启动运行预览
           </Button>
         </div>
       </div>
@@ -125,7 +125,7 @@ function copyExport() {
           </Field>
           <div class="export-btn-wrap">
             <Button variant="secondary" size="md" type="submit" :loading="loading">
-              <Download :size="16" /> 生成导出数据
+              <Download :size="16" /> 导出
             </Button>
           </div>
         </div>

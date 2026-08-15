@@ -171,10 +171,10 @@ watch(
           </Field>
           <div class="save-actions">
             <Button variant="primary" size="md" type="submit" :disabled="!snapshot.run || loading" :loading="loading">
-              <Save :size="16" /> 快速存档
+              <Save :size="16" /> 保存运行
             </Button>
             <Button variant="secondary" size="md" :disabled="loading || !snapshot.save" @click="emit('restoreSave')">
-              <RotateCcw :size="16" /> 恢复此存档
+              <RotateCcw :size="16" /> 恢复存档
             </Button>
           </div>
         </div>
