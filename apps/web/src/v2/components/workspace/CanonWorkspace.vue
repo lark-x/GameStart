@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { User, MapPin, BookOpen, ShieldAlert, Sparkles, Filter } from "@lucide/vue";
+import { User, MapPin, BookOpen, ShieldAlert } from "@lucide/vue";
 import Badge from "../../../components/ui/Badge.vue";
 import Button from "../../../components/ui/Button.vue";
 import Field from "../../../components/ui/Field.vue";

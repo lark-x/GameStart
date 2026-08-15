@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
-import { GitFork, AlertCircle, CheckCircle2, ArrowRight, CornerDownRight, ShieldCheck, Play } from "@lucide/vue";
+import { AlertCircle, CheckCircle2, ArrowRight } from "@lucide/vue";
 import Badge from "../../../components/ui/Badge.vue";
-import Button from "../../../components/ui/Button.vue";
 import type { V2WorkspaceSnapshot } from "../../adapters";
 
 const props = defineProps<{

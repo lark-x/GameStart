@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { ref } from "vue";
-import { PackageCheck, ShieldCheck, Download, Play, FileJson, FileText, CheckCircle2, Lock } from "@lucide/vue";
+import { PackageCheck, ShieldCheck, Download, Play, Lock } from "@lucide/vue";
 import Badge from "../../../components/ui/Badge.vue";
 import Button from "../../../components/ui/Button.vue";
 import Field from "../../../components/ui/Field.vue";

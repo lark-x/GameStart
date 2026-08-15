@@ -1,16 +1,14 @@
 <script setup lang="ts">
-import { computed } from "vue";
-import { ImageIcon, Sparkles, Check, X, AlertTriangle, Cpu, Layers } from "@lucide/vue";
+import { ImageIcon, Sparkles, Check, X, AlertTriangle, Layers } from "@lucide/vue";
 import Badge from "../../../components/ui/Badge.vue";
 import Button from "../../../components/ui/Button.vue";
 import Field from "../../../components/ui/Field.vue";
 import Textarea from "../../../components/ui/Textarea.vue";
-import EmptyState from "../../../components/ui/EmptyState.vue";
 import { v2MediaRefToUrl } from "../../adapters";
 import type { V2WorkspaceSnapshot } from "../../adapters";
 import type { V2CandidateReviewAction } from "../../adapters/types";
 
-const props = defineProps<{
+defineProps<{
   snapshot: V2WorkspaceSnapshot;
   loading: boolean;
   assetPrompt: string;

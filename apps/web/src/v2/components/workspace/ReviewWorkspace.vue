@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Sparkles, Check, X, AlertTriangle, FileText, ArrowRight, ShieldAlert, Cpu } from "@lucide/vue";
+import { Sparkles, Check, X, AlertTriangle, ShieldAlert, Cpu } from "@lucide/vue";
 import Badge from "../../../components/ui/Badge.vue";
 import Button from "../../../components/ui/Button.vue";
 import Field from "../../../components/ui/Field.vue";
@@ -9,7 +9,7 @@ import EmptyState from "../../../components/ui/EmptyState.vue";
 import type { V2WorkspaceSnapshot } from "../../adapters";
 import type { V2CandidateReviewAction } from "../../adapters/types";
 
-const props = defineProps<{
+defineProps<{
   snapshot: V2WorkspaceSnapshot;
   loading: boolean;
   generationPrompt: string;

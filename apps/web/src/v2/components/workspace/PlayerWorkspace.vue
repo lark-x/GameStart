@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, watch, onMounted } from "vue";
-import { Play, Save, RotateCcw, BookOpen, Clock, Gamepad2, ChevronRight, Volume2 } from "@lucide/vue";
+import { ref, watch } from "vue";
+import { Save, RotateCcw, BookOpen, Clock, Gamepad2, ChevronRight } from "@lucide/vue";
 import Badge from "../../../components/ui/Badge.vue";
 import Button from "../../../components/ui/Button.vue";
 import Field from "../../../components/ui/Field.vue";
