@@ -99,6 +99,100 @@ test("V2 platform API stores model profiles without returning secrets and expose
     });
     assert.equal(missingUpdate.statusCode, 404);
 
+    // Test copying profile secret from sourceProfileId
+    const copied = await runtime.app.inject({
+      method: "POST",
+      url: "/api/v2/platform/model-profiles",
+      payload: {
+        name: "Primary Copy",
+        protocol: "openai-compatible",
+        baseUrl: "https://llm.example/v1",
+        model: "creator-model-copied",
+        sourceProfileId: profileId,
+      },
+    });
+    assert.equal(copied.statusCode, 201);
+    assert.equal(copied.json().profile.hasApiKey, true);
+
+    // Test discover models route with mock fetch
+    const originalFetch2 = globalThis.fetch;
+    try {
+      globalThis.fetch = async () => new Response(JSON.stringify({
+        data: [{ id: "mimo-v2" }, { id: "mimo-v2.5" }],
+      }), { status: 200, headers: { "content-type": "application/json" } });
+      const discovered = await runtime.app.inject({
+        method: "POST",
+        url: "/api/v2/platform/model-profiles/discover-models",
+        payload: { protocol: "openai-compatible", baseUrl: "https://llm.example/v1", profileId },
+      });
+      assert.equal(discovered.statusCode, 200);
+      assert.deepEqual(discovered.json().models, ["mimo-v2", "mimo-v2.5"]);
+    } finally {
+      globalThis.fetch = originalFetch2;
+    }
+    // Test discover models route with Anthropic protocol
+    const originalFetch3 = globalThis.fetch;
+    try {
+      globalThis.fetch = async () => new Response(JSON.stringify({
+        data: [{ id: "claude-3-5-sonnet" }, { name: "claude-3-opus" }, "claude-3-haiku"],
+      }), { status: 200, headers: { "content-type": "application/json" } });
+      const anthropicDiscovered = await runtime.app.inject({
+        method: "POST",
+        url: "/api/v2/platform/model-profiles/discover-models",
+        payload: { protocol: "anthropic", baseUrl: "https://api.anthropic.com", apiKey: "sk-ant-test" },
+      });
+      assert.equal(anthropicDiscovered.statusCode, 200);
+      assert.deepEqual(anthropicDiscovered.json().models, ["claude-3-5-sonnet", "claude-3-haiku", "claude-3-opus"]);
+
+      // Test upstream error with json error message
+      globalThis.fetch = async () => new Response(JSON.stringify({ error: { message: "Unauthorized API Key" } }), { status: 401 });
+      const errDiscovered = await runtime.app.inject({
+        method: "POST",
+        url: "/api/v2/platform/model-profiles/discover-models",
+        payload: { protocol: "openai-compatible", baseUrl: "https://llm.example/v1", apiKey: "bad" },
+      });
+      assert.equal(errDiscovered.statusCode, 500);
+
+      // Test upstream error with fallback message format
+      globalThis.fetch = async () => new Response(JSON.stringify({ message: "Bad Gateway" }), { status: 502 });
+      const errDiscovered2 = await runtime.app.inject({
+        method: "POST",
+        url: "/api/v2/platform/model-profiles/discover-models",
+        payload: { protocol: "openai-compatible", baseUrl: "https://llm.example/v1", apiKey: "bad" },
+      });
+      assert.equal(errDiscovered2.statusCode, 500);
+
+      // Test response with models field and top-level array
+      globalThis.fetch = async () => new Response(JSON.stringify({ models: [{ id: "m-models-field" }] }), { status: 200, headers: { "content-type": "application/json" } });
+      const modelsFieldRes = await runtime.app.inject({
+        method: "POST",
+        url: "/api/v2/platform/model-profiles/discover-models",
+        payload: { protocol: "openai-compatible", baseUrl: "https://llm.example/v1", apiKey: "test" },
+      });
+      assert.equal(modelsFieldRes.statusCode, 200);
+      assert.deepEqual(modelsFieldRes.json().models, ["m-models-field"]);
+
+      globalThis.fetch = async () => new Response(JSON.stringify([{ id: "m-raw-arr" }]), { status: 200, headers: { "content-type": "application/json" } });
+      const rawArrRes = await runtime.app.inject({
+        method: "POST",
+        url: "/api/v2/platform/model-profiles/discover-models",
+        payload: { protocol: "openai-compatible", baseUrl: "https://llm.example/v1", apiKey: "test" },
+      });
+      assert.equal(rawArrRes.statusCode, 200);
+      assert.deepEqual(rawArrRes.json().models, ["m-raw-arr"]);
+
+      // Test timeout AbortError
+      globalThis.fetch = async () => { const err = new Error("timeout"); err.name = "AbortError"; throw err; };
+      const timeoutDiscovered = await runtime.app.inject({
+        method: "POST",
+        url: "/api/v2/platform/model-profiles/discover-models",
+        payload: { protocol: "openai-compatible", baseUrl: "https://llm.example/v1", apiKey: "timeout" },
+      });
+      assert.equal(timeoutDiscovered.statusCode, 500);
+    } finally {
+      globalThis.fetch = originalFetch3;
+    }
+
     const bound = await runtime.app.inject({
       method: "PUT",
       url: "/api/v2/platform/model-bindings/scene_generation",

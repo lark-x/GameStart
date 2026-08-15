@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { Cpu, Plus, RefreshCw, Save, ShieldCheck, Trash2, Wifi } from "@lucide/vue";
+import { Copy, Cpu, Download, Plus, RefreshCw, Save, ShieldCheck, Trash2, Wifi } from "@lucide/vue";
 import type {
   V2ModelProfileDto,
   V2ModelProtocol,
@@ -18,7 +18,8 @@ import Select from "../../components/ui/Select.vue";
 import { platformErrorMessage, v2PlatformClient } from "./platform.ts";
 
 interface ModelForm {
-  readonly id?: string;
+  readonly id?: string | undefined;
+  readonly sourceProfileId?: string | undefined;
   name: string;
   protocol: V2ModelProtocol;
   baseUrl: string;
@@ -39,6 +40,10 @@ const loading = ref(false);
 const saving = ref(false);
 const testing = ref(false);
 const deleting = ref(false);
+const fetchingModels = ref(false);
+const discoveredModels = ref<readonly string[]>([]);
+const modelFilter = ref("");
+const fetchModelError = ref<string | null>(null);
 const error = ref<string | null>(null);
 const message = ref<string | null>(null);
 const testMessage = ref<string | null>(null);
@@ -59,6 +64,11 @@ function emptyForm(): ModelForm {
 const editing = computed(() => form.value.id !== undefined);
 const selectedProfile = computed(() => profiles.value.find((profile) => profile.id === form.value.id));
 const sceneBinding = computed(() => bindings.value[0]);
+const filteredDiscoveredModels = computed(() => {
+  if (!modelFilter.value.trim()) return discoveredModels.value;
+  const q = modelFilter.value.toLowerCase().trim();
+  return discoveredModels.value.filter((m) => m.toLowerCase().includes(q));
+});
 
 function selectProfile(profile: V2ModelProfileDto): void {
   form.value = {
@@ -73,11 +83,64 @@ function selectProfile(profile: V2ModelProfileDto): void {
     apiKey: "",
   };
   testMessage.value = null;
+  fetchModelError.value = null;
+  discoveredModels.value = [];
+  modelFilter.value = "";
 }
 
 function newProfile(): void {
   form.value = emptyForm();
   testMessage.value = null;
+  fetchModelError.value = null;
+  discoveredModels.value = [];
+  modelFilter.value = "";
+}
+
+function duplicateProfile(): void {
+  if (form.value.id === undefined) return;
+  const originalId = form.value.id;
+  const baseName = form.value.name.replace(/\s*\(\u526f\u672c\d*\)$/, "");
+  const copyName = baseName + " (\u526f\u672c)";
+  form.value = {
+    ...form.value,
+    id: undefined,
+    sourceProfileId: originalId,
+    name: copyName,
+    apiKey: "",
+  };
+  testMessage.value = "\u5df2\u57fa\u4e8e\u5f53\u524d\u914d\u7f6e\u590d\u5236\u4e3a\u65b0\u6863\u6848\u8349\u7a3f\uff0c\u53ef\u76f4\u63a5\u4fee\u6539\u6a21\u578b\u540d\u79f0\u540e\u4fdd\u5b58\u3002";
+}
+
+async function fetchModels(): Promise<void> {
+  if (!form.value.baseUrl.trim()) {
+    fetchModelError.value = "\u8bf7\u5148\u586b\u5199 API \u5730\u5740";
+    return;
+  }
+  fetchingModels.value = true;
+  fetchModelError.value = null;
+  try {
+    const models = await client.discoverModels({
+      protocol: form.value.protocol,
+      baseUrl: form.value.baseUrl.trim(),
+      apiKey: form.value.apiKey.trim().length > 0 ? form.value.apiKey.trim() : undefined,
+      profileId: form.value.id || form.value.sourceProfileId,
+    });
+    discoveredModels.value = models;
+    if (models.length === 0) {
+      fetchModelError.value = "\u672a\u80fd\u4ece\u8be5\u5730\u5740\u83b7\u53d6\u5230\u6a21\u578b\u5217\u8868\uff0c\u4f60\u53ef\u4ee5\u624b\u52a8\u8f93\u5165\u6a21\u578b\u540d\u79f0\u3002";
+    }
+  } catch (err) {
+    fetchModelError.value = platformErrorMessage(err, "\u83b7\u53d6\u6a21\u578b\u5217\u8868\u5931\u8d25");
+  } finally {
+    fetchingModels.value = false;
+  }
+}
+
+function selectDiscoveredModel(modelId: string): void {
+  form.value.model = modelId;
+  if (!form.value.name || form.value.name.trim().length === 0) {
+    form.value.name = modelId;
+  }
 }
 
 async function refresh(): Promise<void> {
@@ -114,6 +177,7 @@ function requestFromForm(): V2SaveModelProfileRequest {
     temperature: Number(form.value.temperature),
     ...(form.value.id === undefined ? {} : { id: form.value.id }),
     ...(form.value.apiKey.trim().length === 0 ? {} : { apiKey: form.value.apiKey.trim() }),
+    ...(form.value.sourceProfileId && form.value.apiKey.trim().length === 0 ? { sourceProfileId: form.value.sourceProfileId } : {}),
   };
   return input;
 }
@@ -270,46 +334,108 @@ onMounted(() => {
           </div>
           <Badge v-if="selectedProfile?.hasApiKey" tone="success">密钥已保存</Badge>
         </div>
-        <form class="v2-form-grid" @submit.prevent="save">
-          <Field for-id="v2-model-name" label="档案名称" required>
-            <Input id="v2-model-name" v-model="form.name" placeholder="例如：主创作模型" required />
-          </Field>
-          <Field for-id="v2-model-protocol" label="协议" hint="Anthropic 会使用对应消息协议。">
-            <Select id="v2-model-protocol" v-model="form.protocol">
-              <option value="openai-compatible">OpenAI 兼容</option>
-              <option value="anthropic">Anthropic</option>
-            </Select>
-          </Field>
-          <Field for-id="v2-model-base-url" label="API 地址" required hint="例如 https://api.example.com/v1">
-            <Input id="v2-model-base-url" v-model="form.baseUrl" placeholder="https://..." required />
-          </Field>
-          <Field for-id="v2-model-name-value" label="模型名称" required>
-            <Input id="v2-model-name-value" v-model="form.model" placeholder="模型 ID" required />
-          </Field>
-          <Field for-id="v2-model-api-key" label="API 密钥" hint="留空表示保持已有密钥；新建档案时留空表示无密钥。">
-            <Input id="v2-model-api-key" v-model="form.apiKey" type="password" placeholder="sk-..." autocomplete="new-password" />
-          </Field>
-          <Field for-id="v2-model-timeout" label="超时（毫秒）">
-            <Input id="v2-model-timeout" v-model="form.timeoutMs" type="number" min="1" />
-          </Field>
-          <Field for-id="v2-model-max-tokens" label="最大输出 Token">
-            <Input id="v2-model-max-tokens" v-model="form.maxTokens" type="number" min="1" />
-          </Field>
-          <Field for-id="v2-model-temperature" label="温度（0 - 2）">
-            <Input id="v2-model-temperature" v-model="form.temperature" type="number" min="0" max="2" step="0.1" />
-          </Field>
+                <form class="v2-editor-form" @submit.prevent="save">
+          <!-- Step 1: Provider Connection -->
+          <div class="form-block">
+            <h3 class="form-block-title">1. \u670d\u52a1\u5546\u8fde\u63a5\u4e0e\u9274\u6743</h3>
+            <div class="form-row-2">
+              <Field for-id="v2-model-protocol" label="\u534f\u8bae" hint="Anthropic \u4f1a\u4f7f\u7528\u5bf9\u5e94\u6d88\u606f\u534f\u8bae\u3002">
+                <Select id="v2-model-protocol" v-model="form.protocol">
+                  <option value="openai-compatible">OpenAI \u517c\u5bb9</option>
+                  <option value="anthropic">Anthropic</option>
+                </Select>
+              </Field>
+              <Field for-id="v2-model-base-url" label="API \u5730\u5740" required hint="\u4f8b\u5982 https://api.example.com/v1">
+                <Input id="v2-model-base-url" v-model="form.baseUrl" placeholder="https://..." required />
+              </Field>
+            </div>
+            <Field for-id="v2-model-api-key" label="API \u5bc6\u94a5" hint="\u7559\u7a7a\u8868\u793a\u4fdd\u6301\u5df2\u6709\u5bc6\u94a5\uff1b\u65b0\u5efa\u6863\u6848\u65f6\u7559\u7a7a\u8868\u793a\u65e0\u5bc6\u94a5\u3002">
+              <Input id="v2-model-api-key" v-model="form.apiKey" type="password" placeholder="sk-..." autocomplete="new-password" />
+            </Field>
+          </div>
+
+          <!-- Step 2: Model Selection & Discovery -->
+          <div class="form-block">
+            <div class="model-select-header">
+              <h3 class="form-block-title">2. \u6a21\u578b\u9009\u62e9\u4e0e\u83b7\u53d6</h3>
+              <Button
+                variant="secondary"
+                size="sm"
+                type="button"
+                :loading="fetchingModels"
+                :disabled="!form.baseUrl.trim()"
+                @click="fetchModels"
+              >
+                <Download :size="14" aria-hidden="true" />
+                \u83b7\u53d6\u53ef\u7528\u6a21\u578b\u5217\u8868
+              </Button>
+            </div>
+            <Field for-id="v2-model-name-value" label="\u6a21\u578b\u540d\u79f0 (ID)" required hint="\u53ef\u70b9\u51fb\u4e0a\u65b9\u201c\u83b7\u53d6\u201d\u81ea\u52a8\u62c9\u53d6\uff0c\u6216\u76f4\u63a5\u624b\u52a8\u8f93\u5165\u6a21\u578b ID">
+              <Input id="v2-model-name-value" v-model="form.model" placeholder="\u4f8b\u5982 mimo-v2.5, gpt-4o, claude-3-5-sonnet" required />
+            </Field>
+            <div v-if="fetchModelError" class="v2-model-fetch-error" role="alert">
+              {{ fetchModelError }}
+            </div>
+            <div v-if="discoveredModels.length > 0" class="discovered-models-box">
+              <div class="box-head">
+                <span class="box-title">\u53ef\u7528\u6a21\u578b ({{ discoveredModels.length }}) - \u70b9\u51fb\u5feb\u901f\u9009\u7528</span>
+                <div v-if="discoveredModels.length > 6" class="box-search">
+                  <Input v-model="modelFilter" placeholder="\u8fc7\u6ee4\u6a21\u578b..." size="sm" />
+                </div>
+              </div>
+              <div class="models-pill-grid">
+                <button
+                  v-for="m in filteredDiscoveredModels"
+                  :key="m"
+                  type="button"
+                  class="model-chip"
+                  :class="{ active: form.model === m }"
+                  @click="selectDiscoveredModel(m)"
+                >
+                  {{ m }}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 3: Profile Name & Runtime Parameters -->
+          <div class="form-block">
+            <h3 class="form-block-title">3. \u6863\u6848\u4fe1\u606f\u4e0e\u8fd0\u884c\u53c2\u6570</h3>
+            <div class="form-row-2">
+              <Field for-id="v2-model-name" label="\u6863\u6848\u540d\u79f0" required hint="\u7528\u4e8e\u5728\u7cfb\u7edf\u4e2d\u8bc6\u522b\u672c\u6a21\u578b\u914d\u7f6e">
+                <Input id="v2-model-name" v-model="form.name" placeholder="\u4f8b\u5982\uff1a\u4e3b\u521b\u4f5c\u6a21\u578b" required />
+              </Field>
+              <Field for-id="v2-model-timeout" label="\u8d85\u65f6\uff08\u6beb\u79d2\uff09">
+                <Input id="v2-model-timeout" v-model="form.timeoutMs" type="number" min="1" />
+              </Field>
+            </div>
+            <div class="form-row-2">
+              <Field for-id="v2-model-max-tokens" label="\u6700\u5927\u8f93\u51fa Token">
+                <Input id="v2-model-max-tokens" v-model="form.maxTokens" type="number" min="1" />
+              </Field>
+              <Field for-id="v2-model-temperature" label="\u6e29\u5ea6\uff080 - 2\uff09">
+                <Input id="v2-model-temperature" v-model="form.temperature" type="number" min="0" max="2" step="0.1" />
+              </Field>
+            </div>
+          </div>
+
+          <!-- Action Bar -->
           <div class="v2-form-actions v2-form-actions-wide">
             <Button variant="primary" size="md" type="submit" :loading="saving">
               <Save :size="16" aria-hidden="true" />
-              保存档案
+              \u4fdd\u5b58\u6863\u6848
+            </Button>
+            <Button v-if="editing" variant="secondary" size="md" type="button" @click="duplicateProfile">
+              <Copy :size="16" aria-hidden="true" />
+              \u590d\u5236\u6863\u6848
             </Button>
             <Button v-if="editing" variant="secondary" size="md" type="button" :loading="testing" @click="test">
               <Wifi :size="16" aria-hidden="true" />
-              测试连接
+              \u6d4b\u8bd5\u8fde\u63a5
             </Button>
             <Button v-if="editing" variant="danger" size="md" type="button" :loading="deleting" @click="remove">
               <Trash2 :size="16" aria-hidden="true" />
-              删除
+              \u5220\u9664
             </Button>
           </div>
           <p v-if="testMessage" class="v2-inline-message" role="status">{{ testMessage }}</p>
@@ -463,6 +589,20 @@ onMounted(() => {
   font-size: var(--text-xs);
 }
 
+.v2-editor-form { display: grid; gap: var(--space-4); }
+.form-block { padding: var(--space-4); border-radius: var(--radius-md); background: var(--surface-soft); border: 1px solid var(--border); display: grid; gap: var(--space-3); }
+.form-block-title { margin: 0; font-size: var(--text-sm); font-weight: 700; color: var(--text-strong); }
+.model-select-header { display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); }
+.form-row-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.discovered-models-box { padding: var(--space-3); border-radius: var(--radius-sm); background: var(--surface); border: 1px dashed var(--border-strong); display: grid; gap: var(--space-2); }
+.box-head { display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); }
+.box-title { font-size: var(--text-xs); font-weight: 700; color: var(--primary); }
+.box-search { max-width: 200px; }
+.models-pill-grid { display: flex; flex-wrap: wrap; gap: 6px; max-height: 140px; overflow-y: auto; }
+.model-chip { padding: 3px 8px; font-size: 11px; border-radius: var(--radius-xs); border: 1px solid var(--border); background: var(--surface-soft); color: var(--text); cursor: pointer; transition: all 0.15s ease; }
+.model-chip:hover { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
+.model-chip.active { border-color: var(--primary); background: var(--primary); color: var(--on-primary); font-weight: 700; }
+.v2-model-fetch-error { padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); background: var(--danger-soft); color: var(--danger); font-size: var(--text-xs); }
 .v2-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

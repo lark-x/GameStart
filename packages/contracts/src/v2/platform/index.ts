@@ -32,6 +32,18 @@ export interface V2SaveModelProfileRequest {
   readonly maxTokens?: number;
   readonly temperature?: number;
   readonly apiKey?: string;
+  readonly sourceProfileId?: string;
+}
+
+export interface V2DiscoverModelsRequest {
+  readonly protocol: V2ModelProtocol;
+  readonly baseUrl: string;
+  readonly apiKey?: string | undefined;
+  readonly profileId?: string | undefined;
+}
+
+export interface V2DiscoverModelsResponse {
+  readonly models: readonly string[];
 }
 
 export interface V2StoredModelProfile {

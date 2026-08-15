@@ -1,5 +1,6 @@
 import type {
   V2AppearanceSettingsDto,
+  V2DiscoverModelsRequest,
   V2ImageServiceSettingsDto,
   V2ModelBindingDto,
   V2ModelCallLogDto,
@@ -84,6 +85,9 @@ export function createV2PlatformClient(options: V2PlatformClientOptions): V2Plat
     async deleteModelProfile(id: string): Promise<void> {
       await send<void>("DELETE", `/model-profiles/${encodeURIComponent(id)}`);
     },
+    async discoverModels(input: V2DiscoverModelsRequest): Promise<readonly string[]> {
+      return (await send<{ readonly models: readonly string[] }>("POST", "/model-profiles/discover-models", input)).models;
+    },
     async testModelProfile(id: string): Promise<Readonly<Record<string, unknown>>> {
       return send<Readonly<Record<string, unknown>>>("POST", `/model-profiles/${encodeURIComponent(id)}/test`);
     },
@@ -128,6 +132,7 @@ export interface V2PlatformClient {
   listModelProfiles(): Promise<readonly V2ModelProfileDto[]>;
   saveModelProfile(input: V2SaveModelProfileRequest): Promise<V2ModelProfileDto>;
   deleteModelProfile(id: string): Promise<void>;
+  discoverModels(input: V2DiscoverModelsRequest): Promise<readonly string[]>;
   testModelProfile(id: string): Promise<Readonly<Record<string, unknown>>>;
   listModelBindings(): Promise<readonly V2ModelBindingDto[]>;
   setModelBinding(capability: string, input: V2SetModelBindingRequest): Promise<V2ModelBindingDto>;
