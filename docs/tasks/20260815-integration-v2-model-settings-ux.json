@@ -74,6 +74,11 @@
         "command": "pnpm --filter @living-network/web typecheck && pnpm --filter @living-network/web lint && pnpm check:scope && pnpm test:e2e",
         "exitCode": 0,
         "note": "Fix round: complete sticky range for the sidebar (sidebar height subtracts the page bottom padding so sticky travel equals the full scroll distance) and lift the V2 shell above the fixed theme-decoration layer so animated particles no longer paint over the sidebar/content."
+      },
+      {
+        "command": "pnpm --filter @living-network/web typecheck && pnpm --filter @living-network/web lint && pnpm test:e2e",
+        "exitCode": 0,
+        "note": "Fix round 2: compact the sidebar navigation (group gaps, heading margins, paddings; short-viewport media query keeps links at 36px min-height) so the nav fits fully at 768px laptop height with no internal scrollbar or clipped items; move the model settings '获取模型' button beside the input so the required-star label no longer wraps."
       }
     ]
   }

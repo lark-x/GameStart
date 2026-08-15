@@ -178,7 +178,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  padding: var(--space-5) var(--space-3);
+  padding: var(--space-4) var(--space-3);
   border-right: 1px solid var(--border);
   background: var(--surface-soft);
   position: sticky;
@@ -195,7 +195,7 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
-  padding: 0 var(--space-2) var(--space-5);
+  padding: 0 var(--space-2) var(--space-4);
 }
 
 .v2-brand {
@@ -238,18 +238,18 @@ onMounted(() => {
 
 .v2-nav {
   display: grid;
-  gap: var(--space-5);
+  gap: var(--space-3);
   overflow: auto;
   min-height: 0;
 }
 
 .v2-nav-group {
   display: grid;
-  gap: 4px;
+  gap: 3px;
 }
 
 .v2-nav-group h2 {
-  margin: 0 0 var(--space-1);
+  margin: 0 0 2px;
   padding: 0 var(--space-3);
   color: var(--faint);
   font-size: var(--text-xs);
@@ -282,7 +282,7 @@ onMounted(() => {
   align-items: center;
   gap: var(--space-2);
   margin-top: auto;
-  padding: var(--space-5) var(--space-3) 0;
+  padding: var(--space-4) var(--space-3) 0;
   color: var(--muted);
   font-size: var(--text-xs);
 }
@@ -332,6 +332,27 @@ onMounted(() => {
 .v2-mobile-menu,
 .v2-mobile-close {
   display: none;
+}
+
+/* 短视口（常见笔记本/小窗口高度）：收紧导航间距与行高，
+   保证 768px 高度下导航完整可见、不出现内部滚动与裁切。
+   40px 触控目标下限仅在窄高视口（非触控主力场景）放宽到 36px。 */
+@media (max-height: 820px) {
+  .v2-nav {
+    gap: 8px;
+  }
+
+  .v2-nav-group {
+    gap: 2px;
+  }
+
+  .v2-nav-group h2 {
+    margin-bottom: 0;
+  }
+
+  .v2-nav-link {
+    min-height: 36px;
+  }
 }
 
 @media (max-width: 960px) {

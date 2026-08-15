@@ -348,24 +348,21 @@ onMounted(() => {
             <Input id="v2-model-base-url" v-model="form.baseUrl" placeholder="https://..." required />
           </Field>
           <Field for-id="v2-model-name-value" label="模型名称" required hint="可点击右侧获取模型列表或手动输入">
-            <template #label>
-              <div class="model-field-label">
-                <span>模型名称</span>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  type="button"
-                  class="btn-fetch-models"
-                  :loading="fetchingModels"
-                  :disabled="!form.baseUrl.trim()"
-                  @click="fetchModels"
-                >
-                  <Download :size="13" aria-hidden="true" />
-                  获取模型
-                </Button>
-              </div>
-            </template>
-            <Input id="v2-model-name-value" v-model="form.model" placeholder="模型 ID" required />
+            <div class="model-input-row">
+              <Input id="v2-model-name-value" v-model="form.model" placeholder="模型 ID" required />
+              <Button
+                variant="secondary"
+                size="md"
+                type="button"
+                class="btn-fetch-models"
+                :loading="fetchingModels"
+                :disabled="!form.baseUrl.trim()"
+                @click="fetchModels"
+              >
+                <Download :size="13" aria-hidden="true" />
+                获取模型
+              </Button>
+            </div>
           </Field>
 
           <!-- Discovered Models Picker (if any) -->
@@ -590,8 +587,9 @@ onMounted(() => {
 .model-chip:hover { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
 .model-chip.active { border-color: var(--primary); background: var(--primary); color: var(--on-primary); font-weight: 700; }
 .v2-model-fetch-error { padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); background: var(--danger-soft); color: var(--danger); font-size: var(--text-xs); }
-.model-field-label { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); width: 100%; }
-.btn-fetch-models { font-size: 11px; padding: 0 var(--space-2); min-height: 24px; height: 24px; }
+.model-input-row { display: flex; gap: var(--space-2); align-items: stretch; }
+.model-input-row .ui-input { flex: 1; min-width: 0; }
+.btn-fetch-models { flex: 0 0 auto; white-space: nowrap; }
 .v2-discovery-area { grid-column: 1 / -1; display: grid; gap: var(--space-2); }
 .v2-form-grid {
   display: grid;
