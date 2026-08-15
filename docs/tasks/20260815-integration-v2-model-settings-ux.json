@@ -69,6 +69,11 @@
         "command": "pnpm --filter @living-network/web build",
         "exitCode": 0,
         "note": "Web production bundle compiled successfully."
+      },
+      {
+        "command": "pnpm --filter @living-network/web typecheck && pnpm --filter @living-network/web lint && pnpm check:scope && pnpm test:e2e",
+        "exitCode": 0,
+        "note": "Fix round: complete sticky range for the sidebar (sidebar height subtracts the page bottom padding so sticky travel equals the full scroll distance) and lift the V2 shell above the fixed theme-decoration layer so animated particles no longer paint over the sidebar/content."
       }
     ]
   }

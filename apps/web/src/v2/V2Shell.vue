@@ -159,6 +159,9 @@ onMounted(() => {
   max-width: min(1640px, calc(100vw - 48px));
   width: 100%;
   margin: 0 auto;
+  /* 抬升壳层到全屏主题装饰层（.theme-decorations，z-index: 2）之上，
+     避免固定粒子/光斑在滚动时覆盖侧栏与内容，造成样式污染 */
+  z-index: 3;
 }
 
 .v2-app-shell {
@@ -180,7 +183,10 @@ onMounted(() => {
   background: var(--surface-soft);
   position: sticky;
   top: var(--page-pad-y);
-  height: calc(100vh - 2 * var(--page-pad-y));
+  /* 高度 = 视口高度 − 页面上下内边距 − 页面底部额外留白（.page 的 padding-bottom 多出 --space-6）。
+     sticky 的移动范围 = 网格区高度 − 自身高度，只有在该范围内不小于整页滚动距离时，
+     侧栏才能在整段滚动中保持固定；直接减去底部留白使两者恰好相等。 */
+  height: calc(100dvh - 2 * var(--page-pad-y) - var(--space-6));
   overflow-y: auto;
 }
 
