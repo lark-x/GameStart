@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "id": "20260815-integration-ai-scope-governance",
+  "title": "建立面向 Vibe Coding 的模块所有权和 AI 修改范围门禁",
+  "module": "integration",
+  "risk": "high",
+  "changeClass": "normal",
+  "status": "implemented",
+  "userOutcome": "AI 开发只能修改明确授权的单一模块，越界变更由 CI 拒绝，并保留可审计的任务与验证记录。",
+  "allowedPaths": [
+    ".ai/boundary-baseline.json",
+    ".ai/modules.json",
+    ".ai/task.schema.json",
+    ".github/workflows/ci.yml",
+    "AGENTS.md",
+    "apps/AGENTS.md",
+    "docs/DEVELOPMENT.md",
+    "docs/PROGRESS.md",
+    "docs/ai-development-workflow.md",
+    "docs/architecture.md",
+    "docs/interface-requests/README.md",
+    "docs/tasks/20260815-integration-ai-scope-governance.json",
+    "docs/tasks/README.md",
+    "package.json",
+    "packages/AGENTS.md",
+    "scripts/check-boundaries.mjs",
+    "scripts/check-boundaries.test.mjs",
+    "scripts/check-task-scope.mjs",
+    "scripts/check-task-scope.test.mjs",
+    "scripts/governance-lib.mjs",
+    "scripts/run-module-tests.mjs"
+  ],
+  "forbiddenPaths": [
+    "业务实现文件",
+    "V1 代码与 migration",
+    "依赖锁文件",
+    "热点文件拆分"
+  ],
+  "nonGoals": [
+    "不拆微服务",
+    "不重构 Core、Generation、Platform 或 Web 业务",
+    "不物理删除 V1",
+    "不启用自动合并"
+  ],
+  "interfaceRequests": [],
+  "acceptanceCommands": [
+    "pnpm check:scope",
+    "pnpm test:governance",
+    "pnpm check:boundaries",
+    "pnpm typecheck",
+    "pnpm test",
+    "pnpm test:coverage",
+    "pnpm --filter @living-network/web lint",
+    "pnpm build",
+    "pnpm test:integration",
+    "pnpm test:e2e",
+    "git diff --check"
+  ],
+  "approval": {
+    "required": true,
+    "confirmed": true,
+    "reference": "User request on 2026-08-15: PLEASE IMPLEMENT THIS PLAN"
+  },
+  "delivery": {
+    "branch": "codex/integration/ai-scope-governance",
+    "baseSha": "c0ec95150092184384cfb6b4ed5464e32f2902ca",
+    "pullRequest": "https://github.com/lark-x/GameStart/pull/6",
+    "commits": [
+      "9ce9c79da0ea3abf407230465497096790102fb1",
+      "7319c0554f885fcc55549a8b0e5c7d526d61a0fa"
+    ],
+    "results": [
+      { "command": "pnpm check:scope", "exitCode": 0, "note": "21-file Integration scope accepted; exact-path policy enforced." },
+      { "command": "pnpm test:governance", "exitCode": 0, "note": "15 governance tests passed." },
+      { "command": "pnpm check:boundaries", "exitCode": 0, "note": "Package and five-zone boundaries passed; 16 explicit V1 baseline entries unchanged." },
+      { "command": "pnpm test:module:core", "exitCode": 0, "note": "47 tests passed." },
+      { "command": "pnpm test:module:generation-assets", "exitCode": 0, "note": "66 tests passed." },
+      { "command": "pnpm test:module:platform", "exitCode": 0, "note": "7 tests passed." },
+      { "command": "pnpm test:module:web-shell", "exitCode": 0, "note": "1 test passed." },
+      { "command": "pnpm test:module:integration", "exitCode": 0, "note": "41 tests passed." },
+      { "command": "pnpm typecheck", "exitCode": 0, "note": "All workspace type checks passed." },
+      { "command": "pnpm test", "exitCode": 0, "note": "All V2 package tests passed." },
+      { "command": "pnpm test:coverage", "exitCode": 0, "note": "161 tests passed; line coverage remained 100%." },
+      { "command": "pnpm --filter @living-network/web lint", "exitCode": 0, "note": "Web lint passed with zero warnings." },
+      { "command": "pnpm build", "exitCode": 0, "note": "All workspace builds passed." },
+      { "command": "pnpm test:integration", "exitCode": 0, "note": "5 default checks passed; the opt-in Redis case skipped as designed." },
+      { "command": "pnpm test:e2e", "exitCode": 1, "note": "Initial sandbox run could not bind 127.0.0.1:4412 (EPERM); no product test ran." },
+      { "command": "pnpm test:e2e (local loopback approved)", "exitCode": 0, "note": "2 Playwright scenarios passed." },
+      { "command": "RUN_V2_REAL_INTEGRATION=1 REDIS_URL=redis://127.0.0.1:6380 pnpm test:integration", "exitCode": 0, "note": "6/6 real SQLite and temporary Redis checks passed; temporary container removed." },
+      { "command": "pnpm verify", "exitCode": 0, "note": "Combined scope, governance, boundary, type, test, coverage, lint and build verification passed." },
+      { "command": "git diff --check", "exitCode": 0, "note": "No whitespace errors." }
+    ]
+  }
+}

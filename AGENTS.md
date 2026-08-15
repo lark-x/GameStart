@@ -12,6 +12,8 @@
 
 `docs/v2/ai-parallel-master-plan.md` 中的 Gate 0、bootstrap SHA、owner paths、共享文件冻结和 interface request 是三 AI 并行建设期规则。该阶段已经结束；除非新任务明确重新启用并行计划，否则集成后的普通开发不再执行这些临时流程。
 
+当前普通开发改用 `.ai/modules.json` 和 `docs/tasks/*.json` 管理模块所有权与 AI 修改范围。每个开发分支必须携带一份任务记录；实际变更必须通过 `pnpm check:scope`。旧三 AI 计划不再提供 owner paths，但新的范围门禁始终有效。
+
 ## 2. 稳定边界与效率原则
 
 - 当前技术形态以 `docs/architecture.md` 为准；普通功能不得反复重新论证已接受的架构。
@@ -35,6 +37,9 @@
 ## 4. 任务与变更纪律
 
 - 开始前检查未提交改动并保护用户已有工作；只修改任务明确涉及的范围。
+- 从最新 `main` 创建 `codex/<module>/<task>` 分支。低风险任务可直接实现；中高风险任务先记录用户结果、允许路径、禁止事项、接口变化和验收命令，获得用户确认后再编码。
+- 一个开发批次只能属于 `.ai/modules.json` 中的一个模块。同模块小任务可以共用任务记录和 PR；跨模块实现必须拆分。共享 Contract、migration、组合入口、锁文件和治理文件只能由独立 Integration 任务修改。
+- 功能任务需要共享接口时，只能提交精确列出的 `docs/interface-requests/<task-id>.md`；Integration PR 先合并，功能分支再同步 `main`。
 - 不顺手引入框架、生产依赖、无关重构或格式化整个仓库。
 - 不用 `any`、重复 DTO、跨包相对导入或 Database 兼容导出来规避正确边界。
 - 不通过删除有效测试、弱化关键断言、任意排除关键模块或把错误改成 warning 来让门禁通过。
@@ -54,3 +59,5 @@
 - 发布、主分支合并和架构切换节点执行完整验证集；普通任务不因惯例重复跑无关包和全仓覆盖率。
 
 “服务能启动”不等于测试通过；Fake/内存测试通过不等于真实 Redis、LLM、ComfyUI 或其他外部依赖已验收。只报告与本次改动有关的证据，并区分已执行、跳过和无法执行的验证。
+
+单元测试只使用当前模块的 Domain、应用逻辑和最小 Port Fake/Mock，不连接 SQLite、Redis、HTTP、文件系统、LLM 或 ComfyUI。Contract fixture 防止上下游 Mock 漂移；真实 SQLite/临时目录/Fake HTTP 属于 Adapter 测试；组合入口、migration、Redis 和关键跨模块路径属于 Integration/E2E。关键 Port 在可行时让 Fake 与真实 Adapter 运行同一组行为测试。

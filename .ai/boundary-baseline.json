@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "policy": "Existing V1 exceptions only. New entries require an explicit integration task; remove entries when the source violation disappears.",
+  "exceptions": [
+    "relative:packages/ai/src/observability.test.ts:../../domain/src/index.ts",
+    "relative:packages/ai/src/observability.ts:../../contracts/src/interaction-log.ts",
+    "relative:packages/ai/src/observability.ts:../../database/src/interaction-log.ts",
+    "relative:packages/ai/src/profile-provider.ts:../../domain/src/index.ts",
+    "relative:packages/ai/src/profile-resolver.ts:../../database/src/repositories.ts",
+    "relative:packages/database/src/appearance.test.ts:../../domain/src/index.ts",
+    "relative:packages/database/src/behavior-media.test.ts:../../domain/src/index.ts",
+    "relative:packages/database/src/chat.test.ts:../../domain/src/index.ts",
+    "relative:packages/database/src/database.test.ts:../../domain/src/index.ts",
+    "relative:packages/database/src/dispatch.test.ts:../../domain/src/index.ts",
+    "relative:packages/database/src/events.test.ts:../../domain/src/index.ts",
+    "relative:packages/database/src/in-memory-edge.test.ts:../../domain/src/index.ts",
+    "relative:packages/database/src/integration.test.ts:../../domain/src/index.ts",
+    "relative:packages/database/src/interaction-log.test.ts:../../contracts/src/index.ts",
+    "relative:packages/database/src/life-simulation.test.ts:../../domain/src/index.ts",
+    "relative:packages/database/src/memory.test.ts:../../domain/src/index.ts"
+  ]
+}
