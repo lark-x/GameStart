@@ -227,7 +227,6 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
         },
       };
       generationMessage.value = `生成任务已创建，当前状态：${statusLabel(response.job.status)}。`;
-      toast.info(generationMessage.value);
     } catch (err) {
       const msg = operationErrorMessage(err, "创建生成任务失败");
       error.value = msg;
@@ -261,7 +260,6 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
         },
       };
       reviewMessage.value = `候选内容已${reviewActionLabel(result.status)}。`;
-      toast.success(reviewMessage.value);
     } catch (err) {
       const msg = operationErrorMessage(err, "审核候选内容失败");
       error.value = msg;
@@ -284,7 +282,6 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
         releasePackage,
       };
       releaseMessage.value = `发布版本 ${releasePackage.version} 已锁定。`;
-      toast.success(releaseMessage.value);
     } catch (err) {
       const msg = operationErrorMessage(err, "创建发布版本失败");
       error.value = msg;
@@ -340,7 +337,6 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       const save = await adapter.value.saveRun(saveLabel.value);
       snapshot.value = { ...snapshot.value, save };
       playerMessage.value = `已保存“${save.label}”。`;
-      toast.success(playerMessage.value);
     } catch (err) {
       const msg = operationErrorMessage(err, "保存运行失败");
       error.value = msg;
@@ -365,7 +361,6 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
         run: snapshot.value.run === null ? null : { ...snapshot.value.run, currentSceneId: player.sceneId },
       };
       playerMessage.value = `已恢复“${save.label}”。`;
-      toast.success(playerMessage.value);
     } catch (err) {
       const msg = operationErrorMessage(err, "恢复存档失败");
       error.value = msg;
@@ -385,7 +380,6 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       const exportBundle = await adapter.value.exportRelease(exportFormat.value);
       snapshot.value = { ...snapshot.value, exportBundle };
       exportMessage.value = `已准备导出文件：${exportBundle.filename}。`;
-      toast.success(exportMessage.value);
     } catch (err) {
       const msg = operationErrorMessage(err, "导出发布版本失败");
       error.value = msg;
@@ -412,7 +406,6 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
         },
       };
       assetMessage.value = `素材任务已创建，当前状态：${statusLabel(job.status)}。`;
-      toast.info(assetMessage.value);
     } catch (err) {
       const msg = operationErrorMessage(err, "创建素材任务失败");
       error.value = msg;
@@ -453,7 +446,6 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
         },
       };
       assetReviewMessage.value = `素材候选已${reviewActionLabel(result.status)}。`;
-      toast.success(assetReviewMessage.value);
     } catch (err) {
       const msg = operationErrorMessage(err, "审核素材候选失败");
       error.value = msg;
