@@ -14,7 +14,7 @@ export const useNotificationStore = defineStore("v2-notification", () => {
 
   function show(type: ToastItem["type"], message: string, title?: string, duration = 4000) {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const toast: ToastItem = { id, type, title, message, duration };
+    const toast: ToastItem = { id, type, message, ...(title ? { title } : {}), ...(duration !== undefined ? { duration } : {}) };
     notifications.value.push(toast);
 
     if (duration > 0) {

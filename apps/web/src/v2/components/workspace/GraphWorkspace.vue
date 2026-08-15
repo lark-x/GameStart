@@ -19,7 +19,7 @@ const selectedScene = computed(() => {
 });
 
 const diagnostics = computed(() => props.snapshot.sceneGraph.diagnostics);
-const hasErrors = computed(() => diagnostics.value.some(d => d.severity === 'danger' || d.severity === 'error'));
+const hasErrors = computed(() => diagnostics.value.some(d => d.severity === 'danger'));
 
 function formatValue(value: boolean | number | string) {
   return typeof value === "boolean" ? (value ? "是" : "否") : String(value);

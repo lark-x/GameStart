@@ -32,13 +32,13 @@ const searchQuery = ref("");
 const filteredCharacters = computed(() => {
   if (!searchQuery.value.trim()) return props.snapshot.world.characters;
   const q = searchQuery.value.toLowerCase();
-  return props.snapshot.world.characters.filter(c => c.name.toLowerCase().includes(q) || c.profile.summary.toLowerCase().includes(q));
+  return props.snapshot.world.characters.filter(c => c.name.toLowerCase().includes(q) || c.role.toLowerCase().includes(q));
 });
 
 const filteredLocations = computed(() => {
   if (!searchQuery.value.trim()) return props.snapshot.world.locations;
   const q = searchQuery.value.toLowerCase();
-  return props.snapshot.world.locations.filter(l => l.name.toLowerCase().includes(q) || l.summary.toLowerCase().includes(q));
+  return props.snapshot.world.locations.filter(l => l.name.toLowerCase().includes(q) || l.tags.some(t => t.toLowerCase().includes(q)));
 });
 
 const filteredFacts = computed(() => {
@@ -82,7 +82,7 @@ function ruleSeverityLabel(severity: string): string {
               @update:model-value="emit('update:draftWorldName', $event)"
             />
           </Field>
-          <Field :label="conflict ? '期望版本 (冲突)' : '期望版本'" :error="conflict || undefined">
+          <Field :label="conflict ? '期望版本 (冲突)' : '期望版本'" :error="conflict || ''">
             <Input
               :model-value="expectedRevision"
               :disabled="loading"
@@ -180,14 +180,12 @@ function ruleSeverityLabel(severity: string): string {
             </div>
             <div class="header-info">
               <h4>{{ char.name }}</h4>
-              <span class="sub">{{ char.profile.archetype || '角色档案' }}</span>
+              <span class="sub">{{ char.role || '\u89d2\u8272' }}</span>
             </div>
             <Badge tone="info">角色</Badge>
           </div>
-          <p class="entity-summary">{{ char.profile.summary }}</p>
-          <div v-if="char.profile.traits?.length" class="tag-list">
-            <span v-for="t in char.profile.traits" :key="t" class="tag">#{{ t }}</span>
-          </div>
+          <p class="entity-summary">{{ char.role }}</p>
+          
         </article>
       </template>
 
@@ -208,7 +206,9 @@ function ruleSeverityLabel(severity: string): string {
             </div>
             <Badge tone="neutral">地点</Badge>
           </div>
-          <p class="entity-summary">{{ loc.summary }}</p>
+          <div v-if="loc.tags?.length" class="tag-list">
+            <span v-for="t in loc.tags" :key="t" class="tag">#{{ t }}</span>
+          </div>
         </article>
       </template>
 
