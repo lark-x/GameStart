@@ -99,8 +99,8 @@ function newProfile(): void {
 function duplicateProfile(): void {
   if (form.value.id === undefined) return;
   const originalId = form.value.id;
-  const baseName = form.value.name.replace(/\s*\(\u526f\u672c\d*\)$/, "");
-  const copyName = baseName + " (\u526f\u672c)";
+  const baseName = form.value.name.replace(/\s*\(副本\d*\)$/, "");
+  const copyName = baseName + " (副本)";
   form.value = {
     ...form.value,
     id: undefined,
@@ -108,12 +108,12 @@ function duplicateProfile(): void {
     name: copyName,
     apiKey: "",
   };
-  testMessage.value = "\u5df2\u57fa\u4e8e\u5f53\u524d\u914d\u7f6e\u590d\u5236\u4e3a\u65b0\u6863\u6848\u8349\u7a3f\uff0c\u53ef\u76f4\u63a5\u4fee\u6539\u6a21\u578b\u540d\u79f0\u540e\u4fdd\u5b58\u3002";
+  testMessage.value = "已基于当前配置复制为新档案草稿，可直接修改模型名称后保存。";
 }
 
 async function fetchModels(): Promise<void> {
   if (!form.value.baseUrl.trim()) {
-    fetchModelError.value = "\u8bf7\u5148\u586b\u5199 API \u5730\u5740";
+    fetchModelError.value = "请先填写 API 地址";
     return;
   }
   fetchingModels.value = true;
@@ -127,10 +127,10 @@ async function fetchModels(): Promise<void> {
     });
     discoveredModels.value = models;
     if (models.length === 0) {
-      fetchModelError.value = "\u672a\u80fd\u4ece\u8be5\u5730\u5740\u83b7\u53d6\u5230\u6a21\u578b\u5217\u8868\uff0c\u4f60\u53ef\u4ee5\u624b\u52a8\u8f93\u5165\u6a21\u578b\u540d\u79f0\u3002";
+      fetchModelError.value = "未能从该地址获取到模型列表，你可以手动输入模型名称。";
     }
   } catch (err) {
-    fetchModelError.value = platformErrorMessage(err, "\u83b7\u53d6\u6a21\u578b\u5217\u8868\u5931\u8d25");
+    fetchModelError.value = platformErrorMessage(err, "获取模型列表失败");
   } finally {
     fetchingModels.value = false;
   }
@@ -335,22 +335,22 @@ onMounted(() => {
           <Badge v-if="selectedProfile?.hasApiKey" tone="success">密钥已保存</Badge>
         </div>
                         <form class="v2-form-grid" @submit.prevent="save">
-          <Field for-id="v2-model-name" label="\u6863\u6848\u540d\u79f0" required hint="\u4f8b\u5982\uff1a\u4e3b\u521b\u4f5c\u6a21\u578b">
-            <Input id="v2-model-name" v-model="form.name" placeholder="\u4f8b\u5982\uff1a\u4e3b\u521b\u4f5c\u6a21\u578b" required />
+          <Field for-id="v2-model-name" label="档案名称" required hint="例如：主创作模型">
+            <Input id="v2-model-name" v-model="form.name" placeholder="例如：主创作模型" required />
           </Field>
-          <Field for-id="v2-model-protocol" label="\u534f\u8bae" hint="Anthropic \u4f1a\u4f7f\u7528\u5bf9\u5e94\u6d88\u606f\u534f\u8bae\u3002">
+          <Field for-id="v2-model-protocol" label="协议" hint="Anthropic 会使用对应消息协议。">
             <Select id="v2-model-protocol" v-model="form.protocol">
-              <option value="openai-compatible">OpenAI \u517c\u5bb9</option>
+              <option value="openai-compatible">OpenAI 兼容</option>
               <option value="anthropic">Anthropic</option>
             </Select>
           </Field>
-          <Field for-id="v2-model-base-url" label="API \u5730\u5740" required hint="\u4f8b\u5982 https://api.example.com/v1">
+          <Field for-id="v2-model-base-url" label="API 地址" required hint="例如 https://api.example.com/v1">
             <Input id="v2-model-base-url" v-model="form.baseUrl" placeholder="https://..." required />
           </Field>
-          <Field for-id="v2-model-name-value" label="\u6a21\u578b\u540d\u79f0" required hint="\u53ef\u70b9\u51fb\u53f3\u4fa7\u83b7\u53d6\u6a21\u578b\u5217\u8868\u6216\u624b\u52a8\u8f93\u5165">
+          <Field for-id="v2-model-name-value" label="模型名称" required hint="可点击右侧获取模型列表或手动输入">
             <template #label>
               <div class="model-field-label">
-                <span>\u6a21\u578b\u540d\u79f0</span>
+                <span>模型名称</span>
                 <Button
                   variant="secondary"
                   size="sm"
@@ -361,11 +361,11 @@ onMounted(() => {
                   @click="fetchModels"
                 >
                   <Download :size="13" aria-hidden="true" />
-                  \u83b7\u53d6\u6a21\u578b
+                  获取模型
                 </Button>
               </div>
             </template>
-            <Input id="v2-model-name-value" v-model="form.model" placeholder="\u6a21\u578b ID" required />
+            <Input id="v2-model-name-value" v-model="form.model" placeholder="模型 ID" required />
           </Field>
 
           <!-- Discovered Models Picker (if any) -->
@@ -375,9 +375,9 @@ onMounted(() => {
             </div>
             <div v-if="discoveredModels.length > 0" class="discovered-models-box">
               <div class="box-head">
-                <span class="box-title">\u53ef\u7528\u6a21\u578b ({{ discoveredModels.length }}) - \u70b9\u51fb\u5feb\u901f\u9009\u7528</span>
+                <span class="box-title">可用模型 ({{ discoveredModels.length }}) - 点击快速选用</span>
                 <div v-if="discoveredModels.length > 6" class="box-search">
-                  <Input v-model="modelFilter" placeholder="\u8fc7\u6ee4\u6a21\u578b..." size="sm" />
+                  <Input v-model="modelFilter" placeholder="过滤模型..." size="sm" />
                 </div>
               </div>
               <div class="models-pill-grid">
@@ -395,34 +395,34 @@ onMounted(() => {
             </div>
           </div>
 
-          <Field for-id="v2-model-api-key" label="API \u5bc6\u94a5" hint="\u7559\u7a7a\u8868\u793a\u4fdd\u6301\u5df2\u6709\u5bc6\u94a5\uff1b\u65b0\u5efa\u6863\u6848\u65f6\u7559\u7a7a\u8868\u793a\u65e0\u5bc6\u94a5\u3002">
+          <Field for-id="v2-model-api-key" label="API 密钥" hint="留空表示保持已有密钥；新建档案时留空表示无密钥。">
             <Input id="v2-model-api-key" v-model="form.apiKey" type="password" placeholder="sk-..." autocomplete="new-password" />
           </Field>
-          <Field for-id="v2-model-timeout" label="\u8d85\u65f6\uff08\u6beb\u79d2\uff09">
+          <Field for-id="v2-model-timeout" label="超时（毫秒）">
             <Input id="v2-model-timeout" v-model="form.timeoutMs" type="number" min="1" />
           </Field>
-          <Field for-id="v2-model-max-tokens" label="\u6700\u5927\u8f93\u51fa Token">
+          <Field for-id="v2-model-max-tokens" label="最大输出 Token">
             <Input id="v2-model-max-tokens" v-model="form.maxTokens" type="number" min="1" />
           </Field>
-          <Field for-id="v2-model-temperature" label="\u6e29\u5ea6\uff080 - 2\uff09">
+          <Field for-id="v2-model-temperature" label="温度（0 - 2）">
             <Input id="v2-model-temperature" v-model="form.temperature" type="number" min="0" max="2" step="0.1" />
           </Field>
           <div class="v2-form-actions v2-form-actions-wide">
             <Button variant="primary" size="md" type="submit" :loading="saving">
               <Save :size="16" aria-hidden="true" />
-              \u4fdd\u5b58\u6863\u6848
+              保存档案
             </Button>
             <Button v-if="editing" variant="secondary" size="md" type="button" @click="duplicateProfile">
               <Copy :size="16" aria-hidden="true" />
-              \u590d\u5236\u6863\u6848
+              复制档案
             </Button>
             <Button v-if="editing" variant="secondary" size="md" type="button" :loading="testing" @click="test">
               <Wifi :size="16" aria-hidden="true" />
-              \u6d4b\u8bd5\u8fde\u63a5
+              测试连接
             </Button>
             <Button v-if="editing" variant="danger" size="md" type="button" :loading="deleting" @click="remove">
               <Trash2 :size="16" aria-hidden="true" />
-              \u5220\u9664
+              删除
             </Button>
           </div>
           <p v-if="testMessage" class="v2-inline-message" role="status">{{ testMessage }}</p>
