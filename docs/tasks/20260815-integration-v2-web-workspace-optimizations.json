@@ -3,12 +3,17 @@
   "id": "20260815-integration-v2-web-workspace-optimizations",
   "title": "V2 workspace architecture simplification and user experience optimizations",
   "module": "integration",
-  "risk": "medium",
+  "risk": "high",
   "changeClass": "normal",
   "status": "implemented",
-  "userOutcome": "Decouple V2 workspace monolithic panel into domain subviews, integrate global notification toasts, enhance graph inspection, and add player backlogs/typewriter effects.",
+  "userOutcome": "Decouple V2 workspace views, optimize model discovery and profile duplication, enhance wide-screen shell layout and sticky navigation, and ensure theme-consistent scrollbars.",
   "allowedPaths": [
     ".ai/modules.json",
+    "apps/api/src/v2/platform/plugin.test.ts",
+    "apps/api/src/v2/platform/plugin.ts",
+    "apps/web/src/v2/V2Shell.vue",
+    "apps/web/src/v2/adapters/platform.test.ts",
+    "apps/web/src/v2/adapters/platform.ts",
     "apps/web/src/v2/components/V2ToastNotification.vue",
     "apps/web/src/v2/components/V2WorkspacePanel.vue",
     "apps/web/src/v2/components/workspace/AssetsWorkspace.vue",
@@ -20,15 +25,19 @@
     "apps/web/src/v2/stores/notification.ts",
     "apps/web/src/v2/stores/workspace.test.ts",
     "apps/web/src/v2/stores/workspace.ts",
+    "apps/web/src/v2/views/V2ModelSettingsView.vue",
     "apps/web/src/v2/views/V2WorkspaceAreaView.vue",
-    "docs/tasks/20260815-integration-v2-web-workspace-optimizations.json"
+    "docs/tasks/20260815-integration-v2-web-workspace-optimizations.json",
+    "packages/contracts/src/v2/platform/index.ts"
   ],
   "forbiddenPaths": [
-    "packages/contracts/src/v2/**",
+    "packages/contracts/src/v2/core/**",
+    "packages/contracts/src/v2/generation/**",
     "packages/domain/src/v2/**",
     "packages/database/src/v2/**",
     "packages/ai/src/v2/**",
-    "apps/api/src/v2/**",
+    "apps/api/src/v2/core/**",
+    "apps/api/src/v2/generation/**",
     "apps/worker/src/v2/**"
   ],
   "nonGoals": [

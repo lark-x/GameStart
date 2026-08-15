@@ -156,13 +156,15 @@ onMounted(() => {
 <style scoped>
 .v2-shell-page {
   min-height: 100%;
+  max-width: min(1640px, calc(100vw - 48px));
+  width: 100%;
+  margin: 0 auto;
 }
 
 .v2-app-shell {
   display: grid;
   grid-template-columns: 244px minmax(0, 1fr);
   min-height: calc(100vh - 2 * var(--page-pad-y));
-  overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
   background: var(--surface-glass);
@@ -176,6 +178,10 @@ onMounted(() => {
   padding: var(--space-5) var(--space-3);
   border-right: 1px solid var(--border);
   background: var(--surface-soft);
+  position: sticky;
+  top: var(--page-pad-y);
+  height: calc(100vh - 2 * var(--page-pad-y));
+  overflow-y: auto;
 }
 
 .v2-sidebar-head {

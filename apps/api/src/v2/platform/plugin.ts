@@ -9,6 +9,8 @@ import {
 } from "@living-network/contracts/v2";
 import type {
   V2AppearanceSettingsDto,
+  V2DiscoverModelsRequest,
+  V2DiscoverModelsResponse,
   V2ImageServiceSettingsDto,
   V2ModelCallLogDto,
   V2ModelCallLogQuery,
@@ -138,6 +140,17 @@ function parseProfileRequest(value: unknown): V2SaveModelProfileRequest {
     maxTokens: positiveInteger(value.maxTokens, "maxTokens", 4096),
     temperature: temperature(value.temperature, 0.2),
     ...(value.apiKey === undefined ? {} : { apiKey: typeof value.apiKey === "string" ? value.apiKey.trim() : requiredString(value.apiKey, "apiKey") }),
+    ...(typeof value.sourceProfileId === "string" && value.sourceProfileId.trim().length > 0 ? { sourceProfileId: value.sourceProfileId.trim() } : {}),
+  };
+}
+
+function parseDiscoverModelsRequest(value: unknown): V2DiscoverModelsRequest {
+  if (!isRecord(value)) throw new TypeError('request body must be an object');
+  return {
+    protocol: protocol(value.protocol),
+    baseUrl: validUrl(requiredString(value.baseUrl, 'baseUrl'), 'baseUrl'),
+    ...(typeof value.apiKey === 'string' && value.apiKey.trim().length > 0 ? { apiKey: value.apiKey.trim() } : {}),
+    ...(typeof value.profileId === 'string' && value.profileId.trim().length > 0 ? { profileId: value.profileId.trim() } : {}),
   };
 }
 
@@ -312,6 +325,10 @@ export function createV2PlatformPlugin(dependencies: V2PlatformPluginDependencie
       } else if (existing !== undefined) {
         if (existing.encryptedApiKey !== undefined) encrypted.encryptedApiKey = existing.encryptedApiKey;
         if (existing.encryptionIv !== undefined) encrypted.encryptionIv = existing.encryptionIv;
+      } else if (input.sourceProfileId !== undefined) {
+        const sourceProfile = await dependencies.repository.getModelProfile(input.sourceProfileId);
+        if (sourceProfile?.encryptedApiKey !== undefined) encrypted.encryptedApiKey = sourceProfile.encryptedApiKey;
+        if (sourceProfile?.encryptionIv !== undefined) encrypted.encryptionIv = sourceProfile.encryptionIv;
       }
       const saved = await dependencies.repository.saveModelProfile({ id, name: input.name, protocol: input.protocol, baseUrl: input.baseUrl, model: input.model, timeoutMs: input.timeoutMs ?? 30000, maxTokens: input.maxTokens ?? 4096, temperature: input.temperature ?? 0.2, ...encrypted, createdAt: existing?.createdAt ?? now().toISOString(), updatedAt: now().toISOString() });
       return reply.code(existing === undefined ? 201 : 200).send({ profile: publicProfile(saved) });
@@ -337,6 +354,72 @@ export function createV2PlatformPlugin(dependencies: V2PlatformPluginDependencie
       const id = requiredString(params.profileId, "profileId");
       await dependencies.repository.deleteModelProfile(id);
       return reply.code(204).send();
+    }));
+    app.post("/model-profiles/discover-models", async (request, reply) => withError(reply, async () => {
+      const input = parseDiscoverModelsRequest(request.body);
+      let apiKey = input.apiKey;
+      if ((!apiKey || apiKey.length === 0) && input.profileId) {
+        const profile = await dependencies.repository.getModelProfile(input.profileId);
+        if (profile?.encryptedApiKey && profile.encryptionIv && dependencies.secretCipher) {
+          try {
+            apiKey = dependencies.secretCipher.decrypt({ ciphertext: profile.encryptedApiKey, iv: profile.encryptionIv });
+          } catch {}
+        }
+      }
+      const normalizedBase = input.baseUrl.replace(/\/+$/, "");
+      const headers: Record<string, string> = { Accept: "application/json" };
+      let url = "";
+      if (input.protocol === "anthropic") {
+        url = normalizedBase + "/v1/models";
+        if (apiKey) {
+          headers["x-api-key"] = apiKey;
+          headers["anthropic-version"] = "2023-06-01";
+        }
+      } else {
+        url = normalizedBase + "/models";
+        if (apiKey) {
+          headers["Authorization"] = "Bearer " + apiKey;
+        }
+      }
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      try {
+        const response = await fetch(url, { method: "GET", headers, signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (!response.ok) {
+          const errText = await response.text().catch(() => "");
+          let errMsg = "\u4e0a\u6e38\u6a21\u578b\u670d\u52a1\u8fd4\u56de\u9519\u8bef\u72b6\u6001: HTTP " + response.status;
+          try {
+            const errJson = JSON.parse(errText);
+            if (errJson?.error?.message) errMsg = errJson.error.message;
+            else if (errJson?.message) errMsg = errJson.message;
+          } catch {}
+          throw new Error(errMsg);
+        }
+        const json = await response.json().catch(() => ({}));
+        let rawList: unknown[] = [];
+        if (Array.isArray(json?.data)) rawList = json.data;
+        else if (Array.isArray(json?.models)) rawList = json.models;
+        else if (Array.isArray(json)) rawList = json;
+        const models: string[] = [];
+        for (const item of rawList) {
+          if (typeof item === "string" && item.trim().length > 0) {
+            models.push(item.trim());
+          } else if (isRecord(item) && typeof item.id === "string" && item.id.trim().length > 0) {
+            models.push(item.id.trim());
+          } else if (isRecord(item) && typeof item.name === "string" && item.name.trim().length > 0) {
+            models.push(item.name.trim());
+          }
+        }
+        const uniqueModels = Array.from(new Set(models)).sort((a, b) => a.localeCompare(b));
+        return { models: uniqueModels };
+      } catch (err) {
+        clearTimeout(timeoutId);
+        if (err instanceof Error && err.name === "AbortError") {
+          throw new Error("\u83b7\u53d6\u6a21\u578b\u5217\u8868\u8d85\u65f6\uff0c\u8bf7\u68c0\u67e5 API \u5730\u5740\u662f\u5426\u53ef\u8bbf\u95ee");
+        }
+        throw err;
+      }
     }));
     app.post("/model-profiles/:profileId/test", async (request, reply) => withError(reply, async () => {
       const params = request.params as { profileId?: unknown };
