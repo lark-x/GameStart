@@ -5,6 +5,7 @@ import { createPinia, setActivePinia } from "pinia";
 
 import { createV2MockAdapter, type V2WorkspaceAdapter } from "../adapters/index.ts";
 import { V2AdapterError } from "../adapters/types.ts";
+import { useNotificationStore } from "./notification.ts";
 import { createV2DefaultAdapter, useV2WorkspaceStore } from "./workspace.ts";
 
 test("V2 workspace store loads snapshot through injected adapter", async () => {
@@ -259,4 +260,20 @@ test("V2 default adapter selects HTTP by default and mock only when explicitly e
     localStorage: { getItem: () => "http" },
     location: { origin: "http://localhost:4173" },
   }).mode, "http");
+});
+
+test("V2 notification store manages toast notifications lifecycle", () => {
+  setActivePinia(createPinia());
+  const store = useNotificationStore();
+  assert.equal(store.notifications.length, 0);
+
+  store.success("Success msg");
+  store.error("Error msg");
+  store.warning("Warning msg");
+  store.info("Info msg");
+
+  assert.equal(store.notifications.length, 4);
+  const firstId = store.notifications[0].id;
+  store.removeNotification(firstId);
+  assert.equal(store.notifications.length, 3);
 });
