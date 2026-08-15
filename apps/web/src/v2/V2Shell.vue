@@ -85,7 +85,7 @@ onMounted(() => {
 
 <template>
   <div class="page v2-shell-page">
-    <section class="v2-app-shell" aria-label="Living Network V2 创作平台">
+    <section class="v2-shell-layout" aria-label="Living Network V2 创作平台">
     <Button
       variant="secondary"
       size="icon"
@@ -156,40 +156,37 @@ onMounted(() => {
 <style scoped>
 .v2-shell-page {
   min-height: 100%;
-  max-width: min(1640px, calc(100vw - 48px));
   width: 100%;
-  margin: 0 auto;
+  /* 全出血分栏：无页边距、无最大宽度，侧栏贴左缘、内容区填满剩余宽度（类似 DeepSeek 布局） */
+  max-width: none;
+  margin: 0;
+  padding: 0;
   /* 抬升壳层到全屏主题装饰层（.theme-decorations，z-index: 2）之上，
      避免固定粒子/光斑在滚动时覆盖侧栏与内容，造成样式污染 */
   z-index: 3;
 }
 
-.v2-app-shell {
-  display: grid;
-  grid-template-columns: 244px minmax(0, 1fr);
-  min-height: calc(100vh - 2 * var(--page-pad-y));
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
-  background: var(--surface-glass);
-  box-shadow: var(--shadow-md);
+/* 左右分栏（非卡片）：左栏 sticky 固定，右栏随页面滚动，无整体卡片边框/圆角 */
+.v2-shell-layout {
+  display: flex;
+  align-items: stretch;
+  min-height: 100dvh;
 }
 
 .v2-sidebar {
   display: flex;
   flex-direction: column;
+  flex: 0 0 244px;
+  width: 244px;
   min-width: 0;
   padding: var(--space-4) var(--space-3);
   border-right: 1px solid var(--border);
   background: var(--surface-soft);
   position: sticky;
-  top: var(--page-pad-y);
-  /* 与外壳卡片的圆角对齐：侧栏不透明背景若为直角会盖掉卡片左侧圆角，
-     出现“左方右圆”的边框错位；左侧两角取外壳圆角减边框宽度 */
-  border-radius: calc(var(--radius-xl) - 1px) 0 0 calc(var(--radius-xl) - 1px);
-  /* 高度 = 视口高度 − 页面上下内边距 − 页面底部额外留白（.page 的 padding-bottom 多出 --space-6）。
-     sticky 的移动范围 = 网格区高度 − 自身高度，只有在该范围内不小于整页滚动距离时，
-     侧栏才能在整段滚动中保持固定；直接减去底部留白使两者恰好相等。 */
-  height: calc(100dvh - 2 * var(--page-pad-y) - var(--space-6));
+  top: 0;
+  /* 高度 = 视口高度；sticky 移动范围 = 容器高度 − 自身高度 = 整页滚动距离，
+     侧栏在整段滚动中保持固定 */
+  height: 100dvh;
   overflow-y: auto;
 }
 
@@ -300,6 +297,7 @@ onMounted(() => {
 
 .v2-app-content {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   min-width: 0;
 }
@@ -359,9 +357,8 @@ onMounted(() => {
 }
 
 @media (max-width: 960px) {
-  .v2-app-shell {
+  .v2-shell-layout {
     display: block;
-    overflow: visible;
   }
 
   .v2-sidebar {
@@ -369,7 +366,7 @@ onMounted(() => {
     z-index: 30;
     inset: 0 auto 0 0;
     width: min(286px, 84vw);
-    /* 抽屉模式贴屏幕左缘，恢复直角；圆角只属于桌面卡片内嵌场景 */
+    /* 抽屉模式贴屏幕左缘，直角即可（分栏布局无卡片圆角） */
     border-radius: 0;
     transform: translateX(-105%);
     transition: transform var(--motion-base);

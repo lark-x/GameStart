@@ -82,6 +82,11 @@
         "command": "pnpm --filter @living-network/web typecheck && pnpm --filter @living-network/web lint && pnpm test:e2e",
         "exitCode": 0,
         "note": "Fix round 2: compact the sidebar navigation (group gaps, heading margins, paddings; short-viewport media query keeps links at 36px min-height) so the nav fits fully at 768px laptop height with no internal scrollbar or clipped items; move the model settings '获取模型' button beside the input so the required-star label no longer wraps."
+      },
+      {
+        "command": "pnpm --filter @living-network/web typecheck && pnpm --filter @living-network/web lint && pnpm check:scope && pnpm test:e2e && pnpm --filter @living-network/web build",
+        "exitCode": 0,
+        "note": "Fix round 3: redesign the V2 shell from one bordered card into a full-bleed left-right split (DeepSeek-style): remove the card wrapper/border/radius entirely, make the sidebar a flush-left full-viewport sticky column with a border-right divider, and let the content area scroll independently. Eliminates the square-vs-rounded corner mismatch and any card/rounded-corner artifacts while scrolling. Sidebar sticky drift is 0px across the full scroll."
       }
     ]
   }
