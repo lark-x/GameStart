@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "id": "20260815-integration-v2-web-workspace-optimizations",
+  "title": "V2 workspace architecture simplification and user experience optimizations",
+  "module": "integration",
+  "risk": "medium",
+  "changeClass": "normal",
+  "status": "implemented",
+  "userOutcome": "Decouple V2 workspace monolithic panel into domain subviews, integrate global notification toasts, enhance graph inspection, and add player backlogs/typewriter effects.",
+  "allowedPaths": [
+    ".ai/modules.json",
+    "apps/web/src/v2/components/V2ToastNotification.vue",
+    "apps/web/src/v2/components/V2WorkspacePanel.vue",
+    "apps/web/src/v2/components/workspace/AssetsWorkspace.vue",
+    "apps/web/src/v2/components/workspace/CanonWorkspace.vue",
+    "apps/web/src/v2/components/workspace/GraphWorkspace.vue",
+    "apps/web/src/v2/components/workspace/PlayerWorkspace.vue",
+    "apps/web/src/v2/components/workspace/ReleaseWorkspace.vue",
+    "apps/web/src/v2/components/workspace/ReviewWorkspace.vue",
+    "apps/web/src/v2/stores/notification.ts",
+    "apps/web/src/v2/stores/workspace.test.ts",
+    "apps/web/src/v2/stores/workspace.ts",
+    "apps/web/src/v2/views/V2WorkspaceAreaView.vue",
+    "docs/tasks/20260815-integration-v2-web-workspace-optimizations.json"
+  ],
+  "forbiddenPaths": [
+    "packages/contracts/src/v2/**",
+    "packages/domain/src/v2/**",
+    "packages/database/src/v2/**",
+    "packages/ai/src/v2/**",
+    "apps/api/src/v2/**",
+    "apps/worker/src/v2/**"
+  ],
+  "nonGoals": [
+    "V1 API endpoints restoration",
+    "Database schema migration changes"
+  ],
+  "interfaceRequests": [],
+  "acceptanceCommands": [
+    "pnpm check:scope",
+    "pnpm check:boundaries",
+    "pnpm test:coverage",
+    "pnpm --filter @living-network/web build"
+  ],
+  "approval": {
+    "required": true,
+    "confirmed": true,
+    "reference": "user-request-session-goal-round"
+  },
+  "delivery": {
+    "branch": "codex/integration/v2-web-workspace-optimizations",
+    "baseSha": "3ccd4969c54ec07bbd5d4bacf0704f2e766890d4",
+    "pullRequest": null,
+    "commits": [],
+    "results": [
+      {
+        "command": "pnpm check:scope",
+        "exitCode": 0,
+        "note": "Scope validation passes with all modified files declared in manifest."
+      },
+      {
+        "command": "pnpm check:boundaries",
+        "exitCode": 0,
+        "note": "Architectural boundaries clean with 0 violations."
+      },
+      {
+        "command": "pnpm test:coverage",
+        "exitCode": 0,
+        "note": "100% strict test coverage maintained."
+      },
+      {
+        "command": "pnpm --filter @living-network/web build",
+        "exitCode": 0,
+        "note": "Web production bundle compiled successfully."
+      }
+    ]
+  }
+}

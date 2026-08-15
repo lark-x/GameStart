@@ -3,6 +3,7 @@ import { computed } from "vue";
 import { useRoute } from "vue-router";
 
 import V2StatusRail from "../components/V2StatusRail.vue";
+import V2ToastNotification from "../components/V2ToastNotification.vue";
 import V2WorkspacePanel from "../components/V2WorkspacePanel.vue";
 import { useV2WorkspaceStore } from "../stores/workspace";
 
@@ -72,6 +73,7 @@ const currentArea = computed(() => {
       :current-scene-title="store.currentSceneTitle"
       @refresh="store.loadSnapshot"
     />
+    <V2ToastNotification />
   </div>
 </template>
 

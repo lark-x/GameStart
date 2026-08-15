@@ -2,13 +2,14 @@ import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import type { V2IdempotencyKey, V2IsoDateTime, V2Revision, V2StoryWorldId } from "@living-network/contracts/v2";
 
+import { useNotificationStore } from "./notification.ts";
 import { createV2HttpAdapter, createV2MockAdapter, V2AdapterError } from "../adapters/index.ts";
 import type {
   V2CandidateReviewAction,
   V2WorkspaceAdapter,
   V2WorkspaceMode,
   V2WorkspaceSnapshot,
-} from "../adapters/types";
+} from "../adapters/types.ts";
 import { v2WebDefaultGenerationRequest } from "../fixtures/mock-data.ts";
 
 const runtimeEnv = (import.meta as ImportMeta & { readonly env?: Record<string, string | undefined> }).env ?? {};
@@ -201,6 +202,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     loading.value = true;
     error.value = null;
     generationMessage.value = null;
+    const toast = useNotificationStore();
     try {
       const response = await adapter.value.createSceneGenerationJob({
         storyWorldId: snapshot.value.world.storyWorldId as V2StoryWorldId,
@@ -226,7 +228,9 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       };
       generationMessage.value = `生成任务已创建，当前状态：${statusLabel(response.job.status)}。`;
     } catch (err) {
-      error.value = operationErrorMessage(err, "创建生成任务失败");
+      const msg = operationErrorMessage(err, "创建生成任务失败");
+      error.value = msg;
+      toast.error(msg);
     } finally {
       loading.value = false;
     }
@@ -237,6 +241,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     loading.value = true;
     error.value = null;
     reviewMessage.value = null;
+    const toast = useNotificationStore();
     try {
       const result = await adapter.value.reviewCandidate({
         candidateId: snapshot.value.candidate.candidateId,
@@ -256,7 +261,9 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       };
       reviewMessage.value = `候选内容已${reviewActionLabel(result.status)}。`;
     } catch (err) {
-      error.value = operationErrorMessage(err, "审核候选内容失败");
+      const msg = operationErrorMessage(err, "审核候选内容失败");
+      error.value = msg;
+      toast.error(msg);
     } finally {
       loading.value = false;
     }
@@ -267,6 +274,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     loading.value = true;
     error.value = null;
     releaseMessage.value = null;
+    const toast = useNotificationStore();
     try {
       const releasePackage = await adapter.value.createRelease();
       snapshot.value = {
@@ -275,7 +283,9 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       };
       releaseMessage.value = `发布版本 ${releasePackage.version} 已锁定。`;
     } catch (err) {
-      error.value = operationErrorMessage(err, "创建发布版本失败");
+      const msg = operationErrorMessage(err, "创建发布版本失败");
+      error.value = msg;
+      toast.error(msg);
     } finally {
       loading.value = false;
     }
@@ -322,12 +332,15 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     loading.value = true;
     error.value = null;
     playerMessage.value = null;
+    const toast = useNotificationStore();
     try {
       const save = await adapter.value.saveRun(saveLabel.value);
       snapshot.value = { ...snapshot.value, save };
       playerMessage.value = `已保存“${save.label}”。`;
     } catch (err) {
-      error.value = operationErrorMessage(err, "保存运行失败");
+      const msg = operationErrorMessage(err, "保存运行失败");
+      error.value = msg;
+      toast.error(msg);
     } finally {
       loading.value = false;
     }
@@ -338,6 +351,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     loading.value = true;
     error.value = null;
     playerMessage.value = null;
+    const toast = useNotificationStore();
     try {
       const save = snapshot.value.save;
       const player = await adapter.value.restoreSave(save.saveId);
@@ -348,7 +362,9 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       };
       playerMessage.value = `已恢复“${save.label}”。`;
     } catch (err) {
-      error.value = operationErrorMessage(err, "恢复存档失败");
+      const msg = operationErrorMessage(err, "恢复存档失败");
+      error.value = msg;
+      toast.error(msg);
     } finally {
       loading.value = false;
     }
@@ -359,12 +375,15 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     loading.value = true;
     error.value = null;
     exportMessage.value = null;
+    const toast = useNotificationStore();
     try {
       const exportBundle = await adapter.value.exportRelease(exportFormat.value);
       snapshot.value = { ...snapshot.value, exportBundle };
       exportMessage.value = `已准备导出文件：${exportBundle.filename}。`;
     } catch (err) {
-      error.value = operationErrorMessage(err, "导出发布版本失败");
+      const msg = operationErrorMessage(err, "导出发布版本失败");
+      error.value = msg;
+      toast.error(msg);
     } finally {
       loading.value = false;
     }
@@ -375,6 +394,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     loading.value = true;
     error.value = null;
     assetMessage.value = null;
+    const toast = useNotificationStore();
     try {
       const job = await adapter.value.createAssetJob(assetPrompt.value);
       snapshot.value = {
@@ -387,7 +407,9 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       };
       assetMessage.value = `素材任务已创建，当前状态：${statusLabel(job.status)}。`;
     } catch (err) {
-      error.value = operationErrorMessage(err, "创建素材任务失败");
+      const msg = operationErrorMessage(err, "创建素材任务失败");
+      error.value = msg;
+      toast.error(msg);
     } finally {
       loading.value = false;
     }
@@ -398,6 +420,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     loading.value = true;
     error.value = null;
     assetReviewMessage.value = null;
+    const toast = useNotificationStore();
     try {
       const candidate = snapshot.value.assets.candidate;
       const result = await adapter.value.reviewAssetCandidate({
@@ -424,7 +447,9 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       };
       assetReviewMessage.value = `素材候选已${reviewActionLabel(result.status)}。`;
     } catch (err) {
-      error.value = operationErrorMessage(err, "审核素材候选失败");
+      const msg = operationErrorMessage(err, "审核素材候选失败");
+      error.value = msg;
+      toast.error(msg);
     } finally {
       loading.value = false;
     }
