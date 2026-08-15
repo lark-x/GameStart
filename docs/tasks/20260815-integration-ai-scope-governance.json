@@ -64,8 +64,11 @@
   "delivery": {
     "branch": "codex/integration/ai-scope-governance",
     "baseSha": "c0ec95150092184384cfb6b4ed5464e32f2902ca",
-    "pullRequest": null,
-    "commits": ["9ce9c79da0ea3abf407230465497096790102fb1"],
+    "pullRequest": "https://github.com/lark-x/GameStart/pull/6",
+    "commits": [
+      "9ce9c79da0ea3abf407230465497096790102fb1",
+      "7319c0554f885fcc55549a8b0e5c7d526d61a0fa"
+    ],
     "results": [
       { "command": "pnpm check:scope", "exitCode": 0, "note": "21-file Integration scope accepted; exact-path policy enforced." },
       { "command": "pnpm test:governance", "exitCode": 0, "note": "15 governance tests passed." },
