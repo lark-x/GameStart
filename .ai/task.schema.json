@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://living-network.local/schemas/ai-task.json",
+  "title": "Living Network AI development batch",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "title",
+    "module",
+    "risk",
+    "changeClass",
+    "status",
+    "userOutcome",
+    "allowedPaths",
+    "forbiddenPaths",
+    "nonGoals",
+    "interfaceRequests",
+    "acceptanceCommands",
+    "approval",
+    "delivery"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "id": { "type": "string", "pattern": "^[0-9]{8}-[a-z0-9-]+$" },
+    "title": { "type": "string", "minLength": 1 },
+    "module": { "enum": ["core", "generation-assets", "platform", "web-shell", "integration"] },
+    "risk": { "enum": ["low", "medium", "high"] },
+    "changeClass": { "enum": ["normal", "v1-retirement"] },
+    "status": { "enum": ["planned", "approved", "implemented", "merged"] },
+    "userOutcome": { "type": "string", "minLength": 1 },
+    "allowedPaths": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string" } },
+    "forbiddenPaths": { "type": "array", "items": { "type": "string" } },
+    "nonGoals": { "type": "array", "items": { "type": "string" } },
+    "interfaceRequests": { "type": "array", "items": { "type": "string" } },
+    "acceptanceCommands": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required", "confirmed", "reference"],
+      "properties": {
+        "required": { "type": "boolean" },
+        "confirmed": { "type": "boolean" },
+        "reference": { "type": ["string", "null"] }
+      }
+    },
+    "delivery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["branch", "baseSha", "pullRequest", "commits", "results"],
+      "properties": {
+        "branch": { "type": "string", "pattern": "^codex/" },
+        "baseSha": { "type": "string", "minLength": 7 },
+        "pullRequest": { "type": ["string", "null"] },
+        "commits": { "type": "array", "items": { "type": "string" } },
+        "results": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["command", "exitCode", "note"],
+            "properties": {
+              "command": { "type": "string" },
+              "exitCode": { "type": ["integer", "null"] },
+              "note": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

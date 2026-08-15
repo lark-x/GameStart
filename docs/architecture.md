@@ -1,6 +1,6 @@
 # Living Network 当前系统架构
 
-最后核对：2026-08-14（`codex/v2-platform-workspace`）
+最后核对：2026-08-15（`codex/integration/ai-scope-governance`）
 
 本文是当前实现架构的唯一事实来源。V2 已正式接管应用运行时；V1 代码、PostgreSQL migration 和旧 API 只保留在工作树/归档分支中，等待后续独立物理删除任务，不属于当前产品运行时。
 
@@ -48,6 +48,12 @@ API 负责向上迁移和组装数据库；Worker 等待 API readiness，不执�
 | `packages/config` | V2 环境变量、SQLite/Redis/外部能力开关和安全边界 |
 
 依赖方向保持：应用层依赖 Contracts、Domain 和 Ports；Database 实现 Ports；运行时入口负责装配 Database、AI 和外部适配器。`packages/domain` 不依赖 HTTP、数据库、队列、供应商 SDK、Vue 或 `packages/ports`。
+
+### 2.1 开发所有权
+
+跨层开发按 Core、Generation/Assets、Platform、Web Shell、Integration 五个责任区管理，机器事实来源是 `.ai/modules.json`。业务区只能依赖自身和 Integration 提供的共享 Contract/Port；Integration 可以组装所有模块，但不能保存业务规则。当前同时包含多域职责的 Web Workspace、Store、顶层 barrel、migration 和运行时入口在拆分前归 Integration 所有。
+
+V1 代码仍在工作树中，但属于只读区。新增活跃 V2 文件必须拥有唯一模块所有者；未归属、重叠归属和未授权跨模块修改均由 CI 拒绝。
 
 ## 3. API 调用路径
 

@@ -1,12 +1,14 @@
 # Living Network 开发进度
 
-最后核对：2026-08-14（`codex/v2-platform-workspace`）
+最后核对：2026-08-15（`codex/integration/ai-scope-governance`）
 
 本文是当前能力、切换状态和验证证据的进度视图。当前架构见 [architecture.md](./architecture.md)，历史 V1 报告不替代当前代码和测试证据。
 
 ## 1. 当前阶段
 
 V2 已完成 Core/Generation/Assets/Web 集成并完成正式运行时切换验收：V2 是默认 API、Worker、Web、Compose 和 CI 路径；V1 已冻结并归档。当前不删除 V1 数据或历史 migration，物理删除另行审批。
+
+AI 开发治理已进入落地阶段：五区机器可读所有权、任务范围记录、越界 CI 门禁和模块依赖检查已建立；现有混合热点仍待后续行为等价拆分。
 
 ## 2. 当前能力矩阵
 
@@ -55,7 +57,8 @@ V2 已完成 Core/Generation/Assets/Web 集成并完成正式运行时切换验�
 
 ## 5. 后续优先顺序
 
-1. 真实 LLM/ComfyUI 与备份恢复验收。
-2. Slice D：可重建 Qdrant 索引和 Social Temp。
-3. 物理删除 V1 运行时、PostgreSQL 适配与旧入口（另行批准，保留归档和历史 migration）。
-4. 产品化安全、认证、监控和发布流程。
+1. 按独立 Integration PR 渐进拆分 Core use cases、Canon Repository、Web Workspace/Store 和 Generation Plugin 混合热点。
+2. 真实 LLM/ComfyUI 与备份恢复验收。
+3. Slice D：可重建 Qdrant 索引和 Social Temp。
+4. 物理删除 V1 运行时、PostgreSQL 适配与旧入口（另行批准，保留归档和历史 migration）。
+5. 产品化安全、认证、监控和发布流程。

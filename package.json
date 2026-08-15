@@ -13,8 +13,15 @@
     "test:e2e": "playwright test",
     "test:all": "pnpm test && pnpm test:integration",
     "build": "pnpm -r --if-present build",
+    "check:scope": "node scripts/check-task-scope.mjs",
     "check:boundaries": "node scripts/check-boundaries.mjs",
-    "verify": "pnpm check:boundaries && pnpm typecheck && pnpm test && pnpm test:coverage && pnpm --filter @living-network/web lint && pnpm build"
+    "test:governance": "node --test scripts/check-task-scope.test.mjs scripts/check-boundaries.test.mjs",
+    "test:module:core": "node scripts/run-module-tests.mjs core",
+    "test:module:generation-assets": "node scripts/run-module-tests.mjs generation-assets",
+    "test:module:platform": "node scripts/run-module-tests.mjs platform",
+    "test:module:web-shell": "node scripts/run-module-tests.mjs web-shell",
+    "test:module:integration": "node scripts/run-module-tests.mjs integration",
+    "verify": "pnpm check:scope && pnpm test:governance && pnpm check:boundaries && pnpm typecheck && pnpm test && pnpm test:coverage && pnpm --filter @living-network/web lint && pnpm build"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
