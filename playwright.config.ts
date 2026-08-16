@@ -14,12 +14,12 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: "V2_API_PORT=4412 V2_SQLITE_PATH=:memory: V2_MEDIA_ROOT=/tmp/living-network-v2-e2e-media pnpm --filter @living-network/api dev",
+      command: "node scripts/run-with-env.mjs V2_API_PORT=4412 V2_SQLITE_PATH=:memory: V2_MEDIA_ROOT=.tmp/living-network-v2-e2e-media -- pnpm --filter @living-network/api dev",
       port: 4412,
       reuseExistingServer: false,
     },
     {
-      command: "V2_API_PROXY_TARGET=http://127.0.0.1:4412 pnpm --filter @living-network/web exec vite --host 127.0.0.1 --port 4473",
+      command: "node scripts/run-with-env.mjs V2_API_PROXY_TARGET=http://127.0.0.1:4412 -- pnpm --filter @living-network/web exec vite --host 127.0.0.1 --port 4473",
       port: 4473,
       reuseExistingServer: false,
     },
