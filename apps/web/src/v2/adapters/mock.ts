@@ -3,6 +3,8 @@ import {
   type V2GenerationContextPreviewApiRequest,
   type V2CreateSceneGenerationJobApiRequest,
   type V2CreateSceneGenerationJobResponse,
+  type V2CharacterId,
+  type V2IdempotencyKey,
   type V2IsoDateTime,
   type V2JobId,
   type V2PrepareAssetGenerationApiResponse,
@@ -275,10 +277,10 @@ export function createV2MockAdapter(): V2WorkspaceAdapter {
         tokenBudget: request.tokenBudget ?? 4096,
         contextHash: "sha256:mock-scene-preview",
         sourceFactIds: worldFacts.map((fact) => fact.factId),
-        sourceCharacterIds: worldCharacters.map((character) => character.characterId),
+        sourceCharacterIds: worldCharacters.map((character) => character.characterId as V2CharacterId),
         sourceSceneIds: sceneScenes.map((scene) => scene.sceneId),
         facts: worldFacts.map((fact) => ({ id: fact.factId, text: fact.text, visibility: fact.visibility === "creator" ? "creator_only" as const : "player_visible" as const })),
-        characters: worldCharacters.map((character) => ({ characterId: character.characterId, name: character.name })),
+        characters: worldCharacters.map((character) => ({ characterId: character.characterId as V2CharacterId, name: character.name })),
         scenes: sceneScenes.map((scene) => ({ sceneId: scene.sceneId, title: scene.title })),
       };
       return {
@@ -395,7 +397,7 @@ export function createV2MockAdapter(): V2WorkspaceAdapter {
     async prepareAssetGenerationRequest(request: V2AssetGenerationRequestInput): Promise<V2PrepareAssetGenerationApiResponse> {
       const jobId = "job:asset:mock-preview" as V2JobId;
       const prepared = {
-        idempotencyKey: request.idempotencyKey ?? "asset-job:mock-preview",
+        idempotencyKey: request.idempotencyKey ?? "asset-job:mock-preview" as V2IdempotencyKey,
         prompt: request.prompt,
         workflowVersion: request.workflowVersion,
         workflow: request.workflow,

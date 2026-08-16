@@ -26,6 +26,7 @@ const service = computed(() => props.area.startsWith("comfy-") ? "ComfyUI" : "�
 const isComfy = computed(() => service.value === "ComfyUI");
 const section = computed(() => props.area.endsWith("-jobs") ? "jobs" : props.area.endsWith("-review") ? "review" : "request");
 const job = computed(() => isComfy.value ? props.snapshot?.assets.job : props.snapshot?.generation.job);
+const assetJob = computed(() => isComfy.value ? (props.snapshot?.assets.job ?? null) : null);
 const sceneCandidate = computed(() => props.snapshot?.candidate ?? null);
 const assetCandidate = computed(() => props.snapshot?.assets.candidate ?? null);
 const scenePreview = computed(() => store.scenePreparedRequest === null ? "" : JSON.stringify(store.scenePreparedRequest.request, null, 2));
@@ -273,7 +274,7 @@ onMounted(() => {
           <span>创建：{{ job.createdAt }}</span>
           <span>更新：{{ job.updatedAt }}</span>
           <span v-if="job.candidateId">候选：{{ job.candidateId }}</span>
-          <span v-if="'workflowVersion' in job">Workflow：{{ job.workflowVersion }} · Seed {{ job.seed }}</span>
+          <span v-if="assetJob">Workflow：{{ assetJob.workflowVersion }} · Seed {{ assetJob.seed }}</span>
           <span v-if="job.terminalMessage" class="error-line">{{ job.terminalMessage }}</span>
         </div>
       </div>

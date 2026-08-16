@@ -9,7 +9,7 @@ import Input from "../../../components/ui/Input.vue";
 import { v2MediaRefToUrl } from "../../adapters";
 import type { V2WorkspaceSnapshot } from "../../adapters";
 
-const props = defineProps<{
+defineProps<{
   snapshot: V2WorkspaceSnapshot;
   loading: boolean;
   uploading: boolean;
