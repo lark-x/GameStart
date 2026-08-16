@@ -1,6 +1,13 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
-import type { V2IdempotencyKey, V2IsoDateTime, V2Revision, V2StoryWorldId } from "@living-network/contracts/v2";
+import type {
+  V2IdempotencyKey,
+  V2IsoDateTime,
+  V2PrepareAssetGenerationApiResponse,
+  V2Revision,
+  V2SceneGenerationPrepareApiResponse,
+  V2StoryWorldId,
+} from "@living-network/contracts/v2";
 import type { V2StoryWorldDto } from "@living-network/contracts/v2";
 
 import { useNotificationStore } from "./notification.ts";
@@ -94,6 +101,13 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
   const exportFormat = ref<"json" | "markdown">("json");
   const exportMessage = ref<string | null>(null);
   const assetPrompt = ref<string>("");
+  const assetWorkflowVersion = ref<string>("local-default@1");
+  const assetNegativePrompt = ref<string>("");
+  const assetSeed = ref<number>(0);
+  const scenePreparedRequest = ref<V2SceneGenerationPrepareApiResponse | null>(null);
+  const assetPreparedRequest = ref<V2PrepareAssetGenerationApiResponse | null>(null);
+  const preparingGenerationRequest = ref(false);
+  const preparingAssetRequest = ref(false);
   const assetReviewReason = ref<string>("通过后加入本地素材库。");
   const assetMessage = ref<string | null>(null);
   const assetReviewMessage = ref<string | null>(null);
@@ -130,6 +144,41 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       snapshot.value !== null &&
       (draftWorldName.value !== snapshot.value.world.name || draftPremise.value !== snapshot.value.world.premise),
   );
+  const canSubmitSceneGeneration = computed(
+    () => scenePreparedRequest.value !== null && scenePreparedRequest.value.context.prompt === generationPrompt.value,
+  );
+  const canSubmitAssetGeneration = computed(
+    () => assetPreparedMatchesCurrent(),
+  );
+
+  function buildAssetGenerationRequest() {
+    const trimmedNegative = assetNegativePrompt.value.trim();
+    return {
+      prompt: assetPrompt.value,
+      workflowVersion: assetWorkflowVersion.value.trim() || "local-default@1",
+      workflow: {
+        prompt: {
+          class_type: "V2PromptInput",
+          inputs: {
+            text: assetPrompt.value,
+            ...(trimmedNegative === "" ? {} : { negative_text: trimmedNegative }),
+          },
+        },
+        output: {
+          class_type: "V2ControlledMediaOutput",
+          inputs: { media_kind: "image" },
+        },
+      },
+      ...(trimmedNegative === "" ? {} : { negativePrompt: trimmedNegative }),
+      seed: Number.isSafeInteger(assetSeed.value) && assetSeed.value >= 0 ? assetSeed.value : 0,
+    };
+  }
+
+  function assetPreparedMatchesCurrent(): boolean {
+    if (assetPreparedRequest.value === null) return false;
+    const current = buildAssetGenerationRequest();
+    return JSON.stringify(assetPreparedRequest.value.request) === JSON.stringify(current);
+  }
 
   function stopGenerationPolling(): void {
     if (generationPollTimer !== undefined) clearTimeout(generationPollTimer);
@@ -235,6 +284,10 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       generationPrompt.value = snapshot.value.generation.job?.promptPreview ?? generationPrompt.value;
       saveLabel.value = snapshot.value.save?.label ?? saveLabel.value;
       assetPrompt.value = snapshot.value.assets.prompt;
+      assetWorkflowVersion.value = snapshot.value.assets.job?.workflowVersion ?? assetWorkflowVersion.value;
+      assetSeed.value = snapshot.value.assets.job?.seed ?? assetSeed.value;
+      scenePreparedRequest.value = null;
+      assetPreparedRequest.value = null;
       generationMessage.value = null;
       reviewMessage.value = null;
       releaseMessage.value = null;
@@ -391,10 +444,20 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     generationMessage.value = null;
     const toast = useNotificationStore();
     try {
+      const prepared = scenePreparedRequest.value?.context.prompt === generationPrompt.value &&
+        scenePreparedRequest.value.context.baseCanonRevision === snapshot.value.world.revision
+        ? scenePreparedRequest.value
+        : await adapter.value.prepareSceneGenerationRequest({
+            storyWorldId: snapshot.value.world.storyWorldId as V2StoryWorldId,
+            baseCanonRevision: snapshot.value.world.revision as V2Revision,
+            prompt: generationPrompt.value,
+          });
+      scenePreparedRequest.value = prepared;
       const response = await adapter.value.createSceneGenerationJob({
         storyWorldId: snapshot.value.world.storyWorldId as V2StoryWorldId,
         baseCanonRevision: snapshot.value.world.revision as V2Revision,
         prompt: generationPrompt.value,
+        preparedContext: prepared.context,
         idempotencyKey: `generation:${crypto.randomUUID()}` as V2IdempotencyKey,
       });
       const terminalMessage =
@@ -421,6 +484,28 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       toast.error(msg);
     } finally {
       loading.value = false;
+    }
+  }
+
+  async function prepareGenerationRequest() {
+    if (!snapshot.value) return;
+    preparingGenerationRequest.value = true;
+    error.value = null;
+    generationMessage.value = null;
+    const toast = useNotificationStore();
+    try {
+      scenePreparedRequest.value = await adapter.value.prepareSceneGenerationRequest({
+        storyWorldId: snapshot.value.world.storyWorldId as V2StoryWorldId,
+        baseCanonRevision: snapshot.value.world.revision as V2Revision,
+        prompt: generationPrompt.value,
+      });
+      generationMessage.value = "模型请求预览已生成。确认无误后可以提交任务。";
+    } catch (err) {
+      const msg = operationErrorMessage(err, "准备模型请求失败");
+      error.value = msg;
+      toast.error(msg);
+    } finally {
+      preparingGenerationRequest.value = false;
     }
   }
 
@@ -607,7 +692,11 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     assetMessage.value = null;
     const toast = useNotificationStore();
     try {
-      const job = await adapter.value.createAssetJob(assetPrompt.value);
+      const prepared = assetPreparedMatchesCurrent()
+        ? assetPreparedRequest.value!
+        : await adapter.value.prepareAssetGenerationRequest(buildAssetGenerationRequest());
+      assetPreparedRequest.value = prepared;
+      const job = await adapter.value.createAssetJob(prepared.request);
       snapshot.value = {
         ...snapshot.value,
         assets: {
@@ -624,6 +713,24 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       toast.error(msg);
     } finally {
       loading.value = false;
+    }
+  }
+
+  async function prepareAssetRequest() {
+    if (!snapshot.value) return;
+    preparingAssetRequest.value = true;
+    error.value = null;
+    assetMessage.value = null;
+    const toast = useNotificationStore();
+    try {
+      assetPreparedRequest.value = await adapter.value.prepareAssetGenerationRequest(buildAssetGenerationRequest());
+      assetMessage.value = "ComfyUI 请求预览已生成。确认无误后可以提交任务。";
+    } catch (err) {
+      const msg = operationErrorMessage(err, "准备 ComfyUI 请求失败");
+      error.value = msg;
+      toast.error(msg);
+    } finally {
+      preparingAssetRequest.value = false;
     }
   }
 
@@ -689,6 +796,13 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     exportFormat,
     exportMessage,
     assetPrompt,
+    assetWorkflowVersion,
+    assetNegativePrompt,
+    assetSeed,
+    scenePreparedRequest,
+    assetPreparedRequest,
+    preparingGenerationRequest,
+    preparingAssetRequest,
     assetReviewReason,
     assetMessage,
     assetReviewMessage,
@@ -707,6 +821,8 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     canReviewAssetCandidate,
     assetLibraryCount,
     hasDraftChanges,
+    canSubmitSceneGeneration,
+    canSubmitAssetGeneration,
     setAdapter,
     setMode,
     loadSnapshot,
@@ -721,6 +837,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     createCanonEntity,
     updateCanonEntity,
     createGenerationJob,
+    prepareGenerationRequest,
     reviewCandidate,
     createRelease,
     startRun,
@@ -730,6 +847,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     exportRelease,
     uploadManualAsset,
     createAssetJob,
+    prepareAssetRequest,
     reviewAssetCandidate,
   };
 });

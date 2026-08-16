@@ -157,6 +157,16 @@ export interface V2CreateAssetGenerationJobApiResponse {
   readonly inserted: boolean;
 }
 
+export interface V2PrepareAssetGenerationApiResponse {
+  readonly request: {
+    readonly prompt: string;
+    readonly workflowVersion: string;
+    readonly workflow: Record<string, unknown>;
+    readonly negativePrompt?: string;
+    readonly seed?: number;
+  };
+}
+
 export interface V2AssetGenerationJobApiResponse {
   readonly job: V2AssetGenerationJobRecord;
 }
@@ -277,8 +287,24 @@ export interface V2GenerationContextPreviewApiResponse {
   readonly context: V2GenerationContextSnapshot;
 }
 
+export interface V2SceneGenerationPreparedMessage {
+  readonly role: "system" | "user";
+  readonly content: string;
+}
+
+export interface V2SceneGenerationPrepareApiResponse {
+  readonly context: V2GenerationContextSnapshot;
+  readonly request: {
+    readonly responseFormat: "json_object";
+    readonly temperature: number;
+    readonly maxTokens: number;
+    readonly messages: readonly V2SceneGenerationPreparedMessage[];
+  };
+}
+
 export interface V2CreateSceneGenerationJobApiRequest extends V2GenerationContextPreviewApiRequest {
   readonly idempotencyKey: V2IdempotencyKey;
+  readonly preparedContext?: V2GenerationContextSnapshot;
   readonly maxAttempts?: number;
 }
 

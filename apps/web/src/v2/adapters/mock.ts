@@ -1,9 +1,12 @@
 import {
-  type V2CreateSceneGenerationJobRequest,
+  type V2GenerationContextPreviewApiRequest,
+  type V2CreateSceneGenerationJobApiRequest,
   type V2CreateSceneGenerationJobResponse,
   type V2IsoDateTime,
   type V2JobId,
+  type V2PrepareAssetGenerationApiResponse,
   type V2Revision,
+  type V2SceneGenerationPrepareApiResponse,
   type V2StoryWorldDto,
   type V2StoryWorldId,
 } from "@living-network/contracts/v2";
@@ -26,6 +29,7 @@ import { V2AdapterError } from "./types.ts";
 import type {
   V2ApprovedAssetSummary,
   V2ArcSummary,
+  V2AssetGenerationRequestInput,
   V2AssetCandidateSummary,
   V2AssetJobSummary,
   V2AssetReviewRequest,
@@ -258,8 +262,39 @@ export function createV2MockAdapter(): V2WorkspaceAdapter {
       }
     },
 
+    async prepareSceneGenerationRequest(
+      request: V2GenerationContextPreviewApiRequest,
+    ): Promise<V2SceneGenerationPrepareApiResponse> {
+      const context = {
+        storyWorldId: request.storyWorldId,
+        baseCanonRevision: request.baseCanonRevision,
+        requestedAt: now,
+        prompt: request.prompt,
+        promptPreview: request.prompt.slice(0, 160),
+        tokenBudget: request.tokenBudget ?? 4096,
+        contextHash: "sha256:mock-scene-preview",
+        sourceFactIds: worldFacts.map((fact) => fact.factId),
+        sourceCharacterIds: worldCharacters.map((character) => character.characterId),
+        sourceSceneIds: sceneScenes.map((scene) => scene.sceneId),
+        facts: worldFacts.map((fact) => ({ id: fact.factId, text: fact.text, visibility: fact.visibility === "creator" ? "creator_only" as const : "player_visible" as const })),
+        characters: worldCharacters.map((character) => ({ characterId: character.characterId, name: character.name })),
+        scenes: sceneScenes.map((scene) => ({ sceneId: scene.sceneId, title: scene.title })),
+      };
+      return {
+        context,
+        request: {
+          responseFormat: "json_object",
+          temperature: 0.2,
+          maxTokens: context.tokenBudget,
+          messages: [
+            { role: "system", content: "You produce candidate JSON for a local creator-reviewed interactive fiction tool. Output only valid JSON." },
+            { role: "user", content: `creatorPrompt: ${request.prompt}` },
+          ],
+        },
+      };
+    },
     async createSceneGenerationJob(
-      request: V2CreateSceneGenerationJobRequest,
+      request: V2CreateSceneGenerationJobApiRequest,
     ): Promise<V2CreateSceneGenerationJobResponse> {
       return {
         job: {
@@ -349,14 +384,30 @@ export function createV2MockAdapter(): V2WorkspaceAdapter {
         mimeType: input.file.type,
         byteSize: input.file.size,
       };
-      state.assets = { ...state.assets, library: [...state.assets.library, asset] };
+      assetLibrary.push(asset);
       return asset;
     },
-    async createAssetJob(prompt: string): Promise<V2AssetJobSummary> {
+    async prepareAssetGenerationRequest(request: V2AssetGenerationRequestInput): Promise<V2PrepareAssetGenerationApiResponse> {
+      return {
+        request: {
+          prompt: request.prompt,
+          workflowVersion: request.workflowVersion,
+          workflow: request.workflow,
+          ...(request.negativePrompt === undefined ? {} : { negativePrompt: request.negativePrompt }),
+          ...(request.seed === undefined ? {} : { seed: request.seed }),
+        },
+      };
+    },
+    async createAssetJob(input: V2AssetGenerationRequestInput | string): Promise<V2AssetJobSummary> {
+      const request = typeof input === "string"
+        ? { prompt: input, workflowVersion: "local-default@1", workflow: {}, seed: 0 }
+        : input;
       assetJob = {
         ...v2WebFixtureAssets.job,
         status: "queued",
-        promptPreview: prompt.trim() || v2WebFixtureAssets.prompt,
+        promptPreview: request.prompt.trim() || v2WebFixtureAssets.prompt,
+        workflowVersion: request.workflowVersion,
+        seed: request.seed ?? 0,
         terminalMessage: "Asset job queued for ComfyUI adapter.",
         updatedAt: now,
       };

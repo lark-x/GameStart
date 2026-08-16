@@ -1,13 +1,16 @@
 import type {
   V2CandidateEnvelope,
   V2CandidateStatus,
-  V2CreateSceneGenerationJobRequest,
+  V2GenerationContextPreviewApiRequest,
+  V2CreateSceneGenerationJobApiRequest,
   V2CreateSceneGenerationJobResponse,
   V2ErrorEnvelope,
   V2HealthResponse,
   V2JobRef,
+  V2PrepareAssetGenerationApiResponse,
   V2ReleasePreflightResponse,
   V2SceneCandidatePayload,
+  V2SceneGenerationPrepareApiResponse,
   V2StoryWorldDto,
 } from "@living-network/contracts/v2";
 import type { V2CreateArcRequest, V2CreateChoiceRequest, V2CreateSceneRequest, V2CreateStateVariableRequest } from "@living-network/contracts/v2";
@@ -296,6 +299,14 @@ export interface V2AssetReviewResult {
   readonly approvedAsset?: V2ApprovedAssetSummary;
 }
 
+export interface V2AssetGenerationRequestInput {
+  readonly prompt: string;
+  readonly workflowVersion: string;
+  readonly workflow: Record<string, unknown>;
+  readonly negativePrompt?: string;
+  readonly seed?: number;
+}
+
 export type V2CanonCreateInput =
   | { readonly kind: "location"; readonly input: Omit<V2CreateLocationRequest, "locationId" | "expectedRevision" | "idempotencyKey"> }
   | { readonly kind: "character"; readonly input: Omit<V2CreateCharacterRequest, "characterId" | "expectedRevision" | "idempotencyKey"> }
@@ -330,7 +341,8 @@ export interface V2WorkspaceAdapter {
   updateCanonEntity(input: V2CanonUpdateInput & { readonly storyWorldId: string; readonly expectedRevision: number }): Promise<void>;
   createGraphEntity(input: V2GraphCreateInput & { readonly storyWorldId: string; readonly expectedRevision: number }): Promise<void>;
   updateGraphEntity(input: V2GraphUpdateInput & { readonly storyWorldId: string; readonly expectedRevision: number }): Promise<void>;
-  createSceneGenerationJob(request: V2CreateSceneGenerationJobRequest): Promise<V2CreateSceneGenerationJobResponse>;
+  prepareSceneGenerationRequest(request: V2GenerationContextPreviewApiRequest): Promise<V2SceneGenerationPrepareApiResponse>;
+  createSceneGenerationJob(request: V2CreateSceneGenerationJobApiRequest): Promise<V2CreateSceneGenerationJobResponse>;
   getSceneGenerationJob(jobId: string): Promise<V2GenerationJobSummary>;
   getAssetGenerationJob(jobId: string): Promise<V2AssetJobSummary>;
   reviewCandidate(request: V2CandidateReviewRequest): Promise<V2CandidateReviewResult>;
@@ -341,7 +353,8 @@ export interface V2WorkspaceAdapter {
   restoreSave(saveId: string): Promise<V2PlayerRuntimeSummary>;
   exportRelease(format: "json" | "markdown"): Promise<V2ExportBundleSummary>;
   uploadManualAsset(input: { readonly file: File; readonly title: string }): Promise<V2ApprovedAssetSummary>;
-  createAssetJob(prompt: string): Promise<V2AssetJobSummary>;
+  prepareAssetGenerationRequest(request: V2AssetGenerationRequestInput): Promise<V2PrepareAssetGenerationApiResponse>;
+  createAssetJob(request: V2AssetGenerationRequestInput | string): Promise<V2AssetJobSummary>;
   reviewAssetCandidate(request: V2AssetReviewRequest): Promise<V2AssetReviewResult>;
 }
 export class V2AdapterError extends Error {

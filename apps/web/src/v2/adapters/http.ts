@@ -4,17 +4,20 @@ import type {
   V2CoreExportBundleDto,
   V2CreateAssetGenerationJobApiResponse,
   V2CreateManualAssetApiResponse,
-  V2CreateSceneGenerationJobRequest,
+  V2CreateSceneGenerationJobApiRequest,
   V2CreateSceneGenerationJobResponse,
   V2ErrorEnvelope,
+  V2GenerationContextPreviewApiRequest,
   V2GraphSnapshotDto,
   V2GraphValidationDto,
   V2HealthResponse,
+  V2PrepareAssetGenerationApiResponse,
   V2ReleaseManifestDto,
   V2ReleasePreflightDto,
   V2ReviewAssetCandidateApiResponse,
   V2RuntimeSaveDto,
   V2RuntimeSceneDto,
+  V2SceneGenerationPrepareApiResponse,
   V2StateSnapshotDto,
   V2StateVariableDto,
   V2StoryWorldDto,
@@ -26,6 +29,7 @@ import type { V2GenerationJobApiResponse, V2GenerationJobListApiResponse } from 
 import {
   V2AdapterError,
   type V2ApprovedAssetSummary,
+  type V2AssetGenerationRequestInput,
   type V2AssetJobSummary,
   type V2AssetReviewRequest,
   type V2AssetReviewResult,
@@ -125,6 +129,17 @@ function toAssetJobSummary(job: V2AssetGenerationJobListApiResponse["jobs"][numb
     promptPreview: job.prompt,
     ...(job.failureReason === undefined ? {} : { terminalMessage: job.failureReason }),
   };
+}
+
+function normalizeAssetGenerationRequest(input: V2AssetGenerationRequestInput | string): V2AssetGenerationRequestInput {
+  return typeof input === "string"
+    ? {
+        prompt: input,
+        workflowVersion: "local-default@1",
+        workflow: {},
+        seed: 0,
+      }
+    : input;
 }
 
 export function v2MediaRefToUrl(mediaRef: string, baseUrl: string): string | undefined {
@@ -419,12 +434,15 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
       if (input.kind === "choice") await patch(`${path}/choices/${encodeURIComponent(input.id)}`, body);
       if (input.kind === "state") await patch(`${path}/state/variables/${encodeURIComponent(input.id)}`, body);
     },
-    async createSceneGenerationJob(request: V2CreateSceneGenerationJobRequest): Promise<V2CreateSceneGenerationJobResponse> {
+    async createSceneGenerationJob(request: V2CreateSceneGenerationJobApiRequest): Promise<V2CreateSceneGenerationJobResponse> {
       const response = await post<{ readonly job: V2CreateSceneGenerationJobResponse["job"] }>(
         "/api/v2/generation/jobs/scene",
         request,
       );
       return { job: response.job };
+    },
+    async prepareSceneGenerationRequest(request: V2GenerationContextPreviewApiRequest): Promise<V2SceneGenerationPrepareApiResponse> {
+      return post<V2SceneGenerationPrepareApiResponse>("/api/v2/generation/scene/prepare", request);
     },
     async getSceneGenerationJob(jobId: string) {
       return toSceneJobSummary((await get<V2GenerationJobApiResponse>(`/api/v2/generation/jobs/${encodeURIComponent(jobId)}`)).job);
@@ -538,15 +556,28 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
         ...(response.asset.byteSize === undefined ? {} : { byteSize: response.asset.byteSize }),
       };
     },
-    async createAssetJob(prompt: string): Promise<V2AssetJobSummary> {
+    async prepareAssetGenerationRequest(request: V2AssetGenerationRequestInput): Promise<V2PrepareAssetGenerationApiResponse> {
+      if (!worldId) throw new V2AdapterError({ code: "NOT_FOUND", message: "Load a workspace before preparing an asset job." });
+      return post<V2PrepareAssetGenerationApiResponse>("/api/v2/generation/assets/prepare", {
+        storyWorldId: worldId,
+        prompt: request.prompt,
+        workflowVersion: request.workflowVersion,
+        workflow: request.workflow,
+        ...(request.negativePrompt === undefined ? {} : { negativePrompt: request.negativePrompt }),
+        ...(request.seed === undefined ? {} : { seed: request.seed }),
+      });
+    },
+    async createAssetJob(input: V2AssetGenerationRequestInput | string): Promise<V2AssetJobSummary> {
       if (!worldId) throw new V2AdapterError({ code: "NOT_FOUND", message: "Load a workspace before creating an asset job." });
+      const request = normalizeAssetGenerationRequest(input);
       const response = await post<V2CreateAssetGenerationJobApiResponse>("/api/v2/generation/assets/jobs", {
         storyWorldId: worldId,
         idempotencyKey: uniqueCommandKey("asset-job"),
-        prompt,
-        workflowVersion: "local-default@1",
-        workflow: {},
-        seed: 0,
+        prompt: request.prompt,
+        workflowVersion: request.workflowVersion,
+        workflow: request.workflow,
+        ...(request.negativePrompt === undefined ? {} : { negativePrompt: request.negativePrompt }),
+        ...(request.seed === undefined ? {} : { seed: request.seed }),
       });
       return {
         jobId: response.job.jobId,

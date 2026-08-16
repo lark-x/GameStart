@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import type { FastifyPluginAsync, FastifyReply } from "fastify";
+import { buildV2SceneGenerationMessages } from "@living-network/ai/v2";
 import type {
   V2AssetCandidateApiResponse,
   V2AssetReviewAction,
@@ -12,15 +13,18 @@ import type {
   V2CreateAssetGenerationJobApiResponse,
   V2CreateSceneGenerationJobApiRequest,
   V2GenerationContextPreviewApiRequest,
+  V2GenerationContextPreviewApiResponse,
   V2GenerationContextSnapshot,
   V2GenerationJobApiResponse,
   V2GenerationJobListApiResponse,
   V2IdempotencyKey,
   V2IsoDateTime,
   V2JobId,
+  V2PrepareAssetGenerationApiResponse,
   V2Revision,
   V2ReviewAssetCandidateApiRequest,
   V2ReviewAssetCandidateApiResponse,
+  V2SceneGenerationPrepareApiResponse,
   V2StoryWorldId,
   V2CandidateId,
 } from "@living-network/contracts/v2";
@@ -106,9 +110,18 @@ function parseCreateJobRequest(value: unknown): V2CreateSceneGenerationJobApiReq
   if (!isRecord(value)) throw new TypeError("request body must be an object");
   const preview = parseContextPreviewRequest(value);
   const maxAttempts = optionalPositiveInteger(value.maxAttempts, "maxAttempts");
+  const preparedContext = value.preparedContext === undefined
+    ? undefined
+    : isRecord(value.preparedContext)
+      ? value.preparedContext as unknown as V2GenerationContextSnapshot
+      : undefined;
+  if (value.preparedContext !== undefined && preparedContext === undefined) {
+    throw new TypeError("preparedContext must be an object");
+  }
   return {
     ...preview,
     idempotencyKey: nonEmptyString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey,
+    ...(preparedContext === undefined ? {} : { preparedContext }),
     ...(maxAttempts === undefined ? {} : { maxAttempts }),
   };
 }
@@ -131,6 +144,19 @@ function parseCreateAssetJobRequest(value: unknown): V2CreateAssetGenerationJobA
     ...(value.negativePrompt === undefined ? {} : { negativePrompt: nonEmptyString(value.negativePrompt, "negativePrompt") }),
     ...(seed === undefined ? {} : { seed }),
     ...(maxAttempts === undefined ? {} : { maxAttempts }),
+  };
+}
+
+function parsePrepareAssetRequest(value: unknown): Omit<V2CreateAssetGenerationJobApiRequest, "idempotencyKey" | "maxAttempts"> {
+  if (!isRecord(value)) throw new TypeError("request body must be an object");
+  const seed = optionalNonNegativeInteger(value.seed, "seed");
+  return {
+    storyWorldId: nonEmptyString(value.storyWorldId, "storyWorldId") as V2StoryWorldId,
+    prompt: nonEmptyString(value.prompt, "prompt"),
+    workflowVersion: nonEmptyString(value.workflowVersion, "workflowVersion"),
+    workflow: workflowRecord(value.workflow),
+    ...(value.negativePrompt === undefined ? {} : { negativePrompt: nonEmptyString(value.negativePrompt, "negativePrompt") }),
+    ...(seed === undefined ? {} : { seed }),
   };
 }
 
@@ -243,7 +269,34 @@ export function createV2GenerationPlugin(
           requestedAt: now().toISOString(),
           tokenBudget: input.tokenBudget ?? defaultTokenBudget,
         }) as V2GenerationContextSnapshot;
-        return { context };
+        return { context } satisfies V2GenerationContextPreviewApiResponse;
+      } catch (error) {
+        return replyWithError(reply, error);
+      }
+    });
+
+    app.post("/scene/prepare", async (request, reply) => {
+      try {
+        const input = parseContextPreviewRequest(request.body);
+        const snapshot = await dependencies.canonSnapshots.getCanonSnapshot({
+          storyWorldId: input.storyWorldId,
+          revision: input.baseCanonRevision,
+        });
+        const context = buildV2GenerationContextSnapshot({
+          snapshot,
+          prompt: input.prompt,
+          requestedAt: now().toISOString(),
+          tokenBudget: input.tokenBudget ?? defaultTokenBudget,
+        }) as V2GenerationContextSnapshot;
+        return {
+          context,
+          request: {
+            responseFormat: "json_object",
+            temperature: 0.2,
+            maxTokens: context.tokenBudget,
+            messages: buildV2SceneGenerationMessages(context),
+          },
+        } satisfies V2SceneGenerationPrepareApiResponse;
       } catch (error) {
         return replyWithError(reply, error);
       }
@@ -254,16 +307,22 @@ export function createV2GenerationPlugin(
         if (!await sceneCapabilityAvailable()) return replyMissingCapability(reply, "scene generation");
         const input = parseCreateJobRequest(request.body);
         const requestedAt = now().toISOString() as V2IsoDateTime;
-        const snapshot = await dependencies.canonSnapshots.getCanonSnapshot({
-          storyWorldId: input.storyWorldId,
-          revision: input.baseCanonRevision,
-        });
-        const context = buildV2GenerationContextSnapshot({
-          snapshot,
+        const context = input.preparedContext ?? buildV2GenerationContextSnapshot({
+          snapshot: await dependencies.canonSnapshots.getCanonSnapshot({
+            storyWorldId: input.storyWorldId,
+            revision: input.baseCanonRevision,
+          }),
           prompt: input.prompt,
           requestedAt,
           tokenBudget: input.tokenBudget ?? defaultTokenBudget,
         }) as V2GenerationContextSnapshot;
+        if (
+          context.storyWorldId !== input.storyWorldId ||
+          context.baseCanonRevision !== input.baseCanonRevision ||
+          context.prompt !== input.prompt
+        ) {
+          throw new TypeError("preparedContext does not match requested storyWorldId, baseCanonRevision, and prompt");
+        }
         const result = await dependencies.jobs.createSceneJob({
           jobId: stableSceneJobId(input),
           storyWorldId: input.storyWorldId,
@@ -333,6 +392,23 @@ export function createV2GenerationPlugin(
           ...(input.maxAttempts === undefined ? {} : { maxAttempts: input.maxAttempts }),
         });
         return reply.code(result.inserted ? 201 : 200).send(result satisfies V2CreateAssetGenerationJobApiResponse);
+      } catch (error) {
+        return replyWithError(reply, error);
+      }
+    });
+
+    app.post("/assets/prepare", async (request, reply) => {
+      try {
+        const input = parsePrepareAssetRequest(request.body);
+        return {
+          request: {
+            prompt: input.prompt,
+            workflowVersion: input.workflowVersion,
+            workflow: input.workflow,
+            ...(input.negativePrompt === undefined ? {} : { negativePrompt: input.negativePrompt }),
+            ...(input.seed === undefined ? {} : { seed: input.seed }),
+          },
+        } satisfies V2PrepareAssetGenerationApiResponse;
       } catch (error) {
         return replyWithError(reply, error);
       }
