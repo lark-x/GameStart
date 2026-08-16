@@ -174,8 +174,9 @@ onMounted(() => {
 
 .v2-image-form {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(180px, 0.5fr);
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.45fr);
   gap: var(--space-5);
+  max-width: 720px;
 }
 
 .v2-image-form > :nth-child(3),

@@ -230,7 +230,7 @@ onMounted(() => {
 
 .v2-log-filters {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(150px, 0.7fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(160px, 0.85fr) auto;
   gap: var(--space-4);
   align-items: end;
 }

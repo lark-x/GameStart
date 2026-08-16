@@ -85,7 +85,7 @@ onMounted(() => {
 
 <template>
   <div class="page v2-shell-page">
-    <section class="v2-app-shell" aria-label="Living Network V2 创作平台">
+    <section class="v2-shell-layout" aria-label="Living Network V2 创作平台">
     <Button
       variant="secondary"
       size="icon"
@@ -156,26 +156,38 @@ onMounted(() => {
 <style scoped>
 .v2-shell-page {
   min-height: 100%;
+  width: 100%;
+  /* 全出血分栏：无页边距、无最大宽度，侧栏贴左缘、内容区填满剩余宽度（类似 DeepSeek 布局） */
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  /* 抬升壳层到全屏主题装饰层（.theme-decorations，z-index: 2）之上，
+     避免固定粒子/光斑在滚动时覆盖侧栏与内容，造成样式污染 */
+  z-index: 3;
 }
 
-.v2-app-shell {
-  display: grid;
-  grid-template-columns: 244px minmax(0, 1fr);
-  min-height: calc(100vh - 2 * var(--page-pad-y));
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
-  background: var(--surface-glass);
-  box-shadow: var(--shadow-md);
+/* 左右分栏（非卡片）：左栏 sticky 固定，右栏随页面滚动，无整体卡片边框/圆角 */
+.v2-shell-layout {
+  display: flex;
+  align-items: stretch;
+  min-height: 100dvh;
 }
 
 .v2-sidebar {
   display: flex;
   flex-direction: column;
+  flex: 0 0 244px;
+  width: 244px;
   min-width: 0;
-  padding: var(--space-5) var(--space-3);
+  padding: var(--space-4) var(--space-3);
   border-right: 1px solid var(--border);
   background: var(--surface-soft);
+  position: sticky;
+  top: 0;
+  /* 高度 = 视口高度；sticky 移动范围 = 容器高度 − 自身高度 = 整页滚动距离，
+     侧栏在整段滚动中保持固定 */
+  height: 100dvh;
+  overflow-y: auto;
 }
 
 .v2-sidebar-head {
@@ -183,7 +195,7 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
-  padding: 0 var(--space-2) var(--space-5);
+  padding: 0 var(--space-2) var(--space-4);
 }
 
 .v2-brand {
@@ -226,18 +238,18 @@ onMounted(() => {
 
 .v2-nav {
   display: grid;
-  gap: var(--space-5);
+  gap: var(--space-3);
   overflow: auto;
   min-height: 0;
 }
 
 .v2-nav-group {
   display: grid;
-  gap: 4px;
+  gap: 3px;
 }
 
 .v2-nav-group h2 {
-  margin: 0 0 var(--space-1);
+  margin: 0 0 2px;
   padding: 0 var(--space-3);
   color: var(--faint);
   font-size: var(--text-xs);
@@ -270,7 +282,7 @@ onMounted(() => {
   align-items: center;
   gap: var(--space-2);
   margin-top: auto;
-  padding: var(--space-5) var(--space-3) 0;
+  padding: var(--space-4) var(--space-3) 0;
   color: var(--muted);
   font-size: var(--text-xs);
 }
@@ -285,6 +297,7 @@ onMounted(() => {
 
 .v2-app-content {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   min-width: 0;
 }
@@ -322,10 +335,30 @@ onMounted(() => {
   display: none;
 }
 
+/* 短视口（常见笔记本/小窗口高度）：收紧导航间距与行高，
+   保证 768px 高度下导航完整可见、不出现内部滚动与裁切。
+   40px 触控目标下限仅在窄高视口（非触控主力场景）放宽到 36px。 */
+@media (max-height: 820px) {
+  .v2-nav {
+    gap: 8px;
+  }
+
+  .v2-nav-group {
+    gap: 2px;
+  }
+
+  .v2-nav-group h2 {
+    margin-bottom: 0;
+  }
+
+  .v2-nav-link {
+    min-height: 36px;
+  }
+}
+
 @media (max-width: 960px) {
-  .v2-app-shell {
+  .v2-shell-layout {
     display: block;
-    overflow: visible;
   }
 
   .v2-sidebar {
@@ -333,6 +366,8 @@ onMounted(() => {
     z-index: 30;
     inset: 0 auto 0 0;
     width: min(286px, 84vw);
+    /* 抽屉模式贴屏幕左缘，直角即可（分栏布局无卡片圆角） */
+    border-radius: 0;
     transform: translateX(-105%);
     transition: transform var(--motion-base);
     box-shadow: var(--shadow-md);

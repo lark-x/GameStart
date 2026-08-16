@@ -8,6 +8,7 @@ import type {
   V2JobRef,
   V2ReleasePreflightResponse,
   V2SceneCandidatePayload,
+  V2StoryWorldDto,
 } from "@living-network/contracts/v2";
 
 export type V2WorkspaceMode = "mock" | "http";
@@ -250,6 +251,7 @@ export interface V2AssetReviewResult {
 export interface V2WorkspaceAdapter {
   readonly mode: V2WorkspaceMode;
   bootstrapWorkspace(): Promise<void>;
+  createStoryWorld(input: { readonly name: string; readonly summary?: string }): Promise<V2StoryWorldDto>;
   getSnapshot(): Promise<V2WorkspaceSnapshot>;
   createSceneGenerationJob(
     request: V2CreateSceneGenerationJobRequest,

@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "id": "20260815-integration-v2-model-settings-ux",
+  "title": "V2 model discovery, profile duplication, and wide-screen shell layout optimizations",
+  "module": "integration",
+  "risk": "high",
+  "changeClass": "normal",
+  "status": "implemented",
+  "userOutcome": "Add model discovery from upstream provider, profile duplication with secret reuse, fluid wide-screen shell layout, and sticky sidebar navigation.",
+  "allowedPaths": [
+    ".ai/modules.json",
+    "apps/api/src/v2/platform/plugin.test.ts",
+    "apps/api/src/v2/platform/plugin.ts",
+    "apps/web/src/v2/V2Shell.vue",
+    "apps/web/src/v2/adapters/platform.test.ts",
+    "apps/web/src/v2/adapters/platform.ts",
+    "apps/web/src/v2/adapters/adapter.test.ts",
+    "apps/web/src/v2/adapters/http.ts",
+    "apps/web/src/v2/adapters/mock.ts",
+    "apps/web/src/v2/adapters/types.ts",
+    "apps/web/src/v2/components/V2WorkspacePanel.vue",
+    "apps/web/src/v2/components/workspace/CanonWorkspace.vue",
+    "apps/web/src/v2/stores/workspace.test.ts",
+    "apps/web/src/v2/stores/workspace.ts",
+    "apps/web/src/v2/views/V2ModelSettingsView.vue",
+    "apps/web/src/v2/views/V2ImageSettingsView.vue",
+    "apps/web/src/v2/views/V2ModelLogsView.vue",
+    "apps/web/src/v2/views/V2AutomationView.vue",
+    "docs/tasks/20260815-integration-v2-model-settings-ux.json",
+    "packages/contracts/src/v2/platform/index.ts"
+  ],
+  "forbiddenPaths": [
+    "packages/contracts/src/v2/core/**",
+    "packages/contracts/src/v2/generation/**",
+    "packages/domain/src/v2/**",
+    "packages/database/src/v2/**",
+    "packages/ai/src/v2/**",
+    "apps/api/src/v2/core/**",
+    "apps/api/src/v2/generation/**",
+    "apps/worker/src/v2/**"
+  ],
+  "nonGoals": [
+    "Database schema migration changes",
+    "External provider credential storage redesign"
+  ],
+  "interfaceRequests": [],
+  "acceptanceCommands": [
+    "pnpm check:scope",
+    "pnpm check:boundaries",
+    "pnpm test:coverage",
+    "pnpm --filter @living-network/web build"
+  ],
+  "approval": {
+    "required": true,
+    "confirmed": true,
+    "reference": "user-request-model-settings-ux"
+  },
+  "delivery": {
+    "branch": "codex/integration/v2-model-settings-ux",
+    "baseSha": "95070da76de311aa0be73b6ef38a386aabb866e5",
+    "pullRequest": "https://github.com/lark-x/GameStart/pull/8",
+    "commits": [],
+    "results": [
+      {
+        "command": "pnpm check:scope",
+        "exitCode": 0,
+        "note": "Scope validation passes with all modified files declared in manifest."
+      },
+      {
+        "command": "pnpm check:boundaries",
+        "exitCode": 0,
+        "note": "Architectural boundaries clean with 0 violations."
+      },
+      {
+        "command": "pnpm test:coverage",
+        "exitCode": 0,
+        "note": "100% strict test coverage maintained."
+      },
+      {
+        "command": "pnpm --filter @living-network/web build",
+        "exitCode": 0,
+        "note": "Web production bundle compiled successfully."
+      },
+      {
+        "command": "pnpm --filter @living-network/web typecheck && pnpm --filter @living-network/web lint && pnpm check:scope && pnpm test:e2e",
+        "exitCode": 0,
+        "note": "Fix round: complete sticky range for the sidebar (sidebar height subtracts the page bottom padding so sticky travel equals the full scroll distance) and lift the V2 shell above the fixed theme-decoration layer so animated particles no longer paint over the sidebar/content."
+      },
+      {
+        "command": "pnpm --filter @living-network/web typecheck && pnpm --filter @living-network/web lint && pnpm test:e2e",
+        "exitCode": 0,
+        "note": "Fix round 2: compact the sidebar navigation (group gaps, heading margins, paddings; short-viewport media query keeps links at 36px min-height) so the nav fits fully at 768px laptop height with no internal scrollbar or clipped items; move the model settings '获取模型' button beside the input so the required-star label no longer wraps."
+      },
+      {
+        "command": "pnpm --filter @living-network/web typecheck && pnpm --filter @living-network/web lint && pnpm check:scope && pnpm test:e2e && pnpm --filter @living-network/web build",
+        "exitCode": 0,
+        "note": "Fix round 3: redesign the V2 shell from one bordered card into a full-bleed left-right split (DeepSeek-style): remove the card wrapper/border/radius entirely, make the sidebar a flush-left full-viewport sticky column with a border-right divider, and let the content area scroll independently. Eliminates the square-vs-rounded corner mismatch and any card/rounded-corner artifacts while scrolling. Sidebar sticky drift is 0px across the full scroll."
+      }
+    ]
+  }
+}

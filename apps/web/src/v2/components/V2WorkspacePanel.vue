@@ -104,31 +104,28 @@ const title = computed(() => {
       <Badge tone="info">{{ area }}</Badge>
     </div>
 
-    <div v-if="!snapshot" class="v2-loading">
-      正在加载工作区快照...
-    </div>
+    <!-- 1. Canon Area：无快照时也渲染，由组件内部给出空库创建入口 -->
+    <CanonWorkspace
+      v-if="area === 'canon'"
+      :snapshot="snapshot"
+      :loading="loading"
+      :draft-world-name="draftWorldName"
+      :draft-premise="draftPremise"
+      :expected-revision="expectedRevision"
+      :conflict="conflict"
+      :has-draft-changes="hasDraftChanges"
+      @update:draft-world-name="emit('update:draftWorldName', $event)"
+      @update:draft-premise="emit('update:draftPremise', $event)"
+      @update:expected-revision="emit('update:expectedRevision', $event)"
+      @preview-canon-draft="emit('previewCanonDraft')"
+      @reset-canon-draft="emit('resetCanonDraft')"
+    />
 
-    <div v-else class="v2-panel-content">
-      <!-- 1. Canon Area -->
-      <CanonWorkspace
-        v-if="area === 'canon'"
-        :snapshot="snapshot"
-        :loading="loading"
-        :draft-world-name="draftWorldName"
-        :draft-premise="draftPremise"
-        :expected-revision="expectedRevision"
-        :conflict="conflict"
-        :has-draft-changes="hasDraftChanges"
-        @update:draft-world-name="emit('update:draftWorldName', $event)"
-        @update:draft-premise="emit('update:draftPremise', $event)"
-        @update:expected-revision="emit('update:expectedRevision', $event)"
-        @preview-canon-draft="emit('previewCanonDraft')"
-        @reset-canon-draft="emit('resetCanonDraft')"
-      />
-
-      <!-- 2. Graph Area -->
-      <GraphWorkspace
-        v-else-if="area === 'graph'"
+    <template v-else-if="snapshot">
+      <div class="v2-panel-content">
+        <!-- 2. Graph Area -->
+        <GraphWorkspace
+        v-if="area === 'graph'"
         :snapshot="snapshot"
         :loading="loading"
       />
@@ -218,6 +215,11 @@ const title = computed(() => {
           <small>{{ snapshot.run?.currentSceneId ?? "暂无场景" }}</small>
         </article>
       </div>
+      </div>
+    </template>
+
+    <div v-else class="v2-loading">
+      正在加载工作区快照...
     </div>
   </section>
 </template>

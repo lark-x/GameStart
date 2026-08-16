@@ -67,6 +67,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
   const adapter = ref<V2WorkspaceAdapter>(createV2DefaultAdapter());
   const snapshot = ref<V2WorkspaceSnapshot | null>(null);
   const loading = ref(false);
+  const creatingStory = ref(false);
   const error = ref<string | null>(null);
   const draftWorldName = ref("");
   const draftPremise = ref("");
@@ -168,6 +169,21 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     }
     loading.value = false;
     await loadSnapshot();
+  }
+
+  /** 新建故事世界并切换到该世界；失败时抛出错误，由调用方展示。 */
+  async function createStoryWorld(input: { readonly name: string; readonly summary?: string }): Promise<void> {
+    creatingStory.value = true;
+    error.value = null;
+    try {
+      await adapter.value.createStoryWorld(input);
+      await loadSnapshot();
+    } catch (err) {
+      error.value = operationErrorMessage(err, "无法创建故事世界");
+      throw err;
+    } finally {
+      creatingStory.value = false;
+    }
   }
 
   function resetCanonDraft() {
@@ -494,6 +510,8 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     setMode,
     loadSnapshot,
     bootstrapWorkspace,
+    createStoryWorld,
+    creatingStory,
     resetCanonDraft,
     previewCanonDraft,
     createGenerationJob,

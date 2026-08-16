@@ -277,3 +277,45 @@ test("V2 notification store manages toast notifications lifecycle", () => {
   store.removeNotification(firstId);
   assert.equal(store.notifications.length, 3);
 });
+
+test("V2 workspace store creates a story world and reloads the snapshot", async () => {
+  setActivePinia(createPinia());
+  const store = useV2WorkspaceStore();
+  let createdInput: { name: string; summary?: string } | undefined;
+  let snapshotLoads = 0;
+  const adapter: V2WorkspaceAdapter = {
+    ...createV2MockAdapter(),
+    async createStoryWorld(input) {
+      createdInput = input;
+      return { storyWorldId: "world:test", name: input.name, revision: 1, createdAt: "2026-01-01", updatedAt: "2026-01-01" };
+    },
+    async getSnapshot() {
+      snapshotLoads += 1;
+      return createV2MockAdapter().getSnapshot();
+    },
+  };
+
+  store.setAdapter(adapter);
+  await store.createStoryWorld({ name: "新故事", summary: "前提" });
+
+  assert.deepEqual(createdInput, { name: "新故事", summary: "前提" });
+  assert.equal(snapshotLoads, 1);
+  assert.equal(store.error, null);
+  assert.equal(store.creatingStory, false);
+});
+
+test("V2 workspace store surfaces story creation failures", async () => {
+  setActivePinia(createPinia());
+  const store = useV2WorkspaceStore();
+  const adapter: V2WorkspaceAdapter = {
+    ...createV2MockAdapter(),
+    async createStoryWorld() {
+      throw new Error("create failed");
+    },
+  };
+
+  store.setAdapter(adapter);
+  await assert.rejects(() => store.createStoryWorld({ name: "x" }), /create failed/);
+  assert.equal(store.error, "create failed");
+  assert.equal(store.creatingStory, false);
+});

@@ -46,7 +46,10 @@
   "modules": {
     "core": {
       "description": "Canon, graph/state, review, release and play runtime",
-      "allowedDependencies": ["core", "integration"],
+      "allowedDependencies": [
+        "core",
+        "integration"
+      ],
       "ownedPaths": [
         "apps/api/src/v2/core/**",
         "packages/contracts/src/v2/core/**",
@@ -58,7 +61,10 @@
     },
     "generation-assets": {
       "description": "Generation jobs, candidates, assets and external generation adapters",
-      "allowedDependencies": ["generation-assets", "integration"],
+      "allowedDependencies": [
+        "generation-assets",
+        "integration"
+      ],
       "ownedPaths": [
         "apps/api/src/v2/generation/**",
         "apps/worker/src/v2/asset-generation-worker*.ts",
@@ -76,62 +82,57 @@
     },
     "platform": {
       "description": "Model profiles, capability bindings, appearance settings and model-call diagnostics",
-      "allowedDependencies": ["platform", "integration"],
+      "allowedDependencies": [
+        "platform",
+        "integration"
+      ],
       "ownedPaths": [
-        "apps/api/src/v2/platform/plugin*.ts",
-        "apps/web/src/v2/adapters/platform*.ts",
         "apps/web/src/v2/views/V2AppearanceSettingsView.vue",
-        "apps/web/src/v2/views/V2ImageSettingsView.vue",
-        "apps/web/src/v2/views/V2ModelLogsView.vue",
-        "apps/web/src/v2/views/V2ModelSettingsView.vue",
         "apps/web/src/v2/views/platform.ts",
-        "packages/contracts/src/v2/platform/**",
         "packages/ports/src/v2/platform/**",
         "packages/database/src/v2/platform/repository*.ts"
       ]
     },
     "web-shell": {
       "description": "V2 navigation, layout, theme shell and non-business placeholders",
-      "allowedDependencies": ["web-shell", "integration"],
+      "allowedDependencies": [
+        "web-shell",
+        "integration"
+      ],
       "ownedPaths": [
-        "apps/web/src/v2/V2Shell.vue",
         "apps/web/src/v2/components/V2StatusRail.vue",
         "apps/web/src/v2/sentinel.test.ts",
-        "apps/web/src/v2/views/V2AutomationView.vue",
         "apps/web/src/v2/views/V2SettingsHomeView.vue"
       ]
     },
     "integration": {
       "description": "Composition roots, shared contracts, migrations, mixed hotspots and repository governance",
-      "allowedDependencies": ["core", "generation-assets", "platform", "web-shell", "integration"],
+      "allowedDependencies": [
+        "core",
+        "generation-assets",
+        "platform",
+        "web-shell",
+        "integration"
+      ],
       "ownedPaths": [
         ".ai/**",
         ".github/**",
         "AGENTS.md",
-        "apps/AGENTS.md",
-        "packages/AGENTS.md",
-        "docs/**",
-        "scripts/**",
-        "package.json",
-        "pnpm-lock.yaml",
-        "pnpm-workspace.yaml",
-        "tsconfig*.json",
         "apps/*/package.json",
-        "packages/*/package.json",
-        "infra/**",
+        "apps/AGENTS.md",
         "apps/api/src/v2/index.ts",
         "apps/api/src/v2/main.ts",
         "apps/api/src/v2/platform/app.ts",
         "apps/api/src/v2/platform/health.test.ts",
         "apps/api/src/v2/platform/index.ts",
+        "apps/api/src/v2/platform/plugin*.ts",
         "apps/api/src/v2/platform/runtime*.ts",
-        "apps/worker/src/v2/index.ts",
-        "apps/worker/src/v2/runtime.ts",
-        "apps/worker/src/v2/sentinel.test.ts",
+        "apps/web/src/v2/V2Shell.vue",
         "apps/web/src/v2/adapters/adapter.test.ts",
         "apps/web/src/v2/adapters/http.ts",
         "apps/web/src/v2/adapters/index.ts",
         "apps/web/src/v2/adapters/mock.ts",
+        "apps/web/src/v2/adapters/platform*.ts",
         "apps/web/src/v2/adapters/types.ts",
         "apps/web/src/v2/components/V2ToastNotification.vue",
         "apps/web/src/v2/components/V2WorkspacePanel.vue",
@@ -139,10 +140,20 @@
         "apps/web/src/v2/fixtures/**",
         "apps/web/src/v2/index.ts",
         "apps/web/src/v2/stores/**",
+        "apps/web/src/v2/views/V2ModelSettingsView.vue",
         "apps/web/src/v2/views/V2WorkspaceAreaView.vue",
+        "apps/worker/src/v2/index.ts",
+        "apps/worker/src/v2/runtime.ts",
+        "apps/worker/src/v2/sentinel.test.ts",
+        "docs/**",
+        "infra/**",
+        "package.json",
+        "packages/*/package.json",
+        "packages/AGENTS.md",
         "packages/config/src/v2*.ts",
         "packages/contracts/src/v2/fixtures/**",
         "packages/contracts/src/v2/index.ts",
+        "packages/contracts/src/v2/platform/**",
         "packages/contracts/src/v2/shared/**",
         "packages/database/src/v2/core/index.ts",
         "packages/database/src/v2/core/migrations.ts",
@@ -157,7 +168,14 @@
         "packages/domain/src/v2/index.ts",
         "packages/domain/src/v2/shared/**",
         "packages/ports/src/v2/index.ts",
-        "packages/ports/src/v2/shared/**"
+        "packages/ports/src/v2/shared/**",
+        "pnpm-lock.yaml",
+        "pnpm-workspace.yaml",
+        "scripts/**",
+        "tsconfig*.json",
+        "apps/web/src/v2/views/V2ImageSettingsView.vue",
+        "apps/web/src/v2/views/V2ModelLogsView.vue",
+        "apps/web/src/v2/views/V2AutomationView.vue"
       ]
     }
   }

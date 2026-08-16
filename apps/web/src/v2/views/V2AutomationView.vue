@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Radio, Sparkles } from "@lucide/vue";
+import { Radio } from "@lucide/vue";
 
 import EmptyState from "../../components/ui/EmptyState.vue";
 import PageHeader from "../../components/layout/PageHeader.vue";
@@ -22,8 +22,7 @@ import PageHeader from "../../components/layout/PageHeader.vue";
         </template>
         <template #action>
           <div class="v2-automation-hint">
-            <Sparkles :size="17" aria-hidden="true" />
-            <span>未来可复用模型能力绑定、任务队列和调用日志。</span>
+            未来可复用模型能力绑定、任务队列和调用日志。
           </div>
         </template>
       </EmptyState>

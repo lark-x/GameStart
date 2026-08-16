@@ -22,6 +22,7 @@ test("V2 platform client maps configuration endpoints and handles empty deletes"
       if (url.endsWith("/appearance") && method === "GET") return Response.json({ settings: { themeId: "dawn" } });
       if (url.endsWith("/appearance") && method === "PUT") return Response.json({ settings: { themeId: "ocean" } });
       if (url.endsWith("/capabilities") && method === "GET") return Response.json({ sceneGeneration: { enabled: true, configured: true, source: "profile" }, assetGeneration: { enabled: false, configured: false, source: "none" } });
+      if (url.includes("/model-profiles/discover-models") && method === "POST") return Response.json({ models: ["model-a", "model-b"] });
       if (url.includes("/model-profiles/profile%3Aone/test") && method === "POST") return Response.json({ success: true, preview: "OK" });
       if (url.includes("/model-call-logs?") && method === "GET") return Response.json({ items: [], nextCursor: "next" });
       if (url.includes("/model-call-logs/") && method === "GET") return Response.json({ log: { id: "log", status: "success", capability: "scene_generation", startedAt: "now", requestTruncated: false, responseTruncated: false } });
@@ -33,6 +34,7 @@ test("V2 platform client maps configuration endpoints and handles empty deletes"
   assert.deepEqual(await client.listModelProfiles(), []);
   const saved = await client.saveModelProfile({ name: "One", protocol: "openai-compatible", baseUrl: "https://llm.example", model: "m", apiKey: "secret" });
   assert.equal(saved.id, "profile:one");
+  assert.deepEqual(await client.discoverModels({ protocol: "openai-compatible", baseUrl: "https://llm.example", apiKey: "secret" }), ["model-a", "model-b"]);
   assert.equal((await client.testModelProfile("profile:one")).success, true);
   assert.deepEqual(await client.listModelBindings(), []);
   assert.equal((await client.setModelBinding("scene_generation", { profileId: "profile:one" })).profileId, "profile:one");
