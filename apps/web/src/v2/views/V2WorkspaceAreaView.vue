@@ -21,7 +21,7 @@ const areaAliases: Readonly<Record<string, string>> = {
   export: "release",
   operations: "overview",
 };
-const supportedAreas = new Set(["overview", "canon", "graph", "state", "review", "assets", "release", "player"]);
+const supportedAreas = new Set(["overview", "canon", "graph", "state", "assets", "release", "player"]);
 const currentArea = computed(() => {
   const resolved = areaAliases[requestedArea.value] ?? requestedArea.value;
   return supportedAreas.has(resolved) ? resolved : "overview";
@@ -45,17 +45,6 @@ const currentArea = computed(() => {
         v-model:draft-premise="store.draftPremise"
         :conflict="store.conflict"
         :has-draft-changes="store.hasDraftChanges"
-        v-model:generation-prompt="store.generationPrompt"
-        v-model:reviewer="store.reviewer"
-        v-model:review-reason="store.reviewReason"
-        :generation-message="store.generationMessage"
-        :review-message="store.reviewMessage"
-        :can-review-candidate="store.canReviewCandidate"
-        v-model:asset-prompt="store.assetPrompt"
-        v-model:asset-review-reason="store.assetReviewReason"
-        :asset-message="store.assetMessage"
-        :asset-review-message="store.assetReviewMessage"
-        :can-review-asset-candidate="store.canReviewAssetCandidate"
         :uploading-asset="store.uploadingAsset"
         :manual-asset-message="store.manualAssetMessage"
         v-model:save-label="store.saveLabel"
@@ -66,11 +55,7 @@ const currentArea = computed(() => {
         :release-ready="store.releaseReady"
         @preview-canon-draft="store.previewCanonDraft"
         @reset-canon-draft="store.resetCanonDraft"
-        @create-generation-job="store.createGenerationJob"
-        @review-candidate="store.reviewCandidate"
         @upload-manual-asset="store.uploadManualAsset"
-        @create-asset-job="store.createAssetJob"
-        @review-asset-candidate="store.reviewAssetCandidate"
         @create-release="store.createRelease"
         @start-run="store.startRun"
         @submit-choice="store.submitChoice"

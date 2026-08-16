@@ -1,15 +1,13 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { Boxes, FileCheck2, GitFork, Image as ImageIcon, PlayCircle, Sparkles } from "@lucide/vue";
+import { Boxes, FileCheck2, GitFork, Image as ImageIcon, PlayCircle } from "@lucide/vue";
 
 import Badge from "../../components/ui/Badge.vue";
 import type { V2WorkspaceSnapshot } from "../adapters";
-import type { V2CandidateReviewAction } from "../adapters/types";
 
 import CanonWorkspace from "./workspace/CanonWorkspace.vue";
 import GraphWorkspace from "./workspace/GraphWorkspace.vue";
 import StateWorkspace from "./workspace/StateWorkspace.vue";
-import ReviewWorkspace from "./workspace/ReviewWorkspace.vue";
 import AssetsWorkspace from "./workspace/AssetsWorkspace.vue";
 import ReleaseWorkspace from "./workspace/ReleaseWorkspace.vue";
 import PlayerWorkspace from "./workspace/PlayerWorkspace.vue";
@@ -23,17 +21,6 @@ const props = defineProps<{
   draftPremise: string;
   conflict: string | null;
   hasDraftChanges: boolean;
-  generationPrompt: string;
-  generationMessage: string | null;
-  reviewer: string;
-  reviewReason: string;
-  reviewMessage: string | null;
-  canReviewCandidate: boolean;
-  assetPrompt: string;
-  assetReviewReason: string;
-  assetMessage: string | null;
-  assetReviewMessage: string | null;
-  canReviewAssetCandidate: boolean;
   uploadingAsset: boolean;
   manualAssetMessage: string | null;
   saveLabel: string;
@@ -47,20 +34,11 @@ const props = defineProps<{
 const emit = defineEmits<{
   "update:draftWorldName": [value: string];
   "update:draftPremise": [value: string];
-  "update:generationPrompt": [value: string];
-  "update:reviewer": [value: string];
-  "update:reviewReason": [value: string];
-  "update:assetPrompt": [value: string];
-  "update:assetReviewReason": [value: string];
   "update:saveLabel": [value: string];
   "update:exportFormat": [value: "json" | "markdown"];
   previewCanonDraft: [];
   resetCanonDraft: [];
-  createGenerationJob: [];
-  reviewCandidate: [action: V2CandidateReviewAction];
   uploadManualAsset: [input: { readonly file: File; readonly title: string }];
-  createAssetJob: [];
-  reviewAssetCandidate: [action: V2CandidateReviewAction];
   createRelease: [];
   startRun: [];
   submitChoice: [choiceId: string];
@@ -77,8 +55,6 @@ const title = computed(() => {
       return "故事结构图 (Scene Graph)";
     case "state":
       return "状态变量 (State Schema)";
-    case "review":
-      return "生成与审核 (Generation & Review)";
     case "assets":
       return "正式素材库 (Formal Assets)";
     case "release":
@@ -98,7 +74,6 @@ const title = computed(() => {
       <div class="v2-panel-title">
         <Boxes v-if="area === 'canon'" :size="20" aria-hidden="true" />
         <GitFork v-else-if="area === 'graph'" :size="20" aria-hidden="true" />
-        <Sparkles v-else-if="area === 'review'" :size="20" aria-hidden="true" />
         <ImageIcon v-else-if="area === 'assets'" :size="20" aria-hidden="true" />
         <FileCheck2 v-else-if="area === 'release'" :size="20" aria-hidden="true" />
         <PlayCircle v-else-if="area === 'player'" :size="20" aria-hidden="true" />
@@ -145,45 +120,17 @@ const title = computed(() => {
           :loading="loading"
         />
 
-
-      <!-- 3. Review Area -->
-      <ReviewWorkspace
-        v-else-if="area === 'review'"
-        :snapshot="snapshot"
-        :loading="loading"
-        :generation-prompt="generationPrompt"
-        :generation-message="generationMessage"
-        :reviewer="reviewer"
-        :review-reason="reviewReason"
-        :review-message="reviewMessage"
-        :can-review-candidate="canReviewCandidate"
-        @update:generation-prompt="emit('update:generationPrompt', $event)"
-        @update:reviewer="emit('update:reviewer', $event)"
-        @update:review-reason="emit('update:reviewReason', $event)"
-        @create-generation-job="emit('createGenerationJob')"
-        @review-candidate="emit('reviewCandidate', $event)"
-      />
-
-      <!-- 4. Assets Area -->
+      <!-- 3. Assets Area -->
       <AssetsWorkspace
         v-else-if="area === 'assets'"
         :snapshot="snapshot"
         :loading="loading"
-        :asset-prompt="assetPrompt"
-        :asset-message="assetMessage"
-        :asset-review-reason="assetReviewReason"
-        :asset-review-message="assetReviewMessage"
-        :can-review-asset-candidate="canReviewAssetCandidate"
         :uploading="uploadingAsset"
         :upload-message="manualAssetMessage"
-        @update:asset-prompt="emit('update:assetPrompt', $event)"
-        @update:asset-review-reason="emit('update:assetReviewReason', $event)"
         @upload-manual-asset="emit('uploadManualAsset', $event)"
-        @create-asset-job="emit('createAssetJob')"
-        @review-asset-candidate="emit('reviewAssetCandidate', $event)"
       />
 
-      <!-- 5. Release Area -->
+      <!-- 4. Release Area -->
       <ReleaseWorkspace
         v-else-if="area === 'release'"
         :snapshot="snapshot"
@@ -198,7 +145,7 @@ const title = computed(() => {
         @export-release="emit('exportRelease')"
       />
 
-      <!-- 6. Player Area -->
+      <!-- 5. Player Area -->
       <PlayerWorkspace
         v-else-if="area === 'player'"
         :snapshot="snapshot"

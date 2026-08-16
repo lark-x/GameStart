@@ -22,7 +22,7 @@ V2 进入六阶段创作闭环集成期：前端信息架构已按“项目、�
 | Play Runtime/Save | 已实现 | Release 绑定运行、选择、条件、保存、恢复和版本校验 |
 | Generation/Assets API | 已实现 | Job、prepare 预览、上下文快照、资产 Job、受控媒体引用、手动正式素材上传和能力状态；ComfyUI 预览展示与 Worker HTTP 提交共用同一 `/prompt` payload builder |
 | V2 Worker | 已实现 | SQLite outbox 派发、BullMQ、有限重试、租约恢复、场景候选提交、素材候选提交和本地媒体 |
-| Web `/v2` | 已实现 | 中文单语言分组侧栏、独立路由页面、HTTP 默认 adapter、显式 Mock、人工创作/AI/ComfyUI/发布/游玩/导出工作区、旧路由重定向 |
+| Web `/v2` | 已实现 | 中文单语言分组侧栏、独立路由页面、HTTP 默认 adapter、显式 Mock、人工创作/AI/ComfyUI/发布/游玩/导出工作区、旧路由重定向；全局候选审核页已移除，场景/素材候选分别留在 AI 与 ComfyUI 模块 |
 | Platform 配置 | 已实现 | V2 SQLite 持久化模型档案、能力绑定、ComfyUI 图片服务、外观主题；API 密钥服务端加密且不回显，能力状态可区分 enabled/configuration/binding/connection |
 | 模型调用日志 | 已实现 | Worker 记录脱敏请求/响应、耗时、用量、错误和关联上下文；Web 支持筛选、详情、分页和 30 天清理 |
 | 触发器模块 | 边界已建立 | 独立路由和占位页面已提供，触发器引擎按计划后续实现 |

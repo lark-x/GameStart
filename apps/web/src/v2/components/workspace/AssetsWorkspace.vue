@@ -8,26 +8,16 @@ import Field from "../../../components/ui/Field.vue";
 import Input from "../../../components/ui/Input.vue";
 import { v2MediaRefToUrl } from "../../adapters";
 import type { V2WorkspaceSnapshot } from "../../adapters";
-import type { V2CandidateReviewAction } from "../../adapters/types";
 
 const props = defineProps<{
   snapshot: V2WorkspaceSnapshot;
   loading: boolean;
   uploading: boolean;
   uploadMessage: string | null;
-  assetPrompt: string;
-  assetMessage: string | null;
-  assetReviewReason: string;
-  assetReviewMessage: string | null;
-  canReviewAssetCandidate: boolean;
 }>();
 
 const emit = defineEmits<{
   uploadManualAsset: [input: { readonly file: File; readonly title: string }];
-  "update:assetPrompt": [value: string];
-  "update:assetReviewReason": [value: string];
-  createAssetJob: [];
-  reviewAssetCandidate: [action: V2CandidateReviewAction];
 }>();
 
 const fileInput = ref<HTMLInputElement | null>(null);
