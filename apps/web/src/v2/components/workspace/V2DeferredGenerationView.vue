@@ -32,7 +32,7 @@ const scenePreview = computed(() => store.scenePreparedRequest === null ? "" : J
 const assetPreview = computed(() => store.assetPreparedRequest === null ? "" : JSON.stringify(store.assetPreparedRequest.request, null, 2));
 const previewText = computed(() => isComfy.value ? assetPreview.value : scenePreview.value);
 const activeCapability = computed(() => isComfy.value ? capabilities.value?.assetGeneration : capabilities.value?.sceneGeneration);
-const capabilityReady = computed(() => activeCapability.value?.configured === true);
+const capabilityReady = computed(() => activeCapability.value?.enabled === true && activeCapability.value.configured === true);
 const capabilityBadgeLabel = computed(() => {
   if (activeCapability.value === undefined) return loadingCapabilities.value ? "读取中" : "未读取";
   if (!activeCapability.value.enabled) return "环境已关闭";
