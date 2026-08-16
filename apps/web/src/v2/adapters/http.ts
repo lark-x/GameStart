@@ -574,6 +574,7 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
         releaseId,
         idempotencyKey: runId,
       });
+      runId = runtime.run.runId;
       writeRuntimeSession(worldId, { releaseId, releaseVersion, runId, ...(saveId === undefined ? {} : { saveId }), saveLabel });
       return { run: toRun(runtime), player: toPlayer(runtime) };
     },
@@ -603,6 +604,7 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
         runId,
         idempotencyKey: runId,
       });
+      runId = runtime.run.runId;
       if (worldId) writeRuntimeSession(worldId, { ...(releaseId === undefined ? {} : { releaseId }), ...(releaseVersion === undefined ? {} : { releaseVersion }), runId, saveId: savedId, saveLabel });
       return toPlayer(runtime);
     },

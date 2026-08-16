@@ -17,6 +17,7 @@ test("V2 API runtime applies core and generation migrations and wires both plugi
       "0002_v2_core_graph_state",
       "0003_v2_core_candidate_review",
       "0004_v2_core_release_runtime",
+      "0005_v2_runtime_save_labels",
       "0100_generation_jobs",
       "0101_asset_generation_jobs",
       "0102_asset_candidate_review",
