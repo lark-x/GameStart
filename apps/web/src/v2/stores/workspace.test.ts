@@ -42,6 +42,37 @@ test("V2 workspace store exposes adapter failures", async () => {
   assert.equal(store.error, "fixture failed");
 });
 
+test("V2 workspace store clears stale active story when no worlds exist", async () => {
+  setActivePinia(createPinia());
+  const store = useV2WorkspaceStore();
+  const base = createV2MockAdapter();
+  store.setAdapter(base);
+  await store.createStoryWorld({ name: "Temporary story" });
+  assert.equal(store.activeStoryWorldId, "world:mock-1");
+
+  let snapshotRead = false;
+  const emptyAdapter: V2WorkspaceAdapter = {
+    ...base,
+    async listStoryWorlds() {
+      return [];
+    },
+    async getSnapshot() {
+      snapshotRead = true;
+      throw new Error("snapshot should not be read");
+    },
+  };
+
+  store.setAdapter(emptyAdapter);
+  await store.loadSnapshot();
+
+  assert.equal(snapshotRead, false);
+  assert.equal(store.snapshot, null);
+  assert.equal(store.activeStoryWorldId, null);
+  assert.equal(store.expectedRevision, 0);
+  assert.equal(store.draftWorldName, "");
+  assert.equal(store.draftPremise, "");
+});
+
 test("V2 workspace store previews canon draft with revision guard", async () => {
   setActivePinia(createPinia());
   const store = useV2WorkspaceStore();

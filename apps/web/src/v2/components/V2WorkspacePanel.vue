@@ -13,6 +13,7 @@ import ReviewWorkspace from "./workspace/ReviewWorkspace.vue";
 import AssetsWorkspace from "./workspace/AssetsWorkspace.vue";
 import ReleaseWorkspace from "./workspace/ReleaseWorkspace.vue";
 import PlayerWorkspace from "./workspace/PlayerWorkspace.vue";
+import ProjectOverviewWorkspace from "./workspace/ProjectOverviewWorkspace.vue";
 
 const props = defineProps<{
   area: string;
@@ -124,6 +125,12 @@ const title = computed(() => {
       @reset-canon-draft="emit('resetCanonDraft')"
     />
 
+    <ProjectOverviewWorkspace
+      v-else-if="area === 'overview'"
+      :snapshot="snapshot"
+      :loading="loading"
+    />
+
     <template v-else-if="snapshot">
       <div class="v2-panel-content">
         <!-- 2. Graph Area -->
@@ -204,35 +211,11 @@ const title = computed(() => {
         @restore-save="emit('restoreSave')"
       />
 
-      <!-- Default Overview -->
-      <div v-else class="v2-overview-grid">
-        <article class="v2-metric">
-          <span>当前故事空间</span>
-          <strong>{{ snapshot.world.name }}</strong>
-          <small>修订版本 v{{ snapshot.world.revision }}</small>
-        </article>
-        <article class="v2-metric">
-          <span>图谱场景</span>
-          <strong>{{ snapshot.sceneGraph.scenes.length }} 个</strong>
-          <small>{{ snapshot.sceneGraph.diagnostics.length }} 项诊断</small>
-        </article>
-        <article class="v2-metric">
-          <span>候选内容</span>
-          <strong>{{ snapshot.candidate?.status ?? "无" }}</strong>
-          <small>{{ snapshot.candidate?.provenance.source ?? "暂无候选" }}</small>
-        </article>
-        <article class="v2-metric">
-          <span>运行预览</span>
-          <strong>{{ snapshot.run?.releaseVersion ?? "未启动" }}</strong>
-          <small>{{ snapshot.run?.currentSceneId ?? "暂无场景" }}</small>
-        </article>
-      </div>
+      <ProjectOverviewWorkspace v-else :snapshot="snapshot" :loading="loading" />
       </div>
     </template>
 
-    <div v-else class="v2-loading">
-      正在加载工作区快照...
-    </div>
+    <ProjectOverviewWorkspace v-else :snapshot="null" :loading="loading" />
   </section>
 </template>
 
@@ -276,41 +259,6 @@ const title = computed(() => {
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-}
-
-.v2-overview-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
-  gap: var(--space-3);
-}
-
-.v2-metric {
-  display: grid;
-  gap: var(--space-1);
-  min-width: 0;
-  padding: var(--space-4);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface-soft);
-}
-
-.v2-metric span {
-  color: var(--muted);
-  font-size: var(--text-xs);
-  font-weight: 800;
-  text-transform: uppercase;
-}
-
-.v2-metric strong {
-  overflow-wrap: anywhere;
-  color: var(--text-strong);
-  font-size: var(--text-lg);
-}
-
-.v2-metric small {
-  overflow-wrap: anywhere;
-  color: var(--muted);
-  font-size: var(--text-sm);
 }
 
 .v2-loading {

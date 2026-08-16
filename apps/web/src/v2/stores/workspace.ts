@@ -275,6 +275,13 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       storyWorlds.value = await adapter.value.listStoryWorlds();
       if (storyWorlds.value.length === 0) {
         snapshot.value = null;
+        activeStoryWorldId.value = null;
+        expectedRevision.value = 0;
+        draftWorldName.value = "";
+        draftPremise.value = "";
+        if (typeof window !== "undefined") {
+          window.localStorage.removeItem(ACTIVE_STORY_WORLD_STORAGE_KEY);
+        }
         return;
       }
       const selected = storyWorlds.value.find((world) => world.storyWorldId === activeStoryWorldId.value) ?? storyWorlds.value[0]!;
