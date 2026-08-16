@@ -147,6 +147,17 @@ export class V2SqliteReleaseRuntimeRepository implements V2ReleaseRuntimeReposit
     return row === undefined ? undefined : mapSave(row);
   }
 
+  public async listSavesByStoryWorld(storyWorldId: V2StoryWorldId, limit: number): Promise<readonly V2RuntimeSaveRecord[]> {
+    return this.db.prepare(`
+      SELECT saves.*
+      FROM v2_runtime_saves saves
+      INNER JOIN v2_releases releases ON releases.release_id = saves.release_id
+      WHERE releases.story_world_id = ?
+      ORDER BY saves.created_at DESC, saves.save_id DESC
+      LIMIT ?
+    `).all(storyWorldId, limit).map(mapSave);
+  }
+
   public async createSave(input: V2RuntimeSaveRecord): Promise<V2RuntimeSaveRecord> {
     this.db.prepare(`
       INSERT INTO v2_runtime_saves (
@@ -156,9 +167,10 @@ export class V2SqliteReleaseRuntimeRepository implements V2ReleaseRuntimeReposit
         release_version,
         current_scene_id,
         state_json,
-        choice_history_json
+        choice_history_json,
+        label
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       input.saveId,
       input.runId,
@@ -167,6 +179,7 @@ export class V2SqliteReleaseRuntimeRepository implements V2ReleaseRuntimeReposit
       input.currentSceneId,
       JSON.stringify(input.stateValues),
       JSON.stringify(input.choiceHistory),
+      input.label ?? null,
     );
     const created = await this.getSave(input.saveId);
     if (!created) throw new Error("V2 runtime save insert did not return a row");
@@ -207,6 +220,7 @@ function mapSave(row: unknown): V2RuntimeSaveRecord {
     currentSceneId: requireString(record.current_scene_id, "current_scene_id"),
     stateValues: parseStateRecord(record.state_json),
     choiceHistory: parseJsonArray<string>(record.choice_history_json, "choice_history_json"),
+    ...(record.label === null || record.label === undefined ? {} : { label: requireString(record.label, "label") }),
     createdAt: requireString(record.created_at, "created_at"),
   };
 }

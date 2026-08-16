@@ -701,11 +701,17 @@ test("V2 core API releases, runs, saves, and exports a playable graph", async ()
       url: "/api/v2/core/runtime/runs/run_api/saves",
       payload: {
         saveId: "save_api",
+        label: "API checkpoint",
         idempotencyKey: "key_create_save",
       },
     });
     assert.equal(save.statusCode, 201);
     assert.equal(save.json().releaseVersion, "1.0.0");
+    assert.equal(save.json().label, "API checkpoint");
+    const saves = await app.inject({ method: "GET", url: "/api/v2/core/worlds/world_release_api/runtime/saves" });
+    assert.equal(saves.statusCode, 200);
+    assert.equal(saves.json()[0].saveId, "save_api");
+    assert.equal(saves.json()[0].label, "API checkpoint");
     const saved = await app.inject({ method: "GET", url: "/api/v2/core/runtime/saves/save_api" });
     assert.equal(saved.statusCode, 200);
 

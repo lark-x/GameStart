@@ -279,7 +279,7 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
       saveId = persistedSession.saveId ?? saveId;
       saveLabel = persistedSession.saveLabel ?? saveLabel;
       const encodedWorld = encodeURIComponent(worldId);
-      const [canon, graph, validation, variables, initial, candidates, preflight, releases, sceneJobs, assetJobs, assetCandidates, assetLibrary] = await Promise.all([
+      const [canon, graph, validation, variables, initial, candidates, preflight, releases, saves, sceneJobs, assetJobs, assetCandidates, assetLibrary] = await Promise.all([
         get<V2CanonSnapshotDto>(`/api/v2/core/worlds/${encodedWorld}/canon`),
         get<V2GraphSnapshotDto>(`/api/v2/core/worlds/${encodedWorld}/graph`),
         get<V2GraphValidationDto>(`/api/v2/core/worlds/${encodedWorld}/graph/validation`),
@@ -290,6 +290,7 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
         ),
         get<V2ReleasePreflightDto>(`/api/v2/core/worlds/${encodedWorld}/releases/preflight`),
         get<readonly V2ReleaseManifestDto[]>(`/api/v2/core/worlds/${encodedWorld}/releases`),
+        get<readonly V2RuntimeSaveDto[]>(`/api/v2/core/worlds/${encodedWorld}/runtime/saves`),
         get<V2GenerationJobListApiResponse>(`/api/v2/generation/worlds/${encodedWorld}/jobs`),
         get<V2AssetGenerationJobListApiResponse>(`/api/v2/generation/assets/worlds/${encodedWorld}/jobs`),
         get<V2AssetCandidateListApiResponse>(`/api/v2/generation/assets/worlds/${encodedWorld}/candidates`),
@@ -313,13 +314,17 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
           runId = undefined;
         }
       }
-      let save: V2RuntimeSaveDto | null = null;
-      if (saveId) {
-        try {
-          save = await get<V2RuntimeSaveDto>(`/api/v2/core/runtime/saves/${encodeURIComponent(saveId)}`);
-        } catch {
-          saveId = undefined;
-        }
+      let save: V2RuntimeSaveDto | null = saveId === undefined
+        ? null
+        : saves.find((item) => item.saveId === saveId) ?? null;
+      if (save === null) {
+        save = saves[0] ?? null;
+      }
+      if (save === null) {
+        saveId = undefined;
+      } else {
+        saveId = save.saveId;
+        saveLabel = save.label ?? saveLabel;
       }
       writeRuntimeSession(worldId, {
         ...(releaseId === undefined ? {} : { releaseId }),
@@ -586,6 +591,7 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
       saveLabel = label.trim() || "Local checkpoint";
       const save = await post<V2RuntimeSaveDto>(`/api/v2/core/runtime/runs/${encodeURIComponent(runId)}/saves`, {
         saveId,
+        label: saveLabel,
         idempotencyKey: saveId,
       });
       if (worldId) writeRuntimeSession(worldId, { ...(releaseId === undefined ? {} : { releaseId }), ...(releaseVersion === undefined ? {} : { releaseVersion }), runId, saveId, saveLabel });

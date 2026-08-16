@@ -297,9 +297,10 @@ export function parseSubmitRuntimeChoiceBody(body: unknown): V2SubmitRuntimeChoi
 
 export function parseCreateRuntimeSaveBody(body: unknown): V2CreateRuntimeSaveRequest {
   const value = requireBody(body);
-  assertKeys(value, ["saveId", "idempotencyKey"]);
+  assertKeys(value, ["saveId", "label", "idempotencyKey"]);
   return {
     saveId: requiredString(value.saveId, "saveId") as V2SaveId,
+    ...(value.label === undefined ? {} : { label: requiredString(value.label, "label") }),
     idempotencyKey: requiredString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey,
   };
 }

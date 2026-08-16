@@ -181,6 +181,7 @@ test("V2 HTTP adapter drives bootstrap and the complete local creator loop", asy
     if (url.endsWith("/releases/preflight")) return Response.json({ valid: true, diagnostics: [], blockers: [] });
     if (method === "POST" && url.endsWith("/releases")) return Response.json({ releaseId: "release_http", version: "1.0.0", sourceRevision: 2, contentHash: "hash", createdAt: "2026-01-01" });
     if (url.endsWith("/releases")) return Response.json([{ releaseId: "release_http", storyWorldId: "world_http", version: "1.0.0", sourceRevision: 2, contentHash: "hash", createdAt: "2026-01-01" }]);
+    if (url.endsWith("/runtime/saves")) return Response.json([{ saveId: "save_http", runId: "run_http", releaseId: "release_http", releaseVersion: "1.0.0", currentSceneId: "scene_next", label: "Checkpoint", stateValues: {}, choiceHistory: [], createdAt: "2026-01-01" }]);
     if (method === "POST" && url.endsWith("/generation/jobs/scene")) return Response.json({ job: { jobId: "job_scene", status: "queued", createdAt: "2026-01-01", updatedAt: "2026-01-01", prompt: "prompt", contextHash: "hash", attempts: 0, maxAttempts: 3 } });
     if (method === "POST" && url.includes("/candidates/scenes/") && url.endsWith("/review")) return Response.json({ revision: 3, candidate: { status: "approved", reviewedAt: "2026-01-01", reviewReason: "ok" } });
     if (method === "POST" && url.endsWith("/runtime/runs")) return Response.json(runtime);
@@ -237,8 +238,11 @@ test("V2 HTTP adapter drives bootstrap and the complete local creator loop", asy
   assert.equal((await adapter.startRun()).run.runId, "run_http");
   assert.equal((await adapter.submitChoice("choice")).sceneId, "scene_next");
   assert.equal((await adapter.saveRun("Checkpoint")).saveId, "save_http");
+  const saveBody = calls.find((call) => call.url.endsWith("/runtime/runs/run_http/saves"))?.body as Record<string, unknown>;
+  assert.equal(saveBody.label, "Checkpoint");
   const afterSave = await adapter.getSnapshot();
   assert.equal(afterSave.save?.saveId, "save_http");
+  assert.equal(afterSave.save?.label, "Checkpoint");
   assert.equal((await adapter.restoreSave("save_http")).sceneId, "scene_next");
   assert.equal((await adapter.exportRelease("markdown")).format, "markdown");
   assert.equal((await adapter.createAssetJob("asset")).jobId, "asset_job");
@@ -278,6 +282,7 @@ test("V2 HTTP adapter restores runtime session ids after browser refresh", async
       if (url.includes("/generation/assets/worlds/") && url.endsWith("/library")) return Response.json({ assets: [] });
       if (url.endsWith("/releases/preflight")) return Response.json({ valid: true, diagnostics: [], blockers: [] });
       if (url.endsWith("/releases")) return Response.json([{ releaseId: "release", storyWorldId: "world", version: "1.0.0", sourceRevision: 1, contentHash: "hash", createdAt: "2026-01-01" }]);
+      if (url.endsWith("/runtime/saves")) return Response.json([{ saveId: "save", runId: "run", releaseId: "release", releaseVersion: "1.0.0", currentSceneId: "scene", label: "Server checkpoint", stateValues: {}, choiceHistory: ["choice"], createdAt: "2026-01-01" }]);
       if (url.includes("/runtime/runs/run/scene")) return Response.json(runtime);
       if (url.includes("/runtime/saves/save")) return Response.json({ saveId: "save", runId: "run", releaseVersion: "1.0.0", currentSceneId: "scene", createdAt: "2026-01-01" });
       throw new Error(`unhandled ${url}`);
@@ -287,7 +292,7 @@ test("V2 HTTP adapter restores runtime session ids after browser refresh", async
     assert.equal(snapshot.releasePackage?.releaseId, "release");
     assert.equal(snapshot.run?.runId, "run");
     assert.equal(snapshot.save?.saveId, "save");
-    assert.equal(snapshot.save?.label, "Browser checkpoint");
+    assert.equal(snapshot.save?.label, "Server checkpoint");
     assert.equal(snapshot.player?.title, "Restored Scene");
   } finally {
     storage.restore();
@@ -327,6 +332,7 @@ test("V2 HTTP adapter maps optional snapshot values and player choices", async (
     if (url.includes("/generation/assets/worlds/") && url.endsWith("/library")) return Response.json({ assets: [] });
     if (url.endsWith("/releases/preflight")) return Response.json({ valid: false, diagnostics: [{ code: "BAD", severity: "error", message: "Bad release" }], blockers: [{ code: "BAD", message: "Bad release", targetPage: "story" }] });
     if (url.endsWith("/releases")) return Response.json([]);
+    if (url.endsWith("/runtime/saves")) return Response.json([]);
     if (url.includes("/runtime/runs/") && url.endsWith("/scene")) return Response.json(runtime);
     if (url.includes("/runtime/saves/") && url.endsWith("/save")) return Response.json({ saveId: "save", runId: "run", releaseVersion: "1.0.0", currentSceneId: "scene", createdAt: "2026-01-01" });
     return Response.json({}, { status: 404 });
@@ -441,6 +447,7 @@ test("V2 http adapter creates a story world and prefers it on the next snapshot"
     if (url.includes("/generation/assets/worlds/") && url.endsWith("/library")) return Response.json({ assets: [] });
     if (url.endsWith("/releases/preflight")) return Response.json({ valid: true, diagnostics: [], blockers: [] });
     if (url.endsWith("/releases")) return Response.json([]);
+    if (url.endsWith("/runtime/saves")) return Response.json([]);
     throw new Error(`unhandled ${method} ${url}`);
   };
 
@@ -490,6 +497,7 @@ test("V2 HTTP adapter covers authoring CRUD and optional asset/timeline mapping"
     if (url.includes("/generation/assets/worlds/") && url.endsWith("/jobs")) return Response.json({ jobs: [] });
     if (url.endsWith("/releases/preflight")) return Response.json({ valid: true, diagnostics: [], blockers: [] });
     if (url.endsWith("/releases")) return Response.json([]);
+    if (url.endsWith("/runtime/saves")) return Response.json([]);
     if (url.includes("/generation/assets/worlds/") && url.endsWith("/candidates")) return Response.json({
       candidates: [{
         candidateId: "asset_candidate", status: "pending", payload: { asset: { prompt: "Prompt", mediaRef: `media://local/v2/assets/${assetHash}.png`, sourceJobId: "job", workflowVersion: "v1" }, validationNotes: ["ok"] },

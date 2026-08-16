@@ -21,6 +21,7 @@ export interface V2RuntimeSaveRecord {
   readonly currentSceneId: string;
   readonly stateValues: Record<string, string | number | boolean>;
   readonly choiceHistory: readonly string[];
+  readonly label?: string;
   readonly createdAt?: string;
 }
 
@@ -34,6 +35,7 @@ export interface V2ReleaseRuntimeRepository {
   updateRun(input: V2RuntimeRun): Promise<V2RuntimeRun>;
 
   getSave(saveId: V2SaveId): Promise<V2RuntimeSaveRecord | undefined>;
+  listSavesByStoryWorld(storyWorldId: V2StoryWorldId, limit: number): Promise<readonly V2RuntimeSaveRecord[]>;
   createSave(input: V2RuntimeSaveRecord): Promise<V2RuntimeSaveRecord>;
 }
 

@@ -221,6 +221,10 @@ export const v2CorePlugin: FastifyPluginAsync<V2CorePluginOptions> = async (app,
     const result = await useCases.createRuntimeSave(runId, parseCreateRuntimeSaveBody(request.body));
     return reply.status(201).send(result);
   });
+  app.get("/worlds/:storyWorldId/runtime/saves", async (request) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    return useCases.listRuntimeSaves(storyWorldId);
+  });
   app.get("/runtime/saves/:saveId", async (request) => {
     const { saveId } = getSaveParams(request.params);
     return useCases.getRuntimeSave(saveId);

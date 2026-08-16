@@ -149,6 +149,7 @@ export interface V2CoreUseCases {
   getRuntimeScene(runId: V2RunId): Promise<V2RuntimeSceneDto>;
   submitRuntimeChoice(runId: V2RunId, input: V2SubmitRuntimeChoiceRequest): Promise<V2RuntimeSceneDto>;
   createRuntimeSave(runId: V2RunId, input: V2CreateRuntimeSaveRequest): Promise<V2RuntimeSaveDto>;
+  listRuntimeSaves(storyWorldId: V2StoryWorldId): Promise<readonly V2RuntimeSaveDto[]>;
   getRuntimeSave(saveId: V2SaveId): Promise<V2RuntimeSaveDto>;
   loadRuntimeSave(saveId: V2SaveId, input: V2LoadRuntimeSaveRequest): Promise<V2RuntimeSceneDto>;
   exportWorkspace(storyWorldId: V2StoryWorldId, revision: V2Revision): Promise<V2CoreExportBundleDto>;
@@ -599,10 +600,15 @@ export function createV2CoreUseCases(
           currentSceneId: run.currentSceneId,
           stateValues: run.stateValues,
           choiceHistory: run.choiceHistory,
+          ...(input.label === undefined ? {} : { label: input.label }),
         });
         return toRuntimeSaveDto(save);
       }),
     ),
+    listRuntimeSaves: (storyWorldId) => requireReleaseRuntime().withReleaseRuntimeTransaction(async ({ canon, releaseRuntime }) => {
+      await requireWorld(canon, storyWorldId);
+      return (await releaseRuntime.listSavesByStoryWorld(storyWorldId, 20)).map(toRuntimeSaveDto);
+    }),
     getRuntimeSave: (saveId) => requireReleaseRuntime().withReleaseRuntimeTransaction(async ({ releaseRuntime }) =>
       toRuntimeSaveDto(await requireSave(releaseRuntime, saveId)),
     ),
@@ -1000,6 +1006,7 @@ function toRuntimeSaveDto(save: V2RuntimeSaveRecord): V2RuntimeSaveDto {
     currentSceneId: save.currentSceneId as V2SceneDto["sceneId"],
     stateValues: save.stateValues,
     choiceHistory: save.choiceHistory.map((choiceId) => choiceId as V2ChoiceDto["choiceId"]),
+    ...(save.label === undefined ? {} : { label: save.label }),
     createdAt: save.createdAt ?? "1970-01-01T00:00:00.000Z",
   };
 }
