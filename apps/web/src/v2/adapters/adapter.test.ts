@@ -5,6 +5,28 @@ import { createV2HttpAdapter, v2MediaRefToUrl } from "./http.ts";
 import { createV2MockAdapter } from "./mock.ts";
 import { V2AdapterError } from "./types.ts";
 
+function installLocalStorageFixture(initial: Readonly<Record<string, string>> = {}) {
+  const values = new Map(Object.entries(initial));
+  const globalWithWindow = globalThis as typeof globalThis & {
+    window?: { localStorage: Pick<Storage, "getItem" | "setItem" | "removeItem"> };
+  };
+  const previousWindow = globalWithWindow.window;
+  globalWithWindow.window = {
+    localStorage: {
+      getItem: (key) => values.get(key) ?? null,
+      setItem: (key, value) => values.set(key, value),
+      removeItem: (key) => { values.delete(key); },
+    },
+  };
+  return {
+    values,
+    restore: () => {
+      if (previousWindow === undefined) delete globalWithWindow.window;
+      else globalWithWindow.window = previousWindow;
+    },
+  };
+}
+
 test("V2 mock adapter returns typed Gate 0 snapshot data", async () => {
   const snapshot = await createV2MockAdapter().getSnapshot();
 
@@ -222,6 +244,54 @@ test("V2 HTTP adapter drives bootstrap and the complete local creator loop", asy
   assert.equal((await adapter.createAssetJob("asset")).jobId, "asset_job");
   assert.equal((await adapter.reviewAssetCandidate({ candidateId: "asset_candidate", action: "approve", reviewer: "creator", reason: "ready" })).status, "approved");
   assert.ok(calls.some((call) => call.url.includes("/api/v2/core/worlds/world%3A")));
+});
+
+test("V2 HTTP adapter restores runtime session ids after browser refresh", async () => {
+  const storage = installLocalStorageFixture({
+    "living-network-v2-runtime:world": JSON.stringify({
+      releaseId: "release",
+      releaseVersion: "1.0.0",
+      runId: "run",
+      saveId: "save",
+      saveLabel: "Browser checkpoint",
+    }),
+  });
+  try {
+    const runtime = {
+      run: { runId: "run", releaseId: "release", releaseVersion: "1.0.0", currentSceneId: "scene", stateValues: {}, choiceHistory: ["choice"] },
+      scene: { sceneId: "scene", title: "Restored Scene", body: "Restored body", isEntry: true },
+      availableChoices: [],
+    };
+    const fetchImpl = async (input: RequestInfo | URL): Promise<Response> => {
+      const url = String(input);
+      if (url.endsWith("/health")) return Response.json({ ok: true, version: "v2" });
+      if (url.endsWith("/core/worlds")) return Response.json([{ storyWorldId: "world", name: "World", revision: 1 }]);
+      if (url.endsWith("/canon")) return Response.json({ storyWorldId: "world", revision: 1, world: { storyWorldId: "world", name: "World", revision: 1 }, locations: [], characters: [], facts: [], rules: [], timelineEvents: [] });
+      if (url.endsWith("/graph")) return Response.json({ arcs: [], scenes: [{ sceneId: "scene", title: "Restored Scene", isEntry: true }], choices: [] });
+      if (url.endsWith("/graph/validation")) return Response.json({ valid: true, diagnostics: [] });
+      if (url.endsWith("/state/variables")) return Response.json([]);
+      if (url.endsWith("/state/initial")) return Response.json({ values: {} });
+      if (url.endsWith("/candidates/scenes")) return Response.json([]);
+      if (url.includes("/generation/worlds/") && url.endsWith("/jobs")) return Response.json({ jobs: [] });
+      if (url.includes("/generation/assets/worlds/") && url.endsWith("/jobs")) return Response.json({ jobs: [] });
+      if (url.includes("/generation/assets/worlds/") && url.endsWith("/candidates")) return Response.json({ candidates: [] });
+      if (url.includes("/generation/assets/worlds/") && url.endsWith("/library")) return Response.json({ assets: [] });
+      if (url.endsWith("/releases/preflight")) return Response.json({ valid: true, diagnostics: [], blockers: [] });
+      if (url.endsWith("/releases")) return Response.json([{ releaseId: "release", storyWorldId: "world", version: "1.0.0", sourceRevision: 1, contentHash: "hash", createdAt: "2026-01-01" }]);
+      if (url.includes("/runtime/runs/run/scene")) return Response.json(runtime);
+      if (url.includes("/runtime/saves/save")) return Response.json({ saveId: "save", runId: "run", releaseVersion: "1.0.0", currentSceneId: "scene", createdAt: "2026-01-01" });
+      throw new Error(`unhandled ${url}`);
+    };
+
+    const snapshot = await createV2HttpAdapter({ baseUrl: "http://localhost", fetchImpl }).getSnapshot("world");
+    assert.equal(snapshot.releasePackage?.releaseId, "release");
+    assert.equal(snapshot.run?.runId, "run");
+    assert.equal(snapshot.save?.saveId, "save");
+    assert.equal(snapshot.save?.label, "Browser checkpoint");
+    assert.equal(snapshot.player?.title, "Restored Scene");
+  } finally {
+    storage.restore();
+  }
 });
 
 test("V2 HTTP adapter requires the correct operation order", async () => {

@@ -53,6 +53,16 @@ export interface V2HttpAdapterOptions {
   readonly fetchImpl?: typeof fetch;
 }
 
+interface V2RuntimeSession {
+  readonly releaseId?: string;
+  readonly releaseVersion?: string;
+  readonly runId?: string;
+  readonly saveId?: string;
+  readonly saveLabel?: string;
+}
+
+const RUNTIME_SESSION_KEY_PREFIX = "living-network-v2-runtime:";
+
 async function parseJson<T>(response: Response): Promise<T> {
   const payload = (await response.json()) as T | V2ErrorEnvelope | { readonly error?: { readonly message?: string } };
   if (!response.ok) {
@@ -82,6 +92,40 @@ function jsonRequest(method: string, body?: unknown): RequestInit {
 
 function uniqueCommandKey(prefix: string): string {
   return `${prefix}:${Date.now()}:${crypto.randomUUID()}`;
+}
+
+function browserStorage(): Storage | undefined {
+  return typeof window === "undefined" ? undefined : window.localStorage;
+}
+
+function runtimeSessionKey(storyWorldId: string): string {
+  return `${RUNTIME_SESSION_KEY_PREFIX}${storyWorldId}`;
+}
+
+function readRuntimeSession(storyWorldId: string): V2RuntimeSession {
+  const storage = browserStorage();
+  if (storage === undefined) return {};
+  const raw = storage.getItem(runtimeSessionKey(storyWorldId));
+  if (raw === null) return {};
+  try {
+    const parsed = JSON.parse(raw) as Partial<V2RuntimeSession>;
+    return {
+      ...(typeof parsed.releaseId === "string" ? { releaseId: parsed.releaseId } : {}),
+      ...(typeof parsed.releaseVersion === "string" ? { releaseVersion: parsed.releaseVersion } : {}),
+      ...(typeof parsed.runId === "string" ? { runId: parsed.runId } : {}),
+      ...(typeof parsed.saveId === "string" ? { saveId: parsed.saveId } : {}),
+      ...(typeof parsed.saveLabel === "string" ? { saveLabel: parsed.saveLabel } : {}),
+    };
+  } catch {
+    storage.removeItem(runtimeSessionKey(storyWorldId));
+    return {};
+  }
+}
+
+function writeRuntimeSession(storyWorldId: string, session: V2RuntimeSession): void {
+  const storage = browserStorage();
+  if (storage === undefined) return;
+  storage.setItem(runtimeSessionKey(storyWorldId), JSON.stringify(session));
 }
 
 function toPlayer(runtime: V2RuntimeSceneDto): V2PlayerRuntimeSummary {
@@ -228,6 +272,12 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
       }
       worldId = world.storyWorldId;
       revision = world.revision;
+      const persistedSession = readRuntimeSession(worldId);
+      releaseId = persistedSession.releaseId ?? releaseId;
+      releaseVersion = persistedSession.releaseVersion ?? releaseVersion;
+      runId = persistedSession.runId ?? runId;
+      saveId = persistedSession.saveId ?? saveId;
+      saveLabel = persistedSession.saveLabel ?? saveLabel;
       const encodedWorld = encodeURIComponent(worldId);
       const [canon, graph, validation, variables, initial, candidates, preflight, releases, sceneJobs, assetJobs, assetCandidates, assetLibrary] = await Promise.all([
         get<V2CanonSnapshotDto>(`/api/v2/core/worlds/${encodedWorld}/canon`),
@@ -250,13 +300,32 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
       const sceneJob = sceneJobs.jobs[0] ?? null;
       const assetJob = assetJobs.jobs[0] ?? null;
       if (release) {
-        releaseId = release.releaseId;
-        releaseVersion = release.version;
+        releaseId = releaseId ?? release.releaseId;
+        releaseVersion = releaseVersion ?? release.version;
       }
       let runtime: V2RuntimeSceneDto | null = null;
-      if (runId) runtime = await get<V2RuntimeSceneDto>(`/api/v2/core/runtime/runs/${encodeURIComponent(runId)}/scene`);
+      if (runId) {
+        try {
+          runtime = await get<V2RuntimeSceneDto>(`/api/v2/core/runtime/runs/${encodeURIComponent(runId)}/scene`);
+        } catch {
+          runId = undefined;
+        }
+      }
       let save: V2RuntimeSaveDto | null = null;
-      if (saveId) save = await get<V2RuntimeSaveDto>(`/api/v2/core/runtime/saves/${encodeURIComponent(saveId)}`);
+      if (saveId) {
+        try {
+          save = await get<V2RuntimeSaveDto>(`/api/v2/core/runtime/saves/${encodeURIComponent(saveId)}`);
+        } catch {
+          saveId = undefined;
+        }
+      }
+      writeRuntimeSession(worldId, {
+        ...(releaseId === undefined ? {} : { releaseId }),
+        ...(releaseVersion === undefined ? {} : { releaseVersion }),
+        ...(runId === undefined ? {} : { runId }),
+        ...(saveId === undefined ? {} : { saveId }),
+        saveLabel,
+      });
       const entryScene = graph.scenes.find((scene) => scene.isEntry);
       const selectedAssetCandidate = assetCandidates.candidates.find((item) => item.status === "pending" || item.status === "changes_requested") ?? assetCandidates.candidates.at(-1);
       const assetCandidateSummary = selectedAssetCandidate === undefined ? null : {
@@ -480,6 +549,7 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
       });
       releaseId = created.releaseId;
       releaseVersion = created.version;
+      writeRuntimeSession(worldId, { releaseId, releaseVersion, ...(runId === undefined ? {} : { runId }), ...(saveId === undefined ? {} : { saveId }), saveLabel });
       return {
         releaseId: created.releaseId,
         version: created.version,
@@ -490,13 +560,14 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
       };
     },
     async startRun() {
-      if (!releaseId || !releaseVersion) throw new V2AdapterError({ code: "NOT_FOUND", message: "Create or load a release before starting a run." });
+      if (!worldId || !releaseId || !releaseVersion) throw new V2AdapterError({ code: "NOT_FOUND", message: "Create or load a release before starting a run." });
       runId = `run:${Date.now()}:${crypto.randomUUID()}`;
       const runtime = await post<V2RuntimeSceneDto>("/api/v2/core/runtime/runs", {
         runId,
         releaseId,
         idempotencyKey: runId,
       });
+      writeRuntimeSession(worldId, { releaseId, releaseVersion, runId, ...(saveId === undefined ? {} : { saveId }), saveLabel });
       return { run: toRun(runtime), player: toPlayer(runtime) };
     },
     async submitChoice(choiceId: string): Promise<V2PlayerRuntimeSummary> {
@@ -515,6 +586,7 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
         saveId,
         idempotencyKey: saveId,
       });
+      if (worldId) writeRuntimeSession(worldId, { ...(releaseId === undefined ? {} : { releaseId }), ...(releaseVersion === undefined ? {} : { releaseVersion }), runId, saveId, saveLabel });
       return { saveId: save.saveId, label: saveLabel, runId: save.runId, releaseVersion: save.releaseVersion, currentSceneId: save.currentSceneId, savedAt: save.createdAt };
     },
     async restoreSave(savedId: string): Promise<V2PlayerRuntimeSummary> {
@@ -523,6 +595,7 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
         runId,
         idempotencyKey: runId,
       });
+      if (worldId) writeRuntimeSession(worldId, { ...(releaseId === undefined ? {} : { releaseId }), ...(releaseVersion === undefined ? {} : { releaseVersion }), runId, saveId: savedId, saveLabel });
       return toPlayer(runtime);
     },
     async exportRelease(format: "json" | "markdown"): Promise<V2ExportBundleSummary> {

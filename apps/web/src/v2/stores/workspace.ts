@@ -64,6 +64,7 @@ interface V2BrowserAdapterContext {
 }
 
 const browserAdapterContext = typeof window === "undefined" ? undefined : window;
+const ACTIVE_STORY_WORLD_STORAGE_KEY = "living-network-v2-story-world";
 
 export function createV2DefaultAdapter(
   environment: Record<string, string | undefined> = runtimeEnv,
@@ -82,7 +83,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
   const adapter = ref<V2WorkspaceAdapter>(createV2DefaultAdapter());
   const snapshot = ref<V2WorkspaceSnapshot | null>(null);
   const storyWorlds = ref<readonly V2StoryWorldDto[]>([]);
-  const activeStoryWorldId = ref<string | null>(typeof window === "undefined" ? null : window.localStorage.getItem("living-network-v2-story-world"));
+  const activeStoryWorldId = ref<string | null>(typeof window === "undefined" ? null : window.localStorage.getItem(ACTIVE_STORY_WORLD_STORAGE_KEY));
 
   const loading = ref(false);
   const creatingStory = ref(false);
@@ -279,6 +280,9 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       const selected = storyWorlds.value.find((world) => world.storyWorldId === activeStoryWorldId.value) ?? storyWorlds.value[0]!;
       snapshot.value = await adapter.value.getSnapshot(selected.storyWorldId);
       activeStoryWorldId.value = snapshot.value.world.storyWorldId;
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(ACTIVE_STORY_WORLD_STORAGE_KEY, activeStoryWorldId.value);
+      }
       draftWorldName.value = snapshot.value.world.name;
       draftPremise.value = snapshot.value.world.premise;
       expectedRevision.value = snapshot.value.world.revision;
@@ -336,6 +340,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     try {
       const created = await adapter.value.createStoryWorld(input);
       activeStoryWorldId.value = created.storyWorldId;
+      if (typeof window !== "undefined") window.localStorage.setItem(ACTIVE_STORY_WORLD_STORAGE_KEY, created.storyWorldId);
       await loadSnapshot();
     } catch (err) {
       error.value = operationErrorMessage(err, "无法创建故事世界");
@@ -350,6 +355,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     stopAssetPolling();
     if (activeStoryWorldId.value === storyWorldId) return;
     activeStoryWorldId.value = storyWorldId;
+    if (typeof window !== "undefined") window.localStorage.setItem(ACTIVE_STORY_WORLD_STORAGE_KEY, storyWorldId);
     await loadSnapshot();
   }
   function resetCanonDraft() {
