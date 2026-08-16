@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { buildV2SceneGenerationProviderRequest } from "@living-network/ai/v2";
 import type {
   V2ApprovedAssetRecord,
   V2AssetCandidateRecord,
@@ -23,6 +24,7 @@ import type {
   V2ReleaseId,
   V2Revision,
   V2ReviewAssetCandidateInput,
+  V2SceneGenerationPrepareApiResponse,
   V2SceneGenerationJobRecord,
   V2StoryWorldId,
 } from "@living-network/contracts/v2";
@@ -557,6 +559,32 @@ test("V2 generation context preview reads canon snapshot for the requested revis
     assert.equal(body.context.tokenBudget, 900);
     assert.equal(body.context.contextHash.startsWith("sha256:"), true);
     assert.deepEqual(canonSnapshots.requests, [{ storyWorldId: "world_generation", revision: 7 }]);
+  } finally {
+    await app.close();
+  }
+});
+
+test("V2 scene prepare returns the shared model request preview", async () => {
+  const { app } = createApp();
+  await app.ready();
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v2/generation/scene/prepare",
+      payload: {
+        storyWorldId: "world_generation",
+        baseCanonRevision: 7,
+        prompt: "Write the bridge scene.",
+        tokenBudget: 512,
+      },
+    });
+    assert.equal(response.statusCode, 200);
+    const body = response.json() as V2SceneGenerationPrepareApiResponse;
+    const providerRequest = buildV2SceneGenerationProviderRequest({ context: body.context });
+    assert.equal(body.request.responseFormat, providerRequest.responseFormat);
+    assert.equal(body.request.temperature, providerRequest.temperature);
+    assert.equal(body.request.maxTokens, providerRequest.maxTokens);
+    assert.deepEqual(body.request.messages, providerRequest.messages);
   } finally {
     await app.close();
   }

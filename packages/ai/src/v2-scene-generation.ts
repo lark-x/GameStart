@@ -1,4 +1,4 @@
-import type { ChatProvider } from "./provider.ts";
+import type { ChatCompletionRequest, ChatProvider } from "./provider.ts";
 
 export interface V2SceneGenerationRequest {
   readonly context: V2GenerationContextSnapshot;
@@ -54,11 +54,10 @@ export function buildV2SceneGenerationMessages(context: V2GenerationContextSnaps
   ];
 }
 
-export async function generateV2SceneCandidate(
-  provider: ChatProvider,
+export function buildV2SceneGenerationProviderRequest(
   request: V2SceneGenerationRequest,
-): Promise<V2SceneGenerationResult> {
-  const response = await provider.complete({
+): ChatCompletionRequest {
+  return {
     ...(request.model === undefined ? {} : { model: request.model }),
     temperature: request.temperature ?? 0.2,
     maxTokens: request.context.tokenBudget,
@@ -70,7 +69,14 @@ export async function generateV2SceneCandidate(
       capability: "scene_generation",
       ...(request.jobId === undefined ? {} : { jobId: request.jobId }),
     },
-  });
+  };
+}
+
+export async function generateV2SceneCandidate(
+  provider: ChatProvider,
+  request: V2SceneGenerationRequest,
+): Promise<V2SceneGenerationResult> {
+  const response = await provider.complete(buildV2SceneGenerationProviderRequest(request));
   return {
     providerResponseId: response.id,
     model: response.model,

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createV2ChatProvider, generateV2SceneCandidate, type ChatProvider, type ChatCompletionRequest, type V2GenerationContextSnapshot } from "./v2.ts";
+import { buildV2SceneGenerationProviderRequest, createV2ChatProvider, generateV2SceneCandidate, type ChatProvider, type ChatCompletionRequest, type V2GenerationContextSnapshot } from "./v2.ts";
 
 const context: V2GenerationContextSnapshot = {
   storyWorldId: "world_v2",
@@ -43,6 +43,7 @@ test("generateV2SceneCandidate requests JSON and parses provider output", async 
   assert.equal(requests[0]?.responseFormat, "json_object");
   assert.equal(requests[0]?.maxTokens, 512);
   assert.equal(requests[0]?.trace?.correlationId, "v2:generation:sha256:context");
+  assert.deepEqual(requests[0], buildV2SceneGenerationProviderRequest({ context, model: "fake-model" }));
   assert.equal(JSON.stringify(requests[0]?.messages).includes("The bridge is sealed."), true);
 });
 

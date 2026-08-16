@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
 import type { FastifyPluginAsync, FastifyReply } from "fastify";
-import { buildV2SceneGenerationMessages } from "@living-network/ai/v2";
+import { buildV2SceneGenerationProviderRequest } from "@living-network/ai/v2";
 import { buildV2ComfyUiPromptPayload } from "@living-network/contracts/v2";
 import type {
   V2AssetCandidateApiResponse,
@@ -291,13 +291,20 @@ export function createV2GenerationPlugin(
           requestedAt: now().toISOString(),
           tokenBudget: input.tokenBudget ?? defaultTokenBudget,
         }) as V2GenerationContextSnapshot;
+        const providerRequest = buildV2SceneGenerationProviderRequest({ context });
+        if (providerRequest.responseFormat !== "json_object") throw new TypeError("scene generation prepare must request JSON output");
+        const messages = providerRequest.messages.map((message) => {
+          if (message.role !== "system" && message.role !== "user") throw new TypeError("scene generation prepare only supports system and user messages");
+          if (typeof message.content !== "string") throw new TypeError("scene generation prepare only supports text messages");
+          return { role: message.role, content: message.content };
+        });
         return {
           context,
           request: {
-            responseFormat: "json_object",
-            temperature: 0.2,
-            maxTokens: context.tokenBudget,
-            messages: buildV2SceneGenerationMessages(context),
+            responseFormat: providerRequest.responseFormat,
+            temperature: providerRequest.temperature ?? 0.2,
+            maxTokens: providerRequest.maxTokens ?? context.tokenBudget,
+            messages,
           },
         } satisfies V2SceneGenerationPrepareApiResponse;
       } catch (error) {
