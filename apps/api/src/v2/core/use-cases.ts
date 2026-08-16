@@ -25,6 +25,7 @@ import type {
   V2FactDto,
   V2GraphSnapshotDto,
   V2GraphValidationDto,
+  V2GraphDiagnosticDto,
   V2LocationId,
   V2LoadRuntimeSaveRequest,
   V2Revision,
@@ -38,6 +39,7 @@ import type {
   V2StateSnapshotDto,
   V2StateVariableDto,
   V2ReleaseId,
+  V2ReleaseBlockerDto,
   V2ReleaseManifestDto,
   V2ReleasePreflightDto,
   V2RuntimeRunDto,
@@ -515,6 +517,13 @@ export function createV2CoreUseCases(
           ...(diagnostic.sceneId === undefined ? {} : { sceneId: diagnostic.sceneId as V2SceneDto["sceneId"] }),
           ...(diagnostic.choiceId === undefined ? {} : { choiceId: diagnostic.choiceId as V2ChoiceDto["choiceId"] }),
         })),
+        blockers: preflight.diagnostics.filter((diagnostic) => diagnostic.severity === "error").map((diagnostic) => toReleaseBlocker({
+          code: diagnostic.code,
+          severity: diagnostic.severity,
+          message: diagnostic.message,
+          ...(diagnostic.sceneId === undefined ? {} : { sceneId: diagnostic.sceneId as V2SceneDto["sceneId"] }),
+          ...(diagnostic.choiceId === undefined ? {} : { choiceId: diagnostic.choiceId as V2ChoiceDto["choiceId"] }),
+        })),
       };
     }),
     createRelease: (storyWorldId, input) => requireReleaseRuntime().withReleaseRuntimeTransaction(async ({ canon, graphState, releaseRuntime }) =>
@@ -733,6 +742,19 @@ async function requireSceneCandidate(
   const candidate = await candidateReview.getSceneCandidate({ storyWorldId, candidateId: candidateId as never });
   if (!candidate) throw new V2HttpError(404, "NOT_FOUND", "Scene candidate not found");
   return candidate;
+}
+
+function toReleaseBlocker(diagnostic: V2GraphDiagnosticDto): V2ReleaseBlockerDto {
+  if (diagnostic.sceneId !== undefined) {
+    return { code: diagnostic.code, message: diagnostic.message, targetPage: "story", entityId: diagnostic.sceneId };
+  }
+  if (diagnostic.choiceId !== undefined) {
+    return { code: diagnostic.code, message: diagnostic.message, targetPage: "story", entityId: diagnostic.choiceId };
+  }
+  if (diagnostic.code.toLowerCase().includes("state")) {
+    return { code: diagnostic.code, message: diagnostic.message, targetPage: "state" };
+  }
+  return { code: diagnostic.code, message: diagnostic.message, targetPage: "release" };
 }
 
 async function requireRelease(releaseRuntime: V2ReleaseRuntimeRepository, releaseId: V2ReleaseId) {

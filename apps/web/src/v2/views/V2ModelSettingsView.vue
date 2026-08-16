@@ -70,6 +70,18 @@ const filteredDiscoveredModels = computed(() => {
   return discoveredModels.value.filter((m) => m.toLowerCase().includes(q));
 });
 
+function statusLabel(value: string | undefined): string {
+  if (value === "complete") return "配置完整";
+  if (value === "incomplete") return "配置缺失";
+  if (value === "bound") return "已绑定";
+  if (value === "unbound") return "未绑定";
+  if (value === "not-applicable") return "无需绑定";
+  if (value === "ok") return "连接正常";
+  if (value === "failed") return "连接失败";
+  if (value === "checking") return "检测中";
+  return "未测试";
+}
+
 function selectProfile(profile: V2ModelProfileDto): void {
   form.value = {
     id: profile.id,
@@ -210,6 +222,7 @@ async function test(): Promise<void> {
   } catch (err) {
     testMessage.value = platformErrorMessage(err, "连接测试失败");
   } finally {
+    await refresh();
     testing.value = false;
   }
 }
@@ -280,16 +293,19 @@ onMounted(() => {
         <article>
           <span>场景生成</span>
           <Badge :tone="capabilities?.sceneGeneration.configured ? 'success' : 'warning'">
-            {{ capabilities?.sceneGeneration.configured ? "已配置" : "待配置" }}
+            {{ capabilities?.sceneGeneration.enabled ? "已启用" : "已关闭" }}
           </Badge>
-          <small>{{ capabilities?.sceneGeneration.source === "profile" ? "来自模型档案" : "来自环境变量或未配置" }}</small>
+          <small>配置：{{ statusLabel(capabilities?.sceneGeneration.configuration) }} · 绑定：{{ statusLabel(capabilities?.sceneGeneration.binding) }}</small>
+          <small>连接：{{ statusLabel(capabilities?.sceneGeneration.connection) }} · 来源：{{ capabilities?.sceneGeneration.source ?? "none" }}</small>
+          <small v-if="capabilities?.sceneGeneration.errorMessage">{{ capabilities.sceneGeneration.errorMessage }}</small>
         </article>
         <article>
           <span>素材生成</span>
           <Badge :tone="capabilities?.assetGeneration.configured ? 'success' : 'warning'">
-            {{ capabilities?.assetGeneration.configured ? "已配置" : "待配置" }}
+            {{ capabilities?.assetGeneration.enabled ? "已启用" : "已关闭" }}
           </Badge>
-          <small>{{ capabilities?.assetGeneration.source === "settings" ? "来自图片服务设置" : "来自环境变量或未配置" }}</small>
+          <small>配置：{{ statusLabel(capabilities?.assetGeneration.configuration) }} · 绑定：{{ statusLabel(capabilities?.assetGeneration.binding) }}</small>
+          <small>连接：{{ statusLabel(capabilities?.assetGeneration.connection) }} · 来源：{{ capabilities?.assetGeneration.source ?? "none" }}</small>
         </article>
       </div>
     </section>

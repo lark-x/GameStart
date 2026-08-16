@@ -5,6 +5,7 @@ import type {
   V2AssetId,
   V2CandidateId,
   V2CreateAssetGenerationJobInput,
+  V2CreateManualAssetInput,
   V2IdempotencyKey,
   V2IsoDateTime,
   V2JobId,
@@ -134,6 +135,42 @@ test("approves V2 asset candidates with review audit and approved asset facts", 
     const approvedAssets = await repository.listApprovedAssets(seeded.candidate.storyWorldId);
     assert.equal(approvedAssets.length, 1);
     assert.equal(approvedAssets[0]?.assetId, "asset_review");
+  } finally {
+    db.close();
+    cleanup();
+  }
+});
+
+test("creates manual formal assets without asset candidates", async () => {
+  const { db, cleanup } = openV2TempSqliteConnection();
+  try {
+    applyV2Migrations(db, v2GenerationJobMigrations);
+    const repository = new V2SqliteAssetGenerationRepository(db);
+    const input: V2CreateManualAssetInput = {
+      assetId: "asset:manual:station" as V2AssetId,
+      storyWorldId: "world_manual_assets" as V2StoryWorldId,
+      title: "Station Background",
+      mediaRef: "media://local/v2/assets/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png",
+      contentHash: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      originalFilename: "station.png",
+      mimeType: "image/png",
+      byteSize: 1024,
+      createdAt: "2026-08-12T02:15:00.000Z" as V2IsoDateTime,
+    };
+
+    const created = await repository.createManualAsset(input);
+    assert.equal(created.sourceType, "manual");
+    assert.equal(created.candidateId, undefined);
+    assert.equal(created.title, "Station Background");
+    assert.equal(created.originalFilename, "station.png");
+
+    const updated = await repository.createManualAsset({ ...input, title: "Station Background Updated", byteSize: 2048 });
+    assert.equal(updated.title, "Station Background Updated");
+    assert.equal(updated.byteSize, 2048);
+
+    const assets = await repository.listApprovedAssets(input.storyWorldId);
+    assert.equal(assets.length, 1);
+    assert.equal(assets[0]?.sourceType, "manual");
   } finally {
     db.close();
     cleanup();

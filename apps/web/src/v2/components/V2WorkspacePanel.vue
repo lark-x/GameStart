@@ -20,7 +20,6 @@ const props = defineProps<{
   loading: boolean;
   draftWorldName: string;
   draftPremise: string;
-  expectedRevision: number;
   conflict: string | null;
   hasDraftChanges: boolean;
   generationPrompt: string;
@@ -34,6 +33,8 @@ const props = defineProps<{
   assetMessage: string | null;
   assetReviewMessage: string | null;
   canReviewAssetCandidate: boolean;
+  uploadingAsset: boolean;
+  manualAssetMessage: string | null;
   saveLabel: string;
   exportFormat: "json" | "markdown";
   releaseMessage: string | null;
@@ -45,7 +46,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   "update:draftWorldName": [value: string];
   "update:draftPremise": [value: string];
-  "update:expectedRevision": [value: number];
   "update:generationPrompt": [value: string];
   "update:reviewer": [value: string];
   "update:reviewReason": [value: string];
@@ -57,6 +57,7 @@ const emit = defineEmits<{
   resetCanonDraft: [];
   createGenerationJob: [];
   reviewCandidate: [action: V2CandidateReviewAction];
+  uploadManualAsset: [input: { readonly file: File; readonly title: string }];
   createAssetJob: [];
   reviewAssetCandidate: [action: V2CandidateReviewAction];
   createRelease: [];
@@ -78,7 +79,7 @@ const title = computed(() => {
     case "review":
       return "生成与审核 (Generation & Review)";
     case "assets":
-      return "素材与图像生成 (Assets & ComfyUI)";
+      return "正式素材库 (Formal Assets)";
     case "release":
       return "发布与导出 (Release & Export)";
     case "player":
@@ -115,12 +116,10 @@ const title = computed(() => {
       :loading="loading"
       :draft-world-name="draftWorldName"
       :draft-premise="draftPremise"
-      :expected-revision="expectedRevision"
       :conflict="conflict"
       :has-draft-changes="hasDraftChanges"
       @update:draft-world-name="emit('update:draftWorldName', $event)"
       @update:draft-premise="emit('update:draftPremise', $event)"
-      @update:expected-revision="emit('update:expectedRevision', $event)"
       @preview-canon-draft="emit('previewCanonDraft')"
       @reset-canon-draft="emit('resetCanonDraft')"
     />
@@ -168,8 +167,11 @@ const title = computed(() => {
         :asset-review-reason="assetReviewReason"
         :asset-review-message="assetReviewMessage"
         :can-review-asset-candidate="canReviewAssetCandidate"
+        :uploading="uploadingAsset"
+        :upload-message="manualAssetMessage"
         @update:asset-prompt="emit('update:assetPrompt', $event)"
         @update:asset-review-reason="emit('update:assetReviewReason', $event)"
+        @upload-manual-asset="emit('uploadManualAsset', $event)"
         @create-asset-job="emit('createAssetJob')"
         @review-asset-candidate="emit('reviewAssetCandidate', $event)"
       />

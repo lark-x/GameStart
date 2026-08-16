@@ -19,6 +19,7 @@ test("V2 platform client maps configuration endpoints and handles empty deletes"
       if (url.endsWith("/model-bindings/scene_generation") && method === "PUT") return Response.json({ binding: { capability: "scene_generation", profileId: body.profileId, profileName: "One" } });
       if (url.endsWith("/image-service") && method === "GET") return Response.json({ settings: { baseUrl: "", timeoutMs: 30000 } });
       if (url.endsWith("/image-service") && method === "PUT") return Response.json({ settings: { baseUrl: "http://comfy", timeoutMs: 30000 } });
+      if (url.endsWith("/image-service/test") && method === "POST") return Response.json({ check: { service: "comfyui", connection: "ok", checkedAt: "now", durationMs: 10 } });
       if (url.endsWith("/appearance") && method === "GET") return Response.json({ settings: { themeId: "dawn" } });
       if (url.endsWith("/appearance") && method === "PUT") return Response.json({ settings: { themeId: "ocean" } });
       if (url.endsWith("/capabilities") && method === "GET") return Response.json({ sceneGeneration: { enabled: true, configured: true, source: "profile" }, assetGeneration: { enabled: false, configured: false, source: "none" } });
@@ -40,6 +41,7 @@ test("V2 platform client maps configuration endpoints and handles empty deletes"
   assert.equal((await client.setModelBinding("scene_generation", { profileId: "profile:one" })).profileId, "profile:one");
   assert.equal((await client.getImageServiceSettings()).timeoutMs, 30000);
   assert.equal((await client.saveImageServiceSettings({ baseUrl: "http://comfy" })).baseUrl, "http://comfy");
+  assert.equal((await client.testImageServiceConnection()).connection, "ok");
   assert.equal((await client.getAppearanceSettings()).themeId, "dawn");
   assert.equal((await client.saveAppearanceSettings({ themeId: "ocean" })).themeId, "ocean");
   assert.equal((await client.getCapabilities()).sceneGeneration.configured, true);

@@ -5,6 +5,7 @@ import type {
   V2ApprovedAssetRecord,
   V2CandidateId,
   V2CreateAssetGenerationJobInput,
+  V2CreateManualAssetInput,
   V2CreateSceneGenerationJobInput,
   V2GenerationDispatchRecord,
   V2GenerationJobKind,
@@ -111,6 +112,7 @@ export interface V2AssetCandidateReviewResult {
 }
 
 export interface V2AssetReviewRepository extends ApprovedAssetReaderPort {
+  createManualAsset(input: V2CreateManualAssetInput): Promise<V2ApprovedAssetRecord>;
   reviewAssetCandidate(input: V2ReviewAssetCandidateInput): Promise<V2AssetCandidateReviewResult>;
   listApprovedAssets(storyWorldId: V2StoryWorldId): Promise<readonly V2ApprovedAssetRecord[]>;
 }

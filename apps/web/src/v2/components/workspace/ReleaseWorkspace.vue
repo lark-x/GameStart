@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { PackageCheck, ShieldCheck, Download, Play, Lock } from "@lucide/vue";
+import { useRouter } from "vue-router";
 import Badge from "../../../components/ui/Badge.vue";
 import Button from "../../../components/ui/Button.vue";
 import Field from "../../../components/ui/Field.vue";
 import Select from "../../../components/ui/Select.vue";
+import type { V2ReleaseBlockerDto } from "@living-network/contracts/v2";
 import type { V2WorkspaceSnapshot } from "../../adapters";
 
 const props = defineProps<{
@@ -22,10 +24,16 @@ const emit = defineEmits<{
   exportRelease: [];
 }>();
 
+const router = useRouter();
+
 function copyExport() {
   if (props.snapshot.exportBundle?.preview) {
     navigator.clipboard.writeText(props.snapshot.exportBundle.preview);
   }
+}
+
+function goToBlocker(blocker: V2ReleaseBlockerDto): void {
+  void router.push(`/v2/workspace/${blocker.targetPage}`);
 }
 </script>
 
@@ -74,6 +82,14 @@ function copyExport() {
           <Lock :size="16" /> 创建发布版本
         </Button>
         <span v-if="releaseMessage" class="feedback-msg">{{ releaseMessage }}</span>
+      </div>
+
+      <div v-if="snapshot.release.blockers?.length" class="blocker-list" aria-label="发布阻断项">
+        <button v-for="blocker in snapshot.release.blockers" :key="`${blocker.code}-${blocker.entityId ?? 'global'}`" type="button" class="blocker-item" @click="goToBlocker(blocker)">
+          <Badge tone="danger">{{ blocker.code }}</Badge>
+          <span>{{ blocker.message }}</span>
+          <small>前往 {{ blocker.targetPage }}{{ blocker.entityId ? ` · ${blocker.entityId}` : "" }}</small>
+        </button>
       </div>
     </div>
 
@@ -226,6 +242,37 @@ function copyExport() {
 .feedback-msg {
   font-size: var(--text-xs);
   color: var(--muted);
+}
+
+.blocker-list {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.blocker-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.blocker-item span {
+  overflow-wrap: anywhere;
+  font-size: var(--text-sm);
+}
+
+.blocker-item small {
+  color: var(--muted);
+  font-size: var(--text-xs);
+  white-space: nowrap;
 }
 
 .release-package-card {

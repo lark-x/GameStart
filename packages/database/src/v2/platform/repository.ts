@@ -3,6 +3,8 @@ import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 
 import type {
   V2AppearanceSettingsDto,
+  V2ExternalConnectionCheckDto,
+  V2ExternalServiceKind,
   V2ImageServiceSettingsDto,
   V2ModelBindingDto,
   V2ModelCallLogDto,
@@ -66,6 +68,14 @@ type LogRow = {
   error_code: string | null;
   error_status: number | null;
   error_retryable: number | null;
+  error_message: string | null;
+};
+
+type ConnectionCheckRow = {
+  service: string;
+  connection: string;
+  checked_at: string;
+  duration_ms: number | null;
   error_message: string | null;
 };
 
@@ -152,6 +162,16 @@ function mapLog(row: LogRow): V2ModelCallLogDto {
     ...(row.error_code === null ? {} : { errorCode: row.error_code }),
     ...(row.error_status === null ? {} : { errorStatus: row.error_status }),
     ...(row.error_retryable === null ? {} : { errorRetryable: row.error_retryable === 1 }),
+    ...(row.error_message === null ? {} : { errorMessage: row.error_message }),
+  };
+}
+
+function mapConnectionCheck(row: ConnectionCheckRow): V2ExternalConnectionCheckDto {
+  return {
+    service: row.service as V2ExternalServiceKind,
+    connection: row.connection as V2ExternalConnectionCheckDto["connection"],
+    checkedAt: row.checked_at,
+    ...(row.duration_ms === null ? {} : { durationMs: row.duration_ms }),
     ...(row.error_message === null ? {} : { errorMessage: row.error_message }),
   };
 }
@@ -288,6 +308,26 @@ export class V2SqlitePlatformRepository implements V2PlatformRepository {
       ON CONFLICT(singleton_id) DO UPDATE SET theme_id = excluded.theme_id, updated_at = excluded.updated_at
     `).run(input.themeId, updatedAt);
     return this.getAppearanceSettings();
+  }
+
+  public async getExternalConnectionCheck(service: V2ExternalServiceKind): Promise<V2ExternalConnectionCheckDto | undefined> {
+    const row = this.db.prepare("SELECT * FROM v2_external_connection_checks WHERE service = ?").get(service) as ConnectionCheckRow | undefined;
+    return row === undefined ? undefined : mapConnectionCheck(row);
+  }
+
+  public async saveExternalConnectionCheck(check: V2ExternalConnectionCheckDto): Promise<V2ExternalConnectionCheckDto> {
+    this.db.prepare(`
+      INSERT INTO v2_external_connection_checks (service, connection, checked_at, duration_ms, error_message)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(service) DO UPDATE SET
+        connection = excluded.connection,
+        checked_at = excluded.checked_at,
+        duration_ms = excluded.duration_ms,
+        error_message = excluded.error_message
+    `).run(check.service, check.connection, check.checkedAt, check.durationMs ?? null, check.errorMessage ?? null);
+    const saved = await this.getExternalConnectionCheck(check.service);
+    if (saved === undefined) throw new Error("V2 external connection check could not be read back");
+    return saved;
   }
 
   public async startModelCall(input: { readonly log: V2ModelCallLogDto }): Promise<V2ModelCallLogDto> {

@@ -293,6 +293,7 @@ export const v2WebFixtureRelease = {
   revision: 2 as V2Revision,
   valid: true,
   issues: [],
+  blockers: [],
 } as const satisfies V2ReleasePreflightResponse;
 
 export const v2WebFixtureReleasePackage = {
@@ -379,6 +380,7 @@ export const v2WebFixtureAssets = {
       workflowVersion: "character-sprite@1",
       seed: 8108,
       approved: true,
+      sourceType: "candidate",
     },
   ],
 } as const;

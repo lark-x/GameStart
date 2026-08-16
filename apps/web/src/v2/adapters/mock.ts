@@ -334,6 +334,24 @@ export function createV2MockAdapter(): V2WorkspaceAdapter {
       }
       return v2WebFixtureExportBundle;
     },
+    async uploadManualAsset(input: { readonly file: File; readonly title: string }) {
+      const asset = {
+        assetId: `asset:manual:${crypto.randomUUID()}`,
+        title: input.title.trim() || input.file.name,
+        kind: "scene_background" as const,
+        mediaRef: "media://local/v2/assets/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png",
+        thumbnailRef: "media://local/v2/assets/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png",
+        workflowVersion: "manual",
+        seed: 0,
+        approved: true,
+        sourceType: "manual" as const,
+        originalFilename: input.file.name,
+        mimeType: input.file.type,
+        byteSize: input.file.size,
+      };
+      state.assets = { ...state.assets, library: [...state.assets.library, asset] };
+      return asset;
+    },
     async createAssetJob(prompt: string): Promise<V2AssetJobSummary> {
       assetJob = {
         ...v2WebFixtureAssets.job,
@@ -358,6 +376,7 @@ export function createV2MockAdapter(): V2WorkspaceAdapter {
           workflowVersion: assetCandidate?.provenanceSummary ?? "unknown",
           seed: 0,
           approved: true,
+          sourceType: "candidate",
         };
         if (!assetLibrary.some((asset) => asset.assetId === approvedAsset?.assetId)) {
           assetLibrary.push(approvedAsset);

@@ -3,6 +3,7 @@ import type {
   V2CandidateReviewResponse,
   V2CoreExportBundleDto,
   V2CreateAssetGenerationJobApiResponse,
+  V2CreateManualAssetApiResponse,
   V2CreateSceneGenerationJobRequest,
   V2CreateSceneGenerationJobResponse,
   V2ErrorEnvelope,
@@ -254,13 +255,17 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
       };
       const approvedAssetSummaries = assetLibrary.assets.map((asset) => ({
         assetId: asset.assetId,
-        title: asset.assetId,
+        title: asset.title,
         kind: "scene_background" as const,
         mediaRef: asset.mediaRef,
         thumbnailRef: asset.mediaRef,
         workflowVersion: "unknown",
         seed: 0,
         approved: true,
+        sourceType: asset.sourceType,
+        ...(asset.originalFilename === undefined ? {} : { originalFilename: asset.originalFilename }),
+        ...(asset.mimeType === undefined ? {} : { mimeType: asset.mimeType }),
+        ...(asset.byteSize === undefined ? {} : { byteSize: asset.byteSize }),
       }));
       return {
         health,
@@ -345,6 +350,7 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
           revision: world.revision,
           valid: preflight.valid,
           issues: preflight.diagnostics.map((diagnostic) => diagnostic.message),
+          blockers: preflight.blockers,
         },
         releasePackage: release === null ? null : {
           releaseId: release.releaseId,
@@ -506,6 +512,32 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
         preview: format === "json" ? JSON.stringify(bundle.json, null, 2) : bundle.markdown,
       };
     },
+    async uploadManualAsset(input: { readonly file: File; readonly title: string }): Promise<V2ApprovedAssetSummary> {
+      if (!worldId) throw new V2AdapterError({ code: "NOT_FOUND", message: "Load a workspace before uploading an asset." });
+      const body = new FormData();
+      body.set("storyWorldId", worldId);
+      body.set("title", input.title.trim() || input.file.name);
+      body.set("file", input.file, input.file.name);
+      const response = await parseJson<V2CreateManualAssetApiResponse>(await fetcher(`${baseUrl}/api/v2/assets/manual`, {
+        method: "POST",
+        headers: { Accept: "application/json" },
+        body,
+      }));
+      return {
+        assetId: response.asset.assetId,
+        title: response.asset.title,
+        kind: "scene_background",
+        mediaRef: response.asset.mediaRef,
+        thumbnailRef: response.asset.mediaRef,
+        workflowVersion: "manual",
+        seed: 0,
+        approved: true,
+        sourceType: response.asset.sourceType,
+        ...(response.asset.originalFilename === undefined ? {} : { originalFilename: response.asset.originalFilename }),
+        ...(response.asset.mimeType === undefined ? {} : { mimeType: response.asset.mimeType }),
+        ...(response.asset.byteSize === undefined ? {} : { byteSize: response.asset.byteSize }),
+      };
+    },
     async createAssetJob(prompt: string): Promise<V2AssetJobSummary> {
       if (!worldId) throw new V2AdapterError({ code: "NOT_FOUND", message: "Load a workspace before creating an asset job." });
       const response = await post<V2CreateAssetGenerationJobApiResponse>("/api/v2/generation/assets/jobs", {
@@ -541,6 +573,7 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
         workflowVersion: "approved",
         seed: 0,
         approved: true,
+        sourceType: response.approvedAsset.sourceType,
       };
       return {
         status: response.candidate.status,

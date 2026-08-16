@@ -97,6 +97,8 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
   const assetReviewReason = ref<string>("通过后加入本地素材库。");
   const assetMessage = ref<string | null>(null);
   const assetReviewMessage = ref<string | null>(null);
+  const uploadingAsset = ref(false);
+  const manualAssetMessage = ref<string | null>(null);
   let assetPollTimer: ReturnType<typeof setTimeout> | undefined;
   let assetPollStartedAt = 0;
   let generationPollTimer: ReturnType<typeof setTimeout> | undefined;
@@ -576,6 +578,28 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     }
   }
 
+  async function uploadManualAsset(input: { readonly file: File; readonly title: string }): Promise<void> {
+    if (!snapshot.value) return;
+    uploadingAsset.value = true;
+    error.value = null;
+    manualAssetMessage.value = null;
+    const toast = useNotificationStore();
+    try {
+      const asset = await adapter.value.uploadManualAsset(input);
+      snapshot.value = {
+        ...snapshot.value,
+        assets: { ...snapshot.value.assets, library: [asset, ...snapshot.value.assets.library.filter((item) => item.assetId !== asset.assetId)] },
+      };
+      await loadSnapshot();
+      manualAssetMessage.value = `“${asset.title}”已加入正式素材库。`;
+    } catch (err) {
+      const msg = operationErrorMessage(err, "上传正式素材失败");
+      error.value = msg;
+      toast.error(msg);
+    } finally {
+      uploadingAsset.value = false;
+    }
+  }
   async function createAssetJob() {
     if (!snapshot.value) return;
     loading.value = true;
@@ -668,6 +692,8 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     assetReviewReason,
     assetMessage,
     assetReviewMessage,
+    uploadingAsset,
+    manualAssetMessage,
     mode,
     hasSnapshot,
     revisionLabel,
@@ -702,6 +728,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     saveRun,
     restoreSave,
     exportRelease,
+    uploadManualAsset,
     createAssetJob,
     reviewAssetCandidate,
   };

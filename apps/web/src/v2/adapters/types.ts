@@ -276,6 +276,10 @@ export interface V2ApprovedAssetSummary {
   readonly workflowVersion: string;
   readonly seed: number;
   readonly approved: boolean;
+  readonly sourceType: "manual" | "candidate";
+  readonly originalFilename?: string;
+  readonly mimeType?: string;
+  readonly byteSize?: number;
 }
 
 export interface V2AssetReviewRequest {
@@ -336,6 +340,7 @@ export interface V2WorkspaceAdapter {
   saveRun(label: string): Promise<V2SaveSummary>;
   restoreSave(saveId: string): Promise<V2PlayerRuntimeSummary>;
   exportRelease(format: "json" | "markdown"): Promise<V2ExportBundleSummary>;
+  uploadManualAsset(input: { readonly file: File; readonly title: string }): Promise<V2ApprovedAssetSummary>;
   createAssetJob(prompt: string): Promise<V2AssetJobSummary>;
   reviewAssetCandidate(request: V2AssetReviewRequest): Promise<V2AssetReviewResult>;
 }

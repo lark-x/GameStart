@@ -16,6 +16,7 @@ import {
 } from "@living-network/database/v2";
 import type { V2CapabilitiesResponse } from "@living-network/contracts/v2";
 
+import { createV2AssetsPlugin } from "../assets/index.ts";
 import { createV2GenerationPlugin } from "../generation/index.ts";
 import { createV2CoreUseCases } from "../core/use-cases.ts";
 import { createV2FastifyApp } from "./app.ts";
@@ -57,6 +58,7 @@ export function createV2ApiRuntime(options: {
   );
   const app = createV2FastifyApp({
     coreOptions: { useCases: coreUseCases },
+    ...(options.mediaRoot === undefined ? {} : { assetsPlugin: createV2AssetsPlugin({ repository: assets, mediaRoot: options.mediaRoot }) }),
     ...(options.mediaRoot === undefined ? {} : { mediaRoot: options.mediaRoot }),
     ...(options.capabilities === undefined ? {} : { capabilities: options.capabilities }),
     capabilitiesProvider: () => getV2PlatformCapabilities(platformDependencies),

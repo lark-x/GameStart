@@ -7,6 +7,7 @@ import type {
 import type {
   V2CandidateId,
   V2IdempotencyKey,
+  V2ReleaseBlockerDto,
   V2Revision,
   V2StoryWorldId,
 } from "./primitives.ts";
@@ -61,4 +62,5 @@ export interface V2ReleasePreflightResponse {
   readonly revision: V2Revision;
   readonly valid: boolean;
   readonly issues: readonly string[];
+  readonly blockers?: readonly V2ReleaseBlockerDto[];
 }

@@ -125,7 +125,21 @@ function removeConsequence(index: number): void {
   consequences.value.splice(index, 1);
 }
 
-function normalizeValue(value: string | number | boolean): string | number | boolean {
+function stateEditorType(stateKey: string): "string" | "number" | "boolean" | undefined {
+  const type = props.snapshot.typedState.variables.find((variable) => variable.key === stateKey)?.type;
+  if (type === "flag") return "boolean";
+  if (type === "number") return "number";
+  if (type === "text") return "string";
+  return undefined;
+}
+
+function normalizeRuleValue(stateKey: string, value: string | number | boolean): string | number | boolean {
+  const type = stateEditorType(stateKey);
+  if (type === "boolean") return value === true || value === "true";
+  if (type === "number") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
   if (typeof value === "boolean") return value;
   const text = String(value).trim();
   if (text === "true") return true;
@@ -156,8 +170,8 @@ async function submitCreate(): Promise<void> {
   const trimmedTitle = title.value.trim();
   const trimmedBody = body.value.trim();
   const trimmedLabel = label.value.trim();
-  const gatesPayload = gates.value.map((gate) => ({ stateKey: gate.stateKey.trim(), operator: gate.operator, value: normalizeValue(gate.value) }));
-  const consequencesPayload = consequences.value.map((consequence) => ({ stateKey: consequence.stateKey.trim(), operation: consequence.operation, value: normalizeValue(consequence.value) }));
+  const gatesPayload = gates.value.map((gate) => ({ stateKey: gate.stateKey.trim(), operator: gate.operator, value: normalizeRuleValue(gate.stateKey, gate.value) }));
+  const consequencesPayload = consequences.value.map((consequence) => ({ stateKey: consequence.stateKey.trim(), operation: consequence.operation, value: normalizeRuleValue(consequence.stateKey, consequence.value) }));
   try {
     if (editingId.value) {
       if (entityKind.value === "arc") {
@@ -379,9 +393,11 @@ async function submitCreate(): Promise<void> {
             </div>
             <div v-if="gates.length === 0" class="empty-state-notice">无条件限制。</div>
             <div v-for="(gate, index) in gates" :key="index" class="rule-row">
-              <Input v-model="gate.stateKey" placeholder="stateKey" aria-label="条件状态变量" />
+              <Select v-model="gate.stateKey" aria-label="条件状态变量"><option value="" disabled>选择状态变量</option><option v-for="variable in snapshot.typedState.variables" :key="variable.key" :value="variable.key">{{ variable.label }} ({{ variable.key }})</option></Select>
               <Select v-model="gate.operator" aria-label="条件运算符"><option value="eq">=</option><option value="neq">≠</option><option value="gt">&gt;</option><option value="gte">≥</option><option value="lt">&lt;</option><option value="lte">≤</option></Select>
-              <Input v-model="gate.value" placeholder="值" aria-label="条件值" />
+              <Select v-if="stateEditorType(gate.stateKey) === 'boolean'" v-model="gate.value" aria-label="条件值"><option value="true">是</option><option value="false">否</option></Select>
+              <Input v-else-if="stateEditorType(gate.stateKey) === 'number'" v-model="gate.value" type="number" placeholder="值" aria-label="条件值" />
+              <Input v-else v-model="gate.value" placeholder="值" aria-label="条件值" />
               <Button variant="ghost" size="icon" type="button" aria-label="删除条件" @click="removeGate(index)">×</Button>
             </div>
           </div>
@@ -393,9 +409,11 @@ async function submitCreate(): Promise<void> {
             </div>
             <div v-if="consequences.length === 0" class="empty-state-notice">无状态后果。</div>
             <div v-for="(consequence, index) in consequences" :key="index" class="rule-row">
-              <Input v-model="consequence.stateKey" placeholder="stateKey" aria-label="后果状态变量" />
+              <Select v-model="consequence.stateKey" aria-label="后果状态变量"><option value="" disabled>选择状态变量</option><option v-for="variable in snapshot.typedState.variables" :key="variable.key" :value="variable.key">{{ variable.label }} ({{ variable.key }})</option></Select>
               <Select v-model="consequence.operation" aria-label="后果操作"><option value="set">set</option><option value="increment">increment</option></Select>
-              <Input v-model="consequence.value" placeholder="值" aria-label="后果值" />
+              <Select v-if="stateEditorType(consequence.stateKey) === 'boolean'" v-model="consequence.value" aria-label="后果值"><option value="true">是</option><option value="false">否</option></Select>
+              <Input v-else-if="stateEditorType(consequence.stateKey) === 'number'" v-model="consequence.value" type="number" placeholder="值" aria-label="后果值" />
+              <Input v-else v-model="consequence.value" placeholder="值" aria-label="后果值" />
               <Button variant="ghost" size="icon" type="button" aria-label="删除后果" @click="removeConsequence(index)">×</Button>
             </div>
           </div>

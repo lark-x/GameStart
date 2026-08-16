@@ -11,6 +11,7 @@ import type {
   V2AssetGenerationJobRecord,
   V2CandidateId,
   V2CreateAssetGenerationJobInput,
+  V2CreateManualAssetInput,
   V2GenerationDispatchRecord,
   V2GenerationDispatchStatus,
   V2IdempotencyKey,
@@ -85,9 +86,14 @@ type AssetCandidateReviewRow = {
 type ApprovedAssetRow = {
   asset_id: string;
   story_world_id: string;
-  candidate_id: string;
+  source_type: "manual" | "candidate";
+  candidate_id: string | null;
+  title: string;
   media_ref: string;
   content_hash: string;
+  original_filename: string | null;
+  mime_type: string | null;
+  byte_size: number | null;
   approved_at: string;
   reviewer: string | null;
   review_reason: string | null;
@@ -181,16 +187,20 @@ function mapApprovedAsset(row: ApprovedAssetRow): V2ApprovedAssetRecord {
   } = {
     assetId: row.asset_id as V2AssetId,
     storyWorldId: row.story_world_id as V2StoryWorldId,
-    candidateId: row.candidate_id as V2CandidateId,
+    sourceType: row.source_type,
+    title: row.title,
     mediaRef: row.media_ref,
     contentHash: row.content_hash,
     approvedAt: row.approved_at as V2IsoDateTime,
   };
+  if (row.candidate_id !== null) asset.candidateId = row.candidate_id as V2CandidateId;
+  if (row.original_filename !== null) asset.originalFilename = row.original_filename;
+  if (row.mime_type !== null) asset.mimeType = row.mime_type;
+  if (row.byte_size !== null) asset.byteSize = row.byte_size;
   if (row.reviewer !== null) asset.reviewer = row.reviewer;
   if (row.review_reason !== null) asset.reviewReason = row.review_reason;
   return asset;
 }
-
 function mapApprovedAssetRef(row: ApprovedAssetRow): V2ApprovedAssetRef {
   return {
     assetId: row.asset_id as V2AssetId,
@@ -539,13 +549,14 @@ export class V2SqliteAssetGenerationRepository implements V2AssetGenerationJobRe
         }
         this.db.prepare(`
           INSERT INTO v2_approved_assets (
-            asset_id, story_world_id, candidate_id, media_ref, content_hash,
+            asset_id, story_world_id, source_type, candidate_id, title, media_ref, content_hash,
             approved_at, reviewer, review_reason, release_id
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
+          ) VALUES (?, ?, 'candidate', ?, ?, ?, ?, ?, ?, ?, NULL)
         `).run(
           asset.assetId,
           candidate.storyWorldId,
           candidate.candidateId,
+          asset.assetId,
           asset.mediaRef,
           assetContentHash(candidate),
           input.reviewedAt,
@@ -567,6 +578,37 @@ export class V2SqliteAssetGenerationRepository implements V2AssetGenerationJobRe
     });
   }
 
+  public async createManualAsset(input: V2CreateManualAssetInput): Promise<V2ApprovedAssetRecord> {
+    this.db.prepare(`
+      INSERT INTO v2_approved_assets (
+        asset_id, story_world_id, source_type, candidate_id, title, media_ref,
+        content_hash, original_filename, mime_type, byte_size, approved_at,
+        reviewer, review_reason, release_id
+      ) VALUES (?, ?, 'manual', NULL, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)
+      ON CONFLICT(asset_id) DO UPDATE SET
+        title = excluded.title,
+        media_ref = excluded.media_ref,
+        content_hash = excluded.content_hash,
+        original_filename = excluded.original_filename,
+        mime_type = excluded.mime_type,
+        byte_size = excluded.byte_size
+      WHERE v2_approved_assets.story_world_id = excluded.story_world_id
+        AND v2_approved_assets.source_type = 'manual'
+    `).run(
+      input.assetId,
+      input.storyWorldId,
+      input.title,
+      input.mediaRef,
+      input.contentHash,
+      input.originalFilename,
+      input.mimeType,
+      input.byteSize,
+      input.createdAt,
+    );
+    const row = getApprovedAssetRow(this.db, input.storyWorldId, input.assetId);
+    if (row === undefined) throw new Error(`V2 manual asset not found after insert: ${input.assetId}`);
+    return mapApprovedAsset(row);
+  }
   public async getApprovedAsset(input: { readonly storyWorldId: V2StoryWorldId; readonly assetId: V2AssetId }): Promise<V2ApprovedAssetRef | undefined> {
     const row = getApprovedAssetRow(this.db, input.storyWorldId, input.assetId);
     return row === undefined ? undefined : mapApprovedAssetRef(row);

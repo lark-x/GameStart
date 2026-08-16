@@ -7,13 +7,17 @@ export const v2Routes: readonly RouteRecordRaw[] = [
     component: () => import("./V2Shell.vue"),
     meta: { v2Shell: true },
     children: [
-      { path: "", redirect: "/v2/workspace/canon" },
+      { path: "", redirect: "/v2/workspace/project" },
+      { path: "workspace/review", redirect: "/v2/workspace/ai-scene-review" },
       {
         path: "workspace/:area",
         name: "v2-workspace-area",
         component: () => import("./views/V2WorkspaceAreaView.vue"),
         meta: { title: "创作工作区" },
       },
+      { path: "settings/models", redirect: "/v2/services/models" },
+      { path: "settings/image", redirect: "/v2/services/comfyui" },
+      { path: "diagnostics/model-logs", redirect: "/v2/services/logs" },
       {
         path: "settings",
         name: "v2-settings",
@@ -21,16 +25,16 @@ export const v2Routes: readonly RouteRecordRaw[] = [
         meta: { title: "平台配置" },
       },
       {
-        path: "settings/models",
-        name: "v2-settings-models",
+        path: "services/models",
+        name: "v2-services-models",
         component: () => import("./views/V2ModelSettingsView.vue"),
-        meta: { title: "模型与能力" },
+        meta: { title: "模型服务" },
       },
       {
-        path: "settings/image",
-        name: "v2-settings-image",
+        path: "services/comfyui",
+        name: "v2-services-comfyui",
         component: () => import("./views/V2ImageSettingsView.vue"),
-        meta: { title: "图片服务" },
+        meta: { title: "ComfyUI 服务" },
       },
       {
         path: "settings/appearance",
@@ -39,10 +43,16 @@ export const v2Routes: readonly RouteRecordRaw[] = [
         meta: { title: "外观主题" },
       },
       {
-        path: "diagnostics/model-logs",
-        name: "v2-model-logs",
+        path: "services/logs",
+        name: "v2-services-logs",
         component: () => import("./views/V2ModelLogsView.vue"),
-        meta: { title: "模型调用日志" },
+        meta: { title: "调用日志" },
+      },
+      {
+        path: "services/runtime",
+        name: "v2-services-runtime",
+        component: () => import("./views/V2RuntimeStatusView.vue"),
+        meta: { title: "运行状态" },
       },
       {
         path: "automation",

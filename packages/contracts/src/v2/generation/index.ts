@@ -52,6 +52,7 @@ export type V2GenerationJobKind = "scene";
 export type V2AssetMediaKind = "image";
 export type V2AssetCandidateStatus = "pending" | "approved" | "rejected" | "changes_requested";
 export type V2AssetReviewAction = "approve" | "reject" | "request_changes";
+export type V2FormalAssetSource = "manual" | "candidate";
 
 export interface V2AssetCandidatePayload {
   readonly asset: {
@@ -190,12 +191,33 @@ export interface V2AssetCandidateReviewRecord {
 export interface V2ApprovedAssetRecord {
   readonly assetId: V2AssetId;
   readonly storyWorldId: V2StoryWorldId;
-  readonly candidateId: V2CandidateId;
+  readonly sourceType: V2FormalAssetSource;
+  readonly candidateId?: V2CandidateId;
+  readonly title: string;
   readonly mediaRef: string;
   readonly contentHash: string;
   readonly approvedAt: V2IsoDateTime;
+  readonly originalFilename?: string;
+  readonly mimeType?: string;
+  readonly byteSize?: number;
   readonly reviewer?: string;
   readonly reviewReason?: string;
+}
+
+export interface V2CreateManualAssetInput {
+  readonly assetId: V2AssetId;
+  readonly storyWorldId: V2StoryWorldId;
+  readonly title: string;
+  readonly mediaRef: string;
+  readonly contentHash: string;
+  readonly originalFilename: string;
+  readonly mimeType: string;
+  readonly byteSize: number;
+  readonly createdAt: V2IsoDateTime;
+}
+
+export interface V2CreateManualAssetApiResponse {
+  readonly asset: V2ApprovedAssetRecord;
 }
 
 export interface V2ReviewAssetCandidateInput {

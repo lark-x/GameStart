@@ -11,6 +11,7 @@ import type {
   V2AppearanceSettingsDto,
   V2DiscoverModelsRequest,
   V2DiscoverModelsResponse,
+  V2ExternalConnectionCheckDto,
   V2ImageServiceSettingsDto,
   V2ModelCallLogDto,
   V2ModelCallLogQuery,
@@ -41,10 +42,28 @@ export interface V2PlatformPluginDependencies {
   readonly now?: () => Date;
 }
 
+function connectionStatusFromLog(log: V2ModelCallLogDto | undefined): Pick<V2PlatformCapabilities["sceneGeneration"], "connection" | "lastCheckedAt" | "errorMessage"> {
+  if (log === undefined) return { connection: "untested" };
+  const lastCheckedAt = log.completedAt ?? log.startedAt;
+  if (log.status === "running") return { connection: "checking", lastCheckedAt };
+  if (log.status === "success") return { connection: "ok", lastCheckedAt };
+  return {
+    connection: "failed",
+    lastCheckedAt,
+    ...(log.errorMessage === undefined ? {} : { errorMessage: log.errorMessage }),
+  };
+}
+
 export async function getV2PlatformCapabilities(dependencies: Pick<V2PlatformPluginDependencies, "repository" | "secretCipher" | "sceneGenerationEnabled" | "assetGenerationEnabled" | "environmentSceneConfigured" | "environmentAssetConfigured">): Promise<V2PlatformCapabilities> {
   const sceneBinding = await dependencies.repository.getModelBinding("scene_generation");
   const sceneProfile = sceneBinding?.profileId === undefined ? undefined : await dependencies.repository.getModelProfile(sceneBinding.profileId);
   const imageSettings = await dependencies.repository.getImageServiceSettings();
+  const imageConnection = await dependencies.repository.getExternalConnectionCheck("comfyui");
+  const latestModelConnection = await dependencies.repository.queryModelCallLogs({
+    capability: "model_connection_test",
+    ...(sceneProfile === undefined ? {} : { profileId: sceneProfile.id }),
+    limit: 1,
+  });
   const profileHasEncryptedSecret = sceneProfile?.encryptedApiKey !== undefined && sceneProfile.encryptionIv !== undefined;
   const profileNeedsSecret = sceneProfile !== undefined && (sceneProfile.protocol === "anthropic" || profileHasEncryptedSecret);
   let profileSecretAvailable = !profileNeedsSecret;
@@ -67,9 +86,13 @@ export async function getV2PlatformCapabilities(dependencies: Pick<V2PlatformPlu
   const assetSource = imageSettings.baseUrl.length > 0
     ? "settings"
     : dependencies.environmentAssetConfigured ? "environment" : "none";
+  const sceneConnection = connectionStatusFromLog(latestModelConnection.items[0]);
   return {
     sceneGeneration: {
       enabled: dependencies.sceneGenerationEnabled,
+      configuration: sceneCandidateConfigured ? "complete" : "incomplete",
+      binding: sceneBinding === undefined ? "unbound" : "bound",
+      ...sceneConnection,
       configured: sceneConfigured,
       source: dependencies.sceneGenerationEnabled ? sceneSource : "none",
       ...(dependencies.sceneGenerationEnabled
@@ -78,6 +101,11 @@ export async function getV2PlatformCapabilities(dependencies: Pick<V2PlatformPlu
     },
     assetGeneration: {
       enabled: dependencies.assetGenerationEnabled,
+      configuration: assetCandidateConfigured ? "complete" : "incomplete",
+      binding: "not-applicable",
+      connection: imageConnection?.connection ?? "untested",
+      ...(imageConnection?.checkedAt === undefined ? {} : { lastCheckedAt: imageConnection.checkedAt }),
+      ...(imageConnection?.errorMessage === undefined ? {} : { errorMessage: imageConnection.errorMessage }),
       configured: assetConfigured,
       source: dependencies.assetGenerationEnabled ? assetSource : "none",
       ...(dependencies.assetGenerationEnabled ? assetConfigured ? {} : { reason: "settings_missing" as const } : { reason: "disabled_by_environment" as const }),
@@ -308,6 +336,46 @@ async function testProfile(
   }
 }
 
+async function testImageService(
+  repository: V2PlatformRepository,
+  now: () => Date,
+): Promise<V2ExternalConnectionCheckDto> {
+  const settings = await repository.getImageServiceSettings();
+  if (settings.baseUrl.trim().length === 0) throw new TypeError("ComfyUI baseUrl is required before testing connection");
+  const startedAt = now();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), settings.timeoutMs);
+  try {
+    const response = await fetch(`${settings.baseUrl.replace(/\/+$/, "")}/system_stats`, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`ComfyUI returned HTTP ${response.status}`);
+    const endedAt = now();
+    return repository.saveExternalConnectionCheck({
+      service: "comfyui",
+      connection: "ok",
+      checkedAt: endedAt.toISOString(),
+      durationMs: endedAt.getTime() - startedAt.getTime(),
+    });
+  } catch (error) {
+    const endedAt = now();
+    const message = error instanceof Error && error.name === "AbortError"
+      ? "ComfyUI connection test timed out"
+      : redactV2ModelLogText(error instanceof Error ? error.message : String(error));
+    return repository.saveExternalConnectionCheck({
+      service: "comfyui",
+      connection: "failed",
+      checkedAt: endedAt.toISOString(),
+      durationMs: endedAt.getTime() - startedAt.getTime(),
+      errorMessage: message,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export function createV2PlatformPlugin(dependencies: V2PlatformPluginDependencies): FastifyPluginAsync {
   const now = dependencies.now ?? (() => new Date());
   return async (app) => {
@@ -440,6 +508,7 @@ export function createV2PlatformPlugin(dependencies: V2PlatformPluginDependencie
     }));
     app.get("/image-service", async (_request, reply) => withError(reply, async () => ({ settings: await dependencies.repository.getImageServiceSettings() })));
     app.put("/image-service", async (request, reply) => withError(reply, async () => ({ settings: await dependencies.repository.saveImageServiceSettings(parseImageSettings(request.body)) })));
+    app.post("/image-service/test", async (_request, reply) => withError(reply, async () => ({ check: await testImageService(dependencies.repository, now) })));
     app.get("/appearance", async (_request, reply) => withError(reply, async () => ({ settings: await dependencies.repository.getAppearanceSettings() })));
     app.put("/appearance", async (request, reply) => withError(reply, async () => ({ settings: await dependencies.repository.saveAppearanceSettings(parseAppearance(request.body)) })));
     app.get("/model-call-logs", async (request, reply) => withError(reply, async () => dependencies.repository.queryModelCallLogs(parseLogQuery(request.query))));

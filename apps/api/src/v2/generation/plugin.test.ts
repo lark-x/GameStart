@@ -10,6 +10,7 @@ import type {
   V2CharacterId,
   V2CandidateId,
   V2CreateAssetGenerationJobInput,
+  V2CreateManualAssetInput,
   V2CreateSceneGenerationJobInput,
   V2GenerationContextSnapshot,
   V2GenerationDispatchRecord,
@@ -401,7 +402,9 @@ class FakeAssetStore implements V2AssetGenerationJobRepository, V2AssetCandidate
       approvedAsset = {
         assetId: updated.payload.asset.assetId,
         storyWorldId: updated.storyWorldId,
+        sourceType: "candidate",
         candidateId: updated.candidateId,
+        title: updated.payload.asset.assetId,
         mediaRef: updated.payload.asset.mediaRef,
         contentHash: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         approvedAt: input.reviewedAt,
@@ -416,6 +419,23 @@ class FakeAssetStore implements V2AssetGenerationJobRepository, V2AssetCandidate
       inserted: true,
       ...(approvedAsset === undefined ? {} : { approvedAsset }),
     };
+  }
+
+  public async createManualAsset(input: V2CreateManualAssetInput): Promise<V2ApprovedAssetRecord> {
+    const asset: V2ApprovedAssetRecord = {
+      assetId: input.assetId,
+      storyWorldId: input.storyWorldId,
+      sourceType: "manual",
+      title: input.title,
+      mediaRef: input.mediaRef,
+      contentHash: input.contentHash,
+      originalFilename: input.originalFilename,
+      mimeType: input.mimeType,
+      byteSize: input.byteSize,
+      approvedAt: input.createdAt,
+    };
+    this.approvedAssets.set(asset.assetId, asset);
+    return asset;
   }
 
   public async getApprovedAsset(input: { readonly storyWorldId: V2StoryWorldId; readonly assetId: V2AssetId }): Promise<V2ApprovedAssetRef | undefined> {

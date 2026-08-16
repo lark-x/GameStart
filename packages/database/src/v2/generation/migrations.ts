@@ -150,4 +150,60 @@ export const v2GenerationJobMigrations: readonly V2SqliteMigration[] = [
       DROP TABLE v2_asset_candidate_reviews;
     `),
   },
+  {
+    id: "0103_manual_formal_assets",
+    up: (db) => db.exec(`
+      ALTER TABLE v2_approved_assets RENAME TO v2_approved_assets_legacy;
+
+      CREATE TABLE v2_approved_assets (
+        asset_id TEXT PRIMARY KEY,
+        story_world_id TEXT NOT NULL,
+        source_type TEXT NOT NULL CHECK (source_type IN ('manual', 'candidate')),
+        candidate_id TEXT UNIQUE REFERENCES v2_asset_candidates(candidate_id) ON DELETE CASCADE,
+        title TEXT NOT NULL CHECK (length(trim(title)) > 0),
+        media_ref TEXT NOT NULL,
+        content_hash TEXT NOT NULL,
+        original_filename TEXT,
+        mime_type TEXT,
+        byte_size INTEGER CHECK (byte_size IS NULL OR byte_size >= 0),
+        approved_at TEXT NOT NULL,
+        reviewer TEXT,
+        review_reason TEXT,
+        release_id TEXT,
+        CHECK ((source_type = 'manual' AND candidate_id IS NULL) OR (source_type = 'candidate' AND candidate_id IS NOT NULL))
+      );
+
+      INSERT INTO v2_approved_assets (
+        asset_id, story_world_id, source_type, candidate_id, title, media_ref,
+        content_hash, approved_at, reviewer, review_reason, release_id
+      )
+      SELECT asset_id, story_world_id, 'candidate', candidate_id, asset_id, media_ref,
+        content_hash, approved_at, reviewer, review_reason, release_id
+      FROM v2_approved_assets_legacy;
+
+      DROP TABLE v2_approved_assets_legacy;
+      CREATE INDEX v2_approved_assets_story_world_idx ON v2_approved_assets (story_world_id, asset_id);
+      CREATE INDEX v2_approved_assets_release_idx ON v2_approved_assets (story_world_id, release_id);
+      CREATE INDEX v2_approved_assets_content_hash_idx ON v2_approved_assets (story_world_id, content_hash);
+    `),
+    down: (db) => db.exec(`
+      DELETE FROM v2_approved_assets WHERE source_type = 'manual';
+      ALTER TABLE v2_approved_assets RENAME TO v2_approved_assets_extended;
+      CREATE TABLE v2_approved_assets (
+        asset_id TEXT PRIMARY KEY,
+        story_world_id TEXT NOT NULL,
+        candidate_id TEXT NOT NULL UNIQUE REFERENCES v2_asset_candidates(candidate_id) ON DELETE CASCADE,
+        media_ref TEXT NOT NULL,
+        content_hash TEXT NOT NULL,
+        approved_at TEXT NOT NULL,
+        reviewer TEXT,
+        review_reason TEXT,
+        release_id TEXT
+      );
+      INSERT INTO v2_approved_assets SELECT asset_id, story_world_id, candidate_id, media_ref, content_hash, approved_at, reviewer, review_reason, release_id FROM v2_approved_assets_extended;
+      DROP TABLE v2_approved_assets_extended;
+      CREATE INDEX v2_approved_assets_story_world_idx ON v2_approved_assets (story_world_id, asset_id);
+      CREATE INDEX v2_approved_assets_release_idx ON v2_approved_assets (story_world_id, release_id);
+    `),
+  },
 ];

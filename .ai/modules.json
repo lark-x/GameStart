@@ -66,6 +66,7 @@
         "integration"
       ],
       "ownedPaths": [
+        "apps/api/src/v2/assets/**",
         "apps/api/src/v2/generation/**",
         "apps/worker/src/v2/asset-generation-worker*.ts",
         "apps/worker/src/v2/dynamic-comfyui-client.ts",
@@ -88,6 +89,7 @@
       ],
       "ownedPaths": [
         "apps/web/src/v2/views/V2AppearanceSettingsView.vue",
+        "apps/web/src/v2/views/V2RuntimeStatusView.vue",
         "apps/web/src/v2/views/platform.ts",
         "packages/ports/src/v2/platform/**",
         "packages/database/src/v2/platform/repository*.ts"

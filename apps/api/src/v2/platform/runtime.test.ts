@@ -20,8 +20,10 @@ test("V2 API runtime applies core and generation migrations and wires both plugi
       "0100_generation_jobs",
       "0101_asset_generation_jobs",
       "0102_asset_candidate_review",
+      "0103_manual_formal_assets",
       "0200_v2_platform_configuration",
       "0201_v2_model_call_logs",
+      "0202_v2_external_connection_checks",
     ]);
     const health = await runtime.app.inject({ method: "GET", url: "/api/v2/health" });
     assert.equal(health.statusCode, 200);

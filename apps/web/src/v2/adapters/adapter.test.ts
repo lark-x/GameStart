@@ -156,7 +156,7 @@ test("V2 HTTP adapter drives bootstrap and the complete local creator loop", asy
     }] });
     if (url.includes("/generation/assets/worlds/") && url.endsWith("/candidates")) return Response.json({ candidates: [] });
     if (url.includes("/generation/assets/worlds/") && url.endsWith("/library")) return Response.json({ assets: [] });
-    if (url.endsWith("/releases/preflight")) return Response.json({ valid: true, diagnostics: [] });
+    if (url.endsWith("/releases/preflight")) return Response.json({ valid: true, diagnostics: [], blockers: [] });
     if (method === "POST" && url.endsWith("/releases")) return Response.json({ releaseId: "release_http", version: "1.0.0", sourceRevision: 2, contentHash: "hash", createdAt: "2026-01-01" });
     if (url.endsWith("/releases")) return Response.json([{ releaseId: "release_http", storyWorldId: "world_http", version: "1.0.0", sourceRevision: 2, contentHash: "hash", createdAt: "2026-01-01" }]);
     if (method === "POST" && url.endsWith("/generation/jobs/scene")) return Response.json({ job: { jobId: "job_scene", status: "queued", createdAt: "2026-01-01", updatedAt: "2026-01-01", prompt: "prompt", contextHash: "hash", attempts: 0, maxAttempts: 3 } });
@@ -168,7 +168,20 @@ test("V2 HTTP adapter drives bootstrap and the complete local creator loop", asy
     if (method === "POST" && url.includes("/load")) return Response.json(runtime);
     if (url.includes("/core/releases/") && url.endsWith("/export")) return Response.json({ json: { releaseId: "release_http" }, markdown: "# HTTP World" });
     if (method === "POST" && url.endsWith("/generation/assets/jobs")) return Response.json({ job: { jobId: "asset_job", status: "queued", createdAt: "2026-01-01", updatedAt: "2026-01-01", workflowVersion: "local-default@1", seed: 0, prompt: "asset" } });
-    if (method === "POST" && url.includes("/generation/assets/candidates/") && url.endsWith("/review")) return Response.json({ candidate: { status: "approved" }, review: { reviewedAt: "2026-01-01", reason: "ready" }, approvedAsset: { assetId: "asset_http", mediaRef: `media://local/v2/assets/${"a".repeat(64)}.png` } });
+    if (method === "POST" && url.includes("/generation/assets/candidates/") && url.endsWith("/review")) return Response.json({
+      candidate: { status: "approved" },
+      review: { reviewedAt: "2026-01-01", reason: "ready" },
+      approvedAsset: {
+        assetId: "asset_http",
+        storyWorldId: "world_http",
+        sourceType: "candidate",
+        candidateId: "candidate_http",
+        title: "HTTP Asset",
+        mediaRef: `media://local/v2/assets/${"a".repeat(64)}.png`,
+        contentHash: `sha256:${"a".repeat(64)}`,
+        approvedAt: "2026-01-01",
+      },
+    });
     if (url.includes("/runtime/saves/") && method === "GET") return Response.json({ saveId: "save_http", runId: "run_http", releaseVersion: "1.0.0", currentSceneId: "scene_next", createdAt: "2026-01-01" });
     throw new Error(`unhandled ${method} ${url} ${JSON.stringify(body)}`);
   };
@@ -242,7 +255,7 @@ test("V2 HTTP adapter maps optional snapshot values and player choices", async (
     if (url.includes("/generation/assets/worlds/") && url.endsWith("/jobs")) return Response.json({ jobs: [] });
     if (url.includes("/generation/assets/worlds/") && url.endsWith("/candidates")) return Response.json({ candidates: [] });
     if (url.includes("/generation/assets/worlds/") && url.endsWith("/library")) return Response.json({ assets: [] });
-    if (url.endsWith("/releases/preflight")) return Response.json({ valid: false, diagnostics: [{ code: "BAD", severity: "error", message: "Bad release" }] });
+    if (url.endsWith("/releases/preflight")) return Response.json({ valid: false, diagnostics: [{ code: "BAD", severity: "error", message: "Bad release" }], blockers: [{ code: "BAD", message: "Bad release", targetPage: "story" }] });
     if (url.endsWith("/releases")) return Response.json([]);
     if (url.includes("/runtime/runs/") && url.endsWith("/scene")) return Response.json(runtime);
     if (url.includes("/runtime/saves/") && url.endsWith("/save")) return Response.json({ saveId: "save", runId: "run", releaseVersion: "1.0.0", currentSceneId: "scene", createdAt: "2026-01-01" });
@@ -356,7 +369,7 @@ test("V2 http adapter creates a story world and prefers it on the next snapshot"
     if (url.includes("/generation/assets/worlds/") && url.endsWith("/jobs")) return Response.json({ jobs: [] });
     if (url.includes("/generation/assets/worlds/") && url.endsWith("/candidates")) return Response.json({ candidates: [] });
     if (url.includes("/generation/assets/worlds/") && url.endsWith("/library")) return Response.json({ assets: [] });
-    if (url.endsWith("/releases/preflight")) return Response.json({ valid: true, diagnostics: [] });
+    if (url.endsWith("/releases/preflight")) return Response.json({ valid: true, diagnostics: [], blockers: [] });
     if (url.endsWith("/releases")) return Response.json([]);
     throw new Error(`unhandled ${method} ${url}`);
   };
@@ -405,7 +418,7 @@ test("V2 HTTP adapter covers authoring CRUD and optional asset/timeline mapping"
     if (url.endsWith("/candidates/scenes")) return Response.json([]);
     if (url.includes("/generation/worlds/") && url.endsWith("/jobs")) return Response.json({ jobs: [] });
     if (url.includes("/generation/assets/worlds/") && url.endsWith("/jobs")) return Response.json({ jobs: [] });
-    if (url.endsWith("/releases/preflight")) return Response.json({ valid: true, diagnostics: [] });
+    if (url.endsWith("/releases/preflight")) return Response.json({ valid: true, diagnostics: [], blockers: [] });
     if (url.endsWith("/releases")) return Response.json([]);
     if (url.includes("/generation/assets/worlds/") && url.endsWith("/candidates")) return Response.json({
       candidates: [{

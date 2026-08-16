@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { Image as ImageIcon, Save, TestTube2 } from "@lucide/vue";
+import type { V2PlatformCapabilities } from "@living-network/contracts/v2";
 import Badge from "../../components/ui/Badge.vue";
 import Button from "../../components/ui/Button.vue";
 import Field from "../../components/ui/Field.vue";
@@ -16,8 +17,10 @@ interface ImageForm {
 }
 
 const settings = ref<ImageForm>({ baseUrl: "", timeoutMs: "30000", defaultWorkflowVersion: "" });
+const capabilities = ref<V2PlatformCapabilities | null>(null);
 const loading = ref(false);
 const saving = ref(false);
+const testing = ref(false);
 const error = ref<string | null>(null);
 const message = ref<string | null>(null);
 
@@ -25,12 +28,16 @@ async function load(): Promise<void> {
   loading.value = true;
   error.value = null;
   try {
-    const loaded = await client.getImageServiceSettings();
+    const [loaded, nextCapabilities] = await Promise.all([
+      client.getImageServiceSettings(),
+      client.getCapabilities(),
+    ]);
     settings.value = {
       baseUrl: loaded.baseUrl,
       timeoutMs: String(loaded.timeoutMs),
       defaultWorkflowVersion: loaded.defaultWorkflowVersion ?? "",
     };
+    capabilities.value = nextCapabilities;
   } catch (err) {
     error.value = platformErrorMessage(err, "无法读取图片服务设置");
   } finally {
@@ -54,11 +61,37 @@ async function save(): Promise<void> {
       defaultWorkflowVersion: saved.defaultWorkflowVersion ?? "",
     };
     message.value = "图片服务设置已保存。Worker 会在下一次任务执行时读取。";
+    capabilities.value = await client.getCapabilities();
   } catch (err) {
     error.value = platformErrorMessage(err, "保存图片服务设置失败");
   } finally {
     saving.value = false;
   }
+}
+
+async function testConnection(): Promise<void> {
+  testing.value = true;
+  error.value = null;
+  message.value = null;
+  try {
+    const check = await client.testImageServiceConnection();
+    capabilities.value = await client.getCapabilities();
+    message.value = check.connection === "ok" ? "ComfyUI 连接测试成功。" : `ComfyUI 连接测试失败：${check.errorMessage ?? "未知错误"}`;
+  } catch (err) {
+    error.value = platformErrorMessage(err, "测试 ComfyUI 连接失败");
+  } finally {
+    testing.value = false;
+  }
+}
+
+function statusLabel(value: string | undefined): string {
+  if (value === "complete") return "配置完整";
+  if (value === "incomplete") return "配置缺失";
+  if (value === "not-applicable") return "无需绑定";
+  if (value === "ok") return "连接正常";
+  if (value === "failed") return "连接失败";
+  if (value === "checking") return "检测中";
+  return "未测试";
 }
 
 onMounted(() => {
@@ -87,6 +120,13 @@ onMounted(() => {
         <p class="v2-section-kicker">ComfyUI 连接</p>
         <h2 id="v2-image-service-title">本地或远程图片生成服务</h2>
         <p>配置会持久化到 V2 SQLite。密钥以外的连接信息会显示在这里，便于确认 Worker 实际使用的地址。</p>
+        <div class="v2-capability-line">
+          <Badge :tone="capabilities?.assetGeneration.enabled ? 'success' : 'warning'">
+            {{ capabilities?.assetGeneration.enabled ? "环境已启用" : "环境已关闭" }}
+          </Badge>
+          <span>配置：{{ statusLabel(capabilities?.assetGeneration.configuration) }}</span>
+          <span>连接：{{ statusLabel(capabilities?.assetGeneration.connection) }}</span>
+        </div>
       </div>
     </section>
 
@@ -108,6 +148,10 @@ onMounted(() => {
         <Button variant="secondary" size="md" type="button" :disabled="loading" @click="load">
           <TestTube2 :size="16" aria-hidden="true" />
           重新读取
+        </Button>
+        <Button variant="secondary" size="md" type="button" :loading="testing" :disabled="loading || !settings.baseUrl.trim()" @click="testConnection">
+          <TestTube2 :size="16" aria-hidden="true" />
+          测试连接
         </Button>
       </div>
     </form>
@@ -170,6 +214,15 @@ onMounted(() => {
   color: var(--muted);
   font-size: var(--text-sm);
   line-height: 1.6;
+}
+
+.v2-capability-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  color: var(--muted);
+  font-size: var(--text-sm);
 }
 
 .v2-image-form {
