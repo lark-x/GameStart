@@ -39,6 +39,8 @@ const canSubmit = computed(() =>
   (isComfy.value ? store.canSubmitAssetGeneration : store.canSubmitSceneGeneration),
 );
 const configurePath = computed(() => isComfy.value ? "/v2/services/comfyui" : "/v2/services/models");
+const requestPath = computed(() => isComfy.value ? "/v2/workspace/comfy-request" : "/v2/workspace/ai-scene-request");
+const reviewPath = computed(() => isComfy.value ? "/v2/workspace/comfy-review" : "/v2/workspace/ai-scene-review");
 
 function platformClient() {
   const env = (import.meta as ImportMeta & { readonly env?: Record<string, string | undefined> }).env ?? {};
@@ -94,6 +96,14 @@ function reviewAsset(action: V2CandidateReviewAction): void {
 
 function goToConfigure(): void {
   void router.push(configurePath.value);
+}
+
+function goToRequest(): void {
+  void router.push(requestPath.value);
+}
+
+function goToReview(): void {
+  void router.push(reviewPath.value);
 }
 
 onMounted(() => {
@@ -218,6 +228,17 @@ onMounted(() => {
       <Button variant="secondary" size="sm" type="button" :loading="store.loading" @click="store.loadSnapshot">
         <RefreshCw :size="14" /> 刷新状态
       </Button>
+      <div v-if="job" class="job-actions">
+        <Button v-if="job.candidateId" variant="primary" size="sm" type="button" @click="goToReview">
+          <Check :size="14" /> 去审核候选
+        </Button>
+        <Button v-if="job.status === 'failed'" variant="secondary" size="sm" type="button" @click="goToRequest">
+          <Send :size="14" /> 回到请求
+        </Button>
+        <Button v-if="job.status === 'failed'" variant="ghost" size="sm" type="button" @click="goToConfigure">
+          <Settings2 :size="14" /> 检查配置
+        </Button>
+      </div>
     </div>
 
     <div v-else class="module-body">
@@ -289,6 +310,7 @@ onMounted(() => {
 .job-card, .candidate-card { padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-soft); }
 .job-card { display: flex; gap: var(--space-3); align-items: flex-start; }
 .job-card div { display: grid; gap: var(--space-1); }
+.job-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
 .job-card strong, .candidate-card h3 { color: var(--text-strong); }
 .job-card span, .candidate-card span, .candidate-card p, .candidate-card li { color: var(--text); font-size: var(--text-sm); }
 .error-line { color: var(--danger) !important; }
