@@ -19,7 +19,7 @@ export default defineConfig({
       reuseExistingServer: false,
     },
     {
-      command: "VITE_V2_ENABLE_MOCK=true V2_API_PROXY_TARGET=http://127.0.0.1:4412 pnpm --filter @living-network/web exec vite --host 127.0.0.1 --port 4473",
+      command: "V2_API_PROXY_TARGET=http://127.0.0.1:4412 pnpm --filter @living-network/web exec vite --host 127.0.0.1 --port 4473",
       port: 4473,
       reuseExistingServer: false,
     },
