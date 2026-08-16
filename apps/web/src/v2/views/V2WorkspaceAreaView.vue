@@ -14,7 +14,7 @@ const requestedArea = computed(() => typeof route.params.area === "string" ? rou
 const generationArea = computed(() => /^(ai-scene|comfy)-(request|jobs|review)$/.test(requestedArea.value));
 const areaAliases: Readonly<Record<string, string>> = {
   project: "overview",
-  stories: "canon",
+  stories: "overview",
   world: "canon",
   story: "graph",
   "formal-assets": "assets",

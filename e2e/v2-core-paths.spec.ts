@@ -32,6 +32,9 @@ test("V2 redirects legacy entry and exposes the feature-first module map", async
   await expect(page).toHaveURL(/\/v2\/workspace\/ai-scene-review$/);
   await expect(page.getByText("模型 隔离模块", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "候选审核", exact: true })).toBeVisible();
+
+  await page.goto("/v2/workspace/stories");
+  await expect(page.getByRole("heading", { name: "创建第一条故事数据", exact: true })).toBeVisible();
 });
 
 test("V2 keeps external service configuration outside manual authoring pages", async ({ page }) => {
