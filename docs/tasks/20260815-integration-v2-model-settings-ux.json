@@ -58,7 +58,7 @@
   "delivery": {
     "branch": "codex/integration/v2-model-settings-ux",
     "baseSha": "95070da76de311aa0be73b6ef38a386aabb866e5",
-    "pullRequest": null,
+    "pullRequest": "https://github.com/lark-x/GameStart/pull/8",
     "commits": [],
     "results": [
       {
