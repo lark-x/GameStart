@@ -53,3 +53,9 @@ export interface V2PreviewStateDeltaRequest {
   readonly currentValues?: Record<string, V2StateValue>;
   readonly deltas: readonly V2StateDeltaDto[];
 }
+
+export interface V2UpdateStateVariableRequest {
+  readonly defaultValue: V2StateValue;
+  readonly expectedRevision: V2Revision;
+  readonly idempotencyKey: V2IdempotencyKey;
+}

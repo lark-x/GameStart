@@ -207,6 +207,14 @@ export interface V2AssetCandidateApiResponse {
   readonly candidate: V2AssetCandidateRecord;
 }
 
+
+export interface V2AssetCandidateListApiResponse {
+  readonly candidates: readonly V2AssetCandidateRecord[];
+}
+
+export interface V2ApprovedAssetListApiResponse {
+  readonly assets: readonly V2ApprovedAssetRecord[];
+}
 export interface V2ReviewAssetCandidateApiRequest {
   readonly action: V2AssetReviewAction;
   readonly idempotencyKey: V2IdempotencyKey;

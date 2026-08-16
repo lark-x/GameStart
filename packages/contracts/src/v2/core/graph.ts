@@ -100,3 +100,25 @@ export interface V2CreateChoiceRequest {
   readonly expectedRevision: V2Revision;
   readonly idempotencyKey: V2IdempotencyKey;
 }
+export interface V2UpdateArcRequest {
+  readonly title: string;
+  readonly summary?: string;
+  readonly expectedRevision: V2Revision;
+  readonly idempotencyKey: V2IdempotencyKey;
+}
+
+export interface V2UpdateSceneRequest extends V2UpdateArcRequest {
+  readonly arcId?: V2ArcId;
+  readonly body?: string;
+  readonly isEntry: boolean;
+}
+
+export interface V2UpdateChoiceRequest {
+  readonly sourceSceneId: V2SceneId;
+  readonly targetSceneId?: V2SceneId;
+  readonly label: string;
+  readonly gates?: readonly V2StateGateDto[];
+  readonly consequences?: readonly V2StateConsequenceDto[];
+  readonly expectedRevision: V2Revision;
+  readonly idempotencyKey: V2IdempotencyKey;
+}

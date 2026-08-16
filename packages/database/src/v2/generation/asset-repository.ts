@@ -467,6 +467,13 @@ export class V2SqliteAssetGenerationRepository implements V2AssetGenerationJobRe
     return row === undefined ? undefined : mapAssetCandidate(row);
   }
 
+
+  public async listAssetCandidates(storyWorldId: V2StoryWorldId): Promise<readonly V2AssetCandidateRecord[]> {
+    const rows = this.db.prepare(
+      "SELECT * FROM v2_asset_candidates WHERE story_world_id = ? ORDER BY created_at DESC, candidate_id DESC",
+    ).all(storyWorldId) as AssetCandidateRow[];
+    return rows.map(mapAssetCandidate);
+  }
   public async reviewAssetCandidate(input: V2ReviewAssetCandidateInput): Promise<V2AssetCandidateReviewResult> {
     return withV2SqliteTransaction(this.db, () => {
       const candidateRow = getAssetCandidateRow(this.db, input.candidateId);
@@ -558,6 +565,13 @@ export class V2SqliteAssetGenerationRepository implements V2AssetGenerationJobRe
     return row === undefined ? undefined : mapApprovedAssetRef(row);
   }
 
+
+  public async listApprovedAssets(storyWorldId: V2StoryWorldId): Promise<readonly V2ApprovedAssetRecord[]> {
+    const rows = this.db.prepare(
+      "SELECT * FROM v2_approved_assets WHERE story_world_id = ? ORDER BY approved_at DESC, asset_id DESC",
+    ).all(storyWorldId) as ApprovedAssetRow[];
+    return rows.map(mapApprovedAsset);
+  }
   public async listReleaseAssets(input: { readonly storyWorldId: V2StoryWorldId; readonly releaseId: V2ReleaseId }): Promise<readonly V2ApprovedAssetRef[]> {
     const rows = this.db.prepare(`
       SELECT * FROM v2_approved_assets
