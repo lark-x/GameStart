@@ -95,14 +95,14 @@ test("V2 completes the manual authoring loop against the real API", async ({ pag
   await page.getByRole("button", { name: "启动运行预览", exact: true }).click();
 
   await navigateTo(page, "运行预览");
-  await expect(page.getByText("E2E Entry Scene", { exact: true })).toBeVisible();
+  await expect(page.locator(".scene-title-tag").filter({ hasText: /^E2E Entry Scene$/ })).toBeVisible();
   await page.getByRole("button", { name: "E2E Choice" }).click();
-  await expect(page.getByText("E2E Next Scene", { exact: true })).toBeVisible();
+  await expect(page.locator(".scene-title-tag").filter({ hasText: /^E2E Next Scene$/ })).toBeVisible();
   await page.getByLabel("存档名称").fill("E2E checkpoint");
   await page.getByRole("button", { name: "保存运行", exact: true }).click();
   await expect(page.getByText(/E2E checkpoint/)).toBeVisible();
   await page.getByRole("button", { name: "恢复存档", exact: true }).click();
-  await expect(page.getByText("E2E Next Scene", { exact: true })).toBeVisible();
+  await expect(page.locator(".scene-title-tag").filter({ hasText: /^E2E Next Scene$/ })).toBeVisible();
 
   await navigateTo(page, "导出");
   await page.getByLabel("导出格式").selectOption("markdown");
