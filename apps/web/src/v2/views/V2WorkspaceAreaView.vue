@@ -9,7 +9,7 @@ import { useV2WorkspaceStore } from "../stores/workspace";
 
 const route = useRoute();
 const store = useV2WorkspaceStore();
-const areas = new Set(["canon", "graph", "review", "assets", "release", "player", "operations"]);
+const areas = new Set(["canon", "graph", "state", "review", "assets", "release", "player", "operations"]);
 const currentArea = computed(() => {
   const value = typeof route.params.area === "string" ? route.params.area : "canon";
   return areas.has(value) ? value : "canon";

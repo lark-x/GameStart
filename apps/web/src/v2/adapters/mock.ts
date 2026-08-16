@@ -22,17 +22,36 @@ import {
   v2WebFixtureTypedState,
   v2WebFixtureWorld,
 } from "../fixtures/mock-data.ts";
+import { V2AdapterError } from "./types.ts";
 import type {
+  V2ApprovedAssetSummary,
+  V2ArcSummary,
+  V2AssetCandidateSummary,
   V2AssetJobSummary,
   V2AssetReviewRequest,
   V2AssetReviewResult,
   V2CandidateReviewRequest,
   V2CandidateReviewResult,
+  V2CharacterSummary,
+  V2ChoiceSummary,
+  V2FactSummary,
+  V2GraphDiagnostic,
+  V2LocationSummary,
+  V2RuleSummary,
+  V2SceneGraphSummary,
+  V2SceneSummary,
+  V2StateVariableSummary,
+  V2TimelineEventSummary,
+  V2TypedStateSummary,
   V2WorkspaceAdapter,
   V2WorkspaceSnapshot,
+  V2WorkspaceSummary,
 } from "./types.ts";
 
 const now = "2026-08-12T00:00:00.000Z" as V2IsoDateTime;
+import type { V2GraphCreateInput } from "./types.ts";
+import type { V2CanonUpdateInput, V2GraphUpdateInput } from "./types.ts";
+import type { V2CanonCreateInput } from "./types.ts";
 
 export function createV2MockSnapshot(): V2WorkspaceSnapshot {
   return {
@@ -56,9 +75,75 @@ export function createV2MockAdapter(): V2WorkspaceAdapter {
   // Mock 只记录创建的世界；快照仍返回固定 fixture（world_v2_demo），
   // 真实创建链路以 HTTP adapter + Core API 为准。
   const createdWorlds: V2StoryWorldDto[] = [];
+  const fixtureWorld: V2StoryWorldDto = {
+    storyWorldId: v2WebFixtureWorld.storyWorldId as V2StoryWorldId,
+    name: v2WebFixtureWorld.name,
+    summary: v2WebFixtureWorld.premise,
+    revision: v2WebFixtureWorld.revision as V2Revision,
+    createdAt: now,
+    updatedAt: now,
+  };
+  let selectedWorldId = fixtureWorld.storyWorldId;
+  let assetJob: V2AssetJobSummary = { ...v2WebFixtureAssets.job };
+  let assetCandidate: V2AssetCandidateSummary | null = { ...v2WebFixtureAssets.candidate };
+  const assetLibrary: V2ApprovedAssetSummary[] = [...v2WebFixtureAssets.library];
+  const worldCharacters: V2CharacterSummary[] = v2WebFixtureWorld.characters.map((character) => ({ characterId: character.characterId, name: character.name, role: character.role }));
+  const worldLocations: V2LocationSummary[] = v2WebFixtureWorld.locations.map((location) => ({ locationId: location.locationId, name: location.name, tags: [...location.tags] }));
+  const worldFacts: V2FactSummary[] = v2WebFixtureWorld.facts.map((fact) => ({ factId: fact.factId, text: fact.text, visibility: fact.visibility }));
+  const worldRules: V2RuleSummary[] = v2WebFixtureWorld.rules.map((rule) => ({ ruleId: rule.ruleId, text: rule.text, severity: rule.severity }));
+  const worldTimelineEvents: V2TimelineEventSummary[] = v2WebFixtureWorld.timelineEvents.map((event) => ({ ...event }));
+  const sceneArcs: V2ArcSummary[] = v2WebFixtureSceneGraph.arcs.map((arc) => ({ ...arc }));
+  const sceneScenes: V2SceneSummary[] = v2WebFixtureSceneGraph.scenes.map((scene) => ({ ...scene }));
+  const sceneChoices: V2ChoiceSummary[] = v2WebFixtureSceneGraph.choices.map((choice) => ({ ...choice, gates: choice.gates.map((gate) => ({ ...gate })), consequences: choice.consequences.map((consequence) => ({ ...consequence })) }));
+  const sceneDiagnostics: V2GraphDiagnostic[] = v2WebFixtureSceneGraph.diagnostics.map((diagnostic) => ({ ...diagnostic }));
+  const typedStateVariables: V2StateVariableSummary[] = v2WebFixtureTypedState.variables.map((variable) => ({ ...variable }));
+  let worldState: V2WorkspaceSummary = {
+    ...v2WebFixtureWorld,
+    characters: worldCharacters,
+    locations: worldLocations,
+    facts: worldFacts,
+    rules: worldRules,
+    timelineEvents: worldTimelineEvents,
+  };
+  const sceneGraphState: V2SceneGraphSummary = {
+    ...v2WebFixtureSceneGraph,
+    arcs: sceneArcs,
+    scenes: sceneScenes,
+    choices: sceneChoices,
+    diagnostics: sceneDiagnostics,
+  };
+  const typedStateState: V2TypedStateSummary = {
+    ...v2WebFixtureTypedState,
+    variables: typedStateVariables,
+  };
+  let graphCounter = 0;
+  let canonCounter = 0;
+
+  function bumpRevision(): void {
+    const next = (fixtureWorld.revision + 1) as V2Revision;
+    Object.assign(fixtureWorld, { revision: next });
+    worldState = { ...worldState, revision: next };
+  }
+
   return {
     mode: "mock",
     async bootstrapWorkspace(): Promise<void> {},
+    async listStoryWorlds(): Promise<readonly V2StoryWorldDto[]> {
+      return [fixtureWorld, ...createdWorlds];
+    },
+    async updateStoryWorld(input): Promise<V2StoryWorldDto> {
+      const target = input.storyWorldId === fixtureWorld.storyWorldId ? fixtureWorld : createdWorlds.find((world) => world.storyWorldId === input.storyWorldId);
+      if (!target) throw new Error("Story world not found");
+      if (input.expectedRevision !== target.revision) {
+        throw new V2AdapterError({ code: "STALE_REVISION", message: `Expected revision ${input.expectedRevision}, got ${target.revision}` });
+      }
+      const updated = { ...target, name: input.name, ...(input.summary === undefined ? {} : { summary: input.summary }), revision: (input.expectedRevision + 1) as V2Revision, updatedAt: now };
+      if (target.storyWorldId === fixtureWorld.storyWorldId) Object.assign(fixtureWorld, updated);
+      else Object.assign(createdWorlds[createdWorlds.indexOf(target)]!, updated);
+      selectedWorldId = updated.storyWorldId;
+      return updated;
+    },
+
     async createStoryWorld(input: { readonly name: string; readonly summary?: string }): Promise<V2StoryWorldDto> {
       const world: V2StoryWorldDto = {
         storyWorldId: `world:mock-${createdWorlds.length + 1}` as V2StoryWorldId,
@@ -71,9 +156,108 @@ export function createV2MockAdapter(): V2WorkspaceAdapter {
       createdWorlds.push(world);
       return world;
     },
-    async getSnapshot(): Promise<V2WorkspaceSnapshot> {
-      return createV2MockSnapshot();
+    async getSnapshot(storyWorldId?: string): Promise<V2WorkspaceSnapshot> {
+      if (storyWorldId !== undefined) selectedWorldId = storyWorldId as V2StoryWorldId;
+      const selected = [fixtureWorld, ...createdWorlds].find((world) => world.storyWorldId === selectedWorldId) ?? fixtureWorld;
+      const snapshot = createV2MockSnapshot();
+      return {
+        ...snapshot,
+        world: { ...worldState, storyWorldId: selected.storyWorldId, name: selected.name, premise: selected.summary ?? "", revision: selected.revision },
+        sceneGraph: sceneGraphState,
+        typedState: typedStateState,
+        assets: { ...snapshot.assets, job: assetJob, candidate: assetCandidate, library: assetLibrary },
+      };
     },
+    async createCanonEntity(input: V2CanonCreateInput & { readonly storyWorldId: string; readonly expectedRevision: number }): Promise<void> {
+      bumpRevision();
+      canonCounter += 1;
+      const suffix = `mock-${canonCounter}`;
+      if (input.kind === "location") {
+        worldLocations.push({ locationId: `location:${suffix}`, name: input.input.name, tags: input.input.summary ? [input.input.summary] : [] });
+      } else if (input.kind === "character") {
+        worldCharacters.push({ characterId: `character:${suffix}`, name: input.input.name, role: input.input.summary ?? "角色" });
+      } else if (input.kind === "fact") {
+        worldFacts.push({ factId: `fact:${suffix}`, text: input.input.text, visibility: input.input.visibility === "creator_only" ? "creator" : "player" });
+      } else if (input.kind === "rule") {
+        worldRules.push({ ruleId: `rule:${suffix}`, text: input.input.text, severity: input.input.severity === "required" ? "hard" : "soft" });
+      } else if (input.kind === "timeline") {
+        worldTimelineEvents.push({ timelineEventId: `timeline:${suffix}`, localDate: input.input.localDate, title: input.input.title, ...(input.input.summary === undefined ? {} : { summary: input.input.summary }) });
+      }
+    },
+    async updateCanonEntity(input: V2CanonUpdateInput & { readonly storyWorldId: string; readonly expectedRevision: number }): Promise<void> {
+      bumpRevision();
+      if (input.kind === "location") {
+        const index = worldLocations.findIndex((item) => item.locationId === input.id);
+        if (index !== -1) worldLocations[index] = { ...worldLocations[index]!, name: input.input.name, tags: input.input.summary ? [input.input.summary] : [] };
+      } else if (input.kind === "character") {
+        const index = worldCharacters.findIndex((item) => item.characterId === input.id);
+        if (index !== -1) worldCharacters[index] = { ...worldCharacters[index]!, name: input.input.name, role: input.input.summary ?? "角色" };
+      } else if (input.kind === "fact") {
+        const index = worldFacts.findIndex((item) => item.factId === input.id);
+        if (index !== -1) worldFacts[index] = { ...worldFacts[index]!, text: input.input.text, visibility: input.input.visibility === "creator_only" ? "creator" : "player" };
+      } else if (input.kind === "rule") {
+        const index = worldRules.findIndex((item) => item.ruleId === input.id);
+        if (index !== -1) worldRules[index] = { ...worldRules[index]!, text: input.input.text, severity: input.input.severity === "required" ? "hard" : "soft" };
+      } else if (input.kind === "timeline") {
+        const index = worldTimelineEvents.findIndex((item) => item.timelineEventId === input.id);
+        if (index !== -1) worldTimelineEvents[index] = { ...worldTimelineEvents[index]!, localDate: input.input.localDate, title: input.input.title, ...(input.input.summary === undefined ? {} : { summary: input.input.summary }) };
+      }
+    },
+    async createGraphEntity(input: V2GraphCreateInput & { readonly storyWorldId: string; readonly expectedRevision: number }): Promise<void> {
+      bumpRevision();
+      graphCounter += 1;
+      const suffix = `mock-${graphCounter}`;
+      if (input.kind === "arc") {
+        sceneArcs.push({ arcId: `arc:${suffix}`, title: input.input.title, ...(input.input.summary === undefined ? {} : { summary: input.input.summary }) });
+      } else if (input.kind === "scene") {
+        sceneScenes.push({
+          sceneId: `scene:${suffix}`,
+          ...(input.input.arcId === undefined ? {} : { arcId: input.input.arcId }),
+          title: input.input.title,
+          ...(input.input.body === undefined ? {} : { body: input.input.body }),
+          isEntry: input.input.isEntry ?? false,
+          choiceCount: 0,
+          reachable: true,
+          stateDeltaPreview: [],
+        });
+      } else if (input.kind === "choice") {
+        sceneChoices.push({
+          choiceId: `choice:${suffix}`,
+          sourceSceneId: input.input.sourceSceneId,
+          ...(input.input.targetSceneId === undefined ? {} : { targetSceneId: input.input.targetSceneId }),
+          label: input.input.label,
+          gates: input.input.gates ?? [],
+          consequences: input.input.consequences ?? [],
+        });
+      } else if (input.kind === "state") {
+        const type = input.input.valueType === "boolean" ? "flag" : input.input.valueType === "number" ? "number" : "text";
+        typedStateVariables.push({ key: input.input.key, label: input.input.key, type, value: input.input.defaultValue, defaultValue: input.input.defaultValue });
+      }
+    },
+    async updateGraphEntity(input: V2GraphUpdateInput & { readonly storyWorldId: string; readonly expectedRevision: number }): Promise<void> {
+      bumpRevision();
+      if (input.kind === "arc") {
+        const index = sceneArcs.findIndex((item) => item.arcId === input.id);
+        if (index !== -1) sceneArcs[index] = { ...sceneArcs[index]!, title: input.input.title, ...(input.input.summary === undefined ? {} : { summary: input.input.summary }) };
+      } else if (input.kind === "scene") {
+        const index = sceneScenes.findIndex((item) => item.sceneId === input.id);
+        if (index !== -1) sceneScenes[index] = { ...sceneScenes[index]!, title: input.input.title, ...(input.input.body === undefined ? {} : { body: input.input.body }), ...(input.input.arcId === undefined ? {} : { arcId: input.input.arcId }), isEntry: input.input.isEntry };
+      } else if (input.kind === "choice") {
+        const index = sceneChoices.findIndex((item) => item.choiceId === input.id);
+        if (index !== -1) sceneChoices[index] = {
+          ...sceneChoices[index]!,
+          sourceSceneId: input.input.sourceSceneId,
+          ...(input.input.targetSceneId === undefined ? {} : { targetSceneId: input.input.targetSceneId }),
+          label: input.input.label,
+          gates: input.input.gates ?? [],
+          consequences: input.input.consequences ?? [],
+        };
+      } else if (input.kind === "state") {
+        const index = typedStateVariables.findIndex((item) => item.key === input.id);
+        if (index !== -1) typedStateVariables[index] = { ...typedStateVariables[index]!, defaultValue: input.input.defaultValue, value: input.input.defaultValue };
+      }
+    },
+
     async createSceneGenerationJob(
       request: V2CreateSceneGenerationJobRequest,
     ): Promise<V2CreateSceneGenerationJobResponse> {
@@ -84,6 +268,22 @@ export function createV2MockAdapter(): V2WorkspaceAdapter {
           createdAt: now,
           updatedAt: now,
         },
+      };
+    },
+    async getSceneGenerationJob(jobId: string) {
+      return {
+        jobId: jobId as V2JobId,
+        status: "succeeded" as const,
+        createdAt: now,
+        updatedAt: now,
+      };
+    },
+    async getAssetGenerationJob(jobId: string) {
+      return {
+        jobId: jobId as V2JobId,
+        status: "succeeded" as const,
+        createdAt: now,
+        updatedAt: now,
       };
     },
     async reviewCandidate(request: V2CandidateReviewRequest): Promise<V2CandidateReviewResult> {
@@ -133,35 +333,42 @@ export function createV2MockAdapter(): V2WorkspaceAdapter {
       return v2WebFixtureExportBundle;
     },
     async createAssetJob(prompt: string): Promise<V2AssetJobSummary> {
-      return {
+      assetJob = {
         ...v2WebFixtureAssets.job,
         status: "queued",
         promptPreview: prompt.trim() || v2WebFixtureAssets.prompt,
         terminalMessage: "Asset job queued for ComfyUI adapter.",
         updatedAt: now,
       };
+      return assetJob;
     },
     async reviewAssetCandidate(request: V2AssetReviewRequest): Promise<V2AssetReviewResult> {
       const status =
         request.action === "request_changes" ? "changes_requested" : request.action === "approve" ? "approved" : "rejected";
+      let approvedAsset: V2ApprovedAssetSummary | undefined;
+      if (status === "approved") {
+        approvedAsset = {
+          assetId: assetCandidate?.candidateId ?? request.candidateId,
+          title: assetCandidate?.title ?? request.candidateId,
+          kind: "scene_background",
+          mediaRef: assetCandidate?.mediaRef ?? "",
+          thumbnailRef: assetCandidate?.thumbnailRef ?? "",
+          workflowVersion: assetCandidate?.provenanceSummary ?? "unknown",
+          seed: 0,
+          approved: true,
+        };
+        if (!assetLibrary.some((asset) => asset.assetId === approvedAsset?.assetId)) {
+          assetLibrary.push(approvedAsset);
+        }
+      }
+      if (assetCandidate?.candidateId === request.candidateId) {
+        assetCandidate = { ...assetCandidate, status };
+      }
       return {
         status,
         reviewedAt: now,
         reviewReason: request.reason.trim() || `${request.reviewer} marked ${request.candidateId} as ${status}.`,
-        ...(status === "approved"
-          ? {
-              approvedAsset: {
-                assetId: "asset_station_bg",
-                title: v2WebFixtureAssets.candidate.title,
-                kind: "scene_background",
-                mediaRef: v2WebFixtureAssets.candidate.mediaRef,
-                thumbnailRef: v2WebFixtureAssets.candidate.thumbnailRef,
-                workflowVersion: v2WebFixtureAssets.job.workflowVersion,
-                seed: v2WebFixtureAssets.job.seed,
-                approved: true,
-              },
-            }
-          : {}),
+        ...(approvedAsset === undefined ? {} : { approvedAsset }),
       };
     },
   };

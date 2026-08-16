@@ -19,6 +19,7 @@ import {
 
 import Button from "../components/ui/Button.vue";
 import { useV2WorkspaceStore } from "./stores/workspace";
+import Select from "../components/ui/Select.vue";
 
 interface NavItem {
   readonly to: string;
@@ -38,6 +39,7 @@ const groups: readonly NavGroup[] = [
       { to: "/v2/workspace/canon", label: "故事总览", icon: LayoutDashboard },
       { to: "/v2/workspace/graph", label: "故事结构", icon: GitFork },
       { to: "/v2/workspace/review", label: "候选审核", icon: Sparkles },
+      { to: "/v2/workspace/state", label: "状态变量", icon: Activity },
       { to: "/v2/workspace/assets", label: "素材工作台", icon: ImageIcon },
     ],
   },
@@ -141,6 +143,14 @@ onMounted(() => {
           <h1>{{ currentTitle }}</h1>
         </div>
         <Button variant="secondary" size="md" :loading="store.loading" @click="store.loadSnapshot">
+        <div v-if="store.storyWorlds.length" class="v2-story-switcher">
+          <label for="v2-story-world">故事空间</label>
+          <Select id="v2-story-world" :model-value="store.activeStoryWorldId || ''" :disabled="store.loading" @update:model-value="store.selectStoryWorld">
+            <option v-for="world in store.storyWorlds" :key="world.storyWorldId" :value="world.storyWorldId">
+              {{ world.name }}
+            </option>
+          </Select>
+        </div>
           <Activity :size="16" aria-hidden="true" />
           刷新状态
         </Button>
@@ -312,6 +322,19 @@ onMounted(() => {
 }
 
 .v2-topbar-kicker {
+.v2-story-switcher {
+  display: grid;
+  gap: var(--space-1);
+  min-width: min(260px, 36vw);
+  margin-left: auto;
+}
+
+.v2-story-switcher label {
+  color: var(--muted);
+  font-size: var(--text-xs);
+  font-weight: 700;
+}
+
   margin: 0 0 var(--space-1);
   color: var(--primary);
   font-size: var(--text-xs);

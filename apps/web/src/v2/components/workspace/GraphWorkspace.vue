@@ -1,8 +1,17 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
-import { AlertCircle, CheckCircle2, ArrowRight } from "@lucide/vue";
+import { AlertCircle, CheckCircle2, ArrowRight, Plus, Pencil } from "@lucide/vue";
 import Badge from "../../../components/ui/Badge.vue";
-import type { V2WorkspaceSnapshot } from "../../adapters";
+import Button from "../../../components/ui/Button.vue";
+import Drawer from "../../../components/ui/Drawer.vue";
+import Field from "../../../components/ui/Field.vue";
+import Input from "../../../components/ui/Input.vue";
+import Select from "../../../components/ui/Select.vue";
+import Textarea from "../../../components/ui/Textarea.vue";
+import type { V2ArcId, V2SceneId } from "@living-network/contracts/v2";
+import type { V2GraphCreateInput, V2WorkspaceSnapshot } from "../../adapters";
+import type { V2ArcSummary, V2ChoiceSummary } from "../../adapters/types";
+import { useV2WorkspaceStore } from "../../stores/workspace";
 
 const props = defineProps<{
   snapshot: V2WorkspaceSnapshot;
@@ -29,9 +38,162 @@ function severityTone(severity: string): "danger" | "warning" | "info" {
   if (severity === "warning") return "warning";
   return "info";
 }
+const store = useV2WorkspaceStore();
+type GraphEntityKind = "arc" | "scene" | "choice";
+const drawerOpen = ref(false);
+const entityKind = ref<GraphEntityKind>("scene");
+const title = ref("");
+const body = ref("");
+const sourceSceneId = ref("");
+const targetSceneId = ref("");
+const label = ref("");
+const isEntry = ref<"true" | "false">("false");
+const editingId = ref<string | null>(null);
+const arcId = ref("");
+const formError = ref<string | null>(null);
+const gates = ref<Array<{ stateKey: string; operator: "eq" | "neq" | "gt" | "gte" | "lt" | "lte"; value: string }>>([]);
+const consequences = ref<Array<{ stateKey: string; operation: "set" | "increment"; value: string }>>([]);
+
+function resetForm(): void {
+  title.value = "";
+  body.value = "";
+  sourceSceneId.value = props.snapshot.sceneGraph.scenes[0]?.sceneId ?? "";
+  targetSceneId.value = "";
+  label.value = "";
+  isEntry.value = "false";
+  arcId.value = "";
+  gates.value = [];
+  consequences.value = [];
+  formError.value = null;
+}
+
+function openEditScene(): void {
+  if (!selectedScene.value) return;
+  editingId.value = selectedScene.value.sceneId;
+  entityKind.value = "scene";
+  title.value = selectedScene.value.title;
+  body.value = selectedScene.value.body ?? "";
+  arcId.value = selectedScene.value.arcId ?? "";
+  isEntry.value = selectedScene.value.sceneId === props.snapshot.sceneGraph.entrySceneId ? "true" : "false";
+  gates.value = [];
+  consequences.value = [];
+  formError.value = null;
+  drawerOpen.value = true;
+}
+
+function openEditArc(arc: V2ArcSummary): void {
+  editingId.value = arc.arcId;
+  entityKind.value = "arc";
+  title.value = arc.title;
+  body.value = arc.summary ?? "";
+  formError.value = null;
+  drawerOpen.value = true;
+}
+
+function openEditChoice(choice: V2ChoiceSummary): void {
+  editingId.value = choice.choiceId;
+  entityKind.value = "choice";
+  label.value = choice.label;
+  sourceSceneId.value = choice.sourceSceneId;
+  targetSceneId.value = choice.targetSceneId ?? "";
+  gates.value = choice.gates.map((gate) => ({ stateKey: gate.stateKey, operator: gate.operator, value: String(gate.value) }));
+  consequences.value = choice.consequences.map((consequence) => ({ stateKey: consequence.stateKey, operation: consequence.operation, value: String(consequence.value) }));
+  formError.value = null;
+  drawerOpen.value = true;
+}
+
+function openCreate(kind: GraphEntityKind): void {
+  editingId.value = null;
+  entityKind.value = kind;
+  resetForm();
+  drawerOpen.value = true;
+}
+
+function addGate(): void {
+  gates.value.push({ stateKey: "", operator: "eq", value: "" });
+}
+
+function removeGate(index: number): void {
+  gates.value.splice(index, 1);
+}
+
+function addConsequence(): void {
+  consequences.value.push({ stateKey: "", operation: "set", value: "" });
+}
+
+function removeConsequence(index: number): void {
+  consequences.value.splice(index, 1);
+}
+
+function normalizeValue(value: string | number | boolean): string | number | boolean {
+  if (typeof value === "boolean") return value;
+  const text = String(value).trim();
+  if (text === "true") return true;
+  if (text === "false") return false;
+  if (text !== "" && !Number.isNaN(Number(text))) return Number(text);
+  return text;
+}
+
+function validateForm(): string | null {
+  if (entityKind.value === "arc" && !title.value.trim()) return "请输入 Arc 标题。";
+  if (entityKind.value === "scene" && !title.value.trim()) return "请输入场景标题。";
+  if (entityKind.value === "choice") {
+    if (!label.value.trim()) return "请输入选项文本。";
+    if (!sourceSceneId.value) return "请选择源场景。";
+    for (const gate of gates.value) {
+      if (!gate.stateKey.trim()) return "分支条件缺少状态变量 key。";
+    }
+    for (const consequence of consequences.value) {
+      if (!consequence.stateKey.trim()) return "状态后果缺少状态变量 key。";
+    }
+  }
+  return null;
+}
+
+async function submitCreate(): Promise<void> {
+  formError.value = validateForm();
+  if (formError.value) return;
+  const trimmedTitle = title.value.trim();
+  const trimmedBody = body.value.trim();
+  const trimmedLabel = label.value.trim();
+  const gatesPayload = gates.value.map((gate) => ({ stateKey: gate.stateKey.trim(), operator: gate.operator, value: normalizeValue(gate.value) }));
+  const consequencesPayload = consequences.value.map((consequence) => ({ stateKey: consequence.stateKey.trim(), operation: consequence.operation, value: normalizeValue(consequence.value) }));
+  try {
+    if (editingId.value) {
+      if (entityKind.value === "arc") {
+        await store.updateGraphEntity({ kind: "arc", id: editingId.value, input: { title: trimmedTitle, ...(trimmedBody ? { summary: trimmedBody } : {}) } });
+      } else if (entityKind.value === "scene") {
+        await store.updateGraphEntity({ kind: "scene", id: editingId.value, input: { title: trimmedTitle, ...(trimmedBody ? { body: trimmedBody } : {}), ...(arcId.value ? { arcId: arcId.value as V2ArcId } : {}), isEntry: isEntry.value === "true" } });
+      } else if (entityKind.value === "choice") {
+        await store.updateGraphEntity({ kind: "choice", id: editingId.value, input: { sourceSceneId: sourceSceneId.value as V2SceneId, ...(targetSceneId.value ? { targetSceneId: targetSceneId.value as V2SceneId } : {}), label: trimmedLabel, gates: gatesPayload, consequences: consequencesPayload } });
+      }
+    } else {
+      const input: V2GraphCreateInput = entityKind.value === "arc"
+        ? { kind: "arc", input: { title: trimmedTitle, ...(trimmedBody ? { summary: trimmedBody } : {}) } }
+        : entityKind.value === "scene"
+          ? { kind: "scene", input: { title: trimmedTitle, ...(trimmedBody ? { body: trimmedBody } : {}), ...(arcId.value ? { arcId: arcId.value as V2ArcId } : {}), ...(isEntry.value === "true" ? { isEntry: true } : {}) } }
+          : { kind: "choice", input: { sourceSceneId: sourceSceneId.value as V2SceneId, ...(targetSceneId.value ? { targetSceneId: targetSceneId.value as V2SceneId } : {}), label: trimmedLabel, gates: gatesPayload, consequences: consequencesPayload } };
+      await store.createGraphEntity(input);
+    }
+    if (store.error) throw new Error(store.error);
+    drawerOpen.value = false;
+  } catch (error) {
+    formError.value = error instanceof Error ? error.message : "保存失败";
+  }
+}
+
 </script>
 
 <template>
+    <div class="graph-authoring-toolbar">
+      <div><strong>故事结构</strong><span>新增 Arc、场景和分支选项</span></div>
+      <div class="graph-authoring-actions">
+        <Button variant="secondary" size="sm" :disabled="loading" @click="openCreate('arc')"><Plus :size="14" aria-hidden="true" />新增 Arc</Button>
+        <Button variant="secondary" size="sm" :disabled="loading" @click="openCreate('scene')"><Plus :size="14" aria-hidden="true" />新增场景</Button>
+        <Button variant="primary" size="sm" :disabled="loading" @click="openCreate('choice')"><Plus :size="14" aria-hidden="true" />新增选项</Button>
+      </div>
+    </div>
+
   <div class="graph-workspace">
     <!-- Diagnostics Banner -->
     <div class="diagnostics-summary" :class="{ 'has-errors': hasErrors }">
@@ -112,6 +274,7 @@ function severityTone(severity: string): "danger" | "warning" | "info" {
             <h3>{{ selectedScene.title }}</h3>
             <span class="scene-key">ID: {{ selectedScene.sceneId }}</span>
           </div>
+          <Button variant="ghost" size="icon" aria-label="编辑场景" @click="openEditScene"><Pencil :size="15" aria-hidden="true" /></Button>
           <Badge :tone="selectedScene.reachable ? 'success' : 'warning'">
             {{ selectedScene.reachable ? "可到达节点" : "孤立节点" }}
           </Badge>
@@ -148,14 +311,113 @@ function severityTone(severity: string): "danger" | "warning" | "info" {
         </div>
       </div>
     </div>
+
+    <!-- Arc & Choice Authoring Lists -->
+    <div class="graph-authoring-lists">
+      <section class="arc-list-card">
+        <div class="list-head">
+          <h4>Arc 归属</h4>
+          <span>{{ snapshot.sceneGraph.arcs.length }} 条</span>
+        </div>
+        <div v-if="snapshot.sceneGraph.arcs.length === 0" class="empty-state-notice">还没有 Arc，先新增一条。</div>
+        <article v-for="arc in snapshot.sceneGraph.arcs" :key="arc.arcId" class="arc-item">
+          <div class="item-main">
+            <strong>{{ arc.title }}</strong>
+            <span class="muted-id">{{ arc.arcId }}</span>
+          </div>
+          <p v-if="arc.summary" class="item-summary">{{ arc.summary }}</p>
+          <Button variant="ghost" size="icon" aria-label="编辑 Arc" @click="openEditArc(arc)"><Pencil :size="15" aria-hidden="true" /></Button>
+        </article>
+      </section>
+
+      <section class="choice-list-card">
+        <div class="list-head">
+          <h4>分支选项</h4>
+          <span>{{ snapshot.sceneGraph.choices.length }} 条</span>
+        </div>
+        <div v-if="snapshot.sceneGraph.choices.length === 0" class="empty-state-notice">还没有分支选项，先新增一条。</div>
+        <article v-for="choice in snapshot.sceneGraph.choices" :key="choice.choiceId" class="choice-item">
+          <div class="item-main">
+            <strong>{{ choice.label }}</strong>
+            <span class="muted-id">{{ choice.choiceId }}</span>
+          </div>
+          <div class="choice-meta">
+            <span>源: {{ choice.sourceSceneId }}</span>
+            <span v-if="choice.targetSceneId">目标: {{ choice.targetSceneId }}</span>
+          </div>
+          <div v-if="choice.gates.length" class="choice-rules">
+            <span v-for="gate in choice.gates" :key="`${choice.choiceId}-gate-${gate.stateKey}-${gate.operator}`" class="rule-chip">{{ gate.stateKey }} {{ gate.operator }} {{ formatValue(gate.value) }}</span>
+          </div>
+          <div v-if="choice.consequences.length" class="choice-rules">
+            <span v-for="consequence in choice.consequences" :key="`${choice.choiceId}-consequence-${consequence.stateKey}-${consequence.operation}`" class="rule-chip consequence">{{ consequence.stateKey }} {{ consequence.operation }} {{ formatValue(consequence.value) }}</span>
+          </div>
+          <Button variant="ghost" size="icon" aria-label="编辑选项" @click="openEditChoice(choice)"><Pencil :size="15" aria-hidden="true" /></Button>
+        </article>
+      </section>
+    </div>
   </div>
+    <Drawer :open="drawerOpen" :title="editingId ? '编辑故事结构' : '新增故事结构'" description="ID 会自动生成，保存时会校验当前故事版本。" @close="drawerOpen = false">
+      <form class="graph-create-form" @submit.prevent="submitCreate">
+        <p v-if="formError" class="form-error">{{ formError }}</p>
+        <Field v-if="entityKind === 'arc' || entityKind === 'scene'" for-id="graph-title" :label="entityKind === 'arc' ? 'Arc 标题' : '场景标题'" required><Input id="graph-title" v-model="title" required /></Field>
+        <Field v-if="entityKind === 'arc' || entityKind === 'scene'" for-id="graph-body" :label="entityKind === 'arc' ? 'Arc 摘要' : '场景正文'"><Textarea id="graph-body" v-model="body" :rows="6" /></Field>
+        <Field v-if="entityKind === 'scene'" for-id="graph-arc" label="Arc 归属">
+          <Select id="graph-arc" v-model="arcId" aria-label="Arc 归属"><option value="">不归属</option><option v-for="arc in snapshot.sceneGraph.arcs" :key="arc.arcId" :value="arc.arcId">{{ arc.title }}</option></Select>
+        </Field>
+        <Field v-if="entityKind === 'scene'" for-id="graph-entry" label="入口场景">
+          <Select id="graph-entry" v-model="isEntry" aria-label="入口场景"><option value="false">否</option><option value="true">是</option></Select>
+        </Field>
+        <template v-if="entityKind === 'choice'">
+          <Field for-id="graph-source" label="源场景" required><Select id="graph-source" v-model="sourceSceneId" aria-label="源场景"><option v-for="scene in snapshot.sceneGraph.scenes" :key="scene.sceneId" :value="scene.sceneId">{{ scene.title }}</option></Select></Field>
+          <Field for-id="graph-target" label="目标场景"><Select id="graph-target" v-model="targetSceneId" aria-label="目标场景"><option value="">不指定</option><option v-for="scene in snapshot.sceneGraph.scenes" :key="scene.sceneId" :value="scene.sceneId">{{ scene.title }}</option></Select></Field>
+          <Field for-id="graph-label" label="选项文本" required><Input id="graph-label" v-model="label" required /></Field>
+
+          <div class="rule-editor">
+            <div class="rule-editor-head">
+              <strong>分支条件 Gates</strong>
+              <Button variant="ghost" size="sm" type="button" @click="addGate"><Plus :size="14" aria-hidden="true" />添加条件</Button>
+            </div>
+            <div v-if="gates.length === 0" class="empty-state-notice">无条件限制。</div>
+            <div v-for="(gate, index) in gates" :key="index" class="rule-row">
+              <Input v-model="gate.stateKey" placeholder="stateKey" aria-label="条件状态变量" />
+              <Select v-model="gate.operator" aria-label="条件运算符"><option value="eq">=</option><option value="neq">≠</option><option value="gt">&gt;</option><option value="gte">≥</option><option value="lt">&lt;</option><option value="lte">≤</option></Select>
+              <Input v-model="gate.value" placeholder="值" aria-label="条件值" />
+              <Button variant="ghost" size="icon" type="button" aria-label="删除条件" @click="removeGate(index)">×</Button>
+            </div>
+          </div>
+
+          <div class="rule-editor">
+            <div class="rule-editor-head">
+              <strong>状态后果 Consequences</strong>
+              <Button variant="ghost" size="sm" type="button" @click="addConsequence"><Plus :size="14" aria-hidden="true" />添加后果</Button>
+            </div>
+            <div v-if="consequences.length === 0" class="empty-state-notice">无状态后果。</div>
+            <div v-for="(consequence, index) in consequences" :key="index" class="rule-row">
+              <Input v-model="consequence.stateKey" placeholder="stateKey" aria-label="后果状态变量" />
+              <Select v-model="consequence.operation" aria-label="后果操作"><option value="set">set</option><option value="increment">increment</option></Select>
+              <Input v-model="consequence.value" placeholder="值" aria-label="后果值" />
+              <Button variant="ghost" size="icon" type="button" aria-label="删除后果" @click="removeConsequence(index)">×</Button>
+            </div>
+          </div>
+        </template>
+      </form>
+      <template #footer><Button variant="secondary" size="md" @click="drawerOpen = false">取消</Button><Button variant="primary" size="md" :loading="loading" @click="submitCreate">保存</Button></template>
+    </Drawer>
 </template>
 
 <style scoped>
 .graph-workspace {
   display: grid;
   gap: var(--space-4);
+
 }
+.graph-authoring-toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-3) var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-soft); }
+.graph-authoring-toolbar strong { display: block; color: var(--text-strong); }
+.graph-authoring-toolbar span { display: block; margin-top: 2px; color: var(--muted); font-size: var(--text-xs); }
+.graph-authoring-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.graph-create-form { display: grid; gap: var(--space-4); }
+@media (max-width: 640px) { .graph-authoring-toolbar { align-items: stretch; flex-direction: column; } .graph-authoring-actions { display: grid; grid-template-columns: 1fr; } }
+
 
 .diagnostics-summary {
   display: flex;

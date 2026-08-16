@@ -60,14 +60,43 @@ export const v2WebFixtureWorld = {
       severity: "hard",
     },
   ],
+  timelineEvents: [
+    {
+      timelineEventId: "timeline_first_train",
+      localDate: "2088-01-01",
+      title: "First Train Arrives",
+      summary: "The first train arrives at Rain Station with an unlisted passenger.",
+    },
+    {
+      timelineEventId: "timeline_clock_reset",
+      localDate: "2088-01-02",
+      title: "Clock Reset",
+      summary: "The city clock resets after a rejected release candidate.",
+    },
+  ],
 } as const;
 
 export const v2WebFixtureSceneGraph = {
   entrySceneId: "scene_opening" as V2SceneId,
+  arcs: [
+    {
+      arcId: "arc_main",
+      title: "Main Mystery",
+      summary: "The central investigation arc.",
+    },
+    {
+      arcId: "arc_archive",
+      title: "Archive Line",
+      summary: "The route toward the Civic Archive.",
+    },
+  ],
   scenes: [
     {
       sceneId: "scene_opening" as V2SceneId,
+      arcId: "arc_main",
       title: "Opening Scene",
+      body: "Rain taps the glass roof of the station while Mira studies the ticket's impossible scene ID.",
+      isEntry: true,
       choiceCount: 2,
       reachable: true,
       stateDeltaPreview: [
@@ -81,7 +110,10 @@ export const v2WebFixtureSceneGraph = {
     },
     {
       sceneId: "scene_archive" as V2SceneId,
+      arcId: "arc_archive",
       title: "Archive Door",
+      body: "The archive door wakes under the ticket's ink, waiting for a reviewed state delta.",
+      isEntry: false,
       choiceCount: 1,
       reachable: true,
       stateDeltaPreview: [
@@ -95,10 +127,39 @@ export const v2WebFixtureSceneGraph = {
     },
     {
       sceneId: "scene_rooftop" as V2SceneId,
+      arcId: "arc_main",
       title: "Rooftop Signal",
+      body: "A locked signal box waits on the rooftop.",
+      isEntry: false,
       choiceCount: 0,
       reachable: false,
       stateDeltaPreview: [],
+    },
+  ],
+  choices: [
+    {
+      choiceId: "choice_archive",
+      sourceSceneId: "scene_opening" as V2SceneId,
+      targetSceneId: "scene_archive" as V2SceneId,
+      label: "Follow the stamped route to the Civic Archive",
+      gates: [{ stateKey: "archive_unlocked", operator: "eq", value: false }],
+      consequences: [{ stateKey: "trust_archivist", operation: "increment", value: 1 }],
+    },
+    {
+      choiceId: "choice_wait",
+      sourceSceneId: "scene_opening" as V2SceneId,
+      targetSceneId: "scene_opening" as V2SceneId,
+      label: "Wait for the Archivist",
+      gates: [],
+      consequences: [],
+    },
+    {
+      choiceId: "choice_enter_archive",
+      sourceSceneId: "scene_archive" as V2SceneId,
+      targetSceneId: "scene_rooftop" as V2SceneId,
+      label: "Climb to the Rooftop Signal",
+      gates: [{ stateKey: "archive_unlocked", operator: "eq", value: true }],
+      consequences: [{ stateKey: "active_lead", operation: "set", value: "rooftop" }],
     },
   ],
   diagnostics: [
@@ -125,18 +186,21 @@ export const v2WebFixtureTypedState = {
       label: "Trust in Archivist",
       type: "number",
       value: 0,
+      defaultValue: 0,
     },
     {
       key: "archive_unlocked",
       label: "Archive Door Unlocked",
       type: "flag",
       value: false,
+      defaultValue: false,
     },
     {
       key: "active_lead",
       label: "Active Lead",
       type: "text",
       value: "ticket",
+      defaultValue: "ticket",
     },
   ],
   preview: [

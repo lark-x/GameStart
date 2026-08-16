@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "id": "20260816-integration-v2-authoring-data-flow",
+  "title": "V2 complete authoring data flow",
+  "module": "integration",
+  "risk": "high",
+  "changeClass": "normal",
+  "status": "approved",
+  "userOutcome": "Creators can create and update story worlds, canon, graph and state data, then observe generated scene and asset candidates through review.",
+  "allowedPaths": [
+    ".ai/modules.json",
+    "apps/web/src/components/ui/Drawer.vue",
+    "apps/web/src/v2/V2Shell.vue",
+    "apps/web/src/v2/adapters/adapter.test.ts",
+    "apps/web/src/v2/adapters/http.ts",
+    "apps/web/src/v2/adapters/index.ts",
+    "apps/web/src/v2/adapters/mock.ts",
+    "apps/web/src/v2/adapters/types.ts",
+    "apps/web/src/v2/components/V2WorkspacePanel.vue",
+    "apps/web/src/v2/components/workspace/CanonWorkspace.vue",
+    "apps/web/src/v2/components/workspace/GraphWorkspace.vue",
+    "apps/web/src/v2/components/workspace/StateWorkspace.vue",
+    "apps/web/src/v2/fixtures/mock-data.ts",
+    "apps/web/src/v2/stores/workspace.test.ts",
+    "apps/web/src/v2/stores/workspace.ts",
+    "apps/web/src/v2/views/V2WorkspaceAreaView.vue",
+    "e2e/v2-authoring-loop.spec.ts",
+    "docs/tasks/20260816-integration-v2-authoring-data-flow.json"
+  ],
+  "forbiddenPaths": [
+    "packages/database/src/v2/**/migrations.ts",
+    "apps/api/src/v2/platform/**",
+    "apps/worker/src/v2/**",
+    "packages/config/**"
+  ],
+  "nonGoals": [
+    "Delete operations",
+    "Database schema migrations",
+    "Real provider acceptance against LLM or ComfyUI"
+  ],
+  "interfaceRequests": [],
+  "acceptanceCommands": [
+    "pnpm check:scope",
+    "pnpm check:boundaries",
+    "pnpm typecheck",
+    "pnpm test",
+    "pnpm test:coverage",
+    "pnpm --filter @living-network/web lint",
+    "pnpm --filter @living-network/web build",
+    "pnpm test:e2e"
+  ],
+  "approval": {
+    "required": true,
+    "confirmed": true,
+    "reference": "user-approved-v2-authoring-data-flow-plan"
+  },
+  "delivery": {
+    "branch": "codex/integration/v2-authoring-data-flow",
+    "baseSha": "7c573d31b42a5c0a4aaeb8902860846d625a3188",
+    "pullRequest": null,
+    "commits": [],
+    "results": []
+  }
+}

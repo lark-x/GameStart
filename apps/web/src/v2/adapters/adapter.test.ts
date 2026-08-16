@@ -143,6 +143,8 @@ test("V2 HTTP adapter drives bootstrap and the complete local creator loop", asy
     if (url.endsWith("/state/variables")) return Response.json([]);
     if (url.endsWith("/state/initial")) return Response.json({ values: {} });
     if (url.endsWith("/candidates/scenes")) return Response.json([]);
+    if (url.includes("/generation/assets/worlds/") && url.endsWith("/candidates")) return Response.json({ candidates: [] });
+    if (url.includes("/generation/assets/worlds/") && url.endsWith("/library")) return Response.json({ assets: [] });
     if (url.endsWith("/releases/preflight")) return Response.json({ valid: true, diagnostics: [] });
     if (method === "POST" && url.endsWith("/releases")) return Response.json({ releaseId: "release_http", version: "1.0.0", sourceRevision: 2, contentHash: "hash", createdAt: "2026-01-01" });
     if (url.endsWith("/releases")) return Response.json([{ releaseId: "release_http", storyWorldId: "world_http", version: "1.0.0", sourceRevision: 2, contentHash: "hash", createdAt: "2026-01-01" }]);
@@ -209,12 +211,14 @@ test("V2 HTTP adapter maps optional snapshot values and player choices", async (
     const url = String(input);
     if (url.endsWith("/health")) return Response.json({ ok: true, version: "v2" });
     if (url.endsWith("/core/worlds")) return Response.json([{ storyWorldId: "world", name: "World", revision: 1 }]);
-    if (url.endsWith("/canon")) return Response.json({ storyWorldId: "world", revision: 1, world: { storyWorldId: "world", name: "World", revision: 1 }, locations: [{ locationId: "loc", name: "Location" }], characters: [{ characterId: "char", name: "Character" }], facts: [{ factId: "fact", text: "Fact", visibility: "creator_only" }], rules: [{ ruleId: "rule", text: "Rule", severity: "guideline" }] });
+    if (url.endsWith("/canon")) return Response.json({ storyWorldId: "world", revision: 1, world: { storyWorldId: "world", name: "World", revision: 1 }, locations: [{ locationId: "loc", name: "Location" }], characters: [{ characterId: "char", name: "Character" }], facts: [{ factId: "fact", text: "Fact", visibility: "creator_only" }], rules: [{ ruleId: "rule", text: "Rule", severity: "guideline" }], timelineEvents: [] });
     if (url.endsWith("/graph")) return Response.json({ arcs: [], scenes: [{ sceneId: "scene", title: "Scene", isEntry: true }], choices: [{ choiceId: "choice", sourceSceneId: "scene", label: "Continue" }] });
     if (url.endsWith("/graph/validation")) return Response.json({ valid: false, diagnostics: [{ code: "WARN", severity: "warning", message: "Warning", sceneId: "scene" }] });
     if (url.endsWith("/state/variables")) return Response.json([{ key: "Flag", valueType: "boolean", defaultValue: false }, { key: "Count", valueType: "number", defaultValue: 0 }, { key: "Name", valueType: "string", defaultValue: "" }]);
     if (url.endsWith("/state/initial")) return Response.json({ values: { Flag: false, Count: 0, Name: "" } });
     if (url.endsWith("/candidates/scenes")) return Response.json([{ candidateId: "candidate", kind: "scene", status: "changes_requested", storyWorldId: "world", baseCanonRevision: 1, payload: { scene: { sceneId: "candidate_scene", title: "Candidate", body: "Body", participantCharacterIds: [] }, choices: [{ label: "Choice" }], validationNotes: ["note"] }, provenance: { source: "llm", contextHash: "context" } }]);
+    if (url.includes("/generation/assets/worlds/") && url.endsWith("/candidates")) return Response.json({ candidates: [] });
+    if (url.includes("/generation/assets/worlds/") && url.endsWith("/library")) return Response.json({ assets: [] });
     if (url.endsWith("/releases/preflight")) return Response.json({ valid: false, diagnostics: [{ code: "BAD", severity: "error", message: "Bad release" }] });
     if (url.endsWith("/releases")) return Response.json([]);
     if (url.includes("/runtime/runs/") && url.endsWith("/scene")) return Response.json(runtime);
@@ -224,8 +228,13 @@ test("V2 HTTP adapter maps optional snapshot values and player choices", async (
   const snapshot = await createV2HttpAdapter({ baseUrl: "http://localhost", fetchImpl }).getSnapshot();
   assert.equal(snapshot.world.facts[0]?.visibility, "creator");
   assert.equal(snapshot.world.rules[0]?.severity, "soft");
+  assert.equal(snapshot.world.timelineEvents.length, 0);
+  assert.equal(snapshot.sceneGraph.arcs.length, 0);
+  assert.equal(snapshot.sceneGraph.choices[0]?.gates.length, 0);
+  assert.equal(snapshot.sceneGraph.choices[0]?.consequences.length, 0);
   assert.equal(snapshot.sceneGraph.diagnostics[0]?.severity, "warning");
   assert.equal(snapshot.typedState.variables[0]?.type, "flag");
+  assert.equal(snapshot.typedState.variables[0]?.defaultValue, false);
   assert.equal(snapshot.candidate?.status, "changes_requested");
   const adapter = createV2HttpAdapter({ baseUrl: "http://localhost", fetchImpl: async (input) => {
     const url = String(input);
@@ -267,6 +276,8 @@ test("V2 http adapter creates a story world and prefers it on the next snapshot"
     if (url.endsWith("/state/variables")) return Response.json([]);
     if (url.endsWith("/state/initial")) return Response.json({ values: {} });
     if (url.endsWith("/candidates/scenes")) return Response.json([]);
+    if (url.includes("/generation/assets/worlds/") && url.endsWith("/candidates")) return Response.json({ candidates: [] });
+    if (url.includes("/generation/assets/worlds/") && url.endsWith("/library")) return Response.json({ assets: [] });
     if (url.endsWith("/releases/preflight")) return Response.json({ valid: true, diagnostics: [] });
     if (url.endsWith("/releases")) return Response.json([]);
     throw new Error(`unhandled ${method} ${url}`);
