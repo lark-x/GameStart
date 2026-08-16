@@ -245,7 +245,9 @@ test("V2 HTTP adapter drives bootstrap and the complete local creator loop", asy
   assert.equal(afterSave.save?.label, "Checkpoint");
   assert.equal((await adapter.restoreSave("save_http")).sceneId, "scene_next");
   assert.equal((await adapter.exportRelease("markdown")).format, "markdown");
-  assert.equal((await adapter.createAssetJob("asset")).jobId, "asset_job");
+  const createdAssetJob = await adapter.createAssetJob("asset");
+  assert.equal(createdAssetJob.jobId, "asset_job");
+  assert.equal(createdAssetJob.readableStatus, "queued");
   assert.equal((await adapter.reviewAssetCandidate({ candidateId: "asset_candidate", action: "approve", reviewer: "creator", reason: "ready" })).status, "approved");
   assert.ok(calls.some((call) => call.url.includes("/api/v2/core/worlds/world%3A")));
 });

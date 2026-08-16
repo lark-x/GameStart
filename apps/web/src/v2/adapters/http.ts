@@ -667,11 +667,13 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
       return {
         jobId: response.job.jobId,
         status: response.job.status,
+        readableStatus: response.job.status === "succeeded" && response.job.candidateId !== undefined ? "candidate-ready" : response.job.status,
         createdAt: response.job.createdAt,
         updatedAt: response.job.updatedAt,
         workflowVersion: response.job.workflowVersion,
         seed: response.job.seed ?? 0,
         promptPreview: response.job.prompt,
+        ...(response.job.candidateId === undefined ? {} : { candidateId: response.job.candidateId }),
         ...(response.job.failureReason === undefined ? {} : { terminalMessage: response.job.failureReason }),
       };
     },
