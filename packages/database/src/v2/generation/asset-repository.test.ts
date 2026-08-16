@@ -127,6 +127,13 @@ test("approves V2 asset candidates with review audit and approved asset facts", 
     });
     assert.equal(releaseAssets.length, 1);
     assert.equal(releaseAssets[0]?.assetId, "asset_review");
+
+    const candidates = await repository.listAssetCandidates(seeded.candidate.storyWorldId);
+    assert.equal(candidates.length, 1);
+    assert.equal(candidates[0]?.candidateId, seeded.candidate.candidateId);
+    const approvedAssets = await repository.listApprovedAssets(seeded.candidate.storyWorldId);
+    assert.equal(approvedAssets.length, 1);
+    assert.equal(approvedAssets[0]?.assetId, "asset_review");
   } finally {
     db.close();
     cleanup();
