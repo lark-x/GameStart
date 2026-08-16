@@ -7,6 +7,10 @@ export const V2ModelCapability = {
 export type V2ModelCapability = (typeof V2ModelCapability)[keyof typeof V2ModelCapability];
 export type V2ModelProtocol = "openai-compatible" | "anthropic";
 export type V2ModelCallStatus = "running" | "success" | "error" | "interrupted";
+export type V2ExternalCapabilityConfiguration = "complete" | "incomplete";
+export type V2ExternalCapabilityBinding = "bound" | "unbound" | "not-applicable";
+export type V2ExternalCapabilityConnection = "untested" | "checking" | "ok" | "failed";
+export type V2ExternalServiceKind = "model" | "comfyui";
 
 export interface V2ModelProfileDto {
   readonly id: string;
@@ -82,6 +86,14 @@ export interface V2SaveImageServiceSettingsRequest {
   readonly baseUrl: string;
   readonly timeoutMs?: number;
   readonly defaultWorkflowVersion?: string;
+}
+
+export interface V2ExternalConnectionCheckDto {
+  readonly service: V2ExternalServiceKind;
+  readonly connection: V2ExternalCapabilityConnection;
+  readonly checkedAt: string;
+  readonly durationMs?: number;
+  readonly errorMessage?: string;
 }
 
 export interface V2AppearanceSettingsDto {
@@ -176,12 +188,22 @@ export type V2ModelCallLogPage = V2Page<V2ModelCallLogDto>;
 export interface V2PlatformCapabilities {
   readonly sceneGeneration: {
     readonly enabled: boolean;
+    readonly configuration: V2ExternalCapabilityConfiguration;
+    readonly binding: V2ExternalCapabilityBinding;
+    readonly connection: V2ExternalCapabilityConnection;
+    readonly lastCheckedAt?: string;
+    readonly errorMessage?: string;
     readonly configured: boolean;
     readonly source: "profile" | "environment" | "none";
     readonly reason?: "disabled_by_environment" | "profile_missing" | "secret_unavailable";
   };
   readonly assetGeneration: {
     readonly enabled: boolean;
+    readonly configuration: V2ExternalCapabilityConfiguration;
+    readonly binding: V2ExternalCapabilityBinding;
+    readonly connection: V2ExternalCapabilityConnection;
+    readonly lastCheckedAt?: string;
+    readonly errorMessage?: string;
     readonly configured: boolean;
     readonly source: "settings" | "environment" | "none";
     readonly reason?: "disabled_by_environment" | "settings_missing";

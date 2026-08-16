@@ -1,5 +1,7 @@
 import type {
   V2AppearanceSettingsDto,
+  V2ExternalConnectionCheckDto,
+  V2ExternalServiceKind,
   V2ImageServiceSettingsDto,
   V2ModelBindingDto,
   V2ModelCallLogDto,
@@ -31,6 +33,8 @@ export interface V2PlatformSettingsRepository {
   saveImageServiceSettings(input: V2SaveImageServiceSettingsRequest): Promise<V2ImageServiceSettingsDto>;
   getAppearanceSettings(): Promise<V2AppearanceSettingsDto>;
   saveAppearanceSettings(input: V2SaveAppearanceSettingsRequest): Promise<V2AppearanceSettingsDto>;
+  getExternalConnectionCheck(service: V2ExternalServiceKind): Promise<V2ExternalConnectionCheckDto | undefined>;
+  saveExternalConnectionCheck(check: V2ExternalConnectionCheckDto): Promise<V2ExternalConnectionCheckDto>;
 }
 
 export interface V2ModelCallLogRepository {

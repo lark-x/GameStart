@@ -4,13 +4,16 @@ import { RouterLink, RouterView, useRoute } from "vue-router";
 import {
   Activity,
   Boxes,
+  BookOpenText,
+  Download,
   FileCheck2,
   GitFork,
   Image as ImageIcon,
   LayoutDashboard,
+  ListChecks,
   Menu,
   PlayCircle,
-  Radio,
+  Send,
   ScrollText,
   Settings2,
   Sparkles,
@@ -34,13 +37,35 @@ interface NavGroup {
 
 const groups: readonly NavGroup[] = [
   {
-    label: "创作工作区",
+    label: "项目",
     items: [
-      { to: "/v2/workspace/canon", label: "故事总览", icon: LayoutDashboard },
-      { to: "/v2/workspace/graph", label: "故事结构", icon: GitFork },
-      { to: "/v2/workspace/review", label: "候选审核", icon: Sparkles },
-      { to: "/v2/workspace/state", label: "状态变量", icon: Activity },
-      { to: "/v2/workspace/assets", label: "素材工作台", icon: ImageIcon },
+      { to: "/v2/workspace/project", label: "项目首页", icon: LayoutDashboard },
+      { to: "/v2/workspace/stories", label: "故事切换", icon: BookOpenText },
+    ],
+  },
+  {
+    label: "人工创作",
+    items: [
+      { to: "/v2/workspace/world", label: "世界设定", icon: Boxes },
+      { to: "/v2/workspace/state", label: "状态与逻辑", icon: Activity },
+      { to: "/v2/workspace/story", label: "故事结构", icon: GitFork },
+      { to: "/v2/workspace/formal-assets", label: "正式素材库", icon: ImageIcon },
+    ],
+  },
+  {
+    label: "AI 场景生成",
+    items: [
+      { to: "/v2/workspace/ai-scene-request", label: "创建请求", icon: Send },
+      { to: "/v2/workspace/ai-scene-jobs", label: "任务状态", icon: Activity },
+      { to: "/v2/workspace/ai-scene-review", label: "场景候选审核", icon: ListChecks },
+    ],
+  },
+  {
+    label: "ComfyUI 素材生成",
+    items: [
+      { to: "/v2/workspace/comfy-request", label: "创建请求", icon: Send },
+      { to: "/v2/workspace/comfy-jobs", label: "任务状态", icon: Activity },
+      { to: "/v2/workspace/comfy-review", label: "素材候选审核", icon: ListChecks },
     ],
   },
   {
@@ -48,22 +73,16 @@ const groups: readonly NavGroup[] = [
     items: [
       { to: "/v2/workspace/release", label: "发布检查", icon: FileCheck2 },
       { to: "/v2/workspace/player", label: "运行预览", icon: PlayCircle },
+      { to: "/v2/workspace/export", label: "导出", icon: Download },
     ],
   },
   {
-    label: "平台配置",
+    label: "外部服务",
     items: [
-      { to: "/v2/settings/models", label: "模型与能力", icon: Settings2 },
-      { to: "/v2/settings/image", label: "图片服务", icon: ImageIcon },
-      { to: "/v2/settings/appearance", label: "外观主题", icon: Boxes },
-    ],
-  },
-  {
-    label: "诊断与自动化",
-    items: [
-      { to: "/v2/diagnostics/model-logs", label: "模型调用日志", icon: ScrollText },
-      { to: "/v2/automation", label: "触发器", icon: Radio },
-      { to: "/v2/workspace/operations", label: "运行状态", icon: Activity },
+      { to: "/v2/services/models", label: "模型服务", icon: Settings2 },
+      { to: "/v2/services/comfyui", label: "ComfyUI 服务", icon: ImageIcon },
+      { to: "/v2/services/logs", label: "调用日志", icon: ScrollText },
+      { to: "/v2/services/runtime", label: "运行状态", icon: Activity },
     ],
   },
 ];
@@ -100,7 +119,7 @@ onMounted(() => {
 
     <aside class="v2-sidebar" :class="{ 'v2-sidebar-open': mobileOpen }" aria-label="平台导航">
       <div class="v2-sidebar-head">
-        <RouterLink to="/v2/workspace/canon" class="v2-brand" aria-label="返回故事总览">
+        <RouterLink to="/v2/workspace/project" class="v2-brand" aria-label="返回项目首页">
           <span class="v2-brand-mark"><Sparkles :size="18" aria-hidden="true" /></span>
           <span>
             <strong>Living Network</strong>

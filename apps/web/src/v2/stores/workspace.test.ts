@@ -42,6 +42,37 @@ test("V2 workspace store exposes adapter failures", async () => {
   assert.equal(store.error, "fixture failed");
 });
 
+test("V2 workspace store clears stale active story when no worlds exist", async () => {
+  setActivePinia(createPinia());
+  const store = useV2WorkspaceStore();
+  const base = createV2MockAdapter();
+  store.setAdapter(base);
+  await store.createStoryWorld({ name: "Temporary story" });
+  assert.equal(store.activeStoryWorldId, "world:mock-1");
+
+  let snapshotRead = false;
+  const emptyAdapter: V2WorkspaceAdapter = {
+    ...base,
+    async listStoryWorlds() {
+      return [];
+    },
+    async getSnapshot() {
+      snapshotRead = true;
+      throw new Error("snapshot should not be read");
+    },
+  };
+
+  store.setAdapter(emptyAdapter);
+  await store.loadSnapshot();
+
+  assert.equal(snapshotRead, false);
+  assert.equal(store.snapshot, null);
+  assert.equal(store.activeStoryWorldId, null);
+  assert.equal(store.expectedRevision, 0);
+  assert.equal(store.draftWorldName, "");
+  assert.equal(store.draftPremise, "");
+});
+
 test("V2 workspace store previews canon draft with revision guard", async () => {
   setActivePinia(createPinia());
   const store = useV2WorkspaceStore();
@@ -72,6 +103,34 @@ test("V2 workspace store reports stale canon draft revision", async () => {
   assert.equal(store.snapshot?.world.revision, 2);
 });
 
+test("V2 workspace store refreshes entity data on stale revision conflicts", async () => {
+  setActivePinia(createPinia());
+  const store = useV2WorkspaceStore();
+  const base = createV2MockAdapter();
+  const adapter: V2WorkspaceAdapter = {
+    ...base,
+    async createGraphEntity() {
+      await base.updateStoryWorld({
+        storyWorldId: "world_v2_demo",
+        name: "Server Updated World",
+        summary: "Server revision won.",
+        expectedRevision: 2,
+      });
+      throw new V2AdapterError({ code: "STALE_REVISION", message: "Expected revision 2, got 3" });
+    },
+  };
+  store.setAdapter(adapter);
+  await store.loadSnapshot();
+
+  await store.createGraphEntity({ kind: "arc", input: { title: "Local Arc Draft" } });
+
+  assert.match(store.conflict ?? "", /Expected revision 2, got 3/);
+  assert.match(store.error ?? "", /当前输入已保留/);
+  assert.equal(store.snapshot?.world.name, "Server Updated World");
+  assert.equal(store.snapshot?.world.revision, 3);
+  assert.equal(store.expectedRevision, 3);
+});
+
 test("V2 workspace store creates a generation job through the adapter", async () => {
   setActivePinia(createPinia());
   const store = useV2WorkspaceStore();
@@ -99,6 +158,95 @@ test("V2 workspace store applies candidate review result to mock state", async (
   assert.equal(store.snapshot?.candidate.status, "approved");
   assert.equal(store.snapshot?.candidate.reviewReason, "Approved for mock review.");
   assert.equal(store.canReviewCandidate, false);
+});
+
+test("V2 workspace store reloads the real HTTP snapshot after candidate review", async () => {
+  setActivePinia(createPinia());
+  const store = useV2WorkspaceStore();
+  const base = createV2MockAdapter();
+  const pending = await base.getSnapshot();
+  assert.ok(pending.candidate);
+  let snapshotReads = 0;
+  const adapter: V2WorkspaceAdapter = {
+    ...base,
+    mode: "http",
+    async getSnapshot() {
+      snapshotReads += 1;
+      if (snapshotReads === 1) return pending;
+      return {
+        ...pending,
+        world: { ...pending.world, revision: pending.world.revision + 1 },
+        sceneGraph: {
+          ...pending.sceneGraph,
+          scenes: [...pending.sceneGraph.scenes, {
+            sceneId: pending.candidate.payload.scene.sceneId,
+            title: pending.candidate.payload.scene.title,
+            body: pending.candidate.payload.scene.body,
+            isEntry: false,
+            choiceCount: pending.candidate.payload.choices.length,
+            reachable: true,
+            stateDeltaPreview: [],
+          }],
+        },
+        candidate: { ...pending.candidate, status: "approved" as const },
+      };
+    },
+    async reviewCandidate(request) {
+      return { status: "approved", reviewedAt: "2026-08-16T00:00:00.000Z", reviewReason: request.reason };
+    },
+  };
+  store.setAdapter(adapter);
+  await store.loadSnapshot();
+
+  await store.reviewCandidate("approve");
+
+  assert.equal(snapshotReads, 2);
+  assert.equal(store.snapshot?.world.revision, pending.world.revision + 1);
+  assert.ok(store.snapshot?.sceneGraph.scenes.some((scene) => scene.sceneId === pending.candidate?.payload.scene.sceneId));
+});
+
+test("V2 workspace store resumes persisted generation polling after refresh", async () => {
+  mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  try {
+    setActivePinia(createPinia());
+    const store = useV2WorkspaceStore();
+    const base = createV2MockAdapter();
+    const snapshot = await base.getSnapshot();
+    let jobReads = 0;
+    const queuedJob = {
+      jobId: "job_persisted",
+      status: "queued" as const,
+      createdAt: "2026-08-16T00:00:00.000Z",
+      updatedAt: "2026-08-16T00:00:00.000Z",
+      promptPreview: "Persisted prompt",
+    };
+    store.setAdapter({
+      ...base,
+      mode: "http",
+      async getSnapshot() {
+        return {
+          ...snapshot,
+          generation: {
+            ...snapshot.generation,
+            job: jobReads === 0 ? queuedJob : { ...queuedJob, status: "failed", terminalMessage: "provider unavailable" },
+          },
+        };
+      },
+      async getSceneGenerationJob() {
+        jobReads += 1;
+        return { ...queuedJob, status: "failed", updatedAt: "2026-08-16T00:00:02.000Z", terminalMessage: "provider unavailable" };
+      },
+    });
+
+    await store.loadSnapshot();
+    await mock.timers.tick(2000);
+
+    assert.equal(jobReads, 1);
+    assert.equal(store.snapshot?.generation.job?.status, "failed");
+    assert.equal(store.snapshot?.generation.job?.terminalMessage, "provider unavailable");
+  } finally {
+    mock.timers.reset();
+  }
 });
 
 test("V2 workspace store handles release creation and export", async () => {

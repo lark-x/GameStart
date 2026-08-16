@@ -48,13 +48,17 @@ test("V2 release/runtime SQLite repository stores immutable releases, runs, and 
         currentSceneId: run.currentSceneId,
         stateValues: run.stateValues,
         choiceHistory: run.choiceHistory,
+        label: "First checkpoint",
       });
     });
 
     await unit.withReleaseRuntimeTransaction(async ({ releaseRuntime }) => {
       assert.equal((await releaseRuntime.getRelease("release_a" as never))?.version, "1.0.0");
       assert.equal((await releaseRuntime.getRun("run_a" as never))?.currentSceneId, "scene_entry");
-      assert.equal((await releaseRuntime.getSave("save_a" as never))?.releaseVersion, "1.0.0");
+      assert.equal((await releaseRuntime.getSave("save_a" as never))?.label, "First checkpoint");
+      const saves = await releaseRuntime.listSavesByStoryWorld("world_release" as never, 10);
+      assert.equal(saves.length, 1);
+      assert.equal(saves[0]?.saveId, "save_a");
     });
 
     revertV2Migrations(db);

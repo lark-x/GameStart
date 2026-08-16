@@ -24,7 +24,7 @@ test("V2 real-service lane applies SQLite migrations and round-trips a BullMQ jo
   try {
     applyV2Migrations(db);
     const applied = db.prepare("SELECT COUNT(*) AS count FROM v2_schema_migrations").get() as { count: number };
-    assert.equal(applied.count, 9);
+    assert.equal(applied.count, 12);
     await queue.enqueue("real-service-task", { value: 42 }, { attempts: 1 });
     await Promise.race([
       completed,

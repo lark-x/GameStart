@@ -283,6 +283,7 @@ export const v2CoreReleaseRuntimeMigration: V2SqliteMigration = {
         current_scene_id TEXT NOT NULL,
         state_json TEXT NOT NULL,
         choice_history_json TEXT NOT NULL,
+        label TEXT,
         created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
         FOREIGN KEY (run_id, release_id, release_version)
           REFERENCES v2_runtime_runs(run_id, release_id, release_version)
@@ -292,10 +293,12 @@ export const v2CoreReleaseRuntimeMigration: V2SqliteMigration = {
       CREATE INDEX v2_releases_world_idx ON v2_releases(story_world_id, created_at);
       CREATE INDEX v2_runtime_runs_release_idx ON v2_runtime_runs(release_id, updated_at);
       CREATE INDEX v2_runtime_saves_run_idx ON v2_runtime_saves(run_id, created_at);
+      CREATE INDEX v2_runtime_saves_release_idx ON v2_runtime_saves(release_id, created_at);
     `);
   },
   down: (db) => {
     db.exec(`
+      DROP INDEX IF EXISTS v2_runtime_saves_release_idx;
       DROP INDEX IF EXISTS v2_runtime_saves_run_idx;
       DROP INDEX IF EXISTS v2_runtime_runs_release_idx;
       DROP INDEX IF EXISTS v2_releases_world_idx;
@@ -306,9 +309,28 @@ export const v2CoreReleaseRuntimeMigration: V2SqliteMigration = {
   },
 };
 
+export const v2RuntimeSaveLabelMigration: V2SqliteMigration = {
+  id: "0005_v2_runtime_save_labels",
+  up: (db) => {
+    const columns = db.prepare("PRAGMA table_info(v2_runtime_saves)").all() as readonly Record<string, unknown>[];
+    if (!columns.some((column) => column.name === "label")) {
+      db.exec("ALTER TABLE v2_runtime_saves ADD COLUMN label TEXT;");
+    }
+    db.exec("CREATE INDEX IF NOT EXISTS v2_runtime_saves_release_idx ON v2_runtime_saves(release_id, created_at);");
+  },
+  down: (db) => {
+    db.exec("DROP INDEX IF EXISTS v2_runtime_saves_release_idx;");
+    const columns = db.prepare("PRAGMA table_info(v2_runtime_saves)").all() as readonly Record<string, unknown>[];
+    if (columns.some((column) => column.name === "label")) {
+      db.exec("ALTER TABLE v2_runtime_saves DROP COLUMN label;");
+    }
+  },
+};
+
 export const v2CoreCanonMigrations = [
   v2CoreCanonMigration,
   v2CoreGraphStateMigration,
   v2CoreCandidateReviewMigration,
   v2CoreReleaseRuntimeMigration,
+  v2RuntimeSaveLabelMigration,
 ] as const;

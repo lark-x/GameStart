@@ -69,7 +69,7 @@ test("V2 core parsers accept the complete public request surface", () => {
   assert.equal(parseCreateReleaseBody({ releaseId: "release", version: "1.0.0", sourceRevision: 1, idempotencyKey: "release" }).version, "1.0.0");
   assert.equal(parseStartRuntimeRunBody({ runId: "run", releaseId: "release", idempotencyKey: "run" }).releaseId, "release");
   assert.equal(parseSubmitRuntimeChoiceBody({ choiceId: "choice", idempotencyKey: "choice" }).choiceId, "choice");
-  assert.equal(parseCreateRuntimeSaveBody({ saveId: "save", idempotencyKey: "save" }).saveId, "save");
+  assert.equal(parseCreateRuntimeSaveBody({ saveId: "save", label: "Checkpoint", idempotencyKey: "save" }).label, "Checkpoint");
   assert.equal(parseLoadRuntimeSaveBody({ runId: "run", idempotencyKey: "load" }).runId, "run");
 });
 

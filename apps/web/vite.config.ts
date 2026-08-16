@@ -25,6 +25,8 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": resolve(root, "src"),
+      "@living-network/contracts/v2": resolve(root, "../../packages/contracts/src/v2/index.ts"),
+      "@living-network/contracts": resolve(root, "../../packages/contracts/src/index.ts"),
     },
   },
   server: {

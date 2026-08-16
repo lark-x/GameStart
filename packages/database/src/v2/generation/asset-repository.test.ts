@@ -5,6 +5,7 @@ import type {
   V2AssetId,
   V2CandidateId,
   V2CreateAssetGenerationJobInput,
+  V2CreateManualAssetInput,
   V2IdempotencyKey,
   V2IsoDateTime,
   V2JobId,
@@ -140,6 +141,42 @@ test("approves V2 asset candidates with review audit and approved asset facts", 
   }
 });
 
+test("creates manual formal assets without asset candidates", async () => {
+  const { db, cleanup } = openV2TempSqliteConnection();
+  try {
+    applyV2Migrations(db, v2GenerationJobMigrations);
+    const repository = new V2SqliteAssetGenerationRepository(db);
+    const input: V2CreateManualAssetInput = {
+      assetId: "asset:manual:station" as V2AssetId,
+      storyWorldId: "world_manual_assets" as V2StoryWorldId,
+      title: "Station Background",
+      mediaRef: "media://local/v2/assets/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png",
+      contentHash: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      originalFilename: "station.png",
+      mimeType: "image/png",
+      byteSize: 1024,
+      createdAt: "2026-08-12T02:15:00.000Z" as V2IsoDateTime,
+    };
+
+    const created = await repository.createManualAsset(input);
+    assert.equal(created.sourceType, "manual");
+    assert.equal(created.candidateId, undefined);
+    assert.equal(created.title, "Station Background");
+    assert.equal(created.originalFilename, "station.png");
+
+    const updated = await repository.createManualAsset({ ...input, title: "Station Background Updated", byteSize: 2048 });
+    assert.equal(updated.title, "Station Background Updated");
+    assert.equal(updated.byteSize, 2048);
+
+    const assets = await repository.listApprovedAssets(input.storyWorldId);
+    assert.equal(assets.length, 1);
+    assert.equal(assets[0]?.sourceType, "manual");
+  } finally {
+    db.close();
+    cleanup();
+  }
+});
+
 test("replays identical V2 asset candidate reviews and rejects conflicts", async () => {
   const { db, cleanup } = openV2TempSqliteConnection();
   try {
@@ -253,6 +290,8 @@ test("creates V2 asset job and dispatch facts atomically", async () => {
     assert.equal(result.job.workflowVersion, "workflow-v1");
     assert.equal(await repository.getAssetJob("missing" as V2JobId), undefined);
     assert.deepEqual(await repository.listAssetJobsByStatus("queued", 10), [result.job]);
+    assert.deepEqual(await repository.listAssetJobsByStoryWorld(result.job.storyWorldId, 10), [result.job]);
+    assert.deepEqual(await repository.listAssetJobsByStoryWorld("world_other" as V2StoryWorldId, 10), []);
     const dispatch = db.prepare("SELECT * FROM v2_asset_generation_dispatches WHERE job_id = ?").get(result.job.jobId) as { status: string } | undefined;
     assert.equal(dispatch?.status, "pending");
   } finally {

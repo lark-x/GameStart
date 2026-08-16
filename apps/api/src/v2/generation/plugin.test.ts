@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { buildV2SceneGenerationProviderRequest } from "@living-network/ai/v2";
 import type {
   V2ApprovedAssetRecord,
   V2AssetCandidateRecord,
@@ -10,6 +11,7 @@ import type {
   V2CharacterId,
   V2CandidateId,
   V2CreateAssetGenerationJobInput,
+  V2CreateManualAssetInput,
   V2CreateSceneGenerationJobInput,
   V2GenerationContextSnapshot,
   V2GenerationDispatchRecord,
@@ -18,9 +20,11 @@ import type {
   V2IsoDateTime,
   V2JobId,
   V2JobStatus,
+  V2PrepareAssetGenerationApiResponse,
   V2ReleaseId,
   V2Revision,
   V2ReviewAssetCandidateInput,
+  V2SceneGenerationPrepareApiResponse,
   V2SceneGenerationJobRecord,
   V2StoryWorldId,
 } from "@living-network/contracts/v2";
@@ -112,6 +116,10 @@ class FakeGenerationJobs implements V2GenerationJobRepository {
 
   public async listJobsByStatus(status: V2JobStatus, limit: number): Promise<readonly V2SceneGenerationJobRecord[]> {
     return [...this.jobs.values()].filter((job) => job.status === status).slice(0, limit);
+  }
+
+  public async listJobsByStoryWorld(storyWorldId: V2StoryWorldId, limit: number): Promise<readonly V2SceneGenerationJobRecord[]> {
+    return [...this.jobs.values()].filter((job) => job.storyWorldId === storyWorldId).slice(0, limit);
   }
 
   public async markJobClaimed(input: { readonly jobId: V2JobId; readonly claimedAt: string; readonly leaseExpiresAt: string }): Promise<V2SceneGenerationJobRecord> {
@@ -249,6 +257,10 @@ class FakeAssetStore implements V2AssetGenerationJobRepository, V2AssetCandidate
 
   public async listAssetJobsByStatus(status: V2JobStatus, limit: number): Promise<readonly V2AssetGenerationJobRecord[]> {
     return [...this.jobs.values()].filter((job) => job.status === status).slice(0, limit);
+  }
+
+  public async listAssetJobsByStoryWorld(storyWorldId: V2StoryWorldId, limit: number): Promise<readonly V2AssetGenerationJobRecord[]> {
+    return [...this.jobs.values()].filter((job) => job.storyWorldId === storyWorldId).slice(0, limit);
   }
 
   public async markAssetJobClaimed(input: { readonly jobId: V2JobId; readonly claimedAt: string; readonly leaseExpiresAt: string }): Promise<V2AssetGenerationJobRecord> {
@@ -393,7 +405,9 @@ class FakeAssetStore implements V2AssetGenerationJobRepository, V2AssetCandidate
       approvedAsset = {
         assetId: updated.payload.asset.assetId,
         storyWorldId: updated.storyWorldId,
+        sourceType: "candidate",
         candidateId: updated.candidateId,
+        title: updated.payload.asset.assetId,
         mediaRef: updated.payload.asset.mediaRef,
         contentHash: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         approvedAt: input.reviewedAt,
@@ -408,6 +422,23 @@ class FakeAssetStore implements V2AssetGenerationJobRepository, V2AssetCandidate
       inserted: true,
       ...(approvedAsset === undefined ? {} : { approvedAsset }),
     };
+  }
+
+  public async createManualAsset(input: V2CreateManualAssetInput): Promise<V2ApprovedAssetRecord> {
+    const asset: V2ApprovedAssetRecord = {
+      assetId: input.assetId,
+      storyWorldId: input.storyWorldId,
+      sourceType: "manual",
+      title: input.title,
+      mediaRef: input.mediaRef,
+      contentHash: input.contentHash,
+      originalFilename: input.originalFilename,
+      mimeType: input.mimeType,
+      byteSize: input.byteSize,
+      approvedAt: input.createdAt,
+    };
+    this.approvedAssets.set(asset.assetId, asset);
+    return asset;
   }
 
   public async getApprovedAsset(input: { readonly storyWorldId: V2StoryWorldId; readonly assetId: V2AssetId }): Promise<V2ApprovedAssetRef | undefined> {
@@ -533,6 +564,32 @@ test("V2 generation context preview reads canon snapshot for the requested revis
   }
 });
 
+test("V2 scene prepare returns the shared model request preview", async () => {
+  const { app } = createApp();
+  await app.ready();
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v2/generation/scene/prepare",
+      payload: {
+        storyWorldId: "world_generation",
+        baseCanonRevision: 7,
+        prompt: "Write the bridge scene.",
+        tokenBudget: 512,
+      },
+    });
+    assert.equal(response.statusCode, 200);
+    const body = response.json() as V2SceneGenerationPrepareApiResponse;
+    const providerRequest = buildV2SceneGenerationProviderRequest({ context: body.context });
+    assert.equal(body.request.responseFormat, providerRequest.responseFormat);
+    assert.equal(body.request.temperature, providerRequest.temperature);
+    assert.equal(body.request.maxTokens, providerRequest.maxTokens);
+    assert.deepEqual(body.request.messages, providerRequest.messages);
+  } finally {
+    await app.close();
+  }
+});
+
 test("V2 generation API creates, replays, reads, and cancels scene jobs", async () => {
   const { app, jobs } = createApp();
   await app.ready();
@@ -578,6 +635,13 @@ test("V2 generation API creates, replays, reads, and cancels scene jobs", async 
     assert.equal(read.statusCode, 200);
     assert.equal((read.json() as { job: V2SceneGenerationJobRecord }).job.jobId, created.job.jobId);
 
+    const list = await app.inject({
+      method: "GET",
+      url: "/api/v2/generation/worlds/world_generation/jobs",
+    });
+    assert.equal(list.statusCode, 200);
+    assert.deepEqual((list.json() as { jobs: V2SceneGenerationJobRecord[] }).jobs.map((job) => job.jobId), [created.job.jobId]);
+
     const cancel = await app.inject({
       method: "POST",
       url: `/api/v2/generation/jobs/${encodeURIComponent(created.job.jobId)}/cancel`,
@@ -612,6 +676,40 @@ test("V2 generation API reports validation and missing job errors", async () => 
       url: "/api/v2/generation/jobs/job%3Amissing",
     });
     assert.equal(missing.statusCode, 404);
+  } finally {
+    await app.close();
+  }
+});
+
+test("V2 asset API prepares the final ComfyUI payload for preview", async () => {
+  const { app } = createApp();
+  await app.ready();
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v2/generation/assets/prepare",
+      payload: {
+        storyWorldId: "world_generation",
+        idempotencyKey: "idem-asset-preview",
+        prompt: "Generate bridge key art.",
+        workflowVersion: "workflow-v1",
+        workflow: { "1": { class_type: "KSampler" } },
+        negativePrompt: "low quality",
+        seed: 42,
+      },
+    });
+    assert.equal(response.statusCode, 200);
+    const prepared = response.json() as V2PrepareAssetGenerationApiResponse;
+    assert.equal(prepared.request.idempotencyKey, "idem-asset-preview");
+    assert.equal(prepared.request.prompt, "Generate bridge key art.");
+    assert.equal(prepared.jobId.startsWith("job:asset:"), true);
+    assert.deepEqual(prepared.comfyUiPayload.prompt, { "1": { class_type: "KSampler" } });
+    assert.equal(prepared.comfyUiPayload.client_id, "living-network-worker");
+    assert.equal(prepared.comfyUiPayload.extra_data.living_network_job_id, prepared.jobId);
+    assert.equal(prepared.comfyUiPayload.extra_data.workflow_version, "workflow-v1");
+    assert.equal(prepared.comfyUiPayload.extra_data.prompt, "Generate bridge key art.");
+    assert.equal(prepared.comfyUiPayload.extra_data.negative_prompt, "low quality");
+    assert.equal(prepared.comfyUiPayload.extra_data.seed, 42);
   } finally {
     await app.close();
   }
@@ -660,6 +758,13 @@ test("V2 asset API creates, replays, reads, and cancels asset jobs", async () =>
     });
     assert.equal(read.statusCode, 200);
     assert.equal((read.json() as { job: V2AssetGenerationJobRecord }).job.jobId, created.job.jobId);
+
+    const list = await app.inject({
+      method: "GET",
+      url: "/api/v2/generation/assets/worlds/world_generation/jobs",
+    });
+    assert.equal(list.statusCode, 200);
+    assert.deepEqual((list.json() as { jobs: V2AssetGenerationJobRecord[] }).jobs.map((job) => job.jobId), [created.job.jobId]);
 
     const cancel = await app.inject({
       method: "POST",

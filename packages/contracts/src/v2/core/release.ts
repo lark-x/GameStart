@@ -1,5 +1,6 @@
 import type {
   V2IdempotencyKey,
+  V2ReleaseBlockerDto,
   V2ReleaseId,
   V2Revision,
   V2StoryWorldId,
@@ -23,6 +24,7 @@ export interface V2ReleaseManifestDto {
 export interface V2ReleasePreflightDto {
   readonly valid: boolean;
   readonly diagnostics: readonly V2GraphDiagnosticDto[];
+  readonly blockers: readonly V2ReleaseBlockerDto[];
 }
 
 export interface V2CreateReleaseRequest {

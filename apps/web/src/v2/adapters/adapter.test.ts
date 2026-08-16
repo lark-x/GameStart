@@ -5,6 +5,28 @@ import { createV2HttpAdapter, v2MediaRefToUrl } from "./http.ts";
 import { createV2MockAdapter } from "./mock.ts";
 import { V2AdapterError } from "./types.ts";
 
+function installLocalStorageFixture(initial: Readonly<Record<string, string>> = {}) {
+  const values = new Map(Object.entries(initial));
+  const globalWithWindow = globalThis as typeof globalThis & {
+    window?: { localStorage: Pick<Storage, "getItem" | "setItem" | "removeItem"> };
+  };
+  const previousWindow = globalWithWindow.window;
+  globalWithWindow.window = {
+    localStorage: {
+      getItem: (key) => values.get(key) ?? null,
+      setItem: (key, value) => values.set(key, value),
+      removeItem: (key) => { values.delete(key); },
+    },
+  };
+  return {
+    values,
+    restore: () => {
+      if (previousWindow === undefined) delete globalWithWindow.window;
+      else globalWithWindow.window = previousWindow;
+    },
+  };
+}
+
 test("V2 mock adapter returns typed Gate 0 snapshot data", async () => {
   const snapshot = await createV2MockAdapter().getSnapshot();
 
@@ -143,11 +165,23 @@ test("V2 HTTP adapter drives bootstrap and the complete local creator loop", asy
     if (url.endsWith("/state/variables")) return Response.json([]);
     if (url.endsWith("/state/initial")) return Response.json({ values: {} });
     if (url.endsWith("/candidates/scenes")) return Response.json([]);
+    if (url.includes("/generation/worlds/") && url.endsWith("/jobs")) return Response.json({ jobs: [{
+      jobId: "job_scene_persisted", storyWorldId: "world_http", kind: "scene", status: "failed",
+      idempotencyKey: "scene-persisted", baseCanonRevision: 2, contextHash: "context-persisted",
+      context: { storyWorldId: "world_http", baseCanonRevision: 2, requestedAt: "2026-01-01", prompt: "persisted prompt", promptPreview: "persisted prompt", tokenBudget: 512, contextHash: "context-persisted", sourceFactIds: [], sourceCharacterIds: [], sourceSceneIds: [], facts: [], characters: [], scenes: [] },
+      prompt: "persisted prompt", attempts: 1, maxAttempts: 1, createdAt: "2026-01-01", updatedAt: "2026-01-02", failureReason: "provider unavailable",
+    }] });
+    if (url.includes("/generation/assets/worlds/") && url.endsWith("/jobs")) return Response.json({ jobs: [{
+      jobId: "asset_job_persisted", storyWorldId: "world_http", status: "succeeded", idempotencyKey: "asset-persisted",
+      prompt: "persisted asset", workflowVersion: "workflow-v1", workflow: {}, seed: 7, attempts: 0, maxAttempts: 3,
+      createdAt: "2026-01-01", updatedAt: "2026-01-02", candidateId: "asset_candidate_persisted",
+    }] });
     if (url.includes("/generation/assets/worlds/") && url.endsWith("/candidates")) return Response.json({ candidates: [] });
     if (url.includes("/generation/assets/worlds/") && url.endsWith("/library")) return Response.json({ assets: [] });
-    if (url.endsWith("/releases/preflight")) return Response.json({ valid: true, diagnostics: [] });
+    if (url.endsWith("/releases/preflight")) return Response.json({ valid: true, diagnostics: [], blockers: [] });
     if (method === "POST" && url.endsWith("/releases")) return Response.json({ releaseId: "release_http", version: "1.0.0", sourceRevision: 2, contentHash: "hash", createdAt: "2026-01-01" });
     if (url.endsWith("/releases")) return Response.json([{ releaseId: "release_http", storyWorldId: "world_http", version: "1.0.0", sourceRevision: 2, contentHash: "hash", createdAt: "2026-01-01" }]);
+    if (url.endsWith("/runtime/saves")) return Response.json([{ saveId: "save_http", runId: "run_http", releaseId: "release_http", releaseVersion: "1.0.0", currentSceneId: "scene_next", label: "Checkpoint", stateValues: {}, choiceHistory: [], createdAt: "2026-01-01" }]);
     if (method === "POST" && url.endsWith("/generation/jobs/scene")) return Response.json({ job: { jobId: "job_scene", status: "queued", createdAt: "2026-01-01", updatedAt: "2026-01-01", prompt: "prompt", contextHash: "hash", attempts: 0, maxAttempts: 3 } });
     if (method === "POST" && url.includes("/candidates/scenes/") && url.endsWith("/review")) return Response.json({ revision: 3, candidate: { status: "approved", reviewedAt: "2026-01-01", reviewReason: "ok" } });
     if (method === "POST" && url.endsWith("/runtime/runs")) return Response.json(runtime);
@@ -157,7 +191,20 @@ test("V2 HTTP adapter drives bootstrap and the complete local creator loop", asy
     if (method === "POST" && url.includes("/load")) return Response.json(runtime);
     if (url.includes("/core/releases/") && url.endsWith("/export")) return Response.json({ json: { releaseId: "release_http" }, markdown: "# HTTP World" });
     if (method === "POST" && url.endsWith("/generation/assets/jobs")) return Response.json({ job: { jobId: "asset_job", status: "queued", createdAt: "2026-01-01", updatedAt: "2026-01-01", workflowVersion: "local-default@1", seed: 0, prompt: "asset" } });
-    if (method === "POST" && url.includes("/generation/assets/candidates/") && url.endsWith("/review")) return Response.json({ candidate: { status: "approved" }, review: { reviewedAt: "2026-01-01", reason: "ready" }, approvedAsset: { assetId: "asset_http", mediaRef: `media://local/v2/assets/${"a".repeat(64)}.png` } });
+    if (method === "POST" && url.includes("/generation/assets/candidates/") && url.endsWith("/review")) return Response.json({
+      candidate: { status: "approved" },
+      review: { reviewedAt: "2026-01-01", reason: "ready" },
+      approvedAsset: {
+        assetId: "asset_http",
+        storyWorldId: "world_http",
+        sourceType: "candidate",
+        candidateId: "candidate_http",
+        title: "HTTP Asset",
+        mediaRef: `media://local/v2/assets/${"a".repeat(64)}.png`,
+        contentHash: `sha256:${"a".repeat(64)}`,
+        approvedAt: "2026-01-01",
+      },
+    });
     if (url.includes("/runtime/saves/") && method === "GET") return Response.json({ saveId: "save_http", runId: "run_http", releaseVersion: "1.0.0", currentSceneId: "scene_next", createdAt: "2026-01-01" });
     throw new Error(`unhandled ${method} ${url} ${JSON.stringify(body)}`);
   };
@@ -174,20 +221,84 @@ test("V2 HTTP adapter drives bootstrap and the complete local creator loop", asy
   await adapter.bootstrapWorkspace();
   const snapshot = await adapter.getSnapshot();
   assert.equal(snapshot.world.storyWorldId, "world_http");
+  assert.equal(snapshot.generation.job?.jobId, "job_scene_persisted");
+  assert.equal(snapshot.generation.job?.status, "failed");
+  assert.equal(snapshot.generation.job?.terminalMessage, "provider unavailable");
+  assert.equal(snapshot.assets.job?.jobId, "asset_job_persisted");
+  assert.equal(snapshot.assets.job?.status, "succeeded");
+  assert.equal(snapshot.assets.prompt, "persisted asset");
   const job = await adapter.createSceneGenerationJob({ storyWorldId: "world_http", baseCanonRevision: 2, prompt: "prompt", idempotencyKey: "scene-idem" });
   assert.equal(job.job.jobId, "job_scene");
   assert.equal((await adapter.reviewCandidate({ candidateId: "candidate", action: "approve", reviewer: "creator", reason: "ok" })).status, "approved");
+  const reviewBody = calls.find((call) => call.url.endsWith("/candidates/scenes/candidate/review"))?.body as Record<string, unknown>;
+  assert.deepEqual(Object.keys(reviewBody).sort(), ["action", "expectedRevision", "idempotencyKey", "reason", "reviewer"]);
+  assert.equal(reviewBody.action, "approve");
+  assert.equal(reviewBody.expectedRevision, 2);
   assert.equal((await adapter.createRelease()).version, "1.0.0");
   assert.equal((await adapter.startRun()).run.runId, "run_http");
   assert.equal((await adapter.submitChoice("choice")).sceneId, "scene_next");
   assert.equal((await adapter.saveRun("Checkpoint")).saveId, "save_http");
+  const saveBody = calls.find((call) => call.url.endsWith("/runtime/runs/run_http/saves"))?.body as Record<string, unknown>;
+  assert.equal(saveBody.label, "Checkpoint");
   const afterSave = await adapter.getSnapshot();
   assert.equal(afterSave.save?.saveId, "save_http");
+  assert.equal(afterSave.save?.label, "Checkpoint");
   assert.equal((await adapter.restoreSave("save_http")).sceneId, "scene_next");
   assert.equal((await adapter.exportRelease("markdown")).format, "markdown");
-  assert.equal((await adapter.createAssetJob("asset")).jobId, "asset_job");
+  const createdAssetJob = await adapter.createAssetJob("asset");
+  assert.equal(createdAssetJob.jobId, "asset_job");
+  assert.equal(createdAssetJob.readableStatus, "queued");
   assert.equal((await adapter.reviewAssetCandidate({ candidateId: "asset_candidate", action: "approve", reviewer: "creator", reason: "ready" })).status, "approved");
   assert.ok(calls.some((call) => call.url.includes("/api/v2/core/worlds/world%3A")));
+});
+
+test("V2 HTTP adapter restores runtime session ids after browser refresh", async () => {
+  const storage = installLocalStorageFixture({
+    "living-network-v2-runtime:world": JSON.stringify({
+      releaseId: "release",
+      releaseVersion: "1.0.0",
+      runId: "run",
+      saveId: "save",
+      saveLabel: "Browser checkpoint",
+    }),
+  });
+  try {
+    const runtime = {
+      run: { runId: "run", releaseId: "release", releaseVersion: "1.0.0", currentSceneId: "scene", stateValues: {}, choiceHistory: ["choice"] },
+      scene: { sceneId: "scene", title: "Restored Scene", body: "Restored body", isEntry: true },
+      availableChoices: [],
+    };
+    const fetchImpl = async (input: RequestInfo | URL): Promise<Response> => {
+      const url = String(input);
+      if (url.endsWith("/health")) return Response.json({ ok: true, version: "v2" });
+      if (url.endsWith("/core/worlds")) return Response.json([{ storyWorldId: "world", name: "World", revision: 1 }]);
+      if (url.endsWith("/canon")) return Response.json({ storyWorldId: "world", revision: 1, world: { storyWorldId: "world", name: "World", revision: 1 }, locations: [], characters: [], facts: [], rules: [], timelineEvents: [] });
+      if (url.endsWith("/graph")) return Response.json({ arcs: [], scenes: [{ sceneId: "scene", title: "Restored Scene", isEntry: true }], choices: [] });
+      if (url.endsWith("/graph/validation")) return Response.json({ valid: true, diagnostics: [] });
+      if (url.endsWith("/state/variables")) return Response.json([]);
+      if (url.endsWith("/state/initial")) return Response.json({ values: {} });
+      if (url.endsWith("/candidates/scenes")) return Response.json([]);
+      if (url.includes("/generation/worlds/") && url.endsWith("/jobs")) return Response.json({ jobs: [] });
+      if (url.includes("/generation/assets/worlds/") && url.endsWith("/jobs")) return Response.json({ jobs: [] });
+      if (url.includes("/generation/assets/worlds/") && url.endsWith("/candidates")) return Response.json({ candidates: [] });
+      if (url.includes("/generation/assets/worlds/") && url.endsWith("/library")) return Response.json({ assets: [] });
+      if (url.endsWith("/releases/preflight")) return Response.json({ valid: true, diagnostics: [], blockers: [] });
+      if (url.endsWith("/releases")) return Response.json([{ releaseId: "release", storyWorldId: "world", version: "1.0.0", sourceRevision: 1, contentHash: "hash", createdAt: "2026-01-01" }]);
+      if (url.endsWith("/runtime/saves")) return Response.json([{ saveId: "save", runId: "run", releaseId: "release", releaseVersion: "1.0.0", currentSceneId: "scene", label: "Server checkpoint", stateValues: {}, choiceHistory: ["choice"], createdAt: "2026-01-01" }]);
+      if (url.includes("/runtime/runs/run/scene")) return Response.json(runtime);
+      if (url.includes("/runtime/saves/save")) return Response.json({ saveId: "save", runId: "run", releaseVersion: "1.0.0", currentSceneId: "scene", createdAt: "2026-01-01" });
+      throw new Error(`unhandled ${url}`);
+    };
+
+    const snapshot = await createV2HttpAdapter({ baseUrl: "http://localhost", fetchImpl }).getSnapshot("world");
+    assert.equal(snapshot.releasePackage?.releaseId, "release");
+    assert.equal(snapshot.run?.runId, "run");
+    assert.equal(snapshot.save?.saveId, "save");
+    assert.equal(snapshot.save?.label, "Server checkpoint");
+    assert.equal(snapshot.player?.title, "Restored Scene");
+  } finally {
+    storage.restore();
+  }
 });
 
 test("V2 HTTP adapter requires the correct operation order", async () => {
@@ -217,10 +328,28 @@ test("V2 HTTP adapter maps optional snapshot values and player choices", async (
     if (url.endsWith("/state/variables")) return Response.json([{ key: "Flag", valueType: "boolean", defaultValue: false }, { key: "Count", valueType: "number", defaultValue: 0 }, { key: "Name", valueType: "string", defaultValue: "" }]);
     if (url.endsWith("/state/initial")) return Response.json({ values: { Flag: false, Count: 0, Name: "" } });
     if (url.endsWith("/candidates/scenes")) return Response.json([{ candidateId: "candidate", kind: "scene", status: "changes_requested", storyWorldId: "world", baseCanonRevision: 1, payload: { scene: { sceneId: "candidate_scene", title: "Candidate", body: "Body", participantCharacterIds: [] }, choices: [{ label: "Choice" }], validationNotes: ["note"] }, provenance: { source: "llm", contextHash: "context" } }]);
+    if (url.includes("/generation/worlds/") && url.endsWith("/jobs")) return Response.json({ jobs: [{
+      jobId: "job_scene_done",
+      storyWorldId: "world",
+      kind: "scene",
+      status: "succeeded",
+      idempotencyKey: "job-scene-done",
+      baseCanonRevision: 1,
+      contextHash: "context",
+      context: { storyWorldId: "world", baseCanonRevision: 1, requestedAt: "2026-01-01", prompt: "Generate scene", promptPreview: "Generate scene", tokenBudget: 512, contextHash: "context", sourceFactIds: [], sourceCharacterIds: [], sourceSceneIds: [], facts: [], characters: [], scenes: [] },
+      prompt: "Generate scene",
+      attempts: 1,
+      maxAttempts: 3,
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+      candidateId: "candidate",
+    }] });
+    if (url.includes("/generation/assets/worlds/") && url.endsWith("/jobs")) return Response.json({ jobs: [] });
     if (url.includes("/generation/assets/worlds/") && url.endsWith("/candidates")) return Response.json({ candidates: [] });
     if (url.includes("/generation/assets/worlds/") && url.endsWith("/library")) return Response.json({ assets: [] });
-    if (url.endsWith("/releases/preflight")) return Response.json({ valid: false, diagnostics: [{ code: "BAD", severity: "error", message: "Bad release" }] });
+    if (url.endsWith("/releases/preflight")) return Response.json({ valid: false, diagnostics: [{ code: "BAD", severity: "error", message: "Bad release" }], blockers: [{ code: "BAD", message: "Bad release", targetPage: "story" }] });
     if (url.endsWith("/releases")) return Response.json([]);
+    if (url.endsWith("/runtime/saves")) return Response.json([]);
     if (url.includes("/runtime/runs/") && url.endsWith("/scene")) return Response.json(runtime);
     if (url.includes("/runtime/saves/") && url.endsWith("/save")) return Response.json({ saveId: "save", runId: "run", releaseVersion: "1.0.0", currentSceneId: "scene", createdAt: "2026-01-01" });
     return Response.json({}, { status: 404 });
@@ -236,6 +365,9 @@ test("V2 HTTP adapter maps optional snapshot values and player choices", async (
   assert.equal(snapshot.typedState.variables[0]?.type, "flag");
   assert.equal(snapshot.typedState.variables[0]?.defaultValue, false);
   assert.equal(snapshot.candidate?.status, "changes_requested");
+  assert.equal(snapshot.generation.job?.readableStatus, "candidate-ready");
+  assert.equal(snapshot.generation.job?.candidateId, "candidate");
+  assert.equal(snapshot.generation.diff.title, "Candidate");
   const adapter = createV2HttpAdapter({ baseUrl: "http://localhost", fetchImpl: async (input) => {
     const url = String(input);
     return url.includes("/runtime/runs/") ? Response.json(runtime) : fetchImpl(input);
@@ -329,10 +461,13 @@ test("V2 http adapter creates a story world and prefers it on the next snapshot"
     if (url.endsWith("/state/variables")) return Response.json([]);
     if (url.endsWith("/state/initial")) return Response.json({ values: {} });
     if (url.endsWith("/candidates/scenes")) return Response.json([]);
+    if (url.includes("/generation/worlds/") && url.endsWith("/jobs")) return Response.json({ jobs: [] });
+    if (url.includes("/generation/assets/worlds/") && url.endsWith("/jobs")) return Response.json({ jobs: [] });
     if (url.includes("/generation/assets/worlds/") && url.endsWith("/candidates")) return Response.json({ candidates: [] });
     if (url.includes("/generation/assets/worlds/") && url.endsWith("/library")) return Response.json({ assets: [] });
-    if (url.endsWith("/releases/preflight")) return Response.json({ valid: true, diagnostics: [] });
+    if (url.endsWith("/releases/preflight")) return Response.json({ valid: true, diagnostics: [], blockers: [] });
     if (url.endsWith("/releases")) return Response.json([]);
+    if (url.endsWith("/runtime/saves")) return Response.json([]);
     throw new Error(`unhandled ${method} ${url}`);
   };
 
@@ -378,8 +513,11 @@ test("V2 HTTP adapter covers authoring CRUD and optional asset/timeline mapping"
     if (url.endsWith("/state/variables")) return Response.json([{ key: "flag", valueType: "boolean", defaultValue: false, createdAt: "2026-01-01" }]);
     if (url.endsWith("/state/initial")) return Response.json({ values: { flag: false } });
     if (url.endsWith("/candidates/scenes")) return Response.json([]);
-    if (url.endsWith("/releases/preflight")) return Response.json({ valid: true, diagnostics: [] });
+    if (url.includes("/generation/worlds/") && url.endsWith("/jobs")) return Response.json({ jobs: [] });
+    if (url.includes("/generation/assets/worlds/") && url.endsWith("/jobs")) return Response.json({ jobs: [] });
+    if (url.endsWith("/releases/preflight")) return Response.json({ valid: true, diagnostics: [], blockers: [] });
     if (url.endsWith("/releases")) return Response.json([]);
+    if (url.endsWith("/runtime/saves")) return Response.json([]);
     if (url.includes("/generation/assets/worlds/") && url.endsWith("/candidates")) return Response.json({
       candidates: [{
         candidateId: "asset_candidate", status: "pending", payload: { asset: { prompt: "Prompt", mediaRef: `media://local/v2/assets/${assetHash}.png`, sourceJobId: "job", workflowVersion: "v1" }, validationNotes: ["ok"] },

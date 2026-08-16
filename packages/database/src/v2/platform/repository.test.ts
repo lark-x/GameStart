@@ -49,6 +49,26 @@ test("V2 platform repository persists profiles, bindings, and singleton settings
     });
     const appearance = await repository.saveAppearanceSettings({ themeId: "ocean" });
     assert.equal(appearance.themeId, "ocean");
+    assert.equal(await repository.getExternalConnectionCheck("comfyui"), undefined);
+    assert.deepEqual(await repository.saveExternalConnectionCheck({
+      service: "comfyui",
+      connection: "failed",
+      checkedAt: "2026-08-14T10:00:01.000Z",
+      durationMs: 25,
+      errorMessage: "connection refused",
+    }), {
+      service: "comfyui",
+      connection: "failed",
+      checkedAt: "2026-08-14T10:00:01.000Z",
+      durationMs: 25,
+      errorMessage: "connection refused",
+    });
+    assert.equal((await repository.saveExternalConnectionCheck({
+      service: "comfyui",
+      connection: "ok",
+      checkedAt: "2026-08-14T10:00:02.000Z",
+      durationMs: 10,
+    })).connection, "ok");
 
     await repository.clearModelBinding("scene_generation");
     assert.equal(await repository.getModelBinding("scene_generation"), undefined);

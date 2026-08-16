@@ -66,6 +66,7 @@
         "integration"
       ],
       "ownedPaths": [
+        "apps/api/src/v2/assets/**",
         "apps/api/src/v2/generation/**",
         "apps/worker/src/v2/asset-generation-worker*.ts",
         "apps/worker/src/v2/dynamic-comfyui-client.ts",
@@ -88,6 +89,7 @@
       ],
       "ownedPaths": [
         "apps/web/src/v2/views/V2AppearanceSettingsView.vue",
+        "apps/web/src/v2/views/V2RuntimeStatusView.vue",
         "apps/web/src/v2/views/platform.ts",
         "packages/ports/src/v2/platform/**",
         "packages/database/src/v2/platform/repository*.ts"
@@ -145,10 +147,12 @@
         "apps/web/src/v2/views/V2ModelSettingsView.vue",
         "apps/web/src/v2/views/V2WorkspaceAreaView.vue",
         "apps/worker/src/v2/index.ts",
+        "apps/worker/src/v2/runtime.test.ts",
         "apps/worker/src/v2/runtime.ts",
         "apps/worker/src/v2/sentinel.test.ts",
         "docs/**",
         "infra/**",
+        "integration/**",
         "package.json",
         "packages/*/package.json",
         "packages/AGENTS.md",

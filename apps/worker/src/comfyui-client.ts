@@ -1,3 +1,4 @@
+import { buildV2ComfyUiPromptPayload } from "@living-network/contracts/v2";
 import type { V2JsonObject } from "@living-network/domain/v2";
 import type { ComfyUiProgressEvent, ComfyUiResult, ComfyUiSubmitRequest, ComfyUiSubmitResult, ComfyUiWebSocket, ComfyUiWebSocketFactory, ComfyUiClient, ComfyUiProgressClient } from "./comfyui-types.ts";
 
@@ -152,17 +153,15 @@ export class ComfyUiHttpClient implements ComfyUiClient {
     if (request.workflow === undefined) {
       throw new ComfyUiError("CONFIGURATION", "ComfyUI workflow is required for HTTP submission");
     }
-    const payload: Record<string, unknown> = {
-      prompt: request.workflow,
-      client_id: this.clientId,
-      extra_data: {
-        living_network_job_id: request.jobId,
-        workflow_version: request.workflowVersion,
-        prompt: request.prompt,
-        ...(request.negativePrompt === undefined ? {} : { negative_prompt: request.negativePrompt }),
-        ...(request.seed === undefined ? {} : { seed: request.seed }),
-      },
-    };
+    const payload = buildV2ComfyUiPromptPayload({
+      jobId: request.jobId,
+      workflowVersion: request.workflowVersion,
+      prompt: request.prompt,
+      workflow: request.workflow,
+      clientId: this.clientId,
+      ...(request.negativePrompt === undefined ? {} : { negativePrompt: request.negativePrompt }),
+      ...(request.seed === undefined ? {} : { seed: request.seed }),
+    });
     const response = await this.request("/prompt", {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json" },

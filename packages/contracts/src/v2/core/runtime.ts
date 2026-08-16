@@ -41,6 +41,7 @@ export interface V2RuntimeSaveDto {
   readonly currentSceneId: V2SceneId;
   readonly stateValues: Record<string, V2StateValue>;
   readonly choiceHistory: readonly V2ChoiceId[];
+  readonly label?: string;
   readonly createdAt: string;
 }
 
@@ -57,6 +58,7 @@ export interface V2SubmitRuntimeChoiceRequest {
 
 export interface V2CreateRuntimeSaveRequest {
   readonly saveId: V2SaveId;
+  readonly label?: string;
   readonly idempotencyKey: V2IdempotencyKey;
 }
 

@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "id": "20260816-core-v2-use-case-injection",
+  "title": "V2 core use-case injection boundary",
+  "module": "core",
+  "risk": "medium",
+  "changeClass": "normal",
+  "status": "approved",
+  "userOutcome": "The V2 core HTTP plugin receives assembled use cases and no longer constructs SQLite adapters inside the route module.",
+  "allowedPaths": [
+    "apps/api/src/v2/core/canon.test.ts",
+    "apps/api/src/v2/core/plugin.ts",
+    "docs/tasks/20260816-core-v2-use-case-injection.json"
+  ],
+  "forbiddenPaths": [
+    "apps/api/src/v2/generation/**",
+    "apps/web/**",
+    "packages/database/src/v2/**/migrations.ts",
+    "pnpm-lock.yaml"
+  ],
+  "nonGoals": [
+    "Changing Core HTTP contracts",
+    "Changing candidate review or Canon domain semantics",
+    "Database schema migrations"
+  ],
+  "interfaceRequests": [],
+  "acceptanceCommands": [
+    "pnpm check:scope",
+    "pnpm check:boundaries",
+    "pnpm --filter @living-network/domain test",
+    "pnpm --filter @living-network/database test",
+    "pnpm --filter @living-network/api test"
+  ],
+  "approval": {
+    "required": true,
+    "confirmed": true,
+    "reference": "user-approved-v2-authoring-data-chain-plan"
+  },
+  "delivery": {
+    "branch": "codex/core/v2-use-case-injection",
+    "baseSha": "e0d8fa4aa87844a17a2140d2169879278cef66f1",
+    "commits": [],
+    "results": []
+  }
+}

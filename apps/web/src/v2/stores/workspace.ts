@@ -1,6 +1,13 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
-import type { V2IdempotencyKey, V2IsoDateTime, V2Revision, V2StoryWorldId } from "@living-network/contracts/v2";
+import type {
+  V2IdempotencyKey,
+  V2IsoDateTime,
+  V2PrepareAssetGenerationApiResponse,
+  V2Revision,
+  V2SceneGenerationPrepareApiResponse,
+  V2StoryWorldId,
+} from "@living-network/contracts/v2";
 import type { V2StoryWorldDto } from "@living-network/contracts/v2";
 
 import { useNotificationStore } from "./notification.ts";
@@ -21,13 +28,16 @@ const runtimeEnv = (import.meta as ImportMeta & { readonly env?: Record<string, 
 
 const statusLabels: Readonly<Record<string, string>> = {
   queued: "排队中",
+  claimed: "已领取",
   running: "执行中",
   succeeded: "已完成",
+  "candidate-ready": "候选已回写",
   pending: "待审核",
   approved: "已通过",
   changes_requested: "要求修改",
   rejected: "已驳回",
   failed: "失败",
+  cancelled: "已取消",
 };
 
 function statusLabel(status: string): string {
@@ -54,6 +64,7 @@ interface V2BrowserAdapterContext {
 }
 
 const browserAdapterContext = typeof window === "undefined" ? undefined : window;
+const ACTIVE_STORY_WORLD_STORAGE_KEY = "living-network-v2-story-world";
 
 export function createV2DefaultAdapter(
   environment: Record<string, string | undefined> = runtimeEnv,
@@ -72,7 +83,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
   const adapter = ref<V2WorkspaceAdapter>(createV2DefaultAdapter());
   const snapshot = ref<V2WorkspaceSnapshot | null>(null);
   const storyWorlds = ref<readonly V2StoryWorldDto[]>([]);
-  const activeStoryWorldId = ref<string | null>(typeof window === "undefined" ? null : window.localStorage.getItem("living-network-v2-story-world"));
+  const activeStoryWorldId = ref<string | null>(typeof window === "undefined" ? null : window.localStorage.getItem(ACTIVE_STORY_WORLD_STORAGE_KEY));
 
   const loading = ref(false);
   const creatingStory = ref(false);
@@ -92,9 +103,18 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
   const exportFormat = ref<"json" | "markdown">("json");
   const exportMessage = ref<string | null>(null);
   const assetPrompt = ref<string>("");
+  const assetWorkflowVersion = ref<string>("local-default@1");
+  const assetNegativePrompt = ref<string>("");
+  const assetSeed = ref<number>(0);
+  const scenePreparedRequest = ref<V2SceneGenerationPrepareApiResponse | null>(null);
+  const assetPreparedRequest = ref<V2PrepareAssetGenerationApiResponse | null>(null);
+  const preparingGenerationRequest = ref(false);
+  const preparingAssetRequest = ref(false);
   const assetReviewReason = ref<string>("通过后加入本地素材库。");
   const assetMessage = ref<string | null>(null);
   const assetReviewMessage = ref<string | null>(null);
+  const uploadingAsset = ref(false);
+  const manualAssetMessage = ref<string | null>(null);
   let assetPollTimer: ReturnType<typeof setTimeout> | undefined;
   let assetPollStartedAt = 0;
   let generationPollTimer: ReturnType<typeof setTimeout> | undefined;
@@ -126,6 +146,46 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       snapshot.value !== null &&
       (draftWorldName.value !== snapshot.value.world.name || draftPremise.value !== snapshot.value.world.premise),
   );
+  const canSubmitSceneGeneration = computed(
+    () => scenePreparedRequest.value !== null && scenePreparedRequest.value.context.prompt === generationPrompt.value,
+  );
+  const canSubmitAssetGeneration = computed(
+    () => assetPreparedMatchesCurrent(),
+  );
+
+  function buildAssetGenerationRequest() {
+    const trimmedNegative = assetNegativePrompt.value.trim();
+    return {
+      prompt: assetPrompt.value,
+      workflowVersion: assetWorkflowVersion.value.trim() || "local-default@1",
+      workflow: {
+        prompt: {
+          class_type: "V2PromptInput",
+          inputs: {
+            text: assetPrompt.value,
+            ...(trimmedNegative === "" ? {} : { negative_text: trimmedNegative }),
+          },
+        },
+        output: {
+          class_type: "V2ControlledMediaOutput",
+          inputs: { media_kind: "image" },
+        },
+      },
+      ...(trimmedNegative === "" ? {} : { negativePrompt: trimmedNegative }),
+      seed: Number.isSafeInteger(assetSeed.value) && assetSeed.value >= 0 ? assetSeed.value : 0,
+    };
+  }
+
+  function assetPreparedMatchesCurrent(): boolean {
+    if (assetPreparedRequest.value === null) return false;
+    const current = buildAssetGenerationRequest();
+    const prepared = assetPreparedRequest.value.request;
+    return prepared.prompt === current.prompt &&
+      prepared.workflowVersion === current.workflowVersion &&
+      JSON.stringify(prepared.workflow) === JSON.stringify(current.workflow) &&
+      prepared.negativePrompt === current.negativePrompt &&
+      prepared.seed === current.seed;
+  }
 
   function stopGenerationPolling(): void {
     if (generationPollTimer !== undefined) clearTimeout(generationPollTimer);
@@ -220,17 +280,31 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       storyWorlds.value = await adapter.value.listStoryWorlds();
       if (storyWorlds.value.length === 0) {
         snapshot.value = null;
+        activeStoryWorldId.value = null;
+        expectedRevision.value = 0;
+        draftWorldName.value = "";
+        draftPremise.value = "";
+        if (typeof window !== "undefined") {
+          window.localStorage.removeItem(ACTIVE_STORY_WORLD_STORAGE_KEY);
+        }
         return;
       }
       const selected = storyWorlds.value.find((world) => world.storyWorldId === activeStoryWorldId.value) ?? storyWorlds.value[0]!;
       snapshot.value = await adapter.value.getSnapshot(selected.storyWorldId);
       activeStoryWorldId.value = snapshot.value.world.storyWorldId;
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(ACTIVE_STORY_WORLD_STORAGE_KEY, activeStoryWorldId.value);
+      }
       draftWorldName.value = snapshot.value.world.name;
       draftPremise.value = snapshot.value.world.premise;
       expectedRevision.value = snapshot.value.world.revision;
       generationPrompt.value = snapshot.value.generation.job?.promptPreview ?? generationPrompt.value;
       saveLabel.value = snapshot.value.save?.label ?? saveLabel.value;
       assetPrompt.value = snapshot.value.assets.prompt;
+      assetWorkflowVersion.value = snapshot.value.assets.job?.workflowVersion ?? assetWorkflowVersion.value;
+      assetSeed.value = snapshot.value.assets.job?.seed ?? assetSeed.value;
+      scenePreparedRequest.value = null;
+      assetPreparedRequest.value = null;
       generationMessage.value = null;
       reviewMessage.value = null;
       releaseMessage.value = null;
@@ -238,6 +312,18 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       exportMessage.value = null;
       assetMessage.value = null;
       assetReviewMessage.value = null;
+      const sceneJob = snapshot.value.generation.job;
+      if (adapter.value.mode === "http" && sceneJob !== null && (sceneJob.status === "queued" || sceneJob.status === "claimed" || sceneJob.status === "running")) {
+        startGenerationPolling(sceneJob.jobId);
+      } else {
+        stopGenerationPolling();
+      }
+      const assetJob = snapshot.value.assets.job;
+      if (adapter.value.mode === "http" && assetJob !== null && (assetJob.status === "queued" || assetJob.status === "claimed" || assetJob.status === "running")) {
+        startAssetPolling(assetJob.jobId);
+      } else {
+        stopAssetPolling();
+      }
     } catch (err) {
       error.value = operationErrorMessage(err, "无法读取 V2 工作区状态");
     } finally {
@@ -266,6 +352,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     try {
       const created = await adapter.value.createStoryWorld(input);
       activeStoryWorldId.value = created.storyWorldId;
+      if (typeof window !== "undefined") window.localStorage.setItem(ACTIVE_STORY_WORLD_STORAGE_KEY, created.storyWorldId);
       await loadSnapshot();
     } catch (err) {
       error.value = operationErrorMessage(err, "无法创建故事世界");
@@ -280,6 +367,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     stopAssetPolling();
     if (activeStoryWorldId.value === storyWorldId) return;
     activeStoryWorldId.value = storyWorldId;
+    if (typeof window !== "undefined") window.localStorage.setItem(ACTIVE_STORY_WORLD_STORAGE_KEY, storyWorldId);
     await loadSnapshot();
   }
   function resetCanonDraft() {
@@ -312,14 +400,29 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       loading.value = false;
     }
   }
+
+  async function handleStaleWorkspaceRevision(err: unknown, storyWorldId: string): Promise<boolean> {
+    if (!(err instanceof V2AdapterError) || err.code !== "STALE_REVISION") return false;
+    const current = await adapter.value.getSnapshot(storyWorldId);
+    snapshot.value = current;
+    expectedRevision.value = current.world.revision;
+    const message = `服务端已有新版本（${err.message}）。当前输入已保留，请确认服务端内容后再次保存。`;
+    conflict.value = message;
+    error.value = message;
+    return true;
+  }
+
   async function createCanonEntity(input: V2CanonCreateInput): Promise<void> {
     if (!snapshot.value) return;
+    const storyWorldId = snapshot.value.world.storyWorldId;
     loading.value = true;
     error.value = null;
+    conflict.value = null;
     try {
-      await adapter.value.createCanonEntity({ ...input, storyWorldId: snapshot.value.world.storyWorldId, expectedRevision: snapshot.value.world.revision });
+      await adapter.value.createCanonEntity({ ...input, storyWorldId, expectedRevision: snapshot.value.world.revision });
       await loadSnapshot();
     } catch (err) {
+      if (await handleStaleWorkspaceRevision(err, storyWorldId)) return;
       error.value = operationErrorMessage(err, "创建正典数据失败");
     } finally {
       loading.value = false;
@@ -327,12 +430,15 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
   }
   async function createGraphEntity(input: V2GraphCreateInput): Promise<void> {
     if (!snapshot.value) return;
+    const storyWorldId = snapshot.value.world.storyWorldId;
     loading.value = true;
     error.value = null;
+    conflict.value = null;
     try {
-      await adapter.value.createGraphEntity({ ...input, storyWorldId: snapshot.value.world.storyWorldId, expectedRevision: snapshot.value.world.revision });
+      await adapter.value.createGraphEntity({ ...input, storyWorldId, expectedRevision: snapshot.value.world.revision });
       await loadSnapshot();
     } catch (err) {
+      if (await handleStaleWorkspaceRevision(err, storyWorldId)) return;
       error.value = operationErrorMessage(err, "创建图谱数据失败");
     } finally {
       loading.value = false;
@@ -343,12 +449,15 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
 
   async function updateCanonEntity(input: V2CanonUpdateInput): Promise<void> {
     if (!snapshot.value) return;
+    const storyWorldId = snapshot.value.world.storyWorldId;
     loading.value = true;
     error.value = null;
+    conflict.value = null;
     try {
-      await adapter.value.updateCanonEntity({ ...input, storyWorldId: snapshot.value.world.storyWorldId, expectedRevision: snapshot.value.world.revision });
+      await adapter.value.updateCanonEntity({ ...input, storyWorldId, expectedRevision: snapshot.value.world.revision });
       await loadSnapshot();
     } catch (err) {
+      if (await handleStaleWorkspaceRevision(err, storyWorldId)) return;
       error.value = operationErrorMessage(err, "保存正典数据失败");
     } finally {
       loading.value = false;
@@ -357,12 +466,15 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
 
   async function updateGraphEntity(input: V2GraphUpdateInput): Promise<void> {
     if (!snapshot.value) return;
+    const storyWorldId = snapshot.value.world.storyWorldId;
     loading.value = true;
     error.value = null;
+    conflict.value = null;
     try {
-      await adapter.value.updateGraphEntity({ ...input, storyWorldId: snapshot.value.world.storyWorldId, expectedRevision: snapshot.value.world.revision });
+      await adapter.value.updateGraphEntity({ ...input, storyWorldId, expectedRevision: snapshot.value.world.revision });
       await loadSnapshot();
     } catch (err) {
+      if (await handleStaleWorkspaceRevision(err, storyWorldId)) return;
       error.value = operationErrorMessage(err, "保存图谱数据失败");
     } finally {
       loading.value = false;
@@ -375,11 +487,21 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     generationMessage.value = null;
     const toast = useNotificationStore();
     try {
+      const prepared = scenePreparedRequest.value?.context.prompt === generationPrompt.value &&
+        scenePreparedRequest.value.context.baseCanonRevision === snapshot.value.world.revision
+        ? scenePreparedRequest.value
+        : await adapter.value.prepareSceneGenerationRequest({
+            storyWorldId: snapshot.value.world.storyWorldId as V2StoryWorldId,
+            baseCanonRevision: snapshot.value.world.revision as V2Revision,
+            prompt: generationPrompt.value,
+          });
+      scenePreparedRequest.value = prepared;
       const response = await adapter.value.createSceneGenerationJob({
         storyWorldId: snapshot.value.world.storyWorldId as V2StoryWorldId,
         baseCanonRevision: snapshot.value.world.revision as V2Revision,
         prompt: generationPrompt.value,
-        idempotencyKey: `idem_web_${snapshot.value.world.revision}_${generationPrompt.value.length}` as V2IdempotencyKey,
+        preparedContext: prepared.context,
+        idempotencyKey: `generation:${crypto.randomUUID()}` as V2IdempotencyKey,
       });
       const terminalMessage =
         response.job.status === "queued"
@@ -392,6 +514,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
           job: {
             ...(snapshot.value.generation.job ?? {}),
             ...response.job,
+            readableStatus: response.job.status,
             promptPreview: generationPrompt.value,
             ...(terminalMessage ? { terminalMessage } : {}),
           },
@@ -405,6 +528,28 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       toast.error(msg);
     } finally {
       loading.value = false;
+    }
+  }
+
+  async function prepareGenerationRequest() {
+    if (!snapshot.value) return;
+    preparingGenerationRequest.value = true;
+    error.value = null;
+    generationMessage.value = null;
+    const toast = useNotificationStore();
+    try {
+      scenePreparedRequest.value = await adapter.value.prepareSceneGenerationRequest({
+        storyWorldId: snapshot.value.world.storyWorldId as V2StoryWorldId,
+        baseCanonRevision: snapshot.value.world.revision as V2Revision,
+        prompt: generationPrompt.value,
+      });
+      generationMessage.value = "模型请求预览已生成。确认无误后可以提交任务。";
+    } catch (err) {
+      const msg = operationErrorMessage(err, "准备模型请求失败");
+      error.value = msg;
+      toast.error(msg);
+    } finally {
+      preparingGenerationRequest.value = false;
     }
   }
 
@@ -431,6 +576,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
           reviewReason: result.reviewReason,
         },
       };
+      if (adapter.value.mode === "http") await loadSnapshot();
       reviewMessage.value = `候选内容已${reviewActionLabel(result.status)}。`;
     } catch (err) {
       const msg = operationErrorMessage(err, "审核候选内容失败");
@@ -561,6 +707,28 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     }
   }
 
+  async function uploadManualAsset(input: { readonly file: File; readonly title: string }): Promise<void> {
+    if (!snapshot.value) return;
+    uploadingAsset.value = true;
+    error.value = null;
+    manualAssetMessage.value = null;
+    const toast = useNotificationStore();
+    try {
+      const asset = await adapter.value.uploadManualAsset(input);
+      snapshot.value = {
+        ...snapshot.value,
+        assets: { ...snapshot.value.assets, library: [asset, ...snapshot.value.assets.library.filter((item) => item.assetId !== asset.assetId)] },
+      };
+      await loadSnapshot();
+      manualAssetMessage.value = `“${asset.title}”已加入正式素材库。`;
+    } catch (err) {
+      const msg = operationErrorMessage(err, "上传正式素材失败");
+      error.value = msg;
+      toast.error(msg);
+    } finally {
+      uploadingAsset.value = false;
+    }
+  }
   async function createAssetJob() {
     if (!snapshot.value) return;
     loading.value = true;
@@ -568,7 +736,11 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     assetMessage.value = null;
     const toast = useNotificationStore();
     try {
-      const job = await adapter.value.createAssetJob(assetPrompt.value);
+      const prepared = assetPreparedMatchesCurrent()
+        ? assetPreparedRequest.value!
+        : await adapter.value.prepareAssetGenerationRequest(buildAssetGenerationRequest());
+      assetPreparedRequest.value = prepared;
+      const job = await adapter.value.createAssetJob(prepared.request);
       snapshot.value = {
         ...snapshot.value,
         assets: {
@@ -585,6 +757,24 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       toast.error(msg);
     } finally {
       loading.value = false;
+    }
+  }
+
+  async function prepareAssetRequest() {
+    if (!snapshot.value) return;
+    preparingAssetRequest.value = true;
+    error.value = null;
+    assetMessage.value = null;
+    const toast = useNotificationStore();
+    try {
+      assetPreparedRequest.value = await adapter.value.prepareAssetGenerationRequest(buildAssetGenerationRequest());
+      assetMessage.value = "ComfyUI 请求预览已生成。确认无误后可以提交任务。";
+    } catch (err) {
+      const msg = operationErrorMessage(err, "准备 ComfyUI 请求失败");
+      error.value = msg;
+      toast.error(msg);
+    } finally {
+      preparingAssetRequest.value = false;
     }
   }
 
@@ -650,9 +840,18 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     exportFormat,
     exportMessage,
     assetPrompt,
+    assetWorkflowVersion,
+    assetNegativePrompt,
+    assetSeed,
+    scenePreparedRequest,
+    assetPreparedRequest,
+    preparingGenerationRequest,
+    preparingAssetRequest,
     assetReviewReason,
     assetMessage,
     assetReviewMessage,
+    uploadingAsset,
+    manualAssetMessage,
     mode,
     hasSnapshot,
     revisionLabel,
@@ -666,6 +865,8 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     canReviewAssetCandidate,
     assetLibraryCount,
     hasDraftChanges,
+    canSubmitSceneGeneration,
+    canSubmitAssetGeneration,
     setAdapter,
     setMode,
     loadSnapshot,
@@ -680,6 +881,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     createCanonEntity,
     updateCanonEntity,
     createGenerationJob,
+    prepareGenerationRequest,
     reviewCandidate,
     createRelease,
     startRun,
@@ -687,7 +889,9 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     saveRun,
     restoreSave,
     exportRelease,
+    uploadManualAsset,
     createAssetJob,
+    prepareAssetRequest,
     reviewAssetCandidate,
   };
 });

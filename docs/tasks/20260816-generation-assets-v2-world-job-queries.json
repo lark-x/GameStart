@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "id": "20260816-generation-assets-v2-world-job-queries",
+  "title": "V2 story-world generation job queries",
+  "module": "generation-assets",
+  "risk": "medium",
+  "changeClass": "normal",
+  "status": "approved",
+  "userOutcome": "The V2 workspace can recover the latest persisted scene and asset generation job for a story world, including terminal failure details, after a refresh.",
+  "allowedPaths": [
+    "apps/api/src/v2/generation/plugin.test.ts",
+    "apps/api/src/v2/generation/plugin.ts",
+    "apps/worker/src/v2/scene-generation-worker.test.ts",
+    "packages/contracts/src/v2/generation/index.ts",
+    "packages/database/src/v2/generation/asset-repository.test.ts",
+    "packages/database/src/v2/generation/asset-repository.ts",
+    "packages/database/src/v2/generation/repository.test.ts",
+    "packages/database/src/v2/generation/repository.ts",
+    "packages/ports/src/v2/generation/index.ts",
+    "docs/tasks/20260816-generation-assets-v2-world-job-queries.json"
+  ],
+  "forbiddenPaths": [
+    "apps/api/src/v2/core/**",
+    "apps/web/**",
+    "packages/database/src/v2/**/migrations.ts",
+    "pnpm-lock.yaml"
+  ],
+  "nonGoals": [
+    "Changing generation job lifecycle semantics",
+    "Calling real LLM or ComfyUI services",
+    "Database schema migrations"
+  ],
+  "interfaceRequests": [],
+  "acceptanceCommands": [
+    "pnpm check:scope",
+    "pnpm check:boundaries",
+    "pnpm --filter @living-network/contracts test",
+    "pnpm --filter @living-network/database test",
+    "pnpm --filter @living-network/api test",
+    "pnpm --filter @living-network/worker test"
+  ],
+  "approval": {
+    "required": true,
+    "confirmed": true,
+    "reference": "user-approved-v2-authoring-data-chain-plan"
+  },
+  "delivery": {
+    "branch": "codex/generation-assets/v2-world-job-queries",
+    "baseSha": "b95d62abf804dec6b30e047ca53516297ed0dfd3",
+    "commits": [],
+    "results": []
+  }
+}

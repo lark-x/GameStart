@@ -9,6 +9,8 @@ import { v2CorePlugin } from "../core/index.ts";
 import { v2GenerationPlugin } from "../generation/index.ts";
 
 export interface CreateV2FastifyAppOptions {
+  readonly assetsPlugin?: FastifyPluginAsync;
+  readonly assetsOptions?: Record<string, unknown>;
   readonly corePlugin?: FastifyPluginAsync;
   readonly coreOptions?: Record<string, unknown>;
   readonly generationPlugin?: FastifyPluginAsync;
@@ -78,6 +80,9 @@ export function createV2FastifyApp(options: CreateV2FastifyAppOptions = {}): Fas
         .header("Cache-Control", "public, max-age=31536000, immutable")
         .send(createReadStream(target));
     });
+    if (options.assetsPlugin !== undefined) {
+      await v2.register(options.assetsPlugin, { prefix: "/assets", ...(options.assetsOptions ?? {}) });
+    }
     await v2.register(options.corePlugin ?? v2CorePlugin, { prefix: "/core", ...(options.coreOptions ?? {}) });
     await v2.register(options.generationPlugin ?? v2GenerationPlugin, {
       prefix: "/generation",

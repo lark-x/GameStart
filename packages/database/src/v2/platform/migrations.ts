@@ -115,6 +115,19 @@ export const v2PlatformMigrations: V2MigrationRegistry = {
       `),
       down: (db) => db.exec(`DROP TABLE v2_model_call_logs;`),
     },
+    {
+      id: "0202_v2_external_connection_checks",
+      up: (db) => db.exec(`
+        CREATE TABLE v2_external_connection_checks (
+          service TEXT PRIMARY KEY CHECK (service IN ('model', 'comfyui')),
+          connection TEXT NOT NULL CHECK (connection IN ('untested', 'checking', 'ok', 'failed')),
+          checked_at TEXT NOT NULL,
+          duration_ms INTEGER CHECK (duration_ms IS NULL OR duration_ms >= 0),
+          error_message TEXT
+        );
+      `),
+      down: (db) => db.exec(`DROP TABLE v2_external_connection_checks;`),
+    },
   ],
 };
 

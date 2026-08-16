@@ -4,6 +4,10 @@ import test from "node:test";
 import {
   applyV2Migrations,
   openV2TempSqliteConnection,
+  V2SqliteCanonUnitOfWork,
+  V2SqliteCandidateReviewUnitOfWork,
+  V2SqliteGraphStateUnitOfWork,
+  V2SqliteReleaseRuntimeUnitOfWork,
 } from "@living-network/database/v2";
 import { createV2FastifyApp } from "../platform/index.ts";
 import { V2DomainError } from "@living-network/domain/v2";
@@ -11,10 +15,23 @@ import { toV2HttpError, V2HttpError } from "./errors.ts";
 import { createV2CoreUseCases } from "./use-cases.ts";
 import { createV2GraphScene } from "@living-network/domain/v2";
 
+function createSqliteCoreApp(db: import("node:sqlite").DatabaseSync) {
+  return createV2FastifyApp({
+    coreOptions: {
+      useCases: createV2CoreUseCases(
+        new V2SqliteCanonUnitOfWork(db),
+        new V2SqliteGraphStateUnitOfWork(db),
+        new V2SqliteCandidateReviewUnitOfWork(db),
+        new V2SqliteReleaseRuntimeUnitOfWork(db),
+      ),
+    },
+  });
+}
+
 test("V2 core API creates canon records with revision and idempotent replay", async () => {
   const { db, cleanup } = openV2TempSqliteConnection();
   applyV2Migrations(db);
-  const app = createV2FastifyApp({ coreOptions: { sqlite: db } });
+  const app = createSqliteCoreApp(db);
   await app.ready();
   try {
     const createWorld = await app.inject({
@@ -114,7 +131,7 @@ test("V2 HTTP error mapping preserves domain, constraint, and unknown failures",
 test("V2 core API maps stale revisions, idempotency conflicts, and unknown fields", async () => {
   const { db, cleanup } = openV2TempSqliteConnection();
   applyV2Migrations(db);
-  const app = createV2FastifyApp({ coreOptions: { sqlite: db } });
+  const app = createSqliteCoreApp(db);
   await app.ready();
   try {
     await app.inject({
@@ -188,7 +205,7 @@ test("V2 core API maps stale revisions, idempotency conflicts, and unknown field
 test("V2 core API creates graph records, validates reachability, and previews typed state", async () => {
   const { db, cleanup } = openV2TempSqliteConnection();
   applyV2Migrations(db);
-  const app = createV2FastifyApp({ coreOptions: { sqlite: db } });
+  const app = createSqliteCoreApp(db);
   await app.ready();
   try {
     await app.inject({
@@ -321,7 +338,7 @@ test("V2 core API creates graph records, validates reachability, and previews ty
 test("V2 core API reviews scene candidates and applies approved candidates atomically", async () => {
   const { db, cleanup } = openV2TempSqliteConnection();
   applyV2Migrations(db);
-  const app = createV2FastifyApp({ coreOptions: { sqlite: db } });
+  const app = createSqliteCoreApp(db);
   await app.ready();
   try {
     await app.inject({
@@ -425,7 +442,7 @@ test("V2 core API reviews scene candidates and applies approved candidates atomi
 test("V2 core API rejects stale scene candidate approvals without applying graph writes", async () => {
   const { db, cleanup } = openV2TempSqliteConnection();
   applyV2Migrations(db);
-  const app = createV2FastifyApp({ coreOptions: { sqlite: db } });
+  const app = createSqliteCoreApp(db);
   await app.ready();
   try {
     await app.inject({
@@ -498,7 +515,7 @@ test("V2 core API rejects stale scene candidate approvals without applying graph
 test("V2 core API keeps request-changes review revision stable so a revised candidate can be approved", async () => {
   const { db, cleanup } = openV2TempSqliteConnection();
   applyV2Migrations(db);
-  const app = createV2FastifyApp({ coreOptions: { sqlite: db } });
+  const app = createSqliteCoreApp(db);
   await app.ready();
   try {
     await app.inject({
@@ -556,7 +573,7 @@ test("V2 core API keeps request-changes review revision stable so a revised cand
 test("V2 core API releases, runs, saves, and exports a playable graph", async () => {
   const { db, cleanup } = openV2TempSqliteConnection();
   applyV2Migrations(db);
-  const app = createV2FastifyApp({ coreOptions: { sqlite: db } });
+  const app = createSqliteCoreApp(db);
   await app.ready();
   try {
     await app.inject({
@@ -684,11 +701,17 @@ test("V2 core API releases, runs, saves, and exports a playable graph", async ()
       url: "/api/v2/core/runtime/runs/run_api/saves",
       payload: {
         saveId: "save_api",
+        label: "API checkpoint",
         idempotencyKey: "key_create_save",
       },
     });
     assert.equal(save.statusCode, 201);
     assert.equal(save.json().releaseVersion, "1.0.0");
+    assert.equal(save.json().label, "API checkpoint");
+    const saves = await app.inject({ method: "GET", url: "/api/v2/core/worlds/world_release_api/runtime/saves" });
+    assert.equal(saves.statusCode, 200);
+    assert.equal(saves.json()[0].saveId, "save_api");
+    assert.equal(saves.json()[0].label, "API checkpoint");
     const saved = await app.inject({ method: "GET", url: "/api/v2/core/runtime/saves/save_api" });
     assert.equal(saved.statusCode, 200);
 
@@ -730,7 +753,7 @@ test("V2 core API releases, runs, saves, and exports a playable graph", async ()
 test("V2 core API rejects malformed parser inputs and unknown resources", async () => {
   const { db, cleanup } = openV2TempSqliteConnection();
   applyV2Migrations(db);
-  const app = createV2FastifyApp({ coreOptions: { sqlite: db } });
+  const app = createSqliteCoreApp(db);
   await app.ready();
   try {
     const malformedWorld = await app.inject({
@@ -787,7 +810,7 @@ test("V2 core use cases report missing optional dependency groups explicitly", a
 test("V2 core API maps graph diagnostics, candidate references, and release preflight failures", async () => {
   const { db, cleanup } = openV2TempSqliteConnection();
   applyV2Migrations(db);
-  const app = createV2FastifyApp({ coreOptions: { sqlite: db } });
+  const app = createSqliteCoreApp(db);
   await app.ready();
   try {
     await app.inject({ method: "POST", url: "/api/v2/core/worlds", payload: { storyWorldId: "world_edges", name: "Edges", idempotencyKey: "edges-world" } });
@@ -831,7 +854,7 @@ test("V2 core API maps graph diagnostics, candidate references, and release pref
 test("V2 core API applies a candidate with a validated location reference", async () => {
   const { db, cleanup } = openV2TempSqliteConnection();
   applyV2Migrations(db);
-  const app = createV2FastifyApp({ coreOptions: { sqlite: db } });
+  const app = createSqliteCoreApp(db);
   await app.ready();
   try {
     await app.inject({ method: "POST", url: "/api/v2/core/worlds", payload: { storyWorldId: "world_location_candidate", name: "Location candidate", idempotencyKey: "location-world" } });
@@ -870,7 +893,7 @@ test("V2 core plugin exposes an explicit unavailable status without dependencies
 test("V2 core API updates canon and graph records", async () => {
   const { db, cleanup } = openV2TempSqliteConnection();
   applyV2Migrations(db);
-  const app = createV2FastifyApp({ coreOptions: { sqlite: db } });
+  const app = createSqliteCoreApp(db);
   await app.ready();
   try {
     await app.inject({ method: "POST", url: "/api/v2/core/worlds", payload: { storyWorldId: "world_update", name: "Update World", idempotencyKey: "update-world" } });

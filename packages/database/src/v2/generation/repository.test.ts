@@ -77,6 +77,8 @@ test("creates V2 scene job and dispatch facts atomically", async () => {
     assert.equal(dispatches[0]?.jobId, result.job.jobId);
     assert.equal((await repository.getJob("missing" as V2JobId)), undefined);
     assert.deepEqual(await repository.listJobsByStatus("queued", 10), [result.job]);
+    assert.deepEqual(await repository.listJobsByStoryWorld(result.job.storyWorldId, 10), [result.job]);
+    assert.deepEqual(await repository.listJobsByStoryWorld("world_other" as V2StoryWorldId, 10), []);
   } finally {
     db.close();
     cleanup();

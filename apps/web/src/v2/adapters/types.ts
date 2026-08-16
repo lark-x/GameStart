@@ -1,13 +1,17 @@
 import type {
   V2CandidateEnvelope,
   V2CandidateStatus,
-  V2CreateSceneGenerationJobRequest,
+  V2GenerationContextPreviewApiRequest,
+  V2CreateSceneGenerationJobApiRequest,
   V2CreateSceneGenerationJobResponse,
   V2ErrorEnvelope,
   V2HealthResponse,
+  V2IdempotencyKey,
   V2JobRef,
+  V2PrepareAssetGenerationApiResponse,
   V2ReleasePreflightResponse,
   V2SceneCandidatePayload,
+  V2SceneGenerationPrepareApiResponse,
   V2StoryWorldDto,
 } from "@living-network/contracts/v2";
 import type { V2CreateArcRequest, V2CreateChoiceRequest, V2CreateSceneRequest, V2CreateStateVariableRequest } from "@living-network/contracts/v2";
@@ -173,7 +177,9 @@ export interface V2GenerationContextSummary {
 }
 
 export interface V2GenerationJobSummary extends V2JobRef {
+  readonly readableStatus: V2JobRef["status"] | "candidate-ready";
   readonly promptPreview: string;
+  readonly candidateId?: string;
   readonly terminalMessage?: string;
 }
 
@@ -247,9 +253,11 @@ export interface V2AssetWorkbenchSummary {
 }
 
 export interface V2AssetJobSummary extends V2JobRef {
+  readonly readableStatus: V2JobRef["status"] | "candidate-ready";
   readonly workflowVersion: string;
   readonly seed: number;
   readonly promptPreview: string;
+  readonly candidateId?: string;
   readonly terminalMessage?: string;
 }
 
@@ -276,6 +284,10 @@ export interface V2ApprovedAssetSummary {
   readonly workflowVersion: string;
   readonly seed: number;
   readonly approved: boolean;
+  readonly sourceType: "manual" | "candidate";
+  readonly originalFilename?: string;
+  readonly mimeType?: string;
+  readonly byteSize?: number;
 }
 
 export interface V2AssetReviewRequest {
@@ -290,6 +302,15 @@ export interface V2AssetReviewResult {
   readonly reviewedAt: string;
   readonly reviewReason: string;
   readonly approvedAsset?: V2ApprovedAssetSummary;
+}
+
+export interface V2AssetGenerationRequestInput {
+  readonly idempotencyKey?: V2IdempotencyKey;
+  readonly prompt: string;
+  readonly workflowVersion: string;
+  readonly workflow: Record<string, unknown>;
+  readonly negativePrompt?: string;
+  readonly seed?: number;
 }
 
 export type V2CanonCreateInput =
@@ -326,9 +347,10 @@ export interface V2WorkspaceAdapter {
   updateCanonEntity(input: V2CanonUpdateInput & { readonly storyWorldId: string; readonly expectedRevision: number }): Promise<void>;
   createGraphEntity(input: V2GraphCreateInput & { readonly storyWorldId: string; readonly expectedRevision: number }): Promise<void>;
   updateGraphEntity(input: V2GraphUpdateInput & { readonly storyWorldId: string; readonly expectedRevision: number }): Promise<void>;
-  createSceneGenerationJob(request: V2CreateSceneGenerationJobRequest): Promise<V2CreateSceneGenerationJobResponse>;
-  getSceneGenerationJob(jobId: string): Promise<V2JobRef>;
-  getAssetGenerationJob(jobId: string): Promise<V2JobRef>;
+  prepareSceneGenerationRequest(request: V2GenerationContextPreviewApiRequest): Promise<V2SceneGenerationPrepareApiResponse>;
+  createSceneGenerationJob(request: V2CreateSceneGenerationJobApiRequest): Promise<V2CreateSceneGenerationJobResponse>;
+  getSceneGenerationJob(jobId: string): Promise<V2GenerationJobSummary>;
+  getAssetGenerationJob(jobId: string): Promise<V2AssetJobSummary>;
   reviewCandidate(request: V2CandidateReviewRequest): Promise<V2CandidateReviewResult>;
   createRelease(): Promise<V2ReleasePackageSummary>;
   startRun(): Promise<{ readonly run: V2RunSummary; readonly player: V2PlayerRuntimeSummary }>;
@@ -336,7 +358,9 @@ export interface V2WorkspaceAdapter {
   saveRun(label: string): Promise<V2SaveSummary>;
   restoreSave(saveId: string): Promise<V2PlayerRuntimeSummary>;
   exportRelease(format: "json" | "markdown"): Promise<V2ExportBundleSummary>;
-  createAssetJob(prompt: string): Promise<V2AssetJobSummary>;
+  uploadManualAsset(input: { readonly file: File; readonly title: string }): Promise<V2ApprovedAssetSummary>;
+  prepareAssetGenerationRequest(request: V2AssetGenerationRequestInput): Promise<V2PrepareAssetGenerationApiResponse>;
+  createAssetJob(request: V2AssetGenerationRequestInput | string): Promise<V2AssetJobSummary>;
   reviewAssetCandidate(request: V2AssetReviewRequest): Promise<V2AssetReviewResult>;
 }
 export class V2AdapterError extends Error {

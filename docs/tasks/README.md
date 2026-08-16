@@ -1,11 +1,11 @@
-# AI 开发批次记录
+# AI 开发批次历史记录
 
-每个开发分支必须新增且持续更新一份 `<YYYYMMDD>-<module>-<slug>.json`。字段定义见 `.ai/task.schema.json`，完整工作流和提示词见 `docs/ai-development-workflow.md`。
+`docs/tasks/*.json` 是模块化并行建设阶段留下的历史开发记录。功能闭环优先期不再要求新建、更新或随分支携带任务 JSON，CI 和本地检查也不再根据这些文件授权修改路径。
 
-规则：
+当前规则：
 
-- `allowedPaths` 是本批次可修改范围，不是建议范围；CI 按真实 Git diff 强制检查。
-- Integration 任务必须逐个写出精确文件，禁止通配符。
-- 中高风险任务在用户确认前保持 `planned`，确认后记录 `approval.reference`。
-- 同模块相关小任务可追加到同一记录；跨模块变化必须拆分任务和 PR。
-- 验证完成后记录真实命令、退出码和跳过原因。合并后保留文件作为审计证据。
+- 功能开发按用户可见结果组织，可跨 Web、API、Worker 和 Packages。
+- 不要求逐文件 `allowedPaths`、Integration 精确路径、Interface Request 或模块拆分 PR。
+- 普通功能不需要范围预审批；只有破坏性 migration、数据删除、认证秘密、不可逆公共接口和真实生产副作用需要先确认。
+- 现有 JSON 保持原样，`.ai/task.schema.json` 仅用于解释历史记录格式。
+- 首个真实业务闭环完成后再设计新的轻量治理，不自动恢复本目录描述过的旧流程。

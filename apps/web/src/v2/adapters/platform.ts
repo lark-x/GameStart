@@ -1,6 +1,7 @@
 import type {
   V2AppearanceSettingsDto,
   V2DiscoverModelsRequest,
+  V2ExternalConnectionCheckDto,
   V2ImageServiceSettingsDto,
   V2ModelBindingDto,
   V2ModelCallLogDto,
@@ -103,6 +104,9 @@ export function createV2PlatformClient(options: V2PlatformClientOptions): V2Plat
     async saveImageServiceSettings(input: V2SaveImageServiceSettingsRequest): Promise<V2ImageServiceSettingsDto> {
       return (await send<{ readonly settings: V2ImageServiceSettingsDto }>("PUT", "/image-service", input)).settings;
     },
+    async testImageServiceConnection(): Promise<V2ExternalConnectionCheckDto> {
+      return (await send<{ readonly check: V2ExternalConnectionCheckDto }>("POST", "/image-service/test")).check;
+    },
     async getAppearanceSettings(): Promise<V2AppearanceSettingsDto> {
       return (await get<{ readonly settings: V2AppearanceSettingsDto }>("/appearance")).settings;
     },
@@ -138,6 +142,7 @@ export interface V2PlatformClient {
   setModelBinding(capability: string, input: V2SetModelBindingRequest): Promise<V2ModelBindingDto>;
   getImageServiceSettings(): Promise<V2ImageServiceSettingsDto>;
   saveImageServiceSettings(input: V2SaveImageServiceSettingsRequest): Promise<V2ImageServiceSettingsDto>;
+  testImageServiceConnection(): Promise<V2ExternalConnectionCheckDto>;
   getAppearanceSettings(): Promise<V2AppearanceSettingsDto>;
   saveAppearanceSettings(input: V2SaveAppearanceSettingsRequest): Promise<V2AppearanceSettingsDto>;
   getCapabilities(): Promise<V2PlatformCapabilities>;

@@ -17,7 +17,6 @@ const props = defineProps<{
   loading: boolean;
   draftWorldName: string;
   draftPremise: string;
-  expectedRevision: number;
   conflict: string | null;
   hasDraftChanges: boolean;
 }>();
@@ -25,7 +24,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   "update:draftWorldName": [value: string];
   "update:draftPremise": [value: string];
-  "update:expectedRevision": [value: number];
   previewCanonDraft: [];
   resetCanonDraft: [];
 }>();
@@ -216,16 +214,6 @@ function ruleSeverityLabel(severity: string): string {
               id="v2-world-name"
               aria-label="故事空间名称"
               @update:model-value="emit('update:draftWorldName', $event)"
-            />
-          </Field>
-          <Field :label="conflict ? '期望版本 (冲突)' : '期望版本'" :error="conflict || ''">
-            <Input
-              :model-value="expectedRevision"
-              :disabled="loading"
-              id="v2-expected-revision"
-              type="number"
-              aria-label="期望版本"
-              @update:model-value="emit('update:expectedRevision', Number($event))"
             />
           </Field>
         </div>

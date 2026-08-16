@@ -52,6 +52,7 @@ export type V2GenerationJobKind = "scene";
 export type V2AssetMediaKind = "image";
 export type V2AssetCandidateStatus = "pending" | "approved" | "rejected" | "changes_requested";
 export type V2AssetReviewAction = "approve" | "reject" | "request_changes";
+export type V2FormalAssetSource = "manual" | "candidate";
 
 export interface V2AssetCandidatePayload {
   readonly asset: {
@@ -151,13 +152,70 @@ export interface V2CreateAssetGenerationJobApiRequest {
   readonly maxAttempts?: number;
 }
 
+export interface V2AssetGenerationPreparedRequest {
+  readonly idempotencyKey: V2IdempotencyKey;
+  readonly prompt: string;
+  readonly workflowVersion: string;
+  readonly workflow: Record<string, unknown>;
+  readonly negativePrompt?: string;
+  readonly seed?: number;
+}
+
+export interface V2PrepareAssetGenerationApiRequest extends V2AssetGenerationPreparedRequest {
+  readonly storyWorldId: V2StoryWorldId;
+}
+
+export interface V2ComfyUiPromptPayload {
+  readonly prompt: Record<string, unknown>;
+  readonly client_id: string;
+  readonly extra_data: {
+    readonly living_network_job_id: string;
+    readonly workflow_version: string;
+    readonly prompt: string;
+    readonly negative_prompt?: string;
+    readonly seed?: number;
+  };
+}
+
+export function buildV2ComfyUiPromptPayload(input: {
+  readonly jobId: string;
+  readonly workflowVersion: string;
+  readonly prompt: string;
+  readonly workflow: Record<string, unknown>;
+  readonly clientId?: string;
+  readonly negativePrompt?: string;
+  readonly seed?: number;
+}): V2ComfyUiPromptPayload {
+  return {
+    prompt: input.workflow,
+    client_id: input.clientId?.trim() || "living-network-worker",
+    extra_data: {
+      living_network_job_id: input.jobId,
+      workflow_version: input.workflowVersion,
+      prompt: input.prompt,
+      ...(input.negativePrompt === undefined ? {} : { negative_prompt: input.negativePrompt }),
+      ...(input.seed === undefined ? {} : { seed: input.seed }),
+    },
+  };
+}
+
 export interface V2CreateAssetGenerationJobApiResponse {
   readonly job: V2AssetGenerationJobRecord;
   readonly inserted: boolean;
 }
 
+export interface V2PrepareAssetGenerationApiResponse {
+  readonly jobId: V2JobId;
+  readonly request: V2AssetGenerationPreparedRequest;
+  readonly comfyUiPayload: V2ComfyUiPromptPayload;
+}
+
 export interface V2AssetGenerationJobApiResponse {
   readonly job: V2AssetGenerationJobRecord;
+}
+
+export interface V2AssetGenerationJobListApiResponse {
+  readonly jobs: readonly V2AssetGenerationJobRecord[];
 }
 
 export interface V2AssetCandidateRecord {
@@ -186,12 +244,33 @@ export interface V2AssetCandidateReviewRecord {
 export interface V2ApprovedAssetRecord {
   readonly assetId: V2AssetId;
   readonly storyWorldId: V2StoryWorldId;
-  readonly candidateId: V2CandidateId;
+  readonly sourceType: V2FormalAssetSource;
+  readonly candidateId?: V2CandidateId;
+  readonly title: string;
   readonly mediaRef: string;
   readonly contentHash: string;
   readonly approvedAt: V2IsoDateTime;
+  readonly originalFilename?: string;
+  readonly mimeType?: string;
+  readonly byteSize?: number;
   readonly reviewer?: string;
   readonly reviewReason?: string;
+}
+
+export interface V2CreateManualAssetInput {
+  readonly assetId: V2AssetId;
+  readonly storyWorldId: V2StoryWorldId;
+  readonly title: string;
+  readonly mediaRef: string;
+  readonly contentHash: string;
+  readonly originalFilename: string;
+  readonly mimeType: string;
+  readonly byteSize: number;
+  readonly createdAt: V2IsoDateTime;
+}
+
+export interface V2CreateManualAssetApiResponse {
+  readonly asset: V2ApprovedAssetRecord;
 }
 
 export interface V2ReviewAssetCandidateInput {
@@ -251,8 +330,24 @@ export interface V2GenerationContextPreviewApiResponse {
   readonly context: V2GenerationContextSnapshot;
 }
 
+export interface V2SceneGenerationPreparedMessage {
+  readonly role: "system" | "user";
+  readonly content: string;
+}
+
+export interface V2SceneGenerationPrepareApiResponse {
+  readonly context: V2GenerationContextSnapshot;
+  readonly request: {
+    readonly responseFormat: "json_object";
+    readonly temperature: number;
+    readonly maxTokens: number;
+    readonly messages: readonly V2SceneGenerationPreparedMessage[];
+  };
+}
+
 export interface V2CreateSceneGenerationJobApiRequest extends V2GenerationContextPreviewApiRequest {
   readonly idempotencyKey: V2IdempotencyKey;
+  readonly preparedContext?: V2GenerationContextSnapshot;
   readonly maxAttempts?: number;
 }
 
@@ -263,4 +358,8 @@ export interface V2CreateSceneGenerationJobApiResponse {
 
 export interface V2GenerationJobApiResponse {
   readonly job: V2SceneGenerationJobRecord;
+}
+
+export interface V2GenerationJobListApiResponse {
+  readonly jobs: readonly V2SceneGenerationJobRecord[];
 }

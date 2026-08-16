@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "id": "20260816-integration-v2-authoring-data-chain",
+  "title": "V2 authoring data chain integration",
+  "module": "integration",
+  "risk": "high",
+  "changeClass": "normal",
+  "status": "approved",
+  "userOutcome": "The V2 workspace uses the real HTTP API by default, persists authoring facts in SQLite, observes worker generation results and errors after refresh, and only promotes reviewed candidates into canon or the approved asset library.",
+  "allowedPaths": [
+    ".ai/modules.json",
+    "apps/api/src/v2/platform/runtime.ts",
+    "apps/web/src/v2/adapters/adapter.test.ts",
+    "apps/web/src/v2/adapters/http.ts",
+    "apps/web/src/v2/adapters/mock.ts",
+    "apps/web/src/v2/adapters/types.ts",
+    "apps/web/src/v2/stores/workspace.test.ts",
+    "apps/web/src/v2/stores/workspace.ts",
+    "e2e/v2-authoring-loop.spec.ts",
+    "integration/v2-authoring-chain.test.ts",
+    "package.json",
+    "docs/tasks/20260816-integration-v2-authoring-data-chain.json"
+  ],
+  "forbiddenPaths": [
+    "apps/**/src/v1/**",
+    "packages/**/src/v1/**",
+    "packages/database/src/v2/**/migrations.ts",
+    "pnpm-lock.yaml",
+    "packages/config/**"
+  ],
+  "nonGoals": [
+    "Real LLM or ComfyUI acceptance",
+    "V1 chat, feed, or calendar changes",
+    "Database schema migrations",
+    "Unrelated UI redesign"
+  ],
+  "interfaceRequests": [],
+  "acceptanceCommands": [
+    "pnpm check:scope",
+    "pnpm check:boundaries",
+    "pnpm --filter @living-network/contracts test",
+    "pnpm --filter @living-network/domain test",
+    "pnpm --filter @living-network/database test",
+    "pnpm --filter @living-network/api test",
+    "pnpm --filter @living-network/web test",
+    "pnpm --filter @living-network/worker test",
+    "pnpm --filter @living-network/web lint",
+    "pnpm --filter @living-network/web build",
+    "pnpm test:integration",
+    "pnpm test:e2e"
+  ],
+  "approval": {
+    "required": true,
+    "confirmed": true,
+    "reference": "user-approved-v2-authoring-data-chain-plan"
+  },
+  "delivery": {
+    "branch": "codex/integration/v2-authoring-data-chain",
+    "baseSha": "834e3c10b06a9a3e06d30bff3353f9ec4f312548",
+    "commits": [],
+    "results": []
+  }
+}

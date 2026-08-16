@@ -160,6 +160,10 @@ class FakeJobRepository implements V2GenerationJobRepository {
     return this.job.status === status ? [this.job] : [];
   }
 
+  public async listJobsByStoryWorld(storyWorldId: V2StoryWorldId): Promise<readonly V2SceneGenerationJobRecord[]> {
+    return this.job.storyWorldId === storyWorldId ? [this.job] : [];
+  }
+
   public async markJobClaimed(input: { readonly jobId: V2JobId; readonly claimedAt: string; readonly leaseExpiresAt: string }): Promise<V2SceneGenerationJobRecord> {
     if (this.job.jobId === input.jobId && this.job.status === "queued") {
       this.job = { ...this.job, status: "claimed", claimedAt: input.claimedAt as V2IsoDateTime, leaseExpiresAt: input.leaseExpiresAt as V2IsoDateTime, updatedAt: input.claimedAt as V2IsoDateTime };

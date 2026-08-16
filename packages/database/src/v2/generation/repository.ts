@@ -168,6 +168,13 @@ export class V2SqliteGenerationJobRepository implements V2GenerationJobRepositor
     return rows.map(mapJob);
   }
 
+  public async listJobsByStoryWorld(storyWorldId: V2StoryWorldId, limit: number): Promise<readonly V2SceneGenerationJobRecord[]> {
+    const rows = this.db.prepare(
+      "SELECT * FROM v2_generation_jobs WHERE story_world_id = ? ORDER BY created_at DESC, job_id DESC LIMIT ?",
+    ).all(storyWorldId, limit) as JobRow[];
+    return rows.map(mapJob);
+  }
+
   public async markJobClaimed(input: { readonly jobId: V2JobId; readonly claimedAt: string; readonly leaseExpiresAt: string }): Promise<V2SceneGenerationJobRecord> {
     this.db.prepare(`
       UPDATE v2_generation_jobs

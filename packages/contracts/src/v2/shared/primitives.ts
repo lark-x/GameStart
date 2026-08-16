@@ -16,6 +16,13 @@ export type V2IsoDateTime = Brand<string, "V2IsoDateTime">;
 export type V2Revision = Brand<number, "V2Revision">;
 export type V2IdempotencyKey = Brand<string, "V2IdempotencyKey">;
 
+export interface V2ReleaseBlockerDto {
+  readonly code: string;
+  readonly message: string;
+  readonly targetPage: "world" | "state" | "story" | "formal-assets" | "release";
+  readonly entityId?: string;
+}
+
 export interface V2PageRequest {
   readonly cursor?: string;
   readonly limit?: number;

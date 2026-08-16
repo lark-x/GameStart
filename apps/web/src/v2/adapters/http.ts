@@ -3,28 +3,33 @@ import type {
   V2CandidateReviewResponse,
   V2CoreExportBundleDto,
   V2CreateAssetGenerationJobApiResponse,
-  V2CreateSceneGenerationJobRequest,
+  V2CreateManualAssetApiResponse,
+  V2CreateSceneGenerationJobApiRequest,
   V2CreateSceneGenerationJobResponse,
   V2ErrorEnvelope,
+  V2GenerationContextPreviewApiRequest,
   V2GraphSnapshotDto,
   V2GraphValidationDto,
   V2HealthResponse,
+  V2PrepareAssetGenerationApiResponse,
   V2ReleaseManifestDto,
   V2ReleasePreflightDto,
   V2ReviewAssetCandidateApiResponse,
   V2RuntimeSaveDto,
   V2RuntimeSceneDto,
+  V2SceneGenerationPrepareApiResponse,
   V2StateSnapshotDto,
   V2StateVariableDto,
   V2StoryWorldDto,
 } from "@living-network/contracts/v2";
 
 import type { V2AssetCandidateListApiResponse, V2ApprovedAssetListApiResponse } from "@living-network/contracts/v2";
-import type { V2AssetGenerationJobApiResponse } from "@living-network/contracts/v2";
-import type { V2GenerationJobApiResponse } from "@living-network/contracts/v2";
+import type { V2AssetGenerationJobApiResponse, V2AssetGenerationJobListApiResponse } from "@living-network/contracts/v2";
+import type { V2GenerationJobApiResponse, V2GenerationJobListApiResponse } from "@living-network/contracts/v2";
 import {
   V2AdapterError,
   type V2ApprovedAssetSummary,
+  type V2AssetGenerationRequestInput,
   type V2AssetJobSummary,
   type V2AssetReviewRequest,
   type V2AssetReviewResult,
@@ -47,6 +52,16 @@ export interface V2HttpAdapterOptions {
   readonly baseUrl: string;
   readonly fetchImpl?: typeof fetch;
 }
+
+interface V2RuntimeSession {
+  readonly releaseId?: string;
+  readonly releaseVersion?: string;
+  readonly runId?: string;
+  readonly saveId?: string;
+  readonly saveLabel?: string;
+}
+
+const RUNTIME_SESSION_KEY_PREFIX = "living-network-v2-runtime:";
 
 async function parseJson<T>(response: Response): Promise<T> {
   const payload = (await response.json()) as T | V2ErrorEnvelope | { readonly error?: { readonly message?: string } };
@@ -79,6 +94,40 @@ function uniqueCommandKey(prefix: string): string {
   return `${prefix}:${Date.now()}:${crypto.randomUUID()}`;
 }
 
+function browserStorage(): Storage | undefined {
+  return typeof window === "undefined" ? undefined : window.localStorage;
+}
+
+function runtimeSessionKey(storyWorldId: string): string {
+  return `${RUNTIME_SESSION_KEY_PREFIX}${storyWorldId}`;
+}
+
+function readRuntimeSession(storyWorldId: string): V2RuntimeSession {
+  const storage = browserStorage();
+  if (storage === undefined) return {};
+  const raw = storage.getItem(runtimeSessionKey(storyWorldId));
+  if (raw === null) return {};
+  try {
+    const parsed = JSON.parse(raw) as Partial<V2RuntimeSession>;
+    return {
+      ...(typeof parsed.releaseId === "string" ? { releaseId: parsed.releaseId } : {}),
+      ...(typeof parsed.releaseVersion === "string" ? { releaseVersion: parsed.releaseVersion } : {}),
+      ...(typeof parsed.runId === "string" ? { runId: parsed.runId } : {}),
+      ...(typeof parsed.saveId === "string" ? { saveId: parsed.saveId } : {}),
+      ...(typeof parsed.saveLabel === "string" ? { saveLabel: parsed.saveLabel } : {}),
+    };
+  } catch {
+    storage.removeItem(runtimeSessionKey(storyWorldId));
+    return {};
+  }
+}
+
+function writeRuntimeSession(storyWorldId: string, session: V2RuntimeSession): void {
+  const storage = browserStorage();
+  if (storage === undefined) return;
+  storage.setItem(runtimeSessionKey(storyWorldId), JSON.stringify(session));
+}
+
 function toPlayer(runtime: V2RuntimeSceneDto): V2PlayerRuntimeSummary {
   return {
     sceneId: runtime.scene.sceneId,
@@ -100,6 +149,45 @@ function toRun(runtime: V2RuntimeSceneDto): V2RunSummary {
     releaseVersion: runtime.run.releaseVersion,
     currentSceneId: runtime.run.currentSceneId,
   };
+}
+
+function toSceneJobSummary(job: V2GenerationJobListApiResponse["jobs"][number]) {
+  return {
+    jobId: job.jobId,
+    status: job.status,
+    readableStatus: job.status === "succeeded" && job.candidateId !== undefined ? "candidate-ready" as const : job.status,
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
+    promptPreview: job.prompt,
+    ...(job.candidateId === undefined ? {} : { candidateId: job.candidateId }),
+    ...(job.failureReason === undefined ? {} : { terminalMessage: job.failureReason }),
+  };
+}
+
+function toAssetJobSummary(job: V2AssetGenerationJobListApiResponse["jobs"][number]): V2AssetJobSummary {
+  return {
+    jobId: job.jobId,
+    status: job.status,
+    readableStatus: job.status === "succeeded" && job.candidateId !== undefined ? "candidate-ready" : job.status,
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
+    workflowVersion: job.workflowVersion,
+    seed: job.seed ?? 0,
+    promptPreview: job.prompt,
+    ...(job.candidateId === undefined ? {} : { candidateId: job.candidateId }),
+    ...(job.failureReason === undefined ? {} : { terminalMessage: job.failureReason }),
+  };
+}
+
+function normalizeAssetGenerationRequest(input: V2AssetGenerationRequestInput | string): V2AssetGenerationRequestInput {
+  return typeof input === "string"
+    ? {
+        prompt: input,
+        workflowVersion: "local-default@1",
+        workflow: {},
+        seed: 0,
+      }
+    : input;
 }
 
 export function v2MediaRefToUrl(mediaRef: string, baseUrl: string): string | undefined {
@@ -184,8 +272,14 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
       }
       worldId = world.storyWorldId;
       revision = world.revision;
+      const persistedSession = readRuntimeSession(worldId);
+      releaseId = persistedSession.releaseId ?? releaseId;
+      releaseVersion = persistedSession.releaseVersion ?? releaseVersion;
+      runId = persistedSession.runId ?? runId;
+      saveId = persistedSession.saveId ?? saveId;
+      saveLabel = persistedSession.saveLabel ?? saveLabel;
       const encodedWorld = encodeURIComponent(worldId);
-      const [canon, graph, validation, variables, initial, candidates, preflight, releases, assetCandidates, assetLibrary] = await Promise.all([
+      const [canon, graph, validation, variables, initial, candidates, preflight, releases, saves, sceneJobs, assetJobs, assetCandidates, assetLibrary] = await Promise.all([
         get<V2CanonSnapshotDto>(`/api/v2/core/worlds/${encodedWorld}/canon`),
         get<V2GraphSnapshotDto>(`/api/v2/core/worlds/${encodedWorld}/graph`),
         get<V2GraphValidationDto>(`/api/v2/core/worlds/${encodedWorld}/graph/validation`),
@@ -196,19 +290,49 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
         ),
         get<V2ReleasePreflightDto>(`/api/v2/core/worlds/${encodedWorld}/releases/preflight`),
         get<readonly V2ReleaseManifestDto[]>(`/api/v2/core/worlds/${encodedWorld}/releases`),
+        get<readonly V2RuntimeSaveDto[]>(`/api/v2/core/worlds/${encodedWorld}/runtime/saves`),
+        get<V2GenerationJobListApiResponse>(`/api/v2/generation/worlds/${encodedWorld}/jobs`),
+        get<V2AssetGenerationJobListApiResponse>(`/api/v2/generation/assets/worlds/${encodedWorld}/jobs`),
         get<V2AssetCandidateListApiResponse>(`/api/v2/generation/assets/worlds/${encodedWorld}/candidates`),
         get<V2ApprovedAssetListApiResponse>(`/api/v2/generation/assets/worlds/${encodedWorld}/library`),
       ]);
       const candidate = candidates.find((item) => item.status === "pending" || item.status === "changes_requested") ?? candidates.at(-1) ?? null;
-      const release = releases.at(-1) ?? null;
+      const release = releaseId === undefined
+        ? releases.at(-1) ?? null
+        : releases.find((item) => item.releaseId === releaseId) ?? releases.at(-1) ?? null;
+      const sceneJob = sceneJobs.jobs[0] ?? null;
+      const assetJob = assetJobs.jobs[0] ?? null;
       if (release) {
         releaseId = release.releaseId;
         releaseVersion = release.version;
       }
       let runtime: V2RuntimeSceneDto | null = null;
-      if (runId) runtime = await get<V2RuntimeSceneDto>(`/api/v2/core/runtime/runs/${encodeURIComponent(runId)}/scene`);
-      let save: V2RuntimeSaveDto | null = null;
-      if (saveId) save = await get<V2RuntimeSaveDto>(`/api/v2/core/runtime/saves/${encodeURIComponent(saveId)}`);
+      if (runId) {
+        try {
+          runtime = await get<V2RuntimeSceneDto>(`/api/v2/core/runtime/runs/${encodeURIComponent(runId)}/scene`);
+        } catch {
+          runId = undefined;
+        }
+      }
+      let save: V2RuntimeSaveDto | null = saveId === undefined
+        ? null
+        : saves.find((item) => item.saveId === saveId) ?? null;
+      if (save === null) {
+        save = saves[0] ?? null;
+      }
+      if (save === null) {
+        saveId = undefined;
+      } else {
+        saveId = save.saveId;
+        saveLabel = save.label ?? saveLabel;
+      }
+      writeRuntimeSession(worldId, {
+        ...(releaseId === undefined ? {} : { releaseId }),
+        ...(releaseVersion === undefined ? {} : { releaseVersion }),
+        ...(runId === undefined ? {} : { runId }),
+        ...(saveId === undefined ? {} : { saveId }),
+        saveLabel,
+      });
       const entryScene = graph.scenes.find((scene) => scene.isEntry);
       const selectedAssetCandidate = assetCandidates.candidates.find((item) => item.status === "pending" || item.status === "changes_requested") ?? assetCandidates.candidates.at(-1);
       const assetCandidateSummary = selectedAssetCandidate === undefined ? null : {
@@ -226,13 +350,17 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
       };
       const approvedAssetSummaries = assetLibrary.assets.map((asset) => ({
         assetId: asset.assetId,
-        title: asset.assetId,
+        title: asset.title,
         kind: "scene_background" as const,
         mediaRef: asset.mediaRef,
         thumbnailRef: asset.mediaRef,
         workflowVersion: "unknown",
         seed: 0,
         approved: true,
+        sourceType: asset.sourceType,
+        ...(asset.originalFilename === undefined ? {} : { originalFilename: asset.originalFilename }),
+        ...(asset.mimeType === undefined ? {} : { mimeType: asset.mimeType }),
+        ...(asset.byteSize === undefined ? {} : { byteSize: asset.byteSize }),
       }));
       return {
         health,
@@ -293,9 +421,9 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
         },
         generation: {
           context: {
-            baseCanonRevision: world.revision,
-            contextHash: candidate?.provenance.contextHash ?? "not-generated",
-            tokenBudget: 4096,
+            baseCanonRevision: sceneJob?.baseCanonRevision ?? world.revision,
+            contextHash: sceneJob?.contextHash ?? candidate?.provenance.contextHash ?? "not-generated",
+            tokenBudget: sceneJob?.context.tokenBudget ?? 4096,
             sources: [
               { id: world.storyWorldId, label: world.name, kind: "world" },
               ...canon.characters.map((character) => ({ id: character.characterId, label: character.name, kind: "character" as const })),
@@ -303,7 +431,7 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
               ...canon.facts.map((fact) => ({ id: fact.factId, label: fact.text, kind: "fact" as const })),
             ],
           },
-          job: null,
+          job: sceneJob === null ? null : toSceneJobSummary(sceneJob),
           diff: {
             title: candidate?.payload.scene.title ?? "No generated candidate",
             scope: candidate ? ["scene", `${candidate.payload.choices.length} choices`] : [],
@@ -317,6 +445,7 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
           revision: world.revision,
           valid: preflight.valid,
           issues: preflight.diagnostics.map((diagnostic) => diagnostic.message),
+          blockers: preflight.blockers,
         },
         releasePackage: release === null ? null : {
           releaseId: release.releaseId,
@@ -337,7 +466,13 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
           savedAt: save.createdAt,
         },
         exportBundle: null,
-        assets: { workflowName: "local-comfyui", prompt: "", job: null, candidate: assetCandidateSummary, library: approvedAssetSummaries },
+        assets: {
+          workflowName: "local-comfyui",
+          prompt: assetJob?.prompt ?? "",
+          job: assetJob === null ? null : toAssetJobSummary(assetJob),
+          candidate: assetCandidateSummary,
+          library: approvedAssetSummaries,
+        },
       };
     },
     async createGraphEntity(input: V2GraphCreateInput & { readonly storyWorldId: string; readonly expectedRevision: number }): Promise<void> {
@@ -350,7 +485,7 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
       if (input.kind === "state") await post(`${path}/state/variables`, { ...input.input, ...common });
     },
     async getAssetGenerationJob(jobId: string) {
-      return (await get<V2AssetGenerationJobApiResponse>(`/api/v2/generation/assets/jobs/${encodeURIComponent(jobId)}`)).job;
+      return toAssetJobSummary((await get<V2AssetGenerationJobApiResponse>(`/api/v2/generation/assets/jobs/${encodeURIComponent(jobId)}`)).job);
     },
     async createCanonEntity(input: V2CanonCreateInput & { readonly storyWorldId: string; readonly expectedRevision: number }): Promise<void> {
       const suffix = crypto.randomUUID();
@@ -379,21 +514,30 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
       if (input.kind === "choice") await patch(`${path}/choices/${encodeURIComponent(input.id)}`, body);
       if (input.kind === "state") await patch(`${path}/state/variables/${encodeURIComponent(input.id)}`, body);
     },
-    async createSceneGenerationJob(request: V2CreateSceneGenerationJobRequest): Promise<V2CreateSceneGenerationJobResponse> {
+    async createSceneGenerationJob(request: V2CreateSceneGenerationJobApiRequest): Promise<V2CreateSceneGenerationJobResponse> {
       const response = await post<{ readonly job: V2CreateSceneGenerationJobResponse["job"] }>(
         "/api/v2/generation/jobs/scene",
         request,
       );
       return { job: response.job };
     },
+    async prepareSceneGenerationRequest(request: V2GenerationContextPreviewApiRequest): Promise<V2SceneGenerationPrepareApiResponse> {
+      return post<V2SceneGenerationPrepareApiResponse>("/api/v2/generation/scene/prepare", request);
+    },
     async getSceneGenerationJob(jobId: string) {
-      return (await get<V2GenerationJobApiResponse>(`/api/v2/generation/jobs/${encodeURIComponent(jobId)}`)).job;
+      return toSceneJobSummary((await get<V2GenerationJobApiResponse>(`/api/v2/generation/jobs/${encodeURIComponent(jobId)}`)).job);
     },
     async reviewCandidate(request: V2CandidateReviewRequest): Promise<V2CandidateReviewResult> {
       if (!worldId || revision === undefined) throw new V2AdapterError({ code: "NOT_FOUND", message: "Load a workspace before reviewing a candidate." });
       const response = await post<V2CandidateReviewResponse>(
         `/api/v2/core/worlds/${encodeURIComponent(worldId)}/candidates/scenes/${encodeURIComponent(request.candidateId)}/review`,
-        { ...request, expectedRevision: revision, idempotencyKey: uniqueCommandKey("review") },
+        {
+          action: request.action,
+          reviewer: request.reviewer,
+          reason: request.reason,
+          expectedRevision: revision,
+          idempotencyKey: uniqueCommandKey("review"),
+        },
       );
       revision = response.revision;
       return {
@@ -412,6 +556,7 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
       });
       releaseId = created.releaseId;
       releaseVersion = created.version;
+      writeRuntimeSession(worldId, { releaseId, releaseVersion, ...(runId === undefined ? {} : { runId }), ...(saveId === undefined ? {} : { saveId }), saveLabel });
       return {
         releaseId: created.releaseId,
         version: created.version,
@@ -422,13 +567,15 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
       };
     },
     async startRun() {
-      if (!releaseId || !releaseVersion) throw new V2AdapterError({ code: "NOT_FOUND", message: "Create or load a release before starting a run." });
+      if (!worldId || !releaseId || !releaseVersion) throw new V2AdapterError({ code: "NOT_FOUND", message: "Create or load a release before starting a run." });
       runId = `run:${Date.now()}:${crypto.randomUUID()}`;
       const runtime = await post<V2RuntimeSceneDto>("/api/v2/core/runtime/runs", {
         runId,
         releaseId,
         idempotencyKey: runId,
       });
+      runId = runtime.run.runId;
+      writeRuntimeSession(worldId, { releaseId, releaseVersion, runId, ...(saveId === undefined ? {} : { saveId }), saveLabel });
       return { run: toRun(runtime), player: toPlayer(runtime) };
     },
     async submitChoice(choiceId: string): Promise<V2PlayerRuntimeSummary> {
@@ -445,8 +592,10 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
       saveLabel = label.trim() || "Local checkpoint";
       const save = await post<V2RuntimeSaveDto>(`/api/v2/core/runtime/runs/${encodeURIComponent(runId)}/saves`, {
         saveId,
+        label: saveLabel,
         idempotencyKey: saveId,
       });
+      if (worldId) writeRuntimeSession(worldId, { ...(releaseId === undefined ? {} : { releaseId }), ...(releaseVersion === undefined ? {} : { releaseVersion }), runId, saveId, saveLabel });
       return { saveId: save.saveId, label: saveLabel, runId: save.runId, releaseVersion: save.releaseVersion, currentSceneId: save.currentSceneId, savedAt: save.createdAt };
     },
     async restoreSave(savedId: string): Promise<V2PlayerRuntimeSummary> {
@@ -455,6 +604,8 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
         runId,
         idempotencyKey: runId,
       });
+      runId = runtime.run.runId;
+      if (worldId) writeRuntimeSession(worldId, { ...(releaseId === undefined ? {} : { releaseId }), ...(releaseVersion === undefined ? {} : { releaseVersion }), runId, saveId: savedId, saveLabel });
       return toPlayer(runtime);
     },
     async exportRelease(format: "json" | "markdown"): Promise<V2ExportBundleSummary> {
@@ -466,24 +617,67 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
         preview: format === "json" ? JSON.stringify(bundle.json, null, 2) : bundle.markdown,
       };
     },
-    async createAssetJob(prompt: string): Promise<V2AssetJobSummary> {
+    async uploadManualAsset(input: { readonly file: File; readonly title: string }): Promise<V2ApprovedAssetSummary> {
+      if (!worldId) throw new V2AdapterError({ code: "NOT_FOUND", message: "Load a workspace before uploading an asset." });
+      const body = new FormData();
+      body.set("storyWorldId", worldId);
+      body.set("title", input.title.trim() || input.file.name);
+      body.set("file", input.file, input.file.name);
+      const response = await parseJson<V2CreateManualAssetApiResponse>(await fetcher(`${baseUrl}/api/v2/assets/manual`, {
+        method: "POST",
+        headers: { Accept: "application/json" },
+        body,
+      }));
+      return {
+        assetId: response.asset.assetId,
+        title: response.asset.title,
+        kind: "scene_background",
+        mediaRef: response.asset.mediaRef,
+        thumbnailRef: response.asset.mediaRef,
+        workflowVersion: "manual",
+        seed: 0,
+        approved: true,
+        sourceType: response.asset.sourceType,
+        ...(response.asset.originalFilename === undefined ? {} : { originalFilename: response.asset.originalFilename }),
+        ...(response.asset.mimeType === undefined ? {} : { mimeType: response.asset.mimeType }),
+        ...(response.asset.byteSize === undefined ? {} : { byteSize: response.asset.byteSize }),
+      };
+    },
+    async prepareAssetGenerationRequest(request: V2AssetGenerationRequestInput): Promise<V2PrepareAssetGenerationApiResponse> {
+      if (!worldId) throw new V2AdapterError({ code: "NOT_FOUND", message: "Load a workspace before preparing an asset job." });
+      const idempotencyKey = request.idempotencyKey ?? uniqueCommandKey("asset-job");
+      return post<V2PrepareAssetGenerationApiResponse>("/api/v2/generation/assets/prepare", {
+        storyWorldId: worldId,
+        idempotencyKey,
+        prompt: request.prompt,
+        workflowVersion: request.workflowVersion,
+        workflow: request.workflow,
+        ...(request.negativePrompt === undefined ? {} : { negativePrompt: request.negativePrompt }),
+        ...(request.seed === undefined ? {} : { seed: request.seed }),
+      });
+    },
+    async createAssetJob(input: V2AssetGenerationRequestInput | string): Promise<V2AssetJobSummary> {
       if (!worldId) throw new V2AdapterError({ code: "NOT_FOUND", message: "Load a workspace before creating an asset job." });
+      const request = normalizeAssetGenerationRequest(input);
       const response = await post<V2CreateAssetGenerationJobApiResponse>("/api/v2/generation/assets/jobs", {
         storyWorldId: worldId,
-        idempotencyKey: uniqueCommandKey("asset-job"),
-        prompt,
-        workflowVersion: "local-default@1",
-        workflow: {},
-        seed: 0,
+        idempotencyKey: request.idempotencyKey ?? uniqueCommandKey("asset-job"),
+        prompt: request.prompt,
+        workflowVersion: request.workflowVersion,
+        workflow: request.workflow,
+        ...(request.negativePrompt === undefined ? {} : { negativePrompt: request.negativePrompt }),
+        ...(request.seed === undefined ? {} : { seed: request.seed }),
       });
       return {
         jobId: response.job.jobId,
         status: response.job.status,
+        readableStatus: response.job.status === "succeeded" && response.job.candidateId !== undefined ? "candidate-ready" : response.job.status,
         createdAt: response.job.createdAt,
         updatedAt: response.job.updatedAt,
         workflowVersion: response.job.workflowVersion,
         seed: response.job.seed ?? 0,
         promptPreview: response.job.prompt,
+        ...(response.job.candidateId === undefined ? {} : { candidateId: response.job.candidateId }),
         ...(response.job.failureReason === undefined ? {} : { terminalMessage: response.job.failureReason }),
       };
     },
@@ -501,6 +695,7 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
         workflowVersion: "approved",
         seed: 0,
         approved: true,
+        sourceType: response.approvedAsset.sourceType,
       };
       return {
         status: response.candidate.status,

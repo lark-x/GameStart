@@ -1,4 +1,4 @@
-import type { ChatProvider } from "./provider.ts";
+import type { ChatCompletionRequest, ChatProvider } from "./provider.ts";
 
 export interface V2SceneGenerationRequest {
   readonly context: V2GenerationContextSnapshot;
@@ -26,7 +26,7 @@ export interface V2SceneGenerationResult {
   readonly finishReason?: string;
 }
 
-function contextPrompt(context: V2GenerationContextSnapshot): string {
+export function buildV2SceneGenerationUserPrompt(context: V2GenerationContextSnapshot): string {
   return [
     "Generate exactly one V2 scene candidate as JSON.",
     "The JSON shape must be {\"scene\":{\"sceneId\",\"title\",\"body\",\"participantCharacterIds\"},\"choices\":[{\"label\"}],\"validationNotes\":[]}.",
@@ -41,32 +41,42 @@ function contextPrompt(context: V2GenerationContextSnapshot): string {
   ].join("\n");
 }
 
-export async function generateV2SceneCandidate(
-  provider: ChatProvider,
+export function buildV2SceneGenerationMessages(context: V2GenerationContextSnapshot) {
+  return [
+    {
+      role: "system" as const,
+      content: "You produce candidate JSON for a local creator-reviewed interactive fiction tool. Output only valid JSON.",
+    },
+    {
+      role: "user" as const,
+      content: buildV2SceneGenerationUserPrompt(context),
+    },
+  ];
+}
+
+export function buildV2SceneGenerationProviderRequest(
   request: V2SceneGenerationRequest,
-): Promise<V2SceneGenerationResult> {
-  const response = await provider.complete({
+): ChatCompletionRequest {
+  return {
     ...(request.model === undefined ? {} : { model: request.model }),
     temperature: request.temperature ?? 0.2,
     maxTokens: request.context.tokenBudget,
     responseFormat: "json_object",
-    messages: [
-      {
-        role: "system",
-        content: "You produce candidate JSON for a local creator-reviewed interactive fiction tool. Output only valid JSON.",
-      },
-      {
-        role: "user",
-        content: contextPrompt(request.context),
-      },
-    ],
+    messages: buildV2SceneGenerationMessages(request.context),
     trace: {
       correlationId: `v2:generation:${request.context.contextHash}`,
       storyWorldId: request.context.storyWorldId,
       capability: "scene_generation",
       ...(request.jobId === undefined ? {} : { jobId: request.jobId }),
     },
-  });
+  };
+}
+
+export async function generateV2SceneCandidate(
+  provider: ChatProvider,
+  request: V2SceneGenerationRequest,
+): Promise<V2SceneGenerationResult> {
+  const response = await provider.complete(buildV2SceneGenerationProviderRequest(request));
   return {
     providerResponseId: response.id,
     model: response.model,
