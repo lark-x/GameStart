@@ -33,6 +33,32 @@ const assetPreview = computed(() => store.assetPreparedRequest === null ? "" : J
 const previewText = computed(() => isComfy.value ? assetPreview.value : scenePreview.value);
 const activeCapability = computed(() => isComfy.value ? capabilities.value?.assetGeneration : capabilities.value?.sceneGeneration);
 const capabilityReady = computed(() => activeCapability.value?.configured === true);
+const capabilityBadgeLabel = computed(() => {
+  if (activeCapability.value === undefined) return loadingCapabilities.value ? "读取中" : "未读取";
+  if (!activeCapability.value.enabled) return "环境已关闭";
+  return activeCapability.value.configured ? "可提交" : "配置未完成";
+});
+const capabilitySummary = computed(() => {
+  const capability = activeCapability.value;
+  if (capability === undefined) return capabilityError.value ?? (loadingCapabilities.value ? "读取外部服务状态..." : "尚未读取外部服务状态");
+  return [
+    `开关 ${capability.enabled ? "已启用" : "已关闭"}`,
+    `配置 ${externalStatusLabel(capability.configuration)}`,
+    `绑定 ${externalStatusLabel(capability.binding)}`,
+    `连接 ${externalStatusLabel(capability.connection)}`,
+    `来源 ${sourceLabel(capability.source)}`,
+  ].join(" · ");
+});
+const capabilityDetail = computed(() => {
+  const capability = activeCapability.value;
+  if (capability === undefined) return "";
+  const detail = [
+    reasonLabel(capability.reason),
+    capability.errorMessage,
+    capability.lastCheckedAt === undefined ? undefined : `最后检测：${capability.lastCheckedAt}`,
+  ].filter((item): item is string => item !== undefined && item.trim().length > 0);
+  return detail.join(" · ");
+});
 const canSubmit = computed(() =>
   props.snapshot !== null &&
   capabilityReady.value &&
@@ -74,6 +100,38 @@ function statusLabel(status: string | undefined): string {
     failed: "失败",
     cancelled: "已取消",
   }[status ?? ""] ?? (status ?? "暂无");
+}
+
+function externalStatusLabel(status: string | undefined): string {
+  return {
+    complete: "完整",
+    incomplete: "缺失",
+    bound: "已绑定",
+    unbound: "未绑定",
+    "not-applicable": "无需绑定",
+    untested: "未测试",
+    checking: "检测中",
+    ok: "正常",
+    failed: "失败",
+  }[status ?? ""] ?? (status ?? "未知");
+}
+
+function sourceLabel(source: string | undefined): string {
+  return {
+    profile: "模型档案",
+    settings: "服务设置",
+    environment: "环境变量",
+    none: "无",
+  }[source ?? ""] ?? "未知";
+}
+
+function reasonLabel(reason: string | undefined): string | undefined {
+  return {
+    disabled_by_environment: "当前环境未启用该能力",
+    profile_missing: "需要保存并绑定可用模型档案",
+    secret_unavailable: "已保存的密钥无法解密，请重新填写",
+    settings_missing: "需要保存服务地址或配置环境变量",
+  }[reason ?? ""];
 }
 
 function mediaUrl(mediaRef: string): string | undefined {
@@ -131,13 +189,10 @@ onMounted(() => {
       <div class="capability-strip">
         <div>
           <Badge :tone="capabilityReady ? 'success' : 'warning'">
-            {{ capabilityReady ? "能力已配置" : "配置未完成" }}
+            {{ capabilityBadgeLabel }}
           </Badge>
-          <span v-if="activeCapability">
-            开关 {{ activeCapability.enabled ? "enabled" : "disabled" }} · 配置 {{ activeCapability.configuration }} · 绑定 {{ activeCapability.binding }} · 连接 {{ activeCapability.connection }}
-          </span>
-          <span v-else-if="capabilityError">{{ capabilityError }}</span>
-          <span v-else>{{ loadingCapabilities ? "读取外部服务状态..." : "尚未读取外部服务状态" }}</span>
+          <span>{{ capabilitySummary }}</span>
+          <small v-if="capabilityDetail">{{ capabilityDetail }}</small>
         </div>
         <div class="capability-actions">
           <Button variant="ghost" size="sm" type="button" :loading="loadingCapabilities" @click="loadCapabilities">
