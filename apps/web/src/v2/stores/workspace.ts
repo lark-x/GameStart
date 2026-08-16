@@ -388,14 +388,29 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       loading.value = false;
     }
   }
+
+  async function handleStaleWorkspaceRevision(err: unknown, storyWorldId: string): Promise<boolean> {
+    if (!(err instanceof V2AdapterError) || err.code !== "STALE_REVISION") return false;
+    const current = await adapter.value.getSnapshot(storyWorldId);
+    snapshot.value = current;
+    expectedRevision.value = current.world.revision;
+    const message = `服务端已有新版本（${err.message}）。当前输入已保留，请确认服务端内容后再次保存。`;
+    conflict.value = message;
+    error.value = message;
+    return true;
+  }
+
   async function createCanonEntity(input: V2CanonCreateInput): Promise<void> {
     if (!snapshot.value) return;
+    const storyWorldId = snapshot.value.world.storyWorldId;
     loading.value = true;
     error.value = null;
+    conflict.value = null;
     try {
-      await adapter.value.createCanonEntity({ ...input, storyWorldId: snapshot.value.world.storyWorldId, expectedRevision: snapshot.value.world.revision });
+      await adapter.value.createCanonEntity({ ...input, storyWorldId, expectedRevision: snapshot.value.world.revision });
       await loadSnapshot();
     } catch (err) {
+      if (await handleStaleWorkspaceRevision(err, storyWorldId)) return;
       error.value = operationErrorMessage(err, "创建正典数据失败");
     } finally {
       loading.value = false;
@@ -403,12 +418,15 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
   }
   async function createGraphEntity(input: V2GraphCreateInput): Promise<void> {
     if (!snapshot.value) return;
+    const storyWorldId = snapshot.value.world.storyWorldId;
     loading.value = true;
     error.value = null;
+    conflict.value = null;
     try {
-      await adapter.value.createGraphEntity({ ...input, storyWorldId: snapshot.value.world.storyWorldId, expectedRevision: snapshot.value.world.revision });
+      await adapter.value.createGraphEntity({ ...input, storyWorldId, expectedRevision: snapshot.value.world.revision });
       await loadSnapshot();
     } catch (err) {
+      if (await handleStaleWorkspaceRevision(err, storyWorldId)) return;
       error.value = operationErrorMessage(err, "创建图谱数据失败");
     } finally {
       loading.value = false;
@@ -419,12 +437,15 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
 
   async function updateCanonEntity(input: V2CanonUpdateInput): Promise<void> {
     if (!snapshot.value) return;
+    const storyWorldId = snapshot.value.world.storyWorldId;
     loading.value = true;
     error.value = null;
+    conflict.value = null;
     try {
-      await adapter.value.updateCanonEntity({ ...input, storyWorldId: snapshot.value.world.storyWorldId, expectedRevision: snapshot.value.world.revision });
+      await adapter.value.updateCanonEntity({ ...input, storyWorldId, expectedRevision: snapshot.value.world.revision });
       await loadSnapshot();
     } catch (err) {
+      if (await handleStaleWorkspaceRevision(err, storyWorldId)) return;
       error.value = operationErrorMessage(err, "保存正典数据失败");
     } finally {
       loading.value = false;
@@ -433,12 +454,15 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
 
   async function updateGraphEntity(input: V2GraphUpdateInput): Promise<void> {
     if (!snapshot.value) return;
+    const storyWorldId = snapshot.value.world.storyWorldId;
     loading.value = true;
     error.value = null;
+    conflict.value = null;
     try {
-      await adapter.value.updateGraphEntity({ ...input, storyWorldId: snapshot.value.world.storyWorldId, expectedRevision: snapshot.value.world.revision });
+      await adapter.value.updateGraphEntity({ ...input, storyWorldId, expectedRevision: snapshot.value.world.revision });
       await loadSnapshot();
     } catch (err) {
+      if (await handleStaleWorkspaceRevision(err, storyWorldId)) return;
       error.value = operationErrorMessage(err, "保存图谱数据失败");
     } finally {
       loading.value = false;

@@ -72,6 +72,34 @@ test("V2 workspace store reports stale canon draft revision", async () => {
   assert.equal(store.snapshot?.world.revision, 2);
 });
 
+test("V2 workspace store refreshes entity data on stale revision conflicts", async () => {
+  setActivePinia(createPinia());
+  const store = useV2WorkspaceStore();
+  const base = createV2MockAdapter();
+  const adapter: V2WorkspaceAdapter = {
+    ...base,
+    async createGraphEntity() {
+      await base.updateStoryWorld({
+        storyWorldId: "world_v2_demo",
+        name: "Server Updated World",
+        summary: "Server revision won.",
+        expectedRevision: 2,
+      });
+      throw new V2AdapterError({ code: "STALE_REVISION", message: "Expected revision 2, got 3" });
+    },
+  };
+  store.setAdapter(adapter);
+  await store.loadSnapshot();
+
+  await store.createGraphEntity({ kind: "arc", input: { title: "Local Arc Draft" } });
+
+  assert.match(store.conflict ?? "", /Expected revision 2, got 3/);
+  assert.match(store.error ?? "", /当前输入已保留/);
+  assert.equal(store.snapshot?.world.name, "Server Updated World");
+  assert.equal(store.snapshot?.world.revision, 3);
+  assert.equal(store.expectedRevision, 3);
+});
+
 test("V2 workspace store creates a generation job through the adapter", async () => {
   setActivePinia(createPinia());
   const store = useV2WorkspaceStore();
