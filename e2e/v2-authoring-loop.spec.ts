@@ -55,11 +55,11 @@ test("V2 authoring loop completes at 1440px", async ({ page }) => {
   await page.getByLabel("类型").selectOption("boolean");
   await page.getByLabel("默认值").fill("true");
   await page.getByRole("button", { name: "保存变量", exact: true }).click();
-  await expect(page.getByText("e2e_flag", { exact: true })).toBeVisible();
-  await page.locator("article.state-card", { hasText: "e2e_flag" }).getByRole("button", { name: "编辑默认值" }).click();
+  await expect(page.locator("article.state-card", { hasText: "e2e_flag" })).toBeVisible();
+  await page.locator("article.state-card", { hasText: "e2e_flag" }).getByRole("button", { name: "编辑状态变量" }).click();
   await page.getByLabel("默认值").fill("false");
   await page.getByRole("button", { name: "保存变量", exact: true }).click();
-  await expect(page.locator("article.state-card", { hasText: "e2e_flag" }).getByText("false", { exact: true })).toBeVisible();
+  await expect(page.locator("article.state-card", { hasText: "e2e_flag" }).getByText(/默认值：false/)).toBeVisible();
 
   // Add and edit Timeline Event
   await navigateTo(page, "故事总览");
@@ -109,7 +109,7 @@ test("V2 authoring loop completes at 360px", async ({ page }) => {
   await page.getByLabel("类型").selectOption("number");
   await page.getByLabel("默认值").fill("0");
   await page.getByRole("button", { name: "保存变量", exact: true }).click();
-  await expect(page.getByText("mobile_flag", { exact: true })).toBeVisible();
+  await expect(page.locator("article.state-card", { hasText: "mobile_flag" })).toBeVisible();
 
   // Add Timeline Event
   await navigateTo(page, "故事总览");
