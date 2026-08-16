@@ -346,6 +346,42 @@ export class V2SqliteCanonRepository implements V2CanonRepository {
     return world.revision as V2Revision;
   }
 
+  public async updateWorld(input: V2CanonWorld): Promise<V2CanonWorld> {
+    const result = this.db.prepare("UPDATE v2_worlds SET name = ?, summary = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE story_world_id = ?").run(input.name, input.summary ?? null, input.storyWorldId);
+    if (result.changes !== 1) throw new Error("V2 world update did not find a row");
+    return (await this.getWorld(input.storyWorldId as V2StoryWorldId))!;
+  }
+
+  public async updateLocation(input: V2CanonLocation): Promise<V2CanonLocation> {
+    const result = this.db.prepare("UPDATE v2_locations SET name = ?, summary = ? WHERE story_world_id = ? AND location_id = ?").run(input.name, input.summary ?? null, input.storyWorldId, input.locationId);
+    if (result.changes !== 1) throw new Error("V2 location update did not find a row");
+    return (await this.getLocation({ storyWorldId: input.storyWorldId as V2StoryWorldId, locationId: input.locationId as V2LocationId }))!;
+  }
+
+  public async updateCharacter(input: V2CanonCharacter): Promise<V2CanonCharacter> {
+    const result = this.db.prepare("UPDATE v2_characters SET name = ?, summary = ?, home_location_id = ? WHERE story_world_id = ? AND character_id = ?").run(input.name, input.summary ?? null, input.homeLocationId ?? null, input.storyWorldId, input.characterId);
+    if (result.changes !== 1) throw new Error("V2 character update did not find a row");
+    return (await this.getCharacter({ storyWorldId: input.storyWorldId as V2StoryWorldId, characterId: input.characterId as V2CharacterId }))!;
+  }
+
+  public async updateFact(input: V2CanonFact): Promise<V2CanonFact> {
+    const result = this.db.prepare("UPDATE v2_facts SET text = ?, visibility = ? WHERE story_world_id = ? AND fact_id = ?").run(input.text, input.visibility, input.storyWorldId, input.factId);
+    if (result.changes !== 1) throw new Error("V2 fact update did not find a row");
+    return input;
+  }
+
+  public async updateRule(input: V2CanonRule): Promise<V2CanonRule> {
+    const result = this.db.prepare("UPDATE v2_rules SET text = ?, severity = ? WHERE story_world_id = ? AND rule_id = ?").run(input.text, input.severity, input.storyWorldId, input.ruleId);
+    if (result.changes !== 1) throw new Error("V2 rule update did not find a row");
+    return input;
+  }
+
+  public async updateTimelineEvent(input: V2CanonTimelineEvent): Promise<V2CanonTimelineEvent> {
+    const result = this.db.prepare("UPDATE v2_timeline_events SET local_date = ?, title = ?, summary = ? WHERE story_world_id = ? AND timeline_event_id = ?").run(input.localDate, input.title, input.summary ?? null, input.storyWorldId, input.timelineEventId);
+    if (result.changes !== 1) throw new Error("V2 timeline event update did not find a row");
+    return input;
+  }
+
   public async readMutation<TResult>(input: {
     readonly key: V2IdempotencyKey;
     readonly operation: string;
@@ -496,9 +532,33 @@ export class V2SqliteGraphStateRepository implements V2GraphStateRepository {
     if (!created) throw new Error("V2 state variable insert did not return a row");
     return created;
   }
+  public async updateArc(input: V2GraphArc): Promise<V2GraphArc> {
+    const result = this.db.prepare("UPDATE v2_arcs SET title = ?, summary = ? WHERE story_world_id = ? AND arc_id = ?").run(input.title, input.summary ?? null, input.storyWorldId, input.arcId);
+    if (result.changes !== 1) throw new Error("V2 arc update did not find a row");
+    return (await this.getArc({ storyWorldId: input.storyWorldId as V2StoryWorldId, arcId: input.arcId as V2ArcId }))!;
+  }
+
+  public async updateScene(input: V2GraphScene): Promise<V2GraphScene> {
+    const result = this.db.prepare("UPDATE v2_scenes SET arc_id = ?, title = ?, body = ?, is_entry = ? WHERE story_world_id = ? AND scene_id = ?").run(input.arcId ?? null, input.title, input.body ?? null, input.isEntry ? 1 : 0, input.storyWorldId, input.sceneId);
+    if (result.changes !== 1) throw new Error("V2 scene update did not find a row");
+    return (await this.getScene({ storyWorldId: input.storyWorldId as V2StoryWorldId, sceneId: input.sceneId as V2SceneId }))!;
+  }
+
+  public async updateChoice(input: V2GraphChoice): Promise<V2GraphChoice> {
+    const result = this.db.prepare("UPDATE v2_choices SET source_scene_id = ?, target_scene_id = ?, label = ?, gates_json = ?, consequences_json = ? WHERE story_world_id = ? AND choice_id = ?").run(input.sourceSceneId, input.targetSceneId ?? null, input.label, JSON.stringify(input.gates), JSON.stringify(input.consequences), input.storyWorldId, input.choiceId);
+    if (result.changes !== 1) throw new Error("V2 choice update did not find a row");
+    return (await this.getChoice({ storyWorldId: input.storyWorldId as V2StoryWorldId, choiceId: input.choiceId as V2ChoiceId }))!;
+  }
+
+  public async updateStateVariable(input: V2TypedStateVariable): Promise<V2TypedStateVariable> {
+    const result = this.db.prepare("UPDATE v2_state_variables SET default_json = ? WHERE story_world_id = ? AND key = ?").run(JSON.stringify(input.defaultValue), input.storyWorldId, input.key);
+    if (result.changes !== 1) throw new Error("V2 state variable update did not find a row");
+    return (await this.getStateVariable({ storyWorldId: input.storyWorldId as V2StoryWorldId, key: input.key }))!;
+  }
 }
 
 export class V2SqliteCandidateReviewRepository implements V2CandidateReviewRepository {
+
   private readonly db: DatabaseSync;
 
   public constructor(db: DatabaseSync) {

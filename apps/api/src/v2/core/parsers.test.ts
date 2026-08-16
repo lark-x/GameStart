@@ -20,6 +20,16 @@ import {
   parseStartRuntimeRunBody,
   parseSubmitRuntimeChoiceBody,
   parseSubmitSceneCandidateBody,
+  parseUpdateArcBody,
+  parseUpdateCharacterBody,
+  parseUpdateChoiceBody,
+  parseUpdateFactBody,
+  parseUpdateLocationBody,
+  parseUpdateRuleBody,
+  parseUpdateSceneBody,
+  parseUpdateStateVariableBody,
+  parseUpdateTimelineEventBody,
+  parseUpdateWorldBody,
 } from "./parsers.ts";
 
 const revisioned = { expectedRevision: 1, idempotencyKey: "idem" };
@@ -79,4 +89,20 @@ test("V2 core parsers reject malformed scalar, collection, and nested values", (
   assert.throws(() => parseSubmitSceneCandidateBody({ candidateId: "candidate", baseCanonRevision: 1, payload: {}, provenance: { source: "unknown" }, idempotencyKey: "id" }), /payload\.scene/);
   assert.throws(() => parseSubmitSceneCandidateBody({ candidateId: "candidate", baseCanonRevision: 1, payload: { scene: { sceneId: "scene", title: "Scene", body: "Body", participantCharacterIds: [] }, choices: [], validationNotes: [] }, provenance: { source: "unknown" }, idempotencyKey: "id" }), /provenance\.source/);
   assert.throws(() => parseReviewCandidateBody({ action: "bad", reviewer: "creator", ...revisioned }), /review action/);
+});
+
+test("V2 core parsers accept update request bodies", () => {
+  const update = { expectedRevision: 2, idempotencyKey: "update-idem" };
+  assert.equal(parseUpdateWorldBody({ name: "World", summary: "S", ...update }).name, "World");
+  assert.equal(parseUpdateLocationBody({ name: "Station", summary: "S", ...update }).name, "Station");
+  assert.equal(parseUpdateCharacterBody({ name: "Mira", summary: "Pilot", homeLocationId: "loc", ...update }).homeLocationId, "loc");
+  assert.equal(parseUpdateFactBody({ text: "Fact", visibility: "creator_only", ...update }).visibility, "creator_only");
+  assert.equal(parseUpdateRuleBody({ text: "Rule", severity: "guideline", ...update }).severity, "guideline");
+  assert.equal(parseUpdateTimelineEventBody({ localDate: "2026-01-01", title: "Event", summary: "S", ...update }).title, "Event");
+  assert.equal(parseUpdateArcBody({ title: "Arc", summary: "S", ...update }).title, "Arc");
+  assert.equal(parseUpdateSceneBody({ title: "Scene", body: "B", isEntry: true, ...update }).isEntry, true);
+  assert.equal(parseUpdateChoiceBody({ sourceSceneId: "scene", targetSceneId: "next", label: "Choice", gates: [{ stateKey: "Trust", operator: "gte", value: 1 }], consequences: [{ stateKey: "Trust", operation: "increment", value: 1 }], ...update }).label, "Choice");
+  assert.equal(parseUpdateStateVariableBody({ defaultValue: 3, ...update }).defaultValue, 3);
+  assert.throws(() => parseUpdateFactBody({ text: "Fact", visibility: "bad", ...update }), /visibility/);
+  assert.throws(() => parseUpdateRuleBody({ text: "Rule", severity: "bad", ...update }), /severity/);
 });
