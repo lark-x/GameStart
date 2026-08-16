@@ -5,10 +5,13 @@ import test from "node:test";
 import type { ChatCompletionRequest, ChatCompletionResult, ChatDelta, ChatProvider } from "@living-network/ai/v2";
 import type {
   V2ApprovedAssetListApiResponse,
+  V2AssetCandidateListApiResponse,
   V2CoreExportBundleDto,
+  V2CreateAssetGenerationJobApiResponse,
   V2CreateManualAssetApiResponse,
   V2CreateSceneGenerationJobApiResponse,
   V2GenerationJobListApiResponse,
+  V2ReviewAssetCandidateApiResponse,
   V2RuntimeSaveDto,
   V2RuntimeSceneDto,
   V2SceneCandidateDto,
@@ -16,9 +19,12 @@ import type {
 } from "@living-network/contracts/v2";
 
 import { createV2ApiRuntime } from "../apps/api/src/v2/platform/runtime.ts";
+import { FakeComfyUiClient } from "../apps/worker/src/comfyui-client.ts";
+import { processV2AssetGenerationJob } from "../apps/worker/src/v2/asset-generation-worker.ts";
 import { processV2SceneGenerationJob } from "../apps/worker/src/v2/scene-generation-worker.ts";
 import {
   openV2TempSqliteConnection,
+  V2SqliteAssetGenerationRepository,
   V2SqliteCandidateSubmissionPort,
   V2SqliteGenerationJobRepository,
 } from "../packages/database/src/v2/index.ts";
@@ -90,9 +96,10 @@ test("V2 API, SQLite, worker, review, release, and restart form one persisted au
       mediaRoot,
       capabilities: {
         sceneGeneration: { enabled: true },
-        assetGeneration: { enabled: false },
+        assetGeneration: { enabled: true },
       },
       environmentSceneConfigured: true,
+      environmentAssetConfigured: true,
     });
     try {
       const world = await runtime.app.inject({
@@ -328,6 +335,69 @@ test("V2 API, SQLite, worker, review, release, and restart form one persisted au
       assert.equal(releaseExport.statusCode, 200);
       assert.equal((releaseExport.json() as V2CoreExportBundleDto).source.releaseVersion, "1.0.0");
 
+      const createdAssetJob = await runtime.app.inject({
+        method: "POST",
+        url: "/api/v2/generation/assets/jobs",
+        payload: {
+          storyWorldId: "world_integration",
+          idempotencyKey: "integration-asset-job",
+          prompt: "Generate bridge key art.",
+          workflowVersion: "workflow-integration-v1",
+          workflow: { "1": { class_type: "KSampler", inputs: { seed: 42 } } },
+          seed: 42,
+          maxAttempts: 1,
+        },
+      });
+      assert.equal(createdAssetJob.statusCode, 201);
+      const assetJob = (createdAssetJob.json() as V2CreateAssetGenerationJobApiResponse).job;
+      const assetRepository = new V2SqliteAssetGenerationRepository(runtime.db);
+      const assetWorker = await processV2AssetGenerationJob({
+        jobId: assetJob.jobId,
+        kind: "asset",
+        workflowVersion: assetJob.workflowVersion,
+        correlationId: "integration-asset-success",
+      }, {
+        jobs: assetRepository,
+        candidates: assetRepository,
+        comfyUi: new FakeComfyUiClient(),
+      }, {
+        now: () => new Date("2026-08-16T01:02:00.000Z"),
+      });
+      assert.equal(assetWorker.kind, "succeeded");
+      assert.equal(assetWorker.job.status, "succeeded");
+      assert.ok(assetWorker.candidateId);
+
+      const assetCandidates = await runtime.app.inject({
+        method: "GET",
+        url: "/api/v2/generation/assets/worlds/world_integration/candidates",
+      });
+      assert.equal(assetCandidates.statusCode, 200);
+      const assetCandidate = (assetCandidates.json() as V2AssetCandidateListApiResponse).candidates[0];
+      assert.equal(assetCandidate?.status, "pending");
+      assert.equal(assetCandidate?.payload.asset.sourceJobId, assetJob.jobId);
+
+      const assetReview = await runtime.app.inject({
+        method: "POST",
+        url: `/api/v2/generation/assets/candidates/${encodeURIComponent(assetWorker.candidateId!)}/review`,
+        payload: {
+          action: "approve",
+          reviewer: "integration-test",
+          reason: "Generated key art is approved for the formal library.",
+          idempotencyKey: "integration-asset-review",
+        },
+      });
+      assert.equal(assetReview.statusCode, 201);
+      const approvedGeneratedAsset = (assetReview.json() as V2ReviewAssetCandidateApiResponse).approvedAsset;
+      assert.equal(approvedGeneratedAsset?.sourceType, "candidate");
+      assert.equal(approvedGeneratedAsset?.candidateId, assetWorker.candidateId);
+
+      const mixedAssetLibrary = await runtime.app.inject({
+        method: "GET",
+        url: "/api/v2/generation/assets/worlds/world_integration/library",
+      });
+      assert.equal(mixedAssetLibrary.statusCode, 200);
+      assert.deepEqual(new Set((mixedAssetLibrary.json() as V2ApprovedAssetListApiResponse).assets.map((asset) => asset.sourceType)), new Set(["manual", "candidate"]));
+
       const failedCreate = await runtime.app.inject({
         method: "POST",
         url: "/api/v2/generation/jobs/scene",
@@ -404,7 +474,7 @@ test("V2 API, SQLite, worker, review, release, and restart form one persisted au
         url: "/api/v2/generation/assets/worlds/world_integration/library",
       });
       assert.equal(library.statusCode, 200);
-      assert.equal((library.json() as V2ApprovedAssetListApiResponse).assets[0]?.sourceType, "manual");
+      assert.deepEqual(new Set((library.json() as V2ApprovedAssetListApiResponse).assets.map((asset) => asset.sourceType)), new Set(["manual", "candidate"]));
     } finally {
       await restarted.close();
     }
