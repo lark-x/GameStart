@@ -7,13 +7,6 @@ import type {
   V2SaveId,
   V2StoryWorldId,
 } from "@living-network/contracts/v2";
-import {
-  V2SqliteCanonUnitOfWork,
-  V2SqliteCandidateReviewUnitOfWork,
-  V2SqliteGraphStateUnitOfWork,
-  V2SqliteReleaseRuntimeUnitOfWork,
-} from "@living-network/database/v2";
-
 import { toV2HttpError, V2HttpError } from "./errors.ts";
 import {
   parseCreateCharacterBody,
@@ -49,18 +42,10 @@ import { createV2CoreUseCases, type V2CoreUseCases } from "./use-cases.ts";
 
 export interface V2CorePluginOptions {
   readonly useCases?: V2CoreUseCases;
-  readonly sqlite?: import("node:sqlite").DatabaseSync;
 }
 
 export const v2CorePlugin: FastifyPluginAsync<V2CorePluginOptions> = async (app, options) => {
-  const useCases = options.useCases ?? (options.sqlite
-    ? createV2CoreUseCases(
-      new V2SqliteCanonUnitOfWork(options.sqlite),
-      new V2SqliteGraphStateUnitOfWork(options.sqlite),
-      new V2SqliteCandidateReviewUnitOfWork(options.sqlite),
-      new V2SqliteReleaseRuntimeUnitOfWork(options.sqlite),
-    )
-    : undefined);
+  const useCases = options.useCases;
   if (!useCases) {
     app.get("/status", async () => ({ available: false, reason: "V2 core dependencies are not configured" }));
     return;
