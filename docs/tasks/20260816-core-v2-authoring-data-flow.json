@@ -18,7 +18,9 @@
     "packages/database/src/v2/core/canon-repository.ts",
     "packages/ports/src/v2/core/canon-repository.ts",
     "packages/ports/src/v2/core/graph-state-repository.ts",
-    "docs/tasks/20260816-core-v2-authoring-data-flow.json"
+    "docs/tasks/20260816-core-v2-authoring-data-flow.json",
+    "apps/api/src/v2/core/parsers.test.ts",
+    "apps/api/src/v2/core/plugin.test.ts"
   ],
   "forbiddenPaths": [
     "packages/database/src/v2/**/migrations.ts",
