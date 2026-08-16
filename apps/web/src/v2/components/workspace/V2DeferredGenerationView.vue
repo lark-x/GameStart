@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { computed } from "vue";
-import { Activity, AlertTriangle, Check, FileSearch, RefreshCw, Send, Sparkles, X } from "@lucide/vue";
+import { computed, onMounted, ref } from "vue";
+import { useRouter } from "vue-router";
+import { Activity, AlertTriangle, Check, FileSearch, RefreshCw, Send, Settings2, Sparkles, X } from "@lucide/vue";
+import type { V2PlatformCapabilities } from "@living-network/contracts/v2";
 
 import Badge from "../../../components/ui/Badge.vue";
 import Button from "../../../components/ui/Button.vue";
@@ -10,10 +12,15 @@ import Input from "../../../components/ui/Input.vue";
 import Textarea from "../../../components/ui/Textarea.vue";
 import { useV2WorkspaceStore } from "../../stores/workspace";
 import { v2MediaRefToUrl } from "../../adapters";
+import { createV2PlatformClient } from "../../adapters/platform.ts";
 import type { V2CandidateReviewAction, V2WorkspaceSnapshot } from "../../adapters";
 
 const props = defineProps<{ area: string; snapshot: V2WorkspaceSnapshot | null }>();
 const store = useV2WorkspaceStore();
+const router = useRouter();
+const capabilities = ref<V2PlatformCapabilities | null>(null);
+const capabilityError = ref<string | null>(null);
+const loadingCapabilities = ref(false);
 
 const service = computed(() => props.area.startsWith("comfy-") ? "ComfyUI" : "模型");
 const isComfy = computed(() => service.value === "ComfyUI");
@@ -24,7 +31,32 @@ const assetCandidate = computed(() => props.snapshot?.assets.candidate ?? null);
 const scenePreview = computed(() => store.scenePreparedRequest === null ? "" : JSON.stringify(store.scenePreparedRequest.request, null, 2));
 const assetPreview = computed(() => store.assetPreparedRequest === null ? "" : JSON.stringify(store.assetPreparedRequest.request, null, 2));
 const previewText = computed(() => isComfy.value ? assetPreview.value : scenePreview.value);
-const canSubmit = computed(() => props.snapshot !== null && (isComfy.value ? store.canSubmitAssetGeneration : store.canSubmitSceneGeneration));
+const activeCapability = computed(() => isComfy.value ? capabilities.value?.assetGeneration : capabilities.value?.sceneGeneration);
+const capabilityReady = computed(() => activeCapability.value?.configured === true);
+const canSubmit = computed(() =>
+  props.snapshot !== null &&
+  capabilityReady.value &&
+  (isComfy.value ? store.canSubmitAssetGeneration : store.canSubmitSceneGeneration),
+);
+const configurePath = computed(() => isComfy.value ? "/v2/services/comfyui" : "/v2/services/models");
+
+function platformClient() {
+  const env = (import.meta as ImportMeta & { readonly env?: Record<string, string | undefined> }).env ?? {};
+  const fallback = typeof window === "undefined" ? "http://127.0.0.1:3002" : window.location.origin;
+  return createV2PlatformClient({ baseUrl: env.VITE_API_BASE || fallback });
+}
+
+async function loadCapabilities(): Promise<void> {
+  loadingCapabilities.value = true;
+  capabilityError.value = null;
+  try {
+    capabilities.value = await platformClient().getCapabilities();
+  } catch (error) {
+    capabilityError.value = error instanceof Error ? error.message : "无法读取外部服务状态";
+  } finally {
+    loadingCapabilities.value = false;
+  }
+}
 
 function statusLabel(status: string | undefined): string {
   return {
@@ -59,6 +91,14 @@ function reviewScene(action: V2CandidateReviewAction): void {
 function reviewAsset(action: V2CandidateReviewAction): void {
   void store.reviewAssetCandidate(action);
 }
+
+function goToConfigure(): void {
+  void router.push(configurePath.value);
+}
+
+onMounted(() => {
+  void loadCapabilities();
+});
 </script>
 
 <template>
@@ -78,6 +118,27 @@ function reviewAsset(action: V2CandidateReviewAction): void {
     </header>
 
     <div v-if="section === 'request'" class="module-body">
+      <div class="capability-strip">
+        <div>
+          <Badge :tone="capabilityReady ? 'success' : 'warning'">
+            {{ capabilityReady ? "能力已配置" : "配置未完成" }}
+          </Badge>
+          <span v-if="activeCapability">
+            开关 {{ activeCapability.enabled ? "enabled" : "disabled" }} · 配置 {{ activeCapability.configuration }} · 绑定 {{ activeCapability.binding }} · 连接 {{ activeCapability.connection }}
+          </span>
+          <span v-else-if="capabilityError">{{ capabilityError }}</span>
+          <span v-else>{{ loadingCapabilities ? "读取外部服务状态..." : "尚未读取外部服务状态" }}</span>
+        </div>
+        <div class="capability-actions">
+          <Button variant="ghost" size="sm" type="button" :loading="loadingCapabilities" @click="loadCapabilities">
+            <RefreshCw :size="14" /> 刷新
+          </Button>
+          <Button variant="secondary" size="sm" type="button" @click="goToConfigure">
+            <Settings2 :size="14" /> 前往配置
+          </Button>
+        </div>
+      </div>
+
       <form v-if="!isComfy" class="request-form" @submit.prevent="store.createGenerationJob">
         <Field label="业务输入">
           <Textarea
@@ -220,6 +281,9 @@ function reviewAsset(action: V2CandidateReviewAction): void {
 .module-header p { margin: 0 0 var(--space-1); color: var(--primary); font-size: var(--text-xs); font-weight: 800; }
 .module-header h2 { margin: 0; color: var(--text-strong); font-size: var(--text-xl); }
 .module-body, .request-form, .candidate-card { display: grid; gap: var(--space-4); }
+.capability-strip { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-soft); }
+.capability-strip > div:first-child { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); color: var(--muted); font-size: var(--text-sm); }
+.capability-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
 .action-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); color: var(--muted); font-size: var(--text-sm); }
 .compact-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(140px, 180px); gap: var(--space-3); }
 .job-card, .candidate-card { padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-soft); }
