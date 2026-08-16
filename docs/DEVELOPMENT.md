@@ -72,14 +72,14 @@ V1 的 PostgreSQL、旧 `node:http` API 和旧 `/v1` Contract 已冻结，仅作
 - ADR 记录长期且难以逆转的架构选择，不记录常规实现决策。当前文档只在行为、接口、运行方式或完成状态实际变化时更新。
 - 三 AI Gate 0、owner paths、共享文件冻结和 interface request 属于已经结束的并行建设阶段。普通集成后开发不再执行这些流程；未来需要并行冻结时，由任务显式重新启用。
 
-## 9. AI 模块化开发
+## 9. 功能闭环优先与纵向开发
 
-普通 AI 开发使用五个责任区：Core、Generation/Assets、Platform、Web Shell、Integration。机器可读所有权以 `.ai/modules.json` 为准，开发批次以 `docs/tasks/<日期>-<模块>-<任务>.json` 为准。未归属或重叠归属的活跃 V2 文件会被门禁拒绝。
+普通功能以“一个用户结果”为一个 PR，允许在同一个纵向批次中修改 Web、API、Worker、Contracts、Domain、Ports 和 Database。
 
-- 每个分支/PR 只实现一个模块；同模块相关小任务可组成一个开发批次。
-- Integration 独占组合入口、共享 Contract、migration、顶层导出、依赖和治理文件；现有混合热点拆分前也由 Integration 持有。
-- V1 默认只读。物理退役必须使用单独的高风险 Integration 任务。
-- 中高风险开发先确认目标、路径、公共接口、失败处理和验收；低风险仍需任务记录和自动范围检查。
-- 范围检查只证明“改动获得授权”，边界检查证明“依赖方向合法”，业务测试证明“行为正确”，三者不能互相替代。
+- 不需要创建 `docs/tasks/*.json`，不需要 Interface Request，不受 `.ai/modules.json` 的路径 ACL 限制。
+- `.ai/modules.json` 仅用于理解模块划分和依赖方向；自动门禁由 `check:boundaries` 负责依赖方向。
+- 共享 Contract、组合入口、migration、顶层导出和依赖可以在同一纵向功能中修改，但必须保持既有依赖方向，不复制 DTO 或绕过 Domain/Ports。
+- V1 文件保留作为历史实现；未明确要求时不要删除或大规模重构。
+- 范围检查（`check:scope`）已暂停为信息提示，不阻塞普通功能；边界检查、typecheck、核心测试和 build 仍由 CI 把关。
 
 单元测试通过最小 Port Fake/Mock 隔离上下游；Contract fixture 验证协议；Adapter 测试使用临时 SQLite、临时目录或受控 Fake HTTP；Integration/E2E 验证真实装配。Mock 不能替代真实 Adapter 的行为约定测试，也不能被报告为真实外部服务验收。

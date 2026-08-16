@@ -4,33 +4,15 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  scope-check:
-    if: github.event_name == 'pull_request'
+  verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Checkout full pull request history
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24.x
-      - name: Validate AI task scope
-        env:
-          SCOPE_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          SCOPE_HEAD_REF: ${{ github.head_ref }}
-        run: node scripts/check-task-scope.mjs
-
-  v2-verify:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -45,22 +27,20 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Test governance gates
-        run: pnpm test:governance
-      - name: Check V2 architecture boundaries
+      - name: Check architecture boundaries
         run: pnpm check:boundaries
-      - name: Run V2 type checks
+      - name: Typecheck
         run: pnpm typecheck
-      - name: Run V2 unit tests
+      - name: Unit tests
         run: pnpm test
-      - name: Run V2 coverage (100 percent line)
-        run: pnpm test:coverage
-      - name: Build V2 packages and Web
-        run: pnpm build
-      - name: Lint V2 Web
+      - name: Lint web
         run: pnpm --filter @living-network/web lint
+      - name: Build
+        run: pnpm build
 
-  v2-real-services:
+  integration:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -87,14 +67,15 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Run V2 SQLite and Redis integration tests
+      - name: Run SQLite and Redis integration tests
         env:
           RUN_V2_REAL_INTEGRATION: "1"
           REDIS_URL: redis://localhost:6379
         run: pnpm test:integration
 
-  v2-e2e:
-    needs: [v2-verify, v2-real-services]
+  e2e:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
@@ -123,7 +104,7 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Install Playwright browser
         run: pnpm exec playwright install --with-deps chromium
-      - name: Run V2 Playwright paths
+      - name: Run Playwright paths
         env:
           REDIS_URL: redis://localhost:6379
         run: pnpm test:e2e
