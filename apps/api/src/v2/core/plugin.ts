@@ -34,6 +34,16 @@ import {
   parseStartRuntimeRunBody,
   parseSubmitRuntimeChoiceBody,
   parseSubmitSceneCandidateBody,
+  parseUpdateArcBody,
+  parseUpdateCharacterBody,
+  parseUpdateChoiceBody,
+  parseUpdateFactBody,
+  parseUpdateLocationBody,
+  parseUpdateRuleBody,
+  parseUpdateSceneBody,
+  parseUpdateStateVariableBody,
+  parseUpdateTimelineEventBody,
+  parseUpdateWorldBody,
 } from "./parsers.ts";
 import { createV2CoreUseCases, type V2CoreUseCases } from "./use-cases.ts";
 
@@ -95,6 +105,30 @@ export const v2CorePlugin: FastifyPluginAsync<V2CorePluginOptions> = async (app,
     const result = await useCases.createTimelineEvent(storyWorldId, parseCreateTimelineEventBody(request.body));
     return reply.status(201).send(result);
   });
+  app.patch("/worlds/:storyWorldId", async (request) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    return useCases.updateWorld(storyWorldId, parseUpdateWorldBody(request.body));
+  });
+  app.patch("/worlds/:storyWorldId/locations/:locationId", async (request) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    return useCases.updateLocation(storyWorldId, getRouteParam(request.params, "locationId") as never, parseUpdateLocationBody(request.body));
+  });
+  app.patch("/worlds/:storyWorldId/characters/:characterId", async (request) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    return useCases.updateCharacter(storyWorldId, getRouteParam(request.params, "characterId") as never, parseUpdateCharacterBody(request.body));
+  });
+  app.patch("/worlds/:storyWorldId/facts/:factId", async (request) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    return useCases.updateFact(storyWorldId, getRouteParam(request.params, "factId"), parseUpdateFactBody(request.body));
+  });
+  app.patch("/worlds/:storyWorldId/rules/:ruleId", async (request) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    return useCases.updateRule(storyWorldId, getRouteParam(request.params, "ruleId"), parseUpdateRuleBody(request.body));
+  });
+  app.patch("/worlds/:storyWorldId/timeline-events/:timelineEventId", async (request) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    return useCases.updateTimelineEvent(storyWorldId, getRouteParam(request.params, "timelineEventId"), parseUpdateTimelineEventBody(request.body));
+  });
   app.get("/worlds/:storyWorldId/graph", async (request) => {
     const { storyWorldId } = getWorldParams(request.params);
     return useCases.getGraph(storyWorldId);
@@ -118,6 +152,18 @@ export const v2CorePlugin: FastifyPluginAsync<V2CorePluginOptions> = async (app,
     const result = await useCases.createChoice(storyWorldId, parseCreateChoiceBody(request.body));
     return reply.status(201).send(result);
   });
+  app.patch("/worlds/:storyWorldId/arcs/:arcId", async (request) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    return useCases.updateArc(storyWorldId, getRouteParam(request.params, "arcId") as never, parseUpdateArcBody(request.body));
+  });
+  app.patch("/worlds/:storyWorldId/scenes/:sceneId", async (request) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    return useCases.updateScene(storyWorldId, getRouteParam(request.params, "sceneId") as never, parseUpdateSceneBody(request.body));
+  });
+  app.patch("/worlds/:storyWorldId/choices/:choiceId", async (request) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    return useCases.updateChoice(storyWorldId, getRouteParam(request.params, "choiceId") as never, parseUpdateChoiceBody(request.body));
+  });
   app.get("/worlds/:storyWorldId/state/variables", async (request) => {
     const { storyWorldId } = getWorldParams(request.params);
     return useCases.listStateVariables(storyWorldId);
@@ -126,6 +172,10 @@ export const v2CorePlugin: FastifyPluginAsync<V2CorePluginOptions> = async (app,
     const { storyWorldId } = getWorldParams(request.params);
     const result = await useCases.createStateVariable(storyWorldId, parseCreateStateVariableBody(request.body));
     return reply.status(201).send(result);
+  });
+  app.patch("/worlds/:storyWorldId/state/variables/:key", async (request) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    return useCases.updateStateVariable(storyWorldId, getRouteParam(request.params, "key"), parseUpdateStateVariableBody(request.body));
   });
   app.get("/worlds/:storyWorldId/state/initial", async (request) => {
     const { storyWorldId } = getWorldParams(request.params);
@@ -205,6 +255,13 @@ export const v2CorePlugin: FastifyPluginAsync<V2CorePluginOptions> = async (app,
   });
 };
 
+function getRouteParam(params: unknown, key: string): string {
+  const value = (params as Record<string, unknown>)[key];
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new V2HttpError(400, "BAD_REQUEST", `${key} must be a non-empty string`);
+  }
+  return value;
+}
 function getWorldParams(params: unknown): { readonly storyWorldId: V2StoryWorldId } {
   const record = params as Record<string, unknown>;
   const storyWorldId = record.storyWorldId;

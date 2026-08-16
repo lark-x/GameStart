@@ -54,8 +54,12 @@ import type {
   V2SceneCandidateDto,
 } from "@living-network/contracts/v2";
 import type {
-  V2CoreSceneCandidatePayload,
-} from "@living-network/domain/v2";
+  V2UpdateArcRequest, V2UpdateCharacterRequest, V2UpdateChoiceRequest,
+  V2UpdateFactRequest, V2UpdateLocationRequest, V2UpdateRuleRequest,
+  V2UpdateSceneRequest, V2UpdateStateVariableRequest, V2UpdateStoryWorldRequest,
+  V2UpdateTimelineEventRequest,
+} from "@living-network/contracts/v2";
+import type { V2CoreSceneCandidatePayload } from "@living-network/domain/v2";
 import {
   buildV2CoreExportMarkdown,
   buildV2ReleaseExportJson,
@@ -107,6 +111,17 @@ export interface V2CoreUseCases {
   createFact(storyWorldId: V2StoryWorldId, input: V2CreateFactRequest): Promise<V2CanonWriteResponse<V2FactDto>>;
   createRule(storyWorldId: V2StoryWorldId, input: V2CreateRuleRequest): Promise<V2CanonWriteResponse<V2RuleDto>>;
   createTimelineEvent(storyWorldId: V2StoryWorldId, input: V2CreateTimelineEventRequest): Promise<V2CanonWriteResponse<V2TimelineEventDto>>;
+  updateWorld(storyWorldId: V2StoryWorldId, input: V2UpdateStoryWorldRequest): Promise<V2CanonWriteResponse<V2StoryWorldDto>>;
+  updateLocation(storyWorldId: V2StoryWorldId, locationId: V2LocationId, input: V2UpdateLocationRequest): Promise<V2CanonWriteResponse<V2LocationDto>>;
+  updateCharacter(storyWorldId: V2StoryWorldId, characterId: V2CharacterDto["characterId"], input: V2UpdateCharacterRequest): Promise<V2CanonWriteResponse<V2CharacterDto>>;
+  updateFact(storyWorldId: V2StoryWorldId, factId: string, input: V2UpdateFactRequest): Promise<V2CanonWriteResponse<V2FactDto>>;
+  updateRule(storyWorldId: V2StoryWorldId, ruleId: string, input: V2UpdateRuleRequest): Promise<V2CanonWriteResponse<V2RuleDto>>;
+  updateTimelineEvent(storyWorldId: V2StoryWorldId, timelineEventId: string, input: V2UpdateTimelineEventRequest): Promise<V2CanonWriteResponse<V2TimelineEventDto>>;
+  updateArc(storyWorldId: V2StoryWorldId, arcId: V2ArcDto["arcId"], input: V2UpdateArcRequest): Promise<V2CanonWriteResponse<V2ArcDto>>;
+  updateScene(storyWorldId: V2StoryWorldId, sceneId: V2SceneDto["sceneId"], input: V2UpdateSceneRequest): Promise<V2CanonWriteResponse<V2SceneDto>>;
+  updateChoice(storyWorldId: V2StoryWorldId, choiceId: V2ChoiceDto["choiceId"], input: V2UpdateChoiceRequest): Promise<V2CanonWriteResponse<V2ChoiceDto>>;
+  updateStateVariable(storyWorldId: V2StoryWorldId, key: string, input: V2UpdateStateVariableRequest): Promise<V2CanonWriteResponse<V2StateVariableDto>>;
+
   getGraph(storyWorldId: V2StoryWorldId): Promise<V2GraphSnapshotDto>;
   validateGraph(storyWorldId: V2StoryWorldId): Promise<V2GraphValidationDto>;
   createArc(storyWorldId: V2StoryWorldId, input: V2CreateArcRequest): Promise<V2CanonWriteResponse<V2ArcDto>>;
@@ -224,6 +239,57 @@ export function createV2CoreUseCases(
         return { item: toTimelineEventDto(item), revision };
       }),
     ),
+    updateWorld: (storyWorldId, input) => unitOfWork.withCanonTransaction(async ({ canon }) =>
+      withIdempotency(canon, "updateWorld", input.idempotencyKey, { storyWorldId, ...input }, async () => {
+        const existing = await requireWorld(canon, storyWorldId);
+        const validated = createV2CanonWorld({ storyWorldId, name: input.name, ...(input.summary === undefined ? {} : { summary: input.summary }) });
+        const item = await canon.updateWorld({ ...existing, name: validated.name, ...(input.summary === undefined ? {} : { summary: validated.summary }) });
+        const revision = await canon.advanceRevision(storyWorldId, input.expectedRevision);
+        return { item: toWorldDto(item), revision };
+      }),
+    ),
+    updateLocation: (storyWorldId, locationId, input) => unitOfWork.withCanonTransaction(async ({ canon }) =>
+      withIdempotency(canon, "updateLocation", input.idempotencyKey, { storyWorldId, locationId, ...input }, async () => {
+        const existing = await requireLocation(canon, storyWorldId, locationId);
+        const item = await canon.updateLocation(createV2CanonLocation({ storyWorldId, locationId: existing.locationId, name: input.name, ...(input.summary === undefined ? {} : { summary: input.summary }) }));
+        const revision = await canon.advanceRevision(storyWorldId, input.expectedRevision);
+        return { item: toLocationDto(item), revision };
+      }),
+    ),
+    updateCharacter: (storyWorldId, characterId, input) => unitOfWork.withCanonTransaction(async ({ canon }) =>
+      withIdempotency(canon, "updateCharacter", input.idempotencyKey, { storyWorldId, characterId, ...input }, async () => {
+        const existing = await requireCharacter(canon, storyWorldId, characterId);
+        const homeLocationId = input.homeLocationId ?? existing.homeLocationId;
+        if (homeLocationId !== undefined) await requireLocation(canon, storyWorldId, homeLocationId);
+        const item = await canon.updateCharacter(createV2CanonCharacter({ storyWorldId, characterId: existing.characterId, name: input.name, ...(input.summary === undefined ? {} : { summary: input.summary }), ...(homeLocationId === undefined ? {} : { homeLocationId }) }));
+        const revision = await canon.advanceRevision(storyWorldId, input.expectedRevision);
+        return { item: toCharacterDto(item), revision };
+      }),
+    ),
+    updateFact: (storyWorldId, factId, input) => unitOfWork.withCanonTransaction(async ({ canon }) =>
+      withIdempotency(canon, "updateFact", input.idempotencyKey, { storyWorldId, factId, ...input }, async () => {
+        const existing = await requireFact(canon, storyWorldId, factId);
+        const item = await canon.updateFact(createV2CanonFact({ storyWorldId, factId: existing.factId, text: input.text, visibility: input.visibility }));
+        const revision = await canon.advanceRevision(storyWorldId, input.expectedRevision);
+        return { item: toFactDto(item), revision };
+      }),
+    ),
+    updateRule: (storyWorldId, ruleId, input) => unitOfWork.withCanonTransaction(async ({ canon }) =>
+      withIdempotency(canon, "updateRule", input.idempotencyKey, { storyWorldId, ruleId, ...input }, async () => {
+        const existing = await requireRule(canon, storyWorldId, ruleId);
+        const item = await canon.updateRule(createV2CanonRule({ storyWorldId, ruleId: existing.ruleId, text: input.text, severity: input.severity }));
+        const revision = await canon.advanceRevision(storyWorldId, input.expectedRevision);
+        return { item: toRuleDto(item), revision };
+      }),
+    ),
+    updateTimelineEvent: (storyWorldId, timelineEventId, input) => unitOfWork.withCanonTransaction(async ({ canon }) =>
+      withIdempotency(canon, "updateTimelineEvent", input.idempotencyKey, { storyWorldId, timelineEventId, ...input }, async () => {
+        const existing = await requireTimelineEvent(canon, storyWorldId, timelineEventId);
+        const item = await canon.updateTimelineEvent(createV2CanonTimelineEvent({ storyWorldId, timelineEventId: existing.timelineEventId, localDate: input.localDate, title: input.title, ...(input.summary === undefined ? {} : { summary: input.summary }) }));
+        const revision = await canon.advanceRevision(storyWorldId, input.expectedRevision);
+        return { item: toTimelineEventDto(item), revision };
+      }),
+    ),
     getGraph: (storyWorldId) => requireGraphState().withGraphStateTransaction(async ({ canon, graphState }) => {
       await requireWorld(canon, storyWorldId);
       return buildGraphSnapshot(graphState, storyWorldId);
@@ -284,6 +350,37 @@ export function createV2CoreUseCases(
         return { item: toChoiceDto(item), revision };
       }),
     ),
+    updateArc: (storyWorldId, arcId, input) => requireGraphState().withGraphStateTransaction(async ({ canon, graphState }) =>
+      withIdempotency(canon, "updateArc", input.idempotencyKey, { storyWorldId, arcId, ...input }, async () => {
+        const existing = await requireArc(graphState, storyWorldId, arcId);
+        const item = await graphState.updateArc(createV2GraphArc({ storyWorldId, arcId: existing.arcId, title: input.title, ...(input.summary === undefined ? {} : { summary: input.summary }) }));
+        const revision = await canon.advanceRevision(storyWorldId, input.expectedRevision);
+        return { item: toArcDto(item), revision };
+      }),
+    ),
+    updateScene: (storyWorldId, sceneId, input) => requireGraphState().withGraphStateTransaction(async ({ canon, graphState }) =>
+      withIdempotency(canon, "updateScene", input.idempotencyKey, { storyWorldId, sceneId, ...input }, async () => {
+        const existing = await requireScene(graphState, storyWorldId, sceneId);
+        const arcId = input.arcId ?? existing.arcId;
+        if (arcId !== undefined) await requireArc(graphState, storyWorldId, arcId);
+        const item = await graphState.updateScene(createV2GraphScene({ storyWorldId, sceneId: existing.sceneId, ...(arcId === undefined ? {} : { arcId }), title: input.title, ...(input.body === undefined ? {} : { body: input.body }), isEntry: input.isEntry }));
+        const revision = await canon.advanceRevision(storyWorldId, input.expectedRevision);
+        return { item: toSceneDto(item), revision };
+      }),
+    ),
+    updateChoice: (storyWorldId, choiceId, input) => requireGraphState().withGraphStateTransaction(async ({ canon, graphState }) =>
+      withIdempotency(canon, "updateChoice", input.idempotencyKey, { storyWorldId, choiceId, ...input }, async () => {
+        const existing = await graphState.getChoice({ storyWorldId, choiceId });
+        if (!existing) throw new V2HttpError(404, "NOT_FOUND", "Choice not found");
+        const sourceScene = await requireScene(graphState, storyWorldId, input.sourceSceneId);
+        const targetScene = input.targetSceneId === undefined ? undefined : await requireScene(graphState, storyWorldId, input.targetSceneId);
+        const gates = input.gates ?? existing.gates;
+        const consequences = input.consequences ?? existing.consequences;
+        const item = await graphState.updateChoice(createV2GraphChoice({ storyWorldId, choiceId: existing.choiceId, sourceScene, ...(targetScene === undefined ? {} : { targetScene }), label: input.label, gates, consequences }));
+        const revision = await canon.advanceRevision(storyWorldId, input.expectedRevision);
+        return { item: toChoiceDto(item), revision };
+      }),
+    ),
     listStateVariables: (storyWorldId) => requireGraphState().withGraphStateTransaction(async ({ canon, graphState }) => {
       await requireWorld(canon, storyWorldId);
       return (await graphState.listStateVariables(storyWorldId)).map(toStateVariableDto);
@@ -292,6 +389,15 @@ export function createV2CoreUseCases(
       withIdempotency(canon, "createStateVariable", input.idempotencyKey, { storyWorldId, ...input }, async () => {
         await requireWorld(canon, storyWorldId);
         const item = await graphState.createStateVariable(createV2TypedStateVariable({ storyWorldId, ...input }));
+        const revision = await canon.advanceRevision(storyWorldId, input.expectedRevision);
+        return { item: toStateVariableDto(item), revision };
+      }),
+    ),
+    updateStateVariable: (storyWorldId, key, input) => requireGraphState().withGraphStateTransaction(async ({ canon, graphState }) =>
+      withIdempotency(canon, "updateStateVariable", input.idempotencyKey, { storyWorldId, key, ...input }, async () => {
+        const existing = await graphState.getStateVariable({ storyWorldId, key });
+        if (!existing) throw new V2HttpError(404, "NOT_FOUND", "State variable not found");
+        const item = await graphState.updateStateVariable(createV2TypedStateVariable({ storyWorldId, key: existing.key, valueType: existing.valueType, defaultValue: input.defaultValue }));
         const revision = await canon.advanceRevision(storyWorldId, input.expectedRevision);
         return { item: toStateVariableDto(item), revision };
       }),
@@ -584,6 +690,24 @@ async function requireCharacter(canon: V2CanonRepository, storyWorldId: V2StoryW
   const character = await canon.getCharacter({ storyWorldId, characterId: characterId as never });
   if (!character) throw new V2HttpError(422, "VALIDATION_FAILED", "participantCharacterIds must reference existing characters in this story world");
   return character;
+}
+
+async function requireFact(canon: V2CanonRepository, storyWorldId: V2StoryWorldId, factId: string) {
+  const item = (await canon.listFacts(storyWorldId)).find((fact) => fact.factId === factId);
+  if (!item) throw new V2HttpError(404, "NOT_FOUND", "Fact not found");
+  return item;
+}
+
+async function requireRule(canon: V2CanonRepository, storyWorldId: V2StoryWorldId, ruleId: string) {
+  const item = (await canon.listRules(storyWorldId)).find((rule) => rule.ruleId === ruleId);
+  if (!item) throw new V2HttpError(404, "NOT_FOUND", "Rule not found");
+  return item;
+}
+
+async function requireTimelineEvent(canon: V2CanonRepository, storyWorldId: V2StoryWorldId, timelineEventId: string) {
+  const item = (await canon.listTimelineEvents(storyWorldId)).find((event) => event.timelineEventId === timelineEventId);
+  if (!item) throw new V2HttpError(404, "NOT_FOUND", "Timeline event not found");
+  return item;
 }
 
 async function requireArc(graphState: V2GraphStateRepository, storyWorldId: V2StoryWorldId, arcId: unknown) {

@@ -35,6 +35,11 @@ export interface V2GraphStateRepository {
   listChoices(storyWorldId: V2StoryWorldId): Promise<readonly V2GraphChoice[]>;
   createChoice(input: V2GraphChoice): Promise<V2GraphChoice>;
 
+  updateArc(input: V2GraphArc): Promise<V2GraphArc>;
+  updateScene(input: V2GraphScene): Promise<V2GraphScene>;
+  updateChoice(input: V2GraphChoice): Promise<V2GraphChoice>;
+  updateStateVariable(input: V2TypedStateVariable): Promise<V2TypedStateVariable>;
+
   getStateVariable(input: {
     readonly storyWorldId: V2StoryWorldId;
     readonly key: string;
