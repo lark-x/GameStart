@@ -113,5 +113,5 @@ test("V2 completes the manual authoring loop against the real API", async ({ pag
   await navigateTo(page, "项目首页");
   await expect(page.getByRole("heading", { name: storyName, exact: true })).toBeVisible();
   await expect(page.getByText("2 场景", { exact: true })).toBeVisible();
-  await expect(page.getByText("1 个资产", { exact: true })).toBeVisible();
+  await expect(page.locator(".project-metric").filter({ hasText: "正式素材" }).getByText("1 个", { exact: true })).toBeVisible();
 });
