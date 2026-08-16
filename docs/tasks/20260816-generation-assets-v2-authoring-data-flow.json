@@ -13,7 +13,8 @@
     "packages/contracts/src/v2/generation/index.ts",
     "packages/database/src/v2/generation/asset-repository.ts",
     "packages/ports/src/v2/generation/index.ts",
-    "docs/tasks/20260816-generation-assets-v2-authoring-data-flow.json"
+    "docs/tasks/20260816-generation-assets-v2-authoring-data-flow.json",
+    "packages/database/src/v2/generation/asset-repository.test.ts"
   ],
   "forbiddenPaths": [
     "packages/database/src/v2/**/migrations.ts",
