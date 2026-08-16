@@ -131,10 +131,12 @@ async function fetchModels(): Promise<void> {
   fetchingModels.value = true;
   fetchModelError.value = null;
   try {
+    const apiKey = form.value.apiKey.trim();
+    form.value.apiKey = "";
     const models = await client.discoverModels({
       protocol: form.value.protocol,
       baseUrl: form.value.baseUrl.trim(),
-      apiKey: form.value.apiKey.trim().length > 0 ? form.value.apiKey.trim() : undefined,
+      apiKey: apiKey.length > 0 ? apiKey : undefined,
       profileId: form.value.id || form.value.sourceProfileId,
     });
     discoveredModels.value = models;
@@ -199,7 +201,9 @@ async function save(): Promise<void> {
   error.value = null;
   message.value = null;
   try {
-    const saved = await client.saveModelProfile(requestFromForm());
+    const request = requestFromForm();
+    form.value.apiKey = "";
+    const saved = await client.saveModelProfile(request);
     message.value = `模型档案“${saved.name}”已保存。`;
     await refresh();
     selectProfile(saved);

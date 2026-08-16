@@ -462,7 +462,7 @@ export function createV2PlatformPlugin(dependencies: V2PlatformPluginDependencie
             if (errJson?.error?.message) errMsg = errJson.error.message;
             else if (errJson?.message) errMsg = errJson.message;
           } catch {}
-          throw new Error(errMsg);
+          throw new Error(redactV2ModelLogText(errMsg));
         }
         const json = await response.json().catch(() => ({}));
         let rawList: unknown[] = [];
