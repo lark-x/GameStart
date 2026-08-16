@@ -20,14 +20,13 @@ async function navigateTo(page: Page, label: string): Promise<void> {
 }
 
 async function createStory(page: Page, name: string): Promise<void> {
-  await page.goto("/v2/workspace/project");
-  await expect(page.getByText(/创建第一条故事数据|当前故事/)).toBeVisible();
-  if (await page.getByRole("button", { name: "新建故事", exact: true }).isVisible().catch(() => false)) {
-    await page.getByLabel("故事名称").fill(name);
-    await page.getByLabel("故事前提 / 世界观背景").fill("真实 API 与 SQLite 驱动的浏览器创作闭环。");
-    await page.getByRole("button", { name: "新建故事", exact: true }).click();
-    await expect(page.getByLabel("故事空间名称")).toHaveValue(name);
-  }
+  await page.goto("/v2/workspace/world");
+  await expect(page.getByRole("button", { name: "新建故事", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "新建故事", exact: true }).click();
+  await page.getByLabel("故事名称").fill(name);
+  await page.getByLabel("故事前提 / 世界观背景").fill("真实 API 与 SQLite 驱动的浏览器创作闭环。");
+  await page.getByRole("button", { name: "创建故事", exact: true }).click();
+  await expect(page.getByLabel("故事空间名称")).toHaveValue(name);
 }
 
 test("V2 completes the manual authoring loop against the real API", async ({ page }) => {
