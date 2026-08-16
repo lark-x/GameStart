@@ -244,6 +244,59 @@ test("V2 HTTP adapter maps optional snapshot values and player choices", async (
   assert.ok(run instanceof V2AdapterError);
 });
 
+test("V2 mock adapter persists canon and graph authoring edits", async () => {
+  const adapter = createV2MockAdapter();
+
+  await adapter.createCanonEntity({ kind: "location", storyWorldId: "world_v2_demo", expectedRevision: 2, input: { name: "New Location", summary: "A new place" } });
+  await adapter.createCanonEntity({ kind: "character", storyWorldId: "world_v2_demo", expectedRevision: 3, input: { name: "New Character", summary: "A new face" } });
+  await adapter.createCanonEntity({ kind: "fact", storyWorldId: "world_v2_demo", expectedRevision: 4, input: { text: "New fact", visibility: "creator_only" } });
+  await adapter.createCanonEntity({ kind: "rule", storyWorldId: "world_v2_demo", expectedRevision: 5, input: { text: "New rule", severity: "required" } });
+  await adapter.createCanonEntity({ kind: "timeline", storyWorldId: "world_v2_demo", expectedRevision: 6, input: { localDate: "2088-04-04", title: "New Event", summary: "Event summary" } });
+
+  await adapter.updateCanonEntity({ kind: "location", storyWorldId: "world_v2_demo", expectedRevision: 7, id: "loc_station", input: { name: "Rain Station Updated", summary: "Updated" } });
+  await adapter.updateCanonEntity({ kind: "character", storyWorldId: "world_v2_demo", expectedRevision: 8, id: "char_archivist", input: { name: "Archivist Updated", summary: "Updated role" } });
+  await adapter.updateCanonEntity({ kind: "fact", storyWorldId: "world_v2_demo", expectedRevision: 9, id: "fact_clock", input: { text: "Updated fact", visibility: "player_visible" } });
+  await adapter.updateCanonEntity({ kind: "rule", storyWorldId: "world_v2_demo", expectedRevision: 10, id: "rule_candidate_review", input: { text: "Updated rule", severity: "guideline" } });
+  await adapter.updateCanonEntity({ kind: "timeline", storyWorldId: "world_v2_demo", expectedRevision: 11, id: "timeline_first_train", input: { localDate: "2088-05-05", title: "Updated Event", summary: "Updated summary" } });
+
+  await adapter.createGraphEntity({ kind: "arc", storyWorldId: "world_v2_demo", expectedRevision: 12, input: { title: "New Arc", summary: "Arc summary" } });
+  await adapter.createGraphEntity({ kind: "scene", storyWorldId: "world_v2_demo", expectedRevision: 13, input: { title: "New Scene", body: "Scene body", arcId: "arc_main", isEntry: false } });
+  await adapter.createGraphEntity({ kind: "choice", storyWorldId: "world_v2_demo", expectedRevision: 14, input: { sourceSceneId: "scene_opening", targetSceneId: "scene_archive", label: "New Choice", gates: [{ stateKey: "trust_archivist", operator: "gte", value: 1 }], consequences: [{ stateKey: "trust_archivist", operation: "increment", value: 1 }] } });
+  await adapter.createGraphEntity({ kind: "state", storyWorldId: "world_v2_demo", expectedRevision: 15, input: { key: "new_flag", valueType: "boolean", defaultValue: false } });
+
+  await adapter.updateGraphEntity({ kind: "arc", storyWorldId: "world_v2_demo", expectedRevision: 16, id: "arc_main", input: { title: "Main Mystery Updated", summary: "Updated arc" } });
+  await adapter.updateGraphEntity({ kind: "scene", storyWorldId: "world_v2_demo", expectedRevision: 17, id: "scene_opening", input: { title: "Opening Updated", body: "Updated body", isEntry: true } });
+  await adapter.updateGraphEntity({ kind: "choice", storyWorldId: "world_v2_demo", expectedRevision: 18, id: "choice_archive", input: { sourceSceneId: "scene_opening", targetSceneId: "scene_archive", label: "Updated Choice", gates: [], consequences: [] } });
+  await adapter.updateGraphEntity({ kind: "state", storyWorldId: "world_v2_demo", expectedRevision: 19, id: "trust_archivist", input: { defaultValue: 5 } });
+
+  const snapshot = await adapter.getSnapshot();
+  assert.ok(snapshot.world.locations.some((location) => location.locationId.startsWith("location:mock-")));
+  assert.ok(snapshot.world.characters.some((character) => character.characterId.startsWith("character:mock-")));
+  assert.ok(snapshot.world.facts.some((fact) => fact.factId.startsWith("fact:mock-")));
+  assert.ok(snapshot.world.rules.some((rule) => rule.ruleId.startsWith("rule:mock-")));
+  assert.ok(snapshot.world.timelineEvents.some((event) => event.timelineEventId.startsWith("timeline:mock-")));
+  assert.equal(snapshot.world.locations.find((location) => location.locationId === "loc_station")?.name, "Rain Station Updated");
+  assert.equal(snapshot.world.timelineEvents.find((event) => event.timelineEventId === "timeline_first_train")?.title, "Updated Event");
+  assert.ok(snapshot.sceneGraph.arcs.some((arc) => arc.arcId.startsWith("arc:mock-")));
+  assert.ok(snapshot.sceneGraph.scenes.some((scene) => scene.sceneId.startsWith("scene:mock-")));
+  assert.ok(snapshot.sceneGraph.choices.some((choice) => choice.choiceId.startsWith("choice:mock-")));
+  assert.ok(snapshot.typedState.variables.some((variable) => variable.key === "new_flag"));
+  assert.equal(snapshot.sceneGraph.arcs.find((arc) => arc.arcId === "arc_main")?.title, "Main Mystery Updated");
+  assert.equal(snapshot.sceneGraph.scenes.find((scene) => scene.sceneId === "scene_opening")?.title, "Opening Updated");
+  assert.equal(snapshot.sceneGraph.choices.find((choice) => choice.choiceId === "choice_archive")?.label, "Updated Choice");
+  assert.equal(snapshot.typedState.variables.find((variable) => variable.key === "trust_archivist")?.defaultValue, 5);
+});
+
+test("V2 mock adapter updates created story worlds", async () => {
+  const adapter = createV2MockAdapter();
+  const created = await adapter.createStoryWorld({ name: "First" });
+  const updated = await adapter.updateStoryWorld({ storyWorldId: created.storyWorldId, name: "Second", summary: "S", expectedRevision: created.revision });
+
+  assert.equal(updated.name, "Second");
+  const snapshot = await adapter.getSnapshot(created.storyWorldId);
+  assert.equal(snapshot.world.name, "Second");
+});
+
 test("V2 mock adapter creates story worlds with generated ids", async () => {
   const adapter = createV2MockAdapter();
   const first = await adapter.createStoryWorld({ name: "故事甲" });
@@ -297,4 +350,92 @@ test("V2 http adapter creates a story world and prefers it on the next snapshot"
   const snapshot = await adapter.getSnapshot();
   assert.equal(snapshot.world.storyWorldId, createdRef?.storyWorldId);
   assert.equal(snapshot.world.name, "新世界");
+});
+
+test("V2 HTTP adapter covers authoring CRUD and optional asset/timeline mapping", async () => {
+  const world = { storyWorldId: "world", name: "World", revision: 5, createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" };
+  const assetHash = "a".repeat(64);
+  const fetchImpl = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const url = String(input);
+    const method = init?.method ?? "GET";
+    if (method === "PATCH" && url.includes("/core/worlds/world") && !url.includes("/arcs") && !url.includes("/scenes") && !url.includes("/choices") && !url.includes("/state") && !url.includes("/locations") && !url.includes("/characters") && !url.includes("/facts") && !url.includes("/rules") && !url.includes("/timeline")) {
+      return Response.json({ item: { ...world, name: "Updated", revision: 6 } });
+    }
+    if (method === "PATCH" || method === "POST") return Response.json({});
+    if (url.endsWith("/health")) return Response.json({ ok: true, version: "v2" });
+    if (url.endsWith("/core/worlds")) return Response.json([world]);
+    if (url.endsWith("/canon")) return Response.json({
+      storyWorldId: "world", revision: 5, world,
+      locations: [], characters: [], facts: [], rules: [],
+      timelineEvents: [{ timelineEventId: "evt", localDate: "2088-01-01", title: "Event", summary: "Summary" }],
+    });
+    if (url.endsWith("/graph")) return Response.json({
+      arcs: [{ arcId: "arc", title: "Arc", summary: "Arc summary" }],
+      scenes: [{ sceneId: "scene", title: "Scene", isEntry: true, body: "Body", arcId: "arc" }],
+      choices: [{ choiceId: "choice", sourceSceneId: "scene", label: "Choice", gates: [{ stateKey: "flag", operator: "eq", value: true }], consequences: [{ stateKey: "flag", operation: "set", value: true }] }],
+    });
+    if (url.endsWith("/graph/validation")) return Response.json({ valid: true, diagnostics: [] });
+    if (url.endsWith("/state/variables")) return Response.json([{ key: "flag", valueType: "boolean", defaultValue: false, createdAt: "2026-01-01" }]);
+    if (url.endsWith("/state/initial")) return Response.json({ values: { flag: false } });
+    if (url.endsWith("/candidates/scenes")) return Response.json([]);
+    if (url.endsWith("/releases/preflight")) return Response.json({ valid: true, diagnostics: [] });
+    if (url.endsWith("/releases")) return Response.json([]);
+    if (url.includes("/generation/assets/worlds/") && url.endsWith("/candidates")) return Response.json({
+      candidates: [{
+        candidateId: "asset_candidate", status: "pending", payload: { asset: { prompt: "Prompt", mediaRef: `media://local/v2/assets/${assetHash}.png`, sourceJobId: "job", workflowVersion: "v1" }, validationNotes: ["ok"] },
+        reviewedAt: "2026-01-01", reviewer: "creator", reviewReason: "good",
+      }],
+    });
+    if (url.includes("/generation/assets/worlds/") && url.endsWith("/library")) return Response.json({
+      assets: [{ assetId: "asset", mediaRef: `media://local/v2/assets/${assetHash}.png` }],
+    });
+    if (url.includes("/generation/assets/jobs/")) return Response.json({ job: { jobId: "asset_job", status: "queued", workflowVersion: "v1", seed: 0, prompt: "Prompt", createdAt: "2026-01-01", updatedAt: "2026-01-01" } });
+    if (url.includes("/generation/jobs/")) return Response.json({ job: { jobId: "scene_job", status: "queued", createdAt: "2026-01-01", updatedAt: "2026-01-01" } });
+    return Response.json({}, { status: 404 });
+  };
+
+  const adapter = createV2HttpAdapter({ baseUrl: "http://localhost", fetchImpl });
+
+  const worlds = await adapter.listStoryWorlds();
+  assert.equal(worlds.length, 1);
+
+  const updated = await adapter.updateStoryWorld({ storyWorldId: "world", name: "Updated", summary: "S", expectedRevision: 5 });
+  assert.equal(updated.name, "Updated");
+
+  await adapter.createCanonEntity({ kind: "location", storyWorldId: "world", expectedRevision: 6, input: { name: "Loc" } });
+  await adapter.createCanonEntity({ kind: "character", storyWorldId: "world", expectedRevision: 6, input: { name: "Char" } });
+  await adapter.createCanonEntity({ kind: "fact", storyWorldId: "world", expectedRevision: 6, input: { text: "Fact", visibility: "creator_only" } });
+  await adapter.createCanonEntity({ kind: "rule", storyWorldId: "world", expectedRevision: 6, input: { text: "Rule", severity: "guideline" } });
+  await adapter.createCanonEntity({ kind: "timeline", storyWorldId: "world", expectedRevision: 6, input: { localDate: "2088-01-01", title: "Event" } });
+
+  await adapter.updateCanonEntity({ kind: "location", storyWorldId: "world", expectedRevision: 6, id: "loc", input: { name: "Loc2" } });
+  await adapter.updateCanonEntity({ kind: "character", storyWorldId: "world", expectedRevision: 6, id: "char", input: { name: "Char2" } });
+  await adapter.updateCanonEntity({ kind: "fact", storyWorldId: "world", expectedRevision: 6, id: "fact", input: { text: "Fact2", visibility: "player_visible" } });
+  await adapter.updateCanonEntity({ kind: "rule", storyWorldId: "world", expectedRevision: 6, id: "rule", input: { text: "Rule2", severity: "required" } });
+  await adapter.updateCanonEntity({ kind: "timeline", storyWorldId: "world", expectedRevision: 6, id: "evt", input: { localDate: "2088-02-02", title: "Event2" } });
+
+  await adapter.createGraphEntity({ kind: "arc", storyWorldId: "world", expectedRevision: 6, input: { title: "Arc" } });
+  await adapter.createGraphEntity({ kind: "scene", storyWorldId: "world", expectedRevision: 6, input: { title: "Scene", isEntry: false } });
+  await adapter.createGraphEntity({ kind: "choice", storyWorldId: "world", expectedRevision: 6, input: { sourceSceneId: "scene", label: "Choice" } });
+  await adapter.createGraphEntity({ kind: "state", storyWorldId: "world", expectedRevision: 6, input: { key: "flag", valueType: "boolean", defaultValue: false } });
+
+  await adapter.updateGraphEntity({ kind: "arc", storyWorldId: "world", expectedRevision: 6, id: "arc", input: { title: "Arc2" } });
+  await adapter.updateGraphEntity({ kind: "scene", storyWorldId: "world", expectedRevision: 6, id: "scene", input: { title: "Scene2", isEntry: true } });
+  await adapter.updateGraphEntity({ kind: "choice", storyWorldId: "world", expectedRevision: 6, id: "choice", input: { sourceSceneId: "scene", label: "Choice2" } });
+  await adapter.updateGraphEntity({ kind: "state", storyWorldId: "world", expectedRevision: 6, id: "flag", input: { defaultValue: true } });
+
+  const assetJob = await adapter.getAssetGenerationJob("asset_job");
+  assert.equal(assetJob.jobId, "asset_job");
+  const sceneJob = await adapter.getSceneGenerationJob("scene_job");
+  assert.equal(sceneJob.jobId, "scene_job");
+
+  const snapshot = await adapter.getSnapshot("world");
+  assert.equal(snapshot.world.timelineEvents[0]?.summary, "Summary");
+  assert.equal(snapshot.sceneGraph.arcs[0]?.summary, "Arc summary");
+  assert.equal(snapshot.sceneGraph.scenes[0]?.body, "Body");
+  assert.equal(snapshot.sceneGraph.scenes[0]?.arcId, "arc");
+  assert.equal(snapshot.sceneGraph.choices[0]?.gates.length, 1);
+  assert.equal(snapshot.assets.candidate?.status, "pending");
+  assert.equal(snapshot.assets.candidate?.reviewer, "creator");
+  assert.equal(snapshot.assets.library.length, 1);
 });

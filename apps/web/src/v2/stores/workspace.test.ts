@@ -413,3 +413,178 @@ test("V2 workspace store stops generation polling after five minutes", async () 
     mock.timers.reset();
   }
 });
+
+test("V2 workspace store reports an empty workspace explicitly", async () => {
+  setActivePinia(createPinia());
+  const store = useV2WorkspaceStore();
+  store.setAdapter({
+    ...createV2MockAdapter(),
+    async listStoryWorlds() {
+      return [];
+    },
+  });
+
+  await store.loadSnapshot();
+
+  assert.equal(store.hasSnapshot, false);
+  assert.equal(store.snapshot, null);
+});
+
+test("V2 workspace store reports non-stale canon save failures", async () => {
+  setActivePinia(createPinia());
+  const store = useV2WorkspaceStore();
+  store.setAdapter({
+    ...createV2MockAdapter(),
+    async updateStoryWorld() {
+      throw new Error("save failed");
+    },
+  });
+  await store.loadSnapshot();
+
+  await store.previewCanonDraft();
+
+  assert.equal(store.error, "save failed");
+});
+
+test("V2 workspace store reports canon and graph entity operation failures", async () => {
+  setActivePinia(createPinia());
+  const store = useV2WorkspaceStore();
+  store.setAdapter({
+    ...createV2MockAdapter(),
+    async createCanonEntity() {
+      throw new Error("create canon failed");
+    },
+    async updateCanonEntity() {
+      throw new Error("update canon failed");
+    },
+    async createGraphEntity() {
+      throw new Error("create graph failed");
+    },
+    async updateGraphEntity() {
+      throw new Error("update graph failed");
+    },
+  });
+  await store.loadSnapshot();
+
+  await store.createCanonEntity({ kind: "fact", input: { text: "x", visibility: "creator_only" } });
+  assert.equal(store.error, "create canon failed");
+
+  await store.updateCanonEntity({ kind: "fact", id: "fact_clock", input: { text: "y", visibility: "player_visible" } });
+  assert.equal(store.error, "update canon failed");
+
+  await store.createGraphEntity({ kind: "arc", input: { title: "A" } });
+  assert.equal(store.error, "create graph failed");
+
+  await store.updateGraphEntity({ kind: "arc", id: "arc_main", input: { title: "B" } });
+  assert.equal(store.error, "update graph failed");
+});
+
+test("V2 workspace store persists canon and graph entities through mock adapter", async () => {
+  setActivePinia(createPinia());
+  const store = useV2WorkspaceStore();
+  store.setAdapter(createV2MockAdapter());
+  await store.loadSnapshot();
+
+  await store.createCanonEntity({ kind: "fact", input: { text: "New fact", visibility: "creator_only" } });
+  assert.equal(store.error, null);
+
+  await store.createGraphEntity({ kind: "arc", input: { title: "New Arc" } });
+  assert.equal(store.error, null);
+
+  await store.updateCanonEntity({ kind: "fact", id: "fact_clock", input: { text: "Updated fact", visibility: "player_visible" } });
+  assert.equal(store.error, null);
+
+  await store.updateGraphEntity({ kind: "arc", id: "arc_main", input: { title: "Updated Arc" } });
+  assert.equal(store.error, null);
+});
+
+test("V2 workspace store continues generation polling while queued", async () => {
+  mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  try {
+    setActivePinia(createPinia());
+    const store = useV2WorkspaceStore();
+    let reads = 0;
+    store.setAdapter({
+      ...createV2MockAdapter(),
+      async createSceneGenerationJob() {
+        return { job: { jobId: "job_continue", status: "queued", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" } };
+      },
+      async getSceneGenerationJob() {
+        reads += 1;
+        return { jobId: "job_continue", status: "queued", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" };
+      },
+    });
+    await store.loadSnapshot();
+    await store.createGenerationJob();
+    await mock.timers.tick(2000);
+    assert.ok(reads >= 1);
+    assert.match(store.generationMessage ?? "", /生成任务已创建/);
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test("V2 workspace store stops asset polling after five minutes and continues while queued", async () => {
+  mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  try {
+    setActivePinia(createPinia());
+    const store = useV2WorkspaceStore();
+    let reads = 0;
+    store.setAdapter({
+      ...createV2MockAdapter(),
+      async createAssetJob() {
+        return { ...(await createV2MockAdapter().createAssetJob("x")), jobId: "asset_continue", status: "queued", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" };
+      },
+      async getAssetGenerationJob() {
+        reads += 1;
+        return { jobId: "asset_continue", status: "queued", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" };
+      },
+    });
+    await store.loadSnapshot();
+    await store.createAssetJob();
+    await mock.timers.tick(2000);
+    assert.ok(reads >= 1);
+    assert.match(store.assetMessage ?? "", /素材任务已创建/);
+
+    await mock.timers.tick(5 * 60 * 1000 + 100);
+    assert.match(store.assetMessage ?? "", /轮询已暂停/);
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test("V2 workspace store handles generation and asset polling failures", async () => {
+  mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  try {
+    setActivePinia(createPinia());
+    const store = useV2WorkspaceStore();
+    const base = createV2MockAdapter();
+    store.setAdapter({
+      ...base,
+      async createSceneGenerationJob() {
+        return { job: { jobId: "job_fail", status: "queued", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" } };
+      },
+      async getSceneGenerationJob() {
+        throw new Error("generation read failed");
+      },
+      async createAssetJob() {
+        const job = await base.createAssetJob("x");
+        return { ...job, jobId: "asset_fail", status: "queued", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" };
+      },
+      async getAssetGenerationJob() {
+        throw new Error("asset read failed");
+      },
+    });
+    await store.loadSnapshot();
+    await store.createGenerationJob();
+    await mock.timers.tick(2000);
+    assert.equal(store.error, "generation read failed");
+
+    store.error = null;
+    await store.createAssetJob();
+    await mock.timers.tick(2000);
+    assert.equal(store.error, "asset read failed");
+  } finally {
+    mock.timers.reset();
+  }
+});
