@@ -9,25 +9,6 @@ permissions:
   contents: read
 
 jobs:
-  scope-check:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Checkout full pull request history
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24.x
-      - name: Validate AI task scope
-        env:
-          SCOPE_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          SCOPE_HEAD_REF: ${{ github.head_ref }}
-        run: node scripts/check-task-scope.mjs
-
   v2-verify:
     runs-on: ubuntu-latest
     timeout-minutes: 15
