@@ -28,7 +28,13 @@ export interface V2WorkerProcess {
 }
 
 function assertSchemaCurrent(db: DatabaseSync): void {
-  const applied = new Set((db.prepare("SELECT id FROM v2_schema_migrations").all() as Array<{ id: string }>).map((row) => row.id));
+  let appliedRows: Array<{ id: string }>;
+  try {
+    appliedRows = db.prepare("SELECT id FROM v2_schema_migrations").all() as Array<{ id: string }>;
+  } catch {
+    throw new Error("V2 SQLite schema is not current; API must migrate first: v2_schema_migrations");
+  }
+  const applied = new Set(appliedRows.map((row) => row.id));
   const missing = getV2Migrations().map((migration) => migration.id).filter((id) => !applied.has(id));
   if (missing.length > 0) throw new Error(`V2 SQLite schema is not current; API must migrate first: ${missing.join(", ")}`);
 }

@@ -147,6 +147,7 @@
         "apps/web/src/v2/views/V2ModelSettingsView.vue",
         "apps/web/src/v2/views/V2WorkspaceAreaView.vue",
         "apps/worker/src/v2/index.ts",
+        "apps/worker/src/v2/runtime.test.ts",
         "apps/worker/src/v2/runtime.ts",
         "apps/worker/src/v2/sentinel.test.ts",
         "docs/**",
