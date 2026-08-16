@@ -57,7 +57,7 @@
   "delivery": {
     "branch": "codex/integration/v2-authoring-data-flow",
     "baseSha": "7c573d31b42a5c0a4aaeb8902860846d625a3188",
-    "pullRequest": null,
+    "pullRequest": "https://github.com/lark-x/GameStart/pull/11",
     "commits": [
       "6a872eafd285245fa9acd504d6937a5a5db05375",
       "e61852e72dc773d8ea3617710daff6ec94939542",
@@ -65,8 +65,11 @@
       "df66da8e82ef3cf14b6fa53e809b63fb141f45da"
     ],
     "results": [
+      "scope",
+      "boundaries",
       "typecheck",
       "test",
+      "lint",
       "build"
     ]
   }
