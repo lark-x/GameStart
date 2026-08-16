@@ -100,7 +100,7 @@ test("V2 completes the manual authoring loop against the real API", async ({ pag
   await expect(page.locator(".scene-title-tag").filter({ hasText: /^E2E Next Scene$/ })).toBeVisible();
   await page.getByLabel("存档名称").fill("E2E checkpoint");
   await page.getByRole("button", { name: "保存运行", exact: true }).click();
-  await expect(page.getByText(/E2E checkpoint/)).toBeVisible();
+  await expect(page.locator(".save-restore-card strong", { hasText: "E2E checkpoint" })).toBeVisible();
   await page.getByRole("button", { name: "恢复存档", exact: true }).click();
   await expect(page.locator(".scene-title-tag").filter({ hasText: /^E2E Next Scene$/ })).toBeVisible();
 
