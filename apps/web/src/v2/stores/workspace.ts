@@ -1,12 +1,17 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import type { V2IdempotencyKey, V2IsoDateTime, V2Revision, V2StoryWorldId } from "@living-network/contracts/v2";
+import type { V2StoryWorldDto } from "@living-network/contracts/v2";
 
 import { useNotificationStore } from "./notification.ts";
 import { createV2HttpAdapter, createV2MockAdapter, V2AdapterError } from "../adapters/index.ts";
 import type {
   V2CandidateReviewAction,
   V2WorkspaceAdapter,
+  V2GraphCreateInput,
+  V2CanonUpdateInput,
+  V2GraphUpdateInput,
+  V2CanonCreateInput,
   V2WorkspaceMode,
   V2WorkspaceSnapshot,
 } from "../adapters/types.ts";
@@ -66,6 +71,9 @@ export function createV2DefaultAdapter(
 export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
   const adapter = ref<V2WorkspaceAdapter>(createV2DefaultAdapter());
   const snapshot = ref<V2WorkspaceSnapshot | null>(null);
+  const storyWorlds = ref<readonly V2StoryWorldDto[]>([]);
+  const activeStoryWorldId = ref<string | null>(typeof window === "undefined" ? null : window.localStorage.getItem("living-network-v2-story-world"));
+
   const loading = ref(false);
   const creatingStory = ref(false);
   const error = ref<string | null>(null);
@@ -87,6 +95,11 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
   const assetReviewReason = ref<string>("通过后加入本地素材库。");
   const assetMessage = ref<string | null>(null);
   const assetReviewMessage = ref<string | null>(null);
+  let assetPollTimer: ReturnType<typeof setTimeout> | undefined;
+  let assetPollStartedAt = 0;
+  let generationPollTimer: ReturnType<typeof setTimeout> | undefined;
+  let generationPollStartedAt = 0;
+
 
   const mode = computed(() => adapter.value.mode);
   const hasSnapshot = computed(() => snapshot.value !== null);
@@ -114,7 +127,75 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       (draftWorldName.value !== snapshot.value.world.name || draftPremise.value !== snapshot.value.world.premise),
   );
 
+  function stopGenerationPolling(): void {
+    if (generationPollTimer !== undefined) clearTimeout(generationPollTimer);
+    generationPollTimer = undefined;
+  }
+
+  function startGenerationPolling(jobId: string): void {
+    stopGenerationPolling();
+    generationPollStartedAt = Date.now();
+    const poll = async (): Promise<void> => {
+      if (!snapshot.value?.generation.job || snapshot.value.generation.job.jobId !== jobId) return;
+      if (Date.now() - generationPollStartedAt > 5 * 60 * 1000) {
+        generationMessage.value = "生成任务轮询已暂停，可手动刷新状态继续查看。";
+        stopGenerationPolling();
+        return;
+      }
+      try {
+        const job = await adapter.value.getSceneGenerationJob(jobId);
+        if (!snapshot.value?.generation.job || snapshot.value.generation.job.jobId !== jobId) return;
+        snapshot.value = { ...snapshot.value, generation: { ...snapshot.value.generation, job: { ...snapshot.value.generation.job, ...job } } };
+        if (job.status === "succeeded" || job.status === "failed" || job.status === "cancelled") {
+          stopGenerationPolling();
+          await loadSnapshot();
+          return;
+        }
+        generationPollTimer = setTimeout(() => void poll(), 2000);
+      } catch (err) {
+        stopGenerationPolling();
+        error.value = operationErrorMessage(err, "读取生成任务状态失败");
+      }
+    };
+    generationPollTimer = setTimeout(() => void poll(), 2000);
+  }
+
+  function stopAssetPolling(): void {
+    if (assetPollTimer !== undefined) clearTimeout(assetPollTimer);
+    assetPollTimer = undefined;
+  }
+
+  function startAssetPolling(jobId: string): void {
+    stopAssetPolling();
+    assetPollStartedAt = Date.now();
+    const poll = async (): Promise<void> => {
+      if (!snapshot.value?.assets.job || snapshot.value.assets.job.jobId !== jobId) return;
+      if (Date.now() - assetPollStartedAt > 5 * 60 * 1000) {
+        assetMessage.value = "素材任务轮询已暂停，可手动刷新状态。";
+        stopAssetPolling();
+        return;
+      }
+      try {
+        const job = await adapter.value.getAssetGenerationJob(jobId);
+        if (!snapshot.value?.assets.job || snapshot.value.assets.job.jobId !== jobId) return;
+        snapshot.value = { ...snapshot.value, assets: { ...snapshot.value.assets, job: { ...snapshot.value.assets.job, ...job } } };
+        if (job.status === "succeeded" || job.status === "failed" || job.status === "cancelled") {
+          stopAssetPolling();
+          await loadSnapshot();
+          return;
+        }
+        assetPollTimer = setTimeout(() => void poll(), 2000);
+      } catch (err) {
+        stopAssetPolling();
+        error.value = operationErrorMessage(err, "读取素材任务状态失败");
+      }
+    };
+    assetPollTimer = setTimeout(() => void poll(), 2000);
+  }
+
   function setAdapter(nextAdapter: V2WorkspaceAdapter) {
+    stopAssetPolling();
+    stopGenerationPolling();
     adapter.value = nextAdapter;
     snapshot.value = null;
     error.value = null;
@@ -136,7 +217,14 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     error.value = null;
     conflict.value = null;
     try {
-      snapshot.value = await adapter.value.getSnapshot();
+      storyWorlds.value = await adapter.value.listStoryWorlds();
+      if (storyWorlds.value.length === 0) {
+        snapshot.value = null;
+        return;
+      }
+      const selected = storyWorlds.value.find((world) => world.storyWorldId === activeStoryWorldId.value) ?? storyWorlds.value[0]!;
+      snapshot.value = await adapter.value.getSnapshot(selected.storyWorldId);
+      activeStoryWorldId.value = snapshot.value.world.storyWorldId;
       draftWorldName.value = snapshot.value.world.name;
       draftPremise.value = snapshot.value.world.premise;
       expectedRevision.value = snapshot.value.world.revision;
@@ -176,7 +264,8 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     creatingStory.value = true;
     error.value = null;
     try {
-      await adapter.value.createStoryWorld(input);
+      const created = await adapter.value.createStoryWorld(input);
+      activeStoryWorldId.value = created.storyWorldId;
       await loadSnapshot();
     } catch (err) {
       error.value = operationErrorMessage(err, "无法创建故事世界");
@@ -186,6 +275,13 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     }
   }
 
+  async function selectStoryWorld(storyWorldId: string): Promise<void> {
+    stopGenerationPolling();
+    stopAssetPolling();
+    if (activeStoryWorldId.value === storyWorldId) return;
+    activeStoryWorldId.value = storyWorldId;
+    await loadSnapshot();
+  }
   function resetCanonDraft() {
     if (!snapshot.value) return;
     draftWorldName.value = snapshot.value.world.name;
@@ -194,25 +290,84 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     conflict.value = null;
   }
 
-  function previewCanonDraft() {
+  async function previewCanonDraft(): Promise<void> {
     if (!snapshot.value) return;
-    if (expectedRevision.value !== snapshot.value.world.revision) {
-      conflict.value = `Expected revision ${expectedRevision.value}, but workspace is at ${snapshot.value.world.revision}.`;
-      return;
-    }
+    loading.value = true;
+    error.value = null;
     conflict.value = null;
-    snapshot.value = {
-      ...snapshot.value,
-      world: {
-        ...snapshot.value.world,
-        name: draftWorldName.value.trim() || snapshot.value.world.name,
-        premise: draftPremise.value.trim() || snapshot.value.world.premise,
-        revision: snapshot.value.world.revision + 1,
-      },
-    };
-    expectedRevision.value = snapshot.value.world.revision;
+    try {
+      const saved = await adapter.value.updateStoryWorld({ storyWorldId: snapshot.value.world.storyWorldId, name: draftWorldName.value.trim() || snapshot.value.world.name, ...(draftPremise.value.trim() === "" ? {} : { summary: draftPremise.value.trim() }), expectedRevision: expectedRevision.value });
+      expectedRevision.value = saved.revision;
+      await loadSnapshot();
+    } catch (err) {
+      if (err instanceof V2AdapterError && err.code === "STALE_REVISION") {
+        const current = await adapter.value.getSnapshot(snapshot.value.world.storyWorldId);
+        snapshot.value = current;
+        expectedRevision.value = current.world.revision;
+        conflict.value = `服务端已有新版本（${err.message}）。草稿已保留，请确认后再次保存。`;
+        return;
+      }
+      error.value = operationErrorMessage(err, "保存故事设定失败");
+    } finally {
+      loading.value = false;
+    }
+  }
+  async function createCanonEntity(input: V2CanonCreateInput): Promise<void> {
+    if (!snapshot.value) return;
+    loading.value = true;
+    error.value = null;
+    try {
+      await adapter.value.createCanonEntity({ ...input, storyWorldId: snapshot.value.world.storyWorldId, expectedRevision: snapshot.value.world.revision });
+      await loadSnapshot();
+    } catch (err) {
+      error.value = operationErrorMessage(err, "创建正典数据失败");
+    } finally {
+      loading.value = false;
+    }
+  }
+  async function createGraphEntity(input: V2GraphCreateInput): Promise<void> {
+    if (!snapshot.value) return;
+    loading.value = true;
+    error.value = null;
+    try {
+      await adapter.value.createGraphEntity({ ...input, storyWorldId: snapshot.value.world.storyWorldId, expectedRevision: snapshot.value.world.revision });
+      await loadSnapshot();
+    } catch (err) {
+      error.value = operationErrorMessage(err, "创建图谱数据失败");
+    } finally {
+      loading.value = false;
+    }
   }
 
+
+
+  async function updateCanonEntity(input: V2CanonUpdateInput): Promise<void> {
+    if (!snapshot.value) return;
+    loading.value = true;
+    error.value = null;
+    try {
+      await adapter.value.updateCanonEntity({ ...input, storyWorldId: snapshot.value.world.storyWorldId, expectedRevision: snapshot.value.world.revision });
+      await loadSnapshot();
+    } catch (err) {
+      error.value = operationErrorMessage(err, "保存正典数据失败");
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  async function updateGraphEntity(input: V2GraphUpdateInput): Promise<void> {
+    if (!snapshot.value) return;
+    loading.value = true;
+    error.value = null;
+    try {
+      await adapter.value.updateGraphEntity({ ...input, storyWorldId: snapshot.value.world.storyWorldId, expectedRevision: snapshot.value.world.revision });
+      await loadSnapshot();
+    } catch (err) {
+      error.value = operationErrorMessage(err, "保存图谱数据失败");
+    } finally {
+      loading.value = false;
+    }
+  }
   async function createGenerationJob() {
     if (!snapshot.value) return;
     loading.value = true;
@@ -242,6 +397,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
           },
         },
       };
+      startGenerationPolling(response.job.jobId);
       generationMessage.value = `生成任务已创建，当前状态：${statusLabel(response.job.status)}。`;
     } catch (err) {
       const msg = operationErrorMessage(err, "创建生成任务失败");
@@ -421,6 +577,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
           job,
         },
       };
+      startAssetPolling(job.jobId);
       assetMessage.value = `素材任务已创建，当前状态：${statusLabel(job.status)}。`;
     } catch (err) {
       const msg = operationErrorMessage(err, "创建素材任务失败");
@@ -461,6 +618,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
             : snapshot.value.assets.library,
         },
       };
+      await loadSnapshot();
       assetReviewMessage.value = `素材候选已${reviewActionLabel(result.status)}。`;
     } catch (err) {
       const msg = operationErrorMessage(err, "审核素材候选失败");
@@ -474,6 +632,8 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
   return {
     snapshot,
     loading,
+    storyWorlds,
+    activeStoryWorldId,
     error,
     draftWorldName,
     draftPremise,
@@ -512,8 +672,13 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     bootstrapWorkspace,
     createStoryWorld,
     creatingStory,
+    selectStoryWorld,
     resetCanonDraft,
     previewCanonDraft,
+    createGraphEntity,
+    updateGraphEntity,
+    createCanonEntity,
+    updateCanonEntity,
     createGenerationJob,
     reviewCandidate,
     createRelease,

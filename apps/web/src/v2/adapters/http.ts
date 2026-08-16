@@ -19,6 +19,9 @@ import type {
   V2StoryWorldDto,
 } from "@living-network/contracts/v2";
 
+import type { V2AssetCandidateListApiResponse, V2ApprovedAssetListApiResponse } from "@living-network/contracts/v2";
+import type { V2AssetGenerationJobApiResponse } from "@living-network/contracts/v2";
+import type { V2GenerationJobApiResponse } from "@living-network/contracts/v2";
 import {
   V2AdapterError,
   type V2ApprovedAssetSummary,
@@ -32,6 +35,10 @@ import {
   type V2ReleasePackageSummary,
   type V2RunSummary,
   type V2SaveSummary,
+  type V2GraphCreateInput,
+  type V2CanonUpdateInput,
+  type V2GraphUpdateInput,
+  type V2CanonCreateInput,
   type V2WorkspaceAdapter,
   type V2WorkspaceSnapshot,
 } from "./types.ts";
@@ -114,6 +121,7 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
   const get = async <T>(path: string) => parseJson<T>(await fetcher(`${baseUrl}${path}`, jsonRequest("GET")));
   const post = async <T>(path: string, body: unknown) => parseJson<T>(await fetcher(`${baseUrl}${path}`, jsonRequest("POST", body)));
 
+  const patch = async <T>(path: string, body: unknown) => parseJson<T>(await fetcher(`${baseUrl}${path}`, jsonRequest("PATCH", body)));
   return {
     mode: "http",
     async bootstrapWorkspace(): Promise<void> {
@@ -136,6 +144,21 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
       });
       revision = 2;
     },
+    async listStoryWorlds(): Promise<readonly V2StoryWorldDto[]> {
+      return get<readonly V2StoryWorldDto[]>("/api/v2/core/worlds");
+    },
+    async updateStoryWorld(input): Promise<V2StoryWorldDto> {
+      const response = await patch<{ readonly item: V2StoryWorldDto }>(`/api/v2/core/worlds/${encodeURIComponent(input.storyWorldId)}`, {
+        name: input.name,
+        ...(input.summary === undefined ? {} : { summary: input.summary }),
+        expectedRevision: input.expectedRevision,
+        idempotencyKey: uniqueCommandKey("update-world"),
+      });
+      worldId = response.item.storyWorldId;
+      revision = response.item.revision;
+      return response.item;
+    },
+
     async createStoryWorld(input: { readonly name: string; readonly summary?: string }): Promise<V2StoryWorldDto> {
       const suffix = crypto.randomUUID();
       const created = await post<{ item: V2StoryWorldDto }>("/api/v2/core/worlds", {
@@ -149,7 +172,8 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
       revision = created.item.revision;
       return created.item;
     },
-    async getSnapshot(): Promise<V2WorkspaceSnapshot> {
+    async getSnapshot(storyWorldId?: string): Promise<V2WorkspaceSnapshot> {
+      if (storyWorldId !== undefined) worldId = storyWorldId;
       const [health, worlds] = await Promise.all([
         get<V2HealthResponse>("/api/v2/health"),
         get<readonly V2StoryWorldDto[]>("/api/v2/core/worlds"),
@@ -161,7 +185,7 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
       worldId = world.storyWorldId;
       revision = world.revision;
       const encodedWorld = encodeURIComponent(worldId);
-      const [canon, graph, validation, variables, initial, candidates, preflight, releases] = await Promise.all([
+      const [canon, graph, validation, variables, initial, candidates, preflight, releases, assetCandidates, assetLibrary] = await Promise.all([
         get<V2CanonSnapshotDto>(`/api/v2/core/worlds/${encodedWorld}/canon`),
         get<V2GraphSnapshotDto>(`/api/v2/core/worlds/${encodedWorld}/graph`),
         get<V2GraphValidationDto>(`/api/v2/core/worlds/${encodedWorld}/graph/validation`),
@@ -172,6 +196,8 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
         ),
         get<V2ReleasePreflightDto>(`/api/v2/core/worlds/${encodedWorld}/releases/preflight`),
         get<readonly V2ReleaseManifestDto[]>(`/api/v2/core/worlds/${encodedWorld}/releases`),
+        get<V2AssetCandidateListApiResponse>(`/api/v2/generation/assets/worlds/${encodedWorld}/candidates`),
+        get<V2ApprovedAssetListApiResponse>(`/api/v2/generation/assets/worlds/${encodedWorld}/library`),
       ]);
       const candidate = candidates.find((item) => item.status === "pending" || item.status === "changes_requested") ?? candidates.at(-1) ?? null;
       const release = releases.at(-1) ?? null;
@@ -184,6 +210,30 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
       let save: V2RuntimeSaveDto | null = null;
       if (saveId) save = await get<V2RuntimeSaveDto>(`/api/v2/core/runtime/saves/${encodeURIComponent(saveId)}`);
       const entryScene = graph.scenes.find((scene) => scene.isEntry);
+      const selectedAssetCandidate = assetCandidates.candidates.find((item) => item.status === "pending" || item.status === "changes_requested") ?? assetCandidates.candidates.at(-1);
+      const assetCandidateSummary = selectedAssetCandidate === undefined ? null : {
+        candidateId: selectedAssetCandidate.candidateId,
+        status: selectedAssetCandidate.status,
+        title: selectedAssetCandidate.payload.asset.prompt,
+        mediaRef: selectedAssetCandidate.payload.asset.mediaRef,
+        thumbnailRef: selectedAssetCandidate.payload.asset.mediaRef,
+        sourceJobId: selectedAssetCandidate.payload.asset.sourceJobId,
+        provenanceSummary: selectedAssetCandidate.payload.asset.workflowVersion,
+        validationNotes: selectedAssetCandidate.payload.validationNotes,
+        ...(selectedAssetCandidate.reviewedAt === undefined ? {} : { reviewedAt: selectedAssetCandidate.reviewedAt }),
+        ...(selectedAssetCandidate.reviewer === undefined ? {} : { reviewer: selectedAssetCandidate.reviewer }),
+        ...(selectedAssetCandidate.reviewReason === undefined ? {} : { reviewReason: selectedAssetCandidate.reviewReason }),
+      };
+      const approvedAssetSummaries = assetLibrary.assets.map((asset) => ({
+        assetId: asset.assetId,
+        title: asset.assetId,
+        kind: "scene_background" as const,
+        mediaRef: asset.mediaRef,
+        thumbnailRef: asset.mediaRef,
+        workflowVersion: "unknown",
+        seed: 0,
+        approved: true,
+      }));
       return {
         health,
         world: {
@@ -195,15 +245,33 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
           locations: canon.locations.map((location) => ({ locationId: location.locationId, name: location.name, tags: [] })),
           facts: canon.facts.map((fact) => ({ factId: fact.factId, text: fact.text, visibility: fact.visibility === "creator_only" ? "creator" : "player" })),
           rules: canon.rules.map((rule) => ({ ruleId: rule.ruleId, text: rule.text, severity: rule.severity === "required" ? "hard" : "soft" })),
+          timelineEvents: canon.timelineEvents.map((event) => ({
+            timelineEventId: event.timelineEventId,
+            localDate: event.localDate,
+            title: event.title,
+            ...(event.summary === undefined ? {} : { summary: event.summary }),
+          })),
         },
         sceneGraph: {
           entrySceneId: entryScene?.sceneId ?? "",
+          arcs: graph.arcs.map((arc) => ({ arcId: arc.arcId, title: arc.title, ...(arc.summary === undefined ? {} : { summary: arc.summary }) })),
           scenes: graph.scenes.map((scene) => ({
             sceneId: scene.sceneId,
+            ...(scene.arcId === undefined ? {} : { arcId: scene.arcId }),
+            ...(scene.body === undefined ? {} : { body: scene.body }),
             title: scene.title,
+            isEntry: scene.isEntry,
             choiceCount: graph.choices.filter((choice) => choice.sourceSceneId === scene.sceneId).length,
             reachable: !validation.diagnostics.some((diagnostic) => diagnostic.code === "UNREACHABLE_SCENE" && diagnostic.sceneId === scene.sceneId),
             stateDeltaPreview: [],
+          })),
+          choices: graph.choices.map((choice) => ({
+            choiceId: choice.choiceId,
+            sourceSceneId: choice.sourceSceneId,
+            ...(choice.targetSceneId === undefined ? {} : { targetSceneId: choice.targetSceneId }),
+            label: choice.label,
+            gates: (choice.gates ?? []).map((gate) => ({ stateKey: gate.stateKey, operator: gate.operator, value: gate.value })),
+            consequences: (choice.consequences ?? []).map((consequence) => ({ stateKey: consequence.stateKey, operation: consequence.operation, value: consequence.value })),
           })),
           diagnostics: validation.diagnostics.map((diagnostic) => ({
             code: diagnostic.code,
@@ -219,6 +287,7 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
             label: variable.key,
             type: variable.valueType === "boolean" ? "flag" : variable.valueType === "string" ? "text" : "number",
             value: initial.values[variable.key] ?? variable.defaultValue,
+            defaultValue: variable.defaultValue,
           })),
           preview: [],
         },
@@ -268,8 +337,47 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
           savedAt: save.createdAt,
         },
         exportBundle: null,
-        assets: { workflowName: "local-comfyui", prompt: "", job: null, candidate: null, library: [] },
+        assets: { workflowName: "local-comfyui", prompt: "", job: null, candidate: assetCandidateSummary, library: approvedAssetSummaries },
       };
+    },
+    async createGraphEntity(input: V2GraphCreateInput & { readonly storyWorldId: string; readonly expectedRevision: number }): Promise<void> {
+      const suffix = crypto.randomUUID();
+      const path = `/api/v2/core/worlds/${encodeURIComponent(input.storyWorldId)}`;
+      const common = { expectedRevision: input.expectedRevision, idempotencyKey: uniqueCommandKey(`create-${input.kind}`) };
+      if (input.kind === "arc") await post(`${path}/arcs`, { ...input.input, arcId: `arc:${suffix}`, ...common });
+      if (input.kind === "scene") await post(`${path}/scenes`, { ...input.input, sceneId: `scene:${suffix}`, ...common });
+      if (input.kind === "choice") await post(`${path}/choices`, { ...input.input, choiceId: `choice:${suffix}`, ...common });
+      if (input.kind === "state") await post(`${path}/state/variables`, { ...input.input, ...common });
+    },
+    async getAssetGenerationJob(jobId: string) {
+      return (await get<V2AssetGenerationJobApiResponse>(`/api/v2/generation/assets/jobs/${encodeURIComponent(jobId)}`)).job;
+    },
+    async createCanonEntity(input: V2CanonCreateInput & { readonly storyWorldId: string; readonly expectedRevision: number }): Promise<void> {
+      const suffix = crypto.randomUUID();
+      const path = `/api/v2/core/worlds/${encodeURIComponent(input.storyWorldId)}`;
+      const common = { expectedRevision: input.expectedRevision, idempotencyKey: uniqueCommandKey(`create-${input.kind}`) };
+      if (input.kind === "location") await post(`${path}/locations`, { ...input.input, locationId: `location:${suffix}`, ...common });
+      if (input.kind === "character") await post(`${path}/characters`, { ...input.input, characterId: `character:${suffix}`, ...common });
+      if (input.kind === "fact") await post(`${path}/facts`, { ...input.input, factId: `fact:${suffix}`, ...common });
+      if (input.kind === "rule") await post(`${path}/rules`, { ...input.input, ruleId: `rule:${suffix}`, ...common });
+      if (input.kind === "timeline") await post(`${path}/timeline-events`, { ...input.input, timelineEventId: `timeline:${suffix}`, ...common });
+    },
+    async updateCanonEntity(input: V2CanonUpdateInput & { readonly storyWorldId: string; readonly expectedRevision: number }): Promise<void> {
+      const path = `/api/v2/core/worlds/${encodeURIComponent(input.storyWorldId)}`;
+      const body = { ...input.input, expectedRevision: input.expectedRevision, idempotencyKey: uniqueCommandKey(`update-${input.kind}`) };
+      if (input.kind === "location") await patch(`${path}/locations/${encodeURIComponent(input.id)}`, body);
+      if (input.kind === "character") await patch(`${path}/characters/${encodeURIComponent(input.id)}`, body);
+      if (input.kind === "fact") await patch(`${path}/facts/${encodeURIComponent(input.id)}`, body);
+      if (input.kind === "rule") await patch(`${path}/rules/${encodeURIComponent(input.id)}`, body);
+      if (input.kind === "timeline") await patch(`${path}/timeline-events/${encodeURIComponent(input.id)}`, body);
+    },
+    async updateGraphEntity(input: V2GraphUpdateInput & { readonly storyWorldId: string; readonly expectedRevision: number }): Promise<void> {
+      const path = `/api/v2/core/worlds/${encodeURIComponent(input.storyWorldId)}`;
+      const body = { ...input.input, expectedRevision: input.expectedRevision, idempotencyKey: uniqueCommandKey(`update-${input.kind}`) };
+      if (input.kind === "arc") await patch(`${path}/arcs/${encodeURIComponent(input.id)}`, body);
+      if (input.kind === "scene") await patch(`${path}/scenes/${encodeURIComponent(input.id)}`, body);
+      if (input.kind === "choice") await patch(`${path}/choices/${encodeURIComponent(input.id)}`, body);
+      if (input.kind === "state") await patch(`${path}/state/variables/${encodeURIComponent(input.id)}`, body);
     },
     async createSceneGenerationJob(request: V2CreateSceneGenerationJobRequest): Promise<V2CreateSceneGenerationJobResponse> {
       const response = await post<{ readonly job: V2CreateSceneGenerationJobResponse["job"] }>(
@@ -277,6 +385,9 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
         request,
       );
       return { job: response.job };
+    },
+    async getSceneGenerationJob(jobId: string) {
+      return (await get<V2GenerationJobApiResponse>(`/api/v2/generation/jobs/${encodeURIComponent(jobId)}`)).job;
     },
     async reviewCandidate(request: V2CandidateReviewRequest): Promise<V2CandidateReviewResult> {
       if (!worldId || revision === undefined) throw new V2AdapterError({ code: "NOT_FOUND", message: "Load a workspace before reviewing a candidate." });

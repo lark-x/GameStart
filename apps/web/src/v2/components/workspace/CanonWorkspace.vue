@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { Plus, User, MapPin, BookOpen, ShieldAlert } from "@lucide/vue";
+import { Plus, User, MapPin, BookOpen, ShieldAlert, Clock3, Pencil } from "@lucide/vue";
 import Badge from "../../../components/ui/Badge.vue";
 import Button from "../../../components/ui/Button.vue";
 import Field from "../../../components/ui/Field.vue";
 import Input from "../../../components/ui/Input.vue";
 import Modal from "../../../components/ui/Modal.vue";
+import Drawer from "../../../components/ui/Drawer.vue";
+import Select from "../../../components/ui/Select.vue";
 import Textarea from "../../../components/ui/Textarea.vue";
 import type { V2WorkspaceSnapshot } from "../../adapters";
 import { useV2WorkspaceStore } from "../../stores/workspace";
@@ -30,7 +32,7 @@ const emit = defineEmits<{
 
 const store = useV2WorkspaceStore();
 
-const activeTab = ref<"all" | "characters" | "locations" | "facts" | "rules">("all");
+const activeTab = ref<"all" | "characters" | "locations" | "facts" | "rules" | "timeline">("all");
 const searchQuery = ref("");
 
 const createDialogOpen = ref(false);
@@ -38,6 +40,73 @@ const newStoryName = ref("");
 const newStoryPremise = ref("");
 const createError = ref<string | null>(null);
 const creatingStory = computed(() => store.creatingStory);
+type CanonEntityKind = "location" | "character" | "fact" | "rule" | "timeline";
+const entityDrawerOpen = ref(false);
+const editingEntityId = ref<string | null>(null);
+const entityKind = ref<CanonEntityKind>("location");
+const entityName = ref("");
+const entitySummary = ref("");
+const entityText = ref("");
+const entityDate = ref("");
+const entityVisibility = ref<"creator_only" | "player_visible">("player_visible");
+const entitySeverity = ref<"guideline" | "required">("guideline");
+const entityError = ref<string | null>(null);
+
+function openEntityDrawer(kind: CanonEntityKind = "location"): void {
+  editingEntityId.value = null;
+  entityKind.value = kind;
+  entityName.value = "";
+  entitySummary.value = "";
+  entityText.value = "";
+  entityDate.value = "";
+  entityVisibility.value = "player_visible";
+  entitySeverity.value = "guideline";
+  entityError.value = null;
+  entityDrawerOpen.value = true;
+}
+
+function openEditEntity(kind: CanonEntityKind, id: string, value: { name?: string; summary?: string; text?: string; localDate?: string; visibility?: "creator_only" | "player_visible"; severity?: "guideline" | "required" }): void {
+  editingEntityId.value = id;
+  entityKind.value = kind;
+  entityName.value = value.name ?? "";
+  entitySummary.value = value.summary ?? "";
+  entityText.value = value.text ?? "";
+  entityVisibility.value = value.visibility ?? "player_visible";
+  entitySeverity.value = value.severity ?? "guideline";
+  entityDate.value = value.localDate ?? "";
+  entityError.value = null;
+  entityDrawerOpen.value = true;
+}
+async function submitEntity(): Promise<void> {
+  entityError.value = null;
+  try {
+    if (entityKind.value === "location") {
+      const input = { name: entityName.value.trim(), ...(entitySummary.value.trim() ? { summary: entitySummary.value.trim() } : {}) };
+      if (editingEntityId.value) await store.updateCanonEntity({ kind: "location", id: editingEntityId.value, input }); else await store.createCanonEntity({ kind: "location", input });
+    }
+    if (entityKind.value === "character") {
+      const input = { name: entityName.value.trim(), ...(entitySummary.value.trim() ? { summary: entitySummary.value.trim() } : {}) };
+      if (editingEntityId.value) await store.updateCanonEntity({ kind: "character", id: editingEntityId.value, input }); else await store.createCanonEntity({ kind: "character", input });
+    }
+    if (entityKind.value === "fact") {
+      const input = { text: entityText.value.trim(), visibility: entityVisibility.value };
+      if (editingEntityId.value) await store.updateCanonEntity({ kind: "fact", id: editingEntityId.value, input }); else await store.createCanonEntity({ kind: "fact", input });
+    }
+    if (entityKind.value === "rule") {
+      const input = { text: entityText.value.trim(), severity: entitySeverity.value };
+      if (editingEntityId.value) await store.updateCanonEntity({ kind: "rule", id: editingEntityId.value, input }); else await store.createCanonEntity({ kind: "rule", input });
+    }
+    if (entityKind.value === "timeline") {
+      const input = { localDate: entityDate.value, title: entityName.value.trim(), ...(entitySummary.value.trim() ? { summary: entitySummary.value.trim() } : {}) };
+      if (editingEntityId.value) await store.updateCanonEntity({ kind: "timeline", id: editingEntityId.value, input }); else await store.createCanonEntity({ kind: "timeline", input });
+    }
+    if (store.error) throw new Error(store.error);
+    entityDrawerOpen.value = false;
+  } catch (error) {
+    entityError.value = error instanceof Error ? error.message : "保存失败";
+  }
+}
+
 
 function openCreateDialog(): void {
   createError.value = null;
@@ -92,6 +161,13 @@ const filteredRules = computed(() => {
   return props.snapshot.world.rules.filter(r => r.text.toLowerCase().includes(q));
 });
 
+const filteredTimelineEvents = computed(() => {
+  if (!props.snapshot) return [];
+  if (!searchQuery.value.trim()) return props.snapshot.world.timelineEvents;
+  const q = searchQuery.value.toLowerCase();
+  return props.snapshot.world.timelineEvents.filter(event => event.title.toLowerCase().includes(q) || event.summary?.toLowerCase().includes(q));
+});
+
 function visibilityLabel(visibility: string): string {
   return visibility === "creator" ? "创作者可见" : "玩家可见";
 }
@@ -131,9 +207,9 @@ function ruleSeverityLabel(severity: string): string {
           </div>
         </div>
 
-      <form class="v2-canon-form" aria-label="故事设定预览" @submit.prevent="emit('previewCanonDraft')">
+      <form class="v2-canon-form" aria-label="保存故事设定" @submit.prevent="emit('previewCanonDraft')">
         <div class="form-row">
-          <Field label="故事空间名称" hint="修改后先预览修订，通过版本号避免并发冲突">
+          <Field label="故事空间名称" hint="保存时会校验版本，避免覆盖其他创作者的修改">
             <Input
               :model-value="draftWorldName"
               :disabled="loading"
@@ -167,7 +243,7 @@ function ruleSeverityLabel(severity: string): string {
 
         <div class="v2-form-actions">
           <Button variant="primary" size="md" type="submit" :disabled="!hasDraftChanges || loading">
-            预览修订
+            保存修改
           </Button>
           <Button variant="secondary" size="md" :disabled="loading" @click="emit('resetCanonDraft')">
             重置草稿
@@ -214,6 +290,13 @@ function ruleSeverityLabel(severity: string): string {
         >
           <ShieldAlert :size="14" /> 规则 ({{ snapshot.world.rules.length }})
         </button>
+        <button
+          type="button"
+          :class="['filter-btn', { active: activeTab === 'timeline' }]"
+          @click="activeTab = 'timeline'"
+        >
+          <Clock3 :size="14" /> 时间线 ({{ snapshot.world.timelineEvents.length }})
+        </button>
       </div>
 
       <div class="search-box">
@@ -222,6 +305,10 @@ function ruleSeverityLabel(severity: string): string {
           placeholder="搜索角色、地点、事实规则..."
           size="sm"
         />
+      <Button variant="primary" size="md" :disabled="loading" @click="openEntityDrawer(activeTab === 'all' ? 'location' : activeTab as CanonEntityKind)">
+        <Plus :size="16" aria-hidden="true" />
+        新增正典数据
+      </Button>
       </div>
     </div>
 
@@ -242,7 +329,7 @@ function ruleSeverityLabel(severity: string): string {
               <h4>{{ char.name }}</h4>
               <span class="sub">{{ char.role || '\u89d2\u8272' }}</span>
             </div>
-            <Badge tone="info">角色</Badge>
+            <Badge tone="info">角色</Badge><Button variant="ghost" size="icon" aria-label="编辑角色" @click="openEditEntity('character', char.characterId, { name: char.name, summary: char.role })"><Pencil :size="15" aria-hidden="true" /></Button>
           </div>
           <p class="entity-summary">{{ char.role }}</p>
           
@@ -264,7 +351,7 @@ function ruleSeverityLabel(severity: string): string {
               <h4>{{ loc.name }}</h4>
               <span class="sub">场景地点</span>
             </div>
-            <Badge tone="neutral">地点</Badge>
+            <Badge tone="neutral">地点</Badge><Button variant="ghost" size="icon" aria-label="编辑地点" @click="openEditEntity('location', loc.locationId, { name: loc.name, summary: loc.tags.join(', ') })"><Pencil :size="15" aria-hidden="true" /></Button>
           </div>
           <div v-if="loc.tags?.length" class="tag-list">
             <span v-for="t in loc.tags" :key="t" class="tag">#{{ t }}</span>
@@ -283,7 +370,7 @@ function ruleSeverityLabel(severity: string): string {
             <Badge :tone="fact.visibility === 'creator' ? 'warning' : 'info'">
               {{ visibilityLabel(fact.visibility) }}
             </Badge>
-            <span class="fact-id">{{ fact.factId }}</span>
+            <span class="fact-id">{{ fact.factId }}</span><Button variant="ghost" size="icon" aria-label="编辑事实" @click="openEditEntity('fact', fact.factId, { text: fact.text, visibility: fact.visibility === 'creator' ? 'creator_only' : 'player_visible' })"><Pencil :size="15" aria-hidden="true" /></Button>
           </div>
           <p class="fact-text">{{ fact.text }}</p>
         </article>
@@ -300,13 +387,74 @@ function ruleSeverityLabel(severity: string): string {
             <Badge :tone="rule.severity === 'hard' ? 'danger' : 'neutral'">
               {{ ruleSeverityLabel(rule.severity) }}
             </Badge>
-            <span class="rule-id">{{ rule.ruleId }}</span>
+            <span class="rule-id">{{ rule.ruleId }}</span><Button variant="ghost" size="icon" aria-label="编辑规则" @click="openEditEntity('rule', rule.ruleId, { text: rule.text, severity: rule.severity === 'hard' ? 'required' : 'guideline' })"><Pencil :size="15" aria-hidden="true" /></Button>
           </div>
           <p class="rule-text">{{ rule.text }}</p>
         </article>
       </template>
+
+      <!-- Timeline -->
+      <template v-if="activeTab === 'all' || activeTab === 'timeline'">
+        <article
+          v-for="event in filteredTimelineEvents"
+          :key="event.timelineEventId"
+          class="entity-card timeline-card"
+        >
+          <div class="entity-header">
+            <div class="avatar-placeholder timeline-icon"><Clock3 :size="18" /></div>
+            <div class="header-info">
+              <h4>{{ event.title }}</h4>
+              <span class="sub">{{ event.localDate }}</span>
+            </div>
+            <Badge tone="neutral">时间线</Badge><Button variant="ghost" size="icon" aria-label="编辑时间线事件" @click="openEditEntity('timeline', event.timelineEventId, { name: event.title, localDate: event.localDate, ...(event.summary === undefined ? {} : { summary: event.summary }) })"><Pencil :size="15" aria-hidden="true" /></Button>
+          </div>
+          <p v-if="event.summary" class="entity-summary">{{ event.summary }}</p>
+        </article>
+      </template>
     </div>
     </template>
+
+    <Drawer
+      :open="entityDrawerOpen"
+      :title="editingEntityId ? '编辑正典数据' : '新增正典数据'"
+      description="系统会自动生成业务 ID，并使用当前修订号保存。"
+      @close="entityDrawerOpen = false"
+    >
+      <form class="create-story-form" @submit.prevent="submitEntity">
+        <Field for-id="v2-entity-kind" label="数据类型" required>
+          <Select id="v2-entity-kind" v-model="entityKind" aria-label="数据类型">
+            <option value="location">地点</option>
+            <option value="character">角色</option>
+            <option value="fact">事实</option>
+            <option value="rule">规则</option>
+            <option value="timeline">时间线事件</option>
+          </Select>
+        </Field>
+        <Field v-if="entityKind === 'location' || entityKind === 'character' || entityKind === 'timeline'" for-id="v2-entity-name" :label="entityKind === 'timeline' ? '事件标题' : '名称'" required>
+          <Input id="v2-entity-name" v-model="entityName" :placeholder="entityKind === 'timeline' ? '事件标题' : '名称'" required />
+        </Field>
+        <Field v-if="entityKind === 'location' || entityKind === 'character' || entityKind === 'timeline'" for-id="v2-entity-summary" label="说明">
+          <Textarea id="v2-entity-summary" v-model="entitySummary" :rows="4" placeholder="可选说明" />
+        </Field>
+        <Field v-if="entityKind === 'fact' || entityKind === 'rule'" for-id="v2-entity-text" :label="entityKind === 'fact' ? '事实内容' : '规则内容'" required>
+          <Textarea id="v2-entity-text" v-model="entityText" :rows="5" required />
+        </Field>
+        <Field v-if="entityKind === 'fact'" for-id="v2-entity-visibility" label="可见范围" required>
+          <Select id="v2-entity-visibility" v-model="entityVisibility" aria-label="可见范围"><option value="player_visible">玩家可见</option><option value="creator_only">仅创作者可见</option></Select>
+        </Field>
+        <Field v-if="entityKind === 'rule'" for-id="v2-entity-severity" label="规则级别" required>
+          <Select id="v2-entity-severity" v-model="entitySeverity" aria-label="规则级别"><option value="guideline">指导</option><option value="required">必须遵守</option></Select>
+        </Field>
+        <Field v-if="entityKind === 'timeline'" for-id="v2-entity-date" label="日期" required>
+          <Input id="v2-entity-date" v-model="entityDate" type="date" required />
+        </Field>
+        <p v-if="entityError" class="create-story-error" role="alert">{{ entityError }}</p>
+      </form>
+      <template #footer>
+        <Button variant="secondary" size="md" :disabled="loading" @click="entityDrawerOpen = false">取消</Button>
+        <Button variant="primary" size="md" :loading="loading" @click="submitEntity">保存数据</Button>
+      </template>
+    </Drawer>
 
     <Modal
       :open="createDialogOpen"

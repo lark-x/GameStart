@@ -8,6 +8,7 @@ import type { V2CandidateReviewAction } from "../adapters/types";
 
 import CanonWorkspace from "./workspace/CanonWorkspace.vue";
 import GraphWorkspace from "./workspace/GraphWorkspace.vue";
+import StateWorkspace from "./workspace/StateWorkspace.vue";
 import ReviewWorkspace from "./workspace/ReviewWorkspace.vue";
 import AssetsWorkspace from "./workspace/AssetsWorkspace.vue";
 import ReleaseWorkspace from "./workspace/ReleaseWorkspace.vue";
@@ -72,6 +73,8 @@ const title = computed(() => {
       return "正典世界观 (Canon)";
     case "graph":
       return "故事结构图 (Scene Graph)";
+    case "state":
+      return "状态变量 (State Schema)";
     case "review":
       return "生成与审核 (Generation & Review)";
     case "assets":
@@ -79,6 +82,7 @@ const title = computed(() => {
     case "release":
       return "发布与导出 (Release & Export)";
     case "player":
+
       return "游玩预览运行时 (Player Preview)";
     default:
       return "工作空间概览 (Overview)";
@@ -129,6 +133,12 @@ const title = computed(() => {
         :snapshot="snapshot"
         :loading="loading"
       />
+        <StateWorkspace
+          v-else-if="area === 'state'"
+          :snapshot="snapshot"
+          :loading="loading"
+        />
+
 
       <!-- 3. Review Area -->
       <ReviewWorkspace

@@ -120,6 +120,8 @@
         "AGENTS.md",
         "apps/*/package.json",
         "apps/AGENTS.md",
+        "apps/web/src/components/ui/Drawer.vue",
+        "e2e/v2-authoring-loop.spec.ts",
         "apps/api/src/v2/index.ts",
         "apps/api/src/v2/main.ts",
         "apps/api/src/v2/platform/app.ts",
