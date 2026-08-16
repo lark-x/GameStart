@@ -160,6 +160,10 @@ export interface V2AssetGenerationJobApiResponse {
   readonly job: V2AssetGenerationJobRecord;
 }
 
+export interface V2AssetGenerationJobListApiResponse {
+  readonly jobs: readonly V2AssetGenerationJobRecord[];
+}
+
 export interface V2AssetCandidateRecord {
   readonly candidateId: V2CandidateId;
   readonly jobId: V2JobId;
@@ -263,4 +267,8 @@ export interface V2CreateSceneGenerationJobApiResponse {
 
 export interface V2GenerationJobApiResponse {
   readonly job: V2SceneGenerationJobRecord;
+}
+
+export interface V2GenerationJobListApiResponse {
+  readonly jobs: readonly V2SceneGenerationJobRecord[];
 }

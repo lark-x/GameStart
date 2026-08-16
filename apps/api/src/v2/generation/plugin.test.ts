@@ -114,6 +114,10 @@ class FakeGenerationJobs implements V2GenerationJobRepository {
     return [...this.jobs.values()].filter((job) => job.status === status).slice(0, limit);
   }
 
+  public async listJobsByStoryWorld(storyWorldId: V2StoryWorldId, limit: number): Promise<readonly V2SceneGenerationJobRecord[]> {
+    return [...this.jobs.values()].filter((job) => job.storyWorldId === storyWorldId).slice(0, limit);
+  }
+
   public async markJobClaimed(input: { readonly jobId: V2JobId; readonly claimedAt: string; readonly leaseExpiresAt: string }): Promise<V2SceneGenerationJobRecord> {
     const job = this.requireJob(input.jobId);
     const updated: V2SceneGenerationJobRecord = {
@@ -249,6 +253,10 @@ class FakeAssetStore implements V2AssetGenerationJobRepository, V2AssetCandidate
 
   public async listAssetJobsByStatus(status: V2JobStatus, limit: number): Promise<readonly V2AssetGenerationJobRecord[]> {
     return [...this.jobs.values()].filter((job) => job.status === status).slice(0, limit);
+  }
+
+  public async listAssetJobsByStoryWorld(storyWorldId: V2StoryWorldId, limit: number): Promise<readonly V2AssetGenerationJobRecord[]> {
+    return [...this.jobs.values()].filter((job) => job.storyWorldId === storyWorldId).slice(0, limit);
   }
 
   public async markAssetJobClaimed(input: { readonly jobId: V2JobId; readonly claimedAt: string; readonly leaseExpiresAt: string }): Promise<V2AssetGenerationJobRecord> {
@@ -578,6 +586,13 @@ test("V2 generation API creates, replays, reads, and cancels scene jobs", async 
     assert.equal(read.statusCode, 200);
     assert.equal((read.json() as { job: V2SceneGenerationJobRecord }).job.jobId, created.job.jobId);
 
+    const list = await app.inject({
+      method: "GET",
+      url: "/api/v2/generation/worlds/world_generation/jobs",
+    });
+    assert.equal(list.statusCode, 200);
+    assert.deepEqual((list.json() as { jobs: V2SceneGenerationJobRecord[] }).jobs.map((job) => job.jobId), [created.job.jobId]);
+
     const cancel = await app.inject({
       method: "POST",
       url: `/api/v2/generation/jobs/${encodeURIComponent(created.job.jobId)}/cancel`,
@@ -660,6 +675,13 @@ test("V2 asset API creates, replays, reads, and cancels asset jobs", async () =>
     });
     assert.equal(read.statusCode, 200);
     assert.equal((read.json() as { job: V2AssetGenerationJobRecord }).job.jobId, created.job.jobId);
+
+    const list = await app.inject({
+      method: "GET",
+      url: "/api/v2/generation/assets/worlds/world_generation/jobs",
+    });
+    assert.equal(list.statusCode, 200);
+    assert.deepEqual((list.json() as { jobs: V2AssetGenerationJobRecord[] }).jobs.map((job) => job.jobId), [created.job.jobId]);
 
     const cancel = await app.inject({
       method: "POST",

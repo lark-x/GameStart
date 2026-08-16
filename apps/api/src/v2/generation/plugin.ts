@@ -7,12 +7,14 @@ import type {
   V2AssetCandidateListApiResponse,
   V2ApprovedAssetListApiResponse,
   V2AssetGenerationJobApiResponse,
+  V2AssetGenerationJobListApiResponse,
   V2CreateAssetGenerationJobApiRequest,
   V2CreateAssetGenerationJobApiResponse,
   V2CreateSceneGenerationJobApiRequest,
   V2GenerationContextPreviewApiRequest,
   V2GenerationContextSnapshot,
   V2GenerationJobApiResponse,
+  V2GenerationJobListApiResponse,
   V2IdempotencyKey,
   V2IsoDateTime,
   V2JobId,
@@ -288,6 +290,16 @@ export function createV2GenerationPlugin(
       }
     });
 
+    app.get("/worlds/:storyWorldId/jobs", async (request, reply) => {
+      try {
+        return {
+          jobs: await dependencies.jobs.listJobsByStoryWorld(paramsStoryWorldId(request.params), 20),
+        } satisfies V2GenerationJobListApiResponse;
+      } catch (error) {
+        return replyWithError(reply, error);
+      }
+    });
+
     app.post("/jobs/:jobId/cancel", async (request, reply) => {
       try {
         const reason = parseCancelReason(request.body);
@@ -332,6 +344,17 @@ export function createV2GenerationPlugin(
         const job = await dependencies.assetJobs.getAssetJob(paramsJobId(request.params));
         if (job === undefined) return reply.code(404).send({ error: { message: "asset generation job not found" } });
         return { job } satisfies V2AssetGenerationJobApiResponse;
+      } catch (error) {
+        return replyWithError(reply, error);
+      }
+    });
+
+    app.get("/assets/worlds/:storyWorldId/jobs", async (request, reply) => {
+      try {
+        if (dependencies.assetJobs === undefined) return replyMissingCapability(reply, "asset generation repository");
+        return {
+          jobs: await dependencies.assetJobs.listAssetJobsByStoryWorld(paramsStoryWorldId(request.params), 20),
+        } satisfies V2AssetGenerationJobListApiResponse;
       } catch (error) {
         return replyWithError(reply, error);
       }

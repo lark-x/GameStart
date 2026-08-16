@@ -25,6 +25,7 @@ export interface V2GenerationJobRepository {
   createSceneJob(input: V2CreateSceneGenerationJobInput): Promise<V2GenerationJobCreateResult>;
   getJob(jobId: V2JobId): Promise<V2SceneGenerationJobRecord | undefined>;
   listJobsByStatus(status: V2JobStatus, limit: number): Promise<readonly V2SceneGenerationJobRecord[]>;
+  listJobsByStoryWorld(storyWorldId: V2StoryWorldId, limit: number): Promise<readonly V2SceneGenerationJobRecord[]>;
   markJobClaimed(input: { readonly jobId: V2JobId; readonly claimedAt: string; readonly leaseExpiresAt: string }): Promise<V2SceneGenerationJobRecord>;
   markJobRunning(input: { readonly jobId: V2JobId; readonly updatedAt: string }): Promise<V2SceneGenerationJobRecord>;
   recoverExpiredJobLease(input: { readonly jobId: V2JobId; readonly recoveredAt: string }): Promise<V2SceneGenerationJobRecord>;
@@ -55,6 +56,7 @@ export interface V2AssetGenerationJobRepository {
   createAssetJob(input: V2CreateAssetGenerationJobInput): Promise<V2AssetGenerationJobCreateResult>;
   getAssetJob(jobId: V2JobId): Promise<V2AssetGenerationJobRecord | undefined>;
   listAssetJobsByStatus(status: V2JobStatus, limit: number): Promise<readonly V2AssetGenerationJobRecord[]>;
+  listAssetJobsByStoryWorld(storyWorldId: V2StoryWorldId, limit: number): Promise<readonly V2AssetGenerationJobRecord[]>;
   markAssetJobClaimed(input: { readonly jobId: V2JobId; readonly claimedAt: string; readonly leaseExpiresAt: string }): Promise<V2AssetGenerationJobRecord>;
   markAssetJobRunning(input: { readonly jobId: V2JobId; readonly updatedAt: string }): Promise<V2AssetGenerationJobRecord>;
   markAssetJobSubmitted(input: { readonly jobId: V2JobId; readonly submittedAt: string; readonly externalJobId: string }): Promise<V2AssetGenerationJobRecord>;

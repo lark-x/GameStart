@@ -326,6 +326,13 @@ export class V2SqliteAssetGenerationRepository implements V2AssetGenerationJobRe
     return rows.map(mapAssetJob);
   }
 
+  public async listAssetJobsByStoryWorld(storyWorldId: V2StoryWorldId, limit: number): Promise<readonly V2AssetGenerationJobRecord[]> {
+    const rows = this.db.prepare(
+      "SELECT * FROM v2_asset_generation_jobs WHERE story_world_id = ? ORDER BY created_at DESC, job_id DESC LIMIT ?",
+    ).all(storyWorldId, limit) as AssetJobRow[];
+    return rows.map(mapAssetJob);
+  }
+
   public async markAssetJobClaimed(input: { readonly jobId: V2JobId; readonly claimedAt: string; readonly leaseExpiresAt: string }): Promise<V2AssetGenerationJobRecord> {
     this.db.prepare(`
       UPDATE v2_asset_generation_jobs

@@ -253,6 +253,8 @@ test("creates V2 asset job and dispatch facts atomically", async () => {
     assert.equal(result.job.workflowVersion, "workflow-v1");
     assert.equal(await repository.getAssetJob("missing" as V2JobId), undefined);
     assert.deepEqual(await repository.listAssetJobsByStatus("queued", 10), [result.job]);
+    assert.deepEqual(await repository.listAssetJobsByStoryWorld(result.job.storyWorldId, 10), [result.job]);
+    assert.deepEqual(await repository.listAssetJobsByStoryWorld("world_other" as V2StoryWorldId, 10), []);
     const dispatch = db.prepare("SELECT * FROM v2_asset_generation_dispatches WHERE job_id = ?").get(result.job.jobId) as { status: string } | undefined;
     assert.equal(dispatch?.status, "pending");
   } finally {
