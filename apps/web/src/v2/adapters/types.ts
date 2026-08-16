@@ -6,6 +6,7 @@ import type {
   V2CreateSceneGenerationJobResponse,
   V2ErrorEnvelope,
   V2HealthResponse,
+  V2IdempotencyKey,
   V2JobRef,
   V2PrepareAssetGenerationApiResponse,
   V2ReleasePreflightResponse,
@@ -304,6 +305,7 @@ export interface V2AssetReviewResult {
 }
 
 export interface V2AssetGenerationRequestInput {
+  readonly idempotencyKey?: V2IdempotencyKey;
   readonly prompt: string;
   readonly workflowVersion: string;
   readonly workflow: Record<string, unknown>;

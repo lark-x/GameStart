@@ -1,4 +1,5 @@
 import {
+  buildV2ComfyUiPromptPayload,
   type V2GenerationContextPreviewApiRequest,
   type V2CreateSceneGenerationJobApiRequest,
   type V2CreateSceneGenerationJobResponse,
@@ -392,14 +393,19 @@ export function createV2MockAdapter(): V2WorkspaceAdapter {
       return asset;
     },
     async prepareAssetGenerationRequest(request: V2AssetGenerationRequestInput): Promise<V2PrepareAssetGenerationApiResponse> {
+      const jobId = "job:asset:mock-preview" as V2JobId;
+      const prepared = {
+        idempotencyKey: request.idempotencyKey ?? "asset-job:mock-preview",
+        prompt: request.prompt,
+        workflowVersion: request.workflowVersion,
+        workflow: request.workflow,
+        ...(request.negativePrompt === undefined ? {} : { negativePrompt: request.negativePrompt }),
+        ...(request.seed === undefined ? {} : { seed: request.seed }),
+      };
       return {
-        request: {
-          prompt: request.prompt,
-          workflowVersion: request.workflowVersion,
-          workflow: request.workflow,
-          ...(request.negativePrompt === undefined ? {} : { negativePrompt: request.negativePrompt }),
-          ...(request.seed === undefined ? {} : { seed: request.seed }),
-        },
+        jobId,
+        request: prepared,
+        comfyUiPayload: buildV2ComfyUiPromptPayload({ jobId, ...prepared }),
       };
     },
     async createAssetJob(input: V2AssetGenerationRequestInput | string): Promise<V2AssetJobSummary> {

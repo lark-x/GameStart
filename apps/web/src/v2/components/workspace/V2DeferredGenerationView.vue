@@ -29,7 +29,7 @@ const job = computed(() => isComfy.value ? props.snapshot?.assets.job : props.sn
 const sceneCandidate = computed(() => props.snapshot?.candidate ?? null);
 const assetCandidate = computed(() => props.snapshot?.assets.candidate ?? null);
 const scenePreview = computed(() => store.scenePreparedRequest === null ? "" : JSON.stringify(store.scenePreparedRequest.request, null, 2));
-const assetPreview = computed(() => store.assetPreparedRequest === null ? "" : JSON.stringify(store.assetPreparedRequest.request, null, 2));
+const assetPreview = computed(() => store.assetPreparedRequest === null ? "" : JSON.stringify(store.assetPreparedRequest.comfyUiPayload, null, 2));
 const previewText = computed(() => isComfy.value ? assetPreview.value : scenePreview.value);
 const activeCapability = computed(() => isComfy.value ? capabilities.value?.assetGeneration : capabilities.value?.sceneGeneration);
 const capabilityReady = computed(() => activeCapability.value?.enabled === true && activeCapability.value.configured === true);

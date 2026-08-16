@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import type { FastifyPluginAsync, FastifyReply } from "fastify";
 import { buildV2SceneGenerationMessages } from "@living-network/ai/v2";
+import { buildV2ComfyUiPromptPayload } from "@living-network/contracts/v2";
 import type {
   V2AssetCandidateApiResponse,
   V2AssetReviewAction,
@@ -20,6 +21,7 @@ import type {
   V2IdempotencyKey,
   V2IsoDateTime,
   V2JobId,
+  V2PrepareAssetGenerationApiRequest,
   V2PrepareAssetGenerationApiResponse,
   V2Revision,
   V2ReviewAssetCandidateApiRequest,
@@ -147,11 +149,12 @@ function parseCreateAssetJobRequest(value: unknown): V2CreateAssetGenerationJobA
   };
 }
 
-function parsePrepareAssetRequest(value: unknown): Omit<V2CreateAssetGenerationJobApiRequest, "idempotencyKey" | "maxAttempts"> {
+function parsePrepareAssetRequest(value: unknown): V2PrepareAssetGenerationApiRequest {
   if (!isRecord(value)) throw new TypeError("request body must be an object");
   const seed = optionalNonNegativeInteger(value.seed, "seed");
   return {
     storyWorldId: nonEmptyString(value.storyWorldId, "storyWorldId") as V2StoryWorldId,
+    idempotencyKey: nonEmptyString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey,
     prompt: nonEmptyString(value.prompt, "prompt"),
     workflowVersion: nonEmptyString(value.workflowVersion, "workflowVersion"),
     workflow: workflowRecord(value.workflow),
@@ -400,14 +403,19 @@ export function createV2GenerationPlugin(
     app.post("/assets/prepare", async (request, reply) => {
       try {
         const input = parsePrepareAssetRequest(request.body);
+        const jobId = stableAssetJobId(input);
+        const prepared = {
+          idempotencyKey: input.idempotencyKey,
+          prompt: input.prompt,
+          workflowVersion: input.workflowVersion,
+          workflow: input.workflow,
+          ...(input.negativePrompt === undefined ? {} : { negativePrompt: input.negativePrompt }),
+          ...(input.seed === undefined ? {} : { seed: input.seed }),
+        };
         return {
-          request: {
-            prompt: input.prompt,
-            workflowVersion: input.workflowVersion,
-            workflow: input.workflow,
-            ...(input.negativePrompt === undefined ? {} : { negativePrompt: input.negativePrompt }),
-            ...(input.seed === undefined ? {} : { seed: input.seed }),
-          },
+          jobId,
+          request: prepared,
+          comfyUiPayload: buildV2ComfyUiPromptPayload({ jobId, ...prepared }),
         } satisfies V2PrepareAssetGenerationApiResponse;
       } catch (error) {
         return replyWithError(reply, error);

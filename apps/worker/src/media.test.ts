@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  buildV2ComfyUiPromptPayload,
+} from "@living-network/contracts/v2";
+import {
   ActionKind,
   CharacterRole,
   EventRecurrenceKind,
@@ -438,6 +441,14 @@ test("submits workflows and resolves ComfyUI history output", async () => {
   assert.equal(result.externalJobId, "prompt-123");
   assert.match(result.mediaRef, /^http:\/\/comfy\.example\/view\?/);
   const body = JSON.parse(String(calls[0]?.init?.body));
+  assert.deepEqual(body, buildV2ComfyUiPromptPayload({
+    jobId: "job-123",
+    workflowVersion: "wf-v1",
+    prompt: "lanterns",
+    workflow: { "1": { class_type: "CheckpointLoaderSimple" } },
+    clientId: "worker-test",
+    seed: 42,
+  }));
   assert.deepEqual(body.prompt, { "1": { class_type: "CheckpointLoaderSimple" } });
   assert.equal(body.client_id, "worker-test");
   assert.equal(calls[1]?.input, "http://comfy.example/history/prompt-123");

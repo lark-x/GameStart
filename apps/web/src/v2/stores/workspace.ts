@@ -179,7 +179,12 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
   function assetPreparedMatchesCurrent(): boolean {
     if (assetPreparedRequest.value === null) return false;
     const current = buildAssetGenerationRequest();
-    return JSON.stringify(assetPreparedRequest.value.request) === JSON.stringify(current);
+    const prepared = assetPreparedRequest.value.request;
+    return prepared.prompt === current.prompt &&
+      prepared.workflowVersion === current.workflowVersion &&
+      JSON.stringify(prepared.workflow) === JSON.stringify(current.workflow) &&
+      prepared.negativePrompt === current.negativePrompt &&
+      prepared.seed === current.seed;
   }
 
   function stopGenerationPolling(): void {

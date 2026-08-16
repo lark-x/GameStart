@@ -19,6 +19,7 @@ import type {
   V2IsoDateTime,
   V2JobId,
   V2JobStatus,
+  V2PrepareAssetGenerationApiResponse,
   V2ReleaseId,
   V2Revision,
   V2ReviewAssetCandidateInput,
@@ -647,6 +648,40 @@ test("V2 generation API reports validation and missing job errors", async () => 
       url: "/api/v2/generation/jobs/job%3Amissing",
     });
     assert.equal(missing.statusCode, 404);
+  } finally {
+    await app.close();
+  }
+});
+
+test("V2 asset API prepares the final ComfyUI payload for preview", async () => {
+  const { app } = createApp();
+  await app.ready();
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v2/generation/assets/prepare",
+      payload: {
+        storyWorldId: "world_generation",
+        idempotencyKey: "idem-asset-preview",
+        prompt: "Generate bridge key art.",
+        workflowVersion: "workflow-v1",
+        workflow: { "1": { class_type: "KSampler" } },
+        negativePrompt: "low quality",
+        seed: 42,
+      },
+    });
+    assert.equal(response.statusCode, 200);
+    const prepared = response.json() as V2PrepareAssetGenerationApiResponse;
+    assert.equal(prepared.request.idempotencyKey, "idem-asset-preview");
+    assert.equal(prepared.request.prompt, "Generate bridge key art.");
+    assert.equal(prepared.jobId.startsWith("job:asset:"), true);
+    assert.deepEqual(prepared.comfyUiPayload.prompt, { "1": { class_type: "KSampler" } });
+    assert.equal(prepared.comfyUiPayload.client_id, "living-network-worker");
+    assert.equal(prepared.comfyUiPayload.extra_data.living_network_job_id, prepared.jobId);
+    assert.equal(prepared.comfyUiPayload.extra_data.workflow_version, "workflow-v1");
+    assert.equal(prepared.comfyUiPayload.extra_data.prompt, "Generate bridge key art.");
+    assert.equal(prepared.comfyUiPayload.extra_data.negative_prompt, "low quality");
+    assert.equal(prepared.comfyUiPayload.extra_data.seed, 42);
   } finally {
     await app.close();
   }

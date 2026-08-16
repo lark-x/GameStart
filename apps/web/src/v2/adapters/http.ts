@@ -643,8 +643,10 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
     },
     async prepareAssetGenerationRequest(request: V2AssetGenerationRequestInput): Promise<V2PrepareAssetGenerationApiResponse> {
       if (!worldId) throw new V2AdapterError({ code: "NOT_FOUND", message: "Load a workspace before preparing an asset job." });
+      const idempotencyKey = request.idempotencyKey ?? uniqueCommandKey("asset-job");
       return post<V2PrepareAssetGenerationApiResponse>("/api/v2/generation/assets/prepare", {
         storyWorldId: worldId,
+        idempotencyKey,
         prompt: request.prompt,
         workflowVersion: request.workflowVersion,
         workflow: request.workflow,
@@ -657,7 +659,7 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
       const request = normalizeAssetGenerationRequest(input);
       const response = await post<V2CreateAssetGenerationJobApiResponse>("/api/v2/generation/assets/jobs", {
         storyWorldId: worldId,
-        idempotencyKey: uniqueCommandKey("asset-job"),
+        idempotencyKey: request.idempotencyKey ?? uniqueCommandKey("asset-job"),
         prompt: request.prompt,
         workflowVersion: request.workflowVersion,
         workflow: request.workflow,

@@ -152,19 +152,62 @@ export interface V2CreateAssetGenerationJobApiRequest {
   readonly maxAttempts?: number;
 }
 
+export interface V2AssetGenerationPreparedRequest {
+  readonly idempotencyKey: V2IdempotencyKey;
+  readonly prompt: string;
+  readonly workflowVersion: string;
+  readonly workflow: Record<string, unknown>;
+  readonly negativePrompt?: string;
+  readonly seed?: number;
+}
+
+export interface V2PrepareAssetGenerationApiRequest extends V2AssetGenerationPreparedRequest {
+  readonly storyWorldId: V2StoryWorldId;
+}
+
+export interface V2ComfyUiPromptPayload {
+  readonly prompt: Record<string, unknown>;
+  readonly client_id: string;
+  readonly extra_data: {
+    readonly living_network_job_id: string;
+    readonly workflow_version: string;
+    readonly prompt: string;
+    readonly negative_prompt?: string;
+    readonly seed?: number;
+  };
+}
+
+export function buildV2ComfyUiPromptPayload(input: {
+  readonly jobId: string;
+  readonly workflowVersion: string;
+  readonly prompt: string;
+  readonly workflow: Record<string, unknown>;
+  readonly clientId?: string;
+  readonly negativePrompt?: string;
+  readonly seed?: number;
+}): V2ComfyUiPromptPayload {
+  return {
+    prompt: input.workflow,
+    client_id: input.clientId?.trim() || "living-network-worker",
+    extra_data: {
+      living_network_job_id: input.jobId,
+      workflow_version: input.workflowVersion,
+      prompt: input.prompt,
+      ...(input.negativePrompt === undefined ? {} : { negative_prompt: input.negativePrompt }),
+      ...(input.seed === undefined ? {} : { seed: input.seed }),
+    },
+  };
+}
+
 export interface V2CreateAssetGenerationJobApiResponse {
   readonly job: V2AssetGenerationJobRecord;
   readonly inserted: boolean;
 }
 
 export interface V2PrepareAssetGenerationApiResponse {
-  readonly request: {
-    readonly prompt: string;
-    readonly workflowVersion: string;
-    readonly workflow: Record<string, unknown>;
-    readonly negativePrompt?: string;
-    readonly seed?: number;
-  };
+  readonly jobId: V2JobId;
+  readonly request: V2AssetGenerationPreparedRequest;
+  readonly comfyUiPayload: V2ComfyUiPromptPayload;
 }
 
 export interface V2AssetGenerationJobApiResponse {
