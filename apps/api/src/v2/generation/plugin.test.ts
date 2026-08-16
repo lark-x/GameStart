@@ -343,6 +343,16 @@ class FakeAssetStore implements V2AssetGenerationJobRepository, V2AssetCandidate
     return this.candidates.get(candidateId);
   }
 
+  public async listAssetCandidates(storyWorldId: V2StoryWorldId): Promise<readonly V2AssetCandidateRecord[]> {
+    if (this.throwAssetReads) throw new Error("asset candidate list failed");
+    return [...this.candidates.values()].filter((candidate) => candidate.storyWorldId === storyWorldId);
+  }
+
+  public async listApprovedAssets(storyWorldId: V2StoryWorldId): Promise<readonly V2ApprovedAssetRecord[]> {
+    if (this.throwAssetReads) throw new Error("asset approved list failed");
+    return [...this.approvedAssets.values()].filter((asset) => asset.storyWorldId === storyWorldId);
+  }
+
   public async reviewAssetCandidate(input: V2ReviewAssetCandidateInput): Promise<V2AssetCandidateReviewResult> {
     const candidate = this.candidates.get(input.candidateId);
     if (candidate === undefined) throw new Error("asset candidate not found");
@@ -830,6 +840,10 @@ test("V2 asset API maps configured asset repository failures", async () => {
     assert.equal(cancel.statusCode, 500);
     const candidate = await app.inject({ method: "GET", url: "/api/v2/generation/assets/candidates/candidate" });
     assert.equal(candidate.statusCode, 500);
+    const candidateList = await app.inject({ method: "GET", url: "/api/v2/generation/assets/worlds/world/candidates" });
+    assert.equal(candidateList.statusCode, 500);
+    const libraryList = await app.inject({ method: "GET", url: "/api/v2/generation/assets/worlds/world/library" });
+    assert.equal(libraryList.statusCode, 500);
   } finally {
     await app.close();
   }
@@ -897,3 +911,41 @@ test("V2 generation plugin keeps dispatch records outside API responses", () => 
   assert.equal(dispatch.status, "pending");
 }
 );
+
+test("V2 asset API lists candidates and approved library", async () => {
+  const { app, assets } = createApp();
+  await app.ready();
+  try {
+    const create = await app.inject({
+      method: "POST",
+      url: "/api/v2/generation/assets/jobs",
+      payload: {
+        storyWorldId: "world_generation",
+        idempotencyKey: "idem-list-asset",
+        prompt: "Generate bridge key art.",
+        workflowVersion: "workflow-v1",
+        workflow: { "1": { class_type: "KSampler" } },
+        seed: 42,
+      },
+    });
+    assert.equal(create.statusCode, 201);
+    const created = create.json() as { job: V2AssetGenerationJobRecord };
+    const candidate = assets.seedPendingCandidate(created.job);
+    const review = await app.inject({
+      method: "POST",
+      url: `/api/v2/generation/assets/candidates/${encodeURIComponent(candidate.candidateId)}/review`,
+      payload: { action: "approve", idempotencyKey: "idem-list-review", reviewer: "creator", reason: "ok" },
+    });
+    assert.equal(review.statusCode, 201);
+
+    const candidates = await app.inject({ method: "GET", url: "/api/v2/generation/assets/worlds/world_generation/candidates" });
+    assert.equal(candidates.statusCode, 200);
+    assert.equal((candidates.json() as { candidates: V2AssetCandidateRecord[] }).candidates.length, 1);
+
+    const library = await app.inject({ method: "GET", url: "/api/v2/generation/assets/worlds/world_generation/library" });
+    assert.equal(library.statusCode, 200);
+    assert.equal((library.json() as { assets: V2ApprovedAssetRecord[] }).assets.length, 1);
+  } finally {
+    await app.close();
+  }
+});
