@@ -31,7 +31,7 @@
   "delivery": {
     "branch": "codex/integration/v2-story-space-switcher-polish",
     "baseSha": "2edd34b389675a35d1d529af0c0f686eb0c29543",
-    "pullRequest": null,
+    "pullRequest": "https://github.com/lark-x/GameStart/pull/12",
     "commits": [
       "f9efa9d989ebdc49b011fb7fb6b2a3654a0c32e9"
     ],
