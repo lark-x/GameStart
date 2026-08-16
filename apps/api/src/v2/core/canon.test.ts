@@ -866,3 +866,59 @@ test("V2 core plugin exposes an explicit unavailable status without dependencies
     await app.close();
   }
 });
+
+test("V2 core API updates canon and graph records", async () => {
+  const { db, cleanup } = openV2TempSqliteConnection();
+  applyV2Migrations(db);
+  const app = createV2FastifyApp({ coreOptions: { sqlite: db } });
+  await app.ready();
+  try {
+    await app.inject({ method: "POST", url: "/api/v2/core/worlds", payload: { storyWorldId: "world_update", name: "Update World", idempotencyKey: "update-world" } });
+    let revision = 1;
+    const create = async (url: string, payload: Record<string, unknown>): Promise<void> => {
+      const response = await app.inject({ method: "POST", url, payload: { ...payload, expectedRevision: revision, idempotencyKey: `idem-${url}-${revision}` } });
+      assert.equal(response.statusCode, 201, `${url}: ${response.body}`);
+      revision = response.json().revision;
+    };
+    const update = async (url: string, payload: Record<string, unknown>): Promise<number> => {
+      const response = await app.inject({ method: "PATCH", url, payload: { ...payload, expectedRevision: revision, idempotencyKey: `idem-update-${url}-${revision}` } });
+      assert.equal(response.statusCode, 200, `${url}: ${response.body}`);
+      const next = response.json().revision;
+      assert.equal(next, revision + 1);
+      revision = next;
+      return next;
+    };
+
+    await create("/api/v2/core/worlds/world_update/locations", { locationId: "loc", name: "Location" });
+    await create("/api/v2/core/worlds/world_update/characters", { characterId: "char", name: "Character" });
+    await create("/api/v2/core/worlds/world_update/facts", { factId: "fact", text: "Fact", visibility: "player_visible" });
+    await create("/api/v2/core/worlds/world_update/rules", { ruleId: "rule", text: "Rule", severity: "required" });
+    await create("/api/v2/core/worlds/world_update/timeline-events", { timelineEventId: "event", localDate: "2026-01-01", title: "Event" });
+    await create("/api/v2/core/worlds/world_update/arcs", { arcId: "arc", title: "Arc" });
+    await create("/api/v2/core/worlds/world_update/scenes", { sceneId: "scene", title: "Scene", isEntry: true });
+    await create("/api/v2/core/worlds/world_update/choices", { choiceId: "choice", sourceSceneId: "scene", label: "Choice" });
+    await create("/api/v2/core/worlds/world_update/state/variables", { key: "Trust", valueType: "number", defaultValue: 0 });
+
+    await update("/api/v2/core/worlds/world_update", { name: "Updated World", summary: "S" });
+    await update("/api/v2/core/worlds/world_update/locations/loc", { name: "Updated Location" });
+    await update("/api/v2/core/worlds/world_update/characters/char", { name: "Updated Character" });
+    await update("/api/v2/core/worlds/world_update/facts/fact", { text: "Updated Fact", visibility: "creator_only" });
+    await update("/api/v2/core/worlds/world_update/rules/rule", { text: "Updated Rule", severity: "guideline" });
+    await update("/api/v2/core/worlds/world_update/timeline-events/event", { localDate: "2026-02-02", title: "Updated Event" });
+    await update("/api/v2/core/worlds/world_update/arcs/arc", { title: "Updated Arc" });
+    await update("/api/v2/core/worlds/world_update/scenes/scene", { title: "Updated Scene", body: "Body", isEntry: true });
+    await update("/api/v2/core/worlds/world_update/choices/choice", { sourceSceneId: "scene", label: "Updated Choice" });
+    await update("/api/v2/core/worlds/world_update/state/variables/Trust", { defaultValue: 3 });
+
+    const missingFact = await app.inject({ method: "PATCH", url: "/api/v2/core/worlds/world_update/facts/missing", payload: { text: "X", visibility: "player_visible", expectedRevision: revision, idempotencyKey: "missing-fact" } });
+    assert.equal(missingFact.statusCode, 404);
+    const missingRule = await app.inject({ method: "PATCH", url: "/api/v2/core/worlds/world_update/rules/missing", payload: { text: "X", severity: "required", expectedRevision: revision, idempotencyKey: "missing-rule" } });
+    assert.equal(missingRule.statusCode, 404);
+    const missingEvent = await app.inject({ method: "PATCH", url: "/api/v2/core/worlds/world_update/timeline-events/missing", payload: { localDate: "2026-01-01", title: "X", expectedRevision: revision, idempotencyKey: "missing-event" } });
+    assert.equal(missingEvent.statusCode, 404);
+  } finally {
+    await app.close();
+    db.close();
+    cleanup();
+  }
+});
