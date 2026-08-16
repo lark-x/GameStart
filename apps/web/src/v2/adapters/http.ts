@@ -296,12 +296,14 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
         get<V2ApprovedAssetListApiResponse>(`/api/v2/generation/assets/worlds/${encodedWorld}/library`),
       ]);
       const candidate = candidates.find((item) => item.status === "pending" || item.status === "changes_requested") ?? candidates.at(-1) ?? null;
-      const release = releases.at(-1) ?? null;
+      const release = releaseId === undefined
+        ? releases.at(-1) ?? null
+        : releases.find((item) => item.releaseId === releaseId) ?? releases.at(-1) ?? null;
       const sceneJob = sceneJobs.jobs[0] ?? null;
       const assetJob = assetJobs.jobs[0] ?? null;
       if (release) {
-        releaseId = releaseId ?? release.releaseId;
-        releaseVersion = releaseVersion ?? release.version;
+        releaseId = release.releaseId;
+        releaseVersion = release.version;
       }
       let runtime: V2RuntimeSceneDto | null = null;
       if (runId) {
