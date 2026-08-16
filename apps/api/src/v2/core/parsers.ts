@@ -41,6 +41,19 @@ import type {
 } from "@living-network/contracts/v2";
 
 import { V2HttpError } from "./errors.ts";
+import type {
+  V2UpdateArcRequest,
+  V2UpdateCharacterRequest,
+  V2UpdateChoiceRequest,
+  V2UpdateFactRequest,
+  V2UpdateLocationRequest,
+  V2UpdateRuleRequest,
+  V2UpdateSceneRequest,
+  V2UpdateStateVariableRequest,
+  V2UpdateStoryWorldRequest,
+  V2UpdateTimelineEventRequest,
+} from "@living-network/contracts/v2";
+
 
 export function parseCreateWorldBody(body: unknown): V2CreateStoryWorldRequest {
   const value = requireBody(body);
@@ -168,6 +181,58 @@ export function parseCreateStateVariableBody(body: unknown): V2CreateStateVariab
   };
 }
 
+export function parseUpdateWorldBody(body: unknown): V2UpdateStoryWorldRequest {
+  const value = requireRevisionedBody(body, ["name", "summary"]);
+  return { name: requiredString(value.name, "name"), ...(value.summary === undefined ? {} : { summary: requiredString(value.summary, "summary") }), expectedRevision: requiredRevision(value.expectedRevision), idempotencyKey: requiredString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey };
+}
+
+export function parseUpdateLocationBody(body: unknown): V2UpdateLocationRequest {
+  const value = requireRevisionedBody(body, ["name", "summary"]);
+  return { name: requiredString(value.name, "name"), ...(value.summary === undefined ? {} : { summary: requiredString(value.summary, "summary") }), expectedRevision: requiredRevision(value.expectedRevision), idempotencyKey: requiredString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey };
+}
+
+export function parseUpdateCharacterBody(body: unknown): V2UpdateCharacterRequest {
+  const value = requireRevisionedBody(body, ["name", "summary", "homeLocationId"]);
+  return { name: requiredString(value.name, "name"), ...(value.summary === undefined ? {} : { summary: requiredString(value.summary, "summary") }), ...(value.homeLocationId === undefined ? {} : { homeLocationId: requiredString(value.homeLocationId, "homeLocationId") as V2LocationId }), expectedRevision: requiredRevision(value.expectedRevision), idempotencyKey: requiredString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey };
+}
+
+export function parseUpdateFactBody(body: unknown): V2UpdateFactRequest {
+  const value = requireRevisionedBody(body, ["text", "visibility"]);
+  const visibility = requiredFactVisibility(value.visibility);
+  return { text: requiredString(value.text, "text"), visibility, expectedRevision: requiredRevision(value.expectedRevision), idempotencyKey: requiredString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey };
+}
+
+export function parseUpdateRuleBody(body: unknown): V2UpdateRuleRequest {
+  const value = requireRevisionedBody(body, ["text", "severity"]);
+  const severity = requiredRuleSeverity(value.severity);
+  return { text: requiredString(value.text, "text"), severity, expectedRevision: requiredRevision(value.expectedRevision), idempotencyKey: requiredString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey };
+}
+
+export function parseUpdateTimelineEventBody(body: unknown): V2UpdateTimelineEventRequest {
+  const value = requireRevisionedBody(body, ["localDate", "title", "summary"]);
+  return { localDate: requiredString(value.localDate, "localDate"), title: requiredString(value.title, "title"), ...(value.summary === undefined ? {} : { summary: requiredString(value.summary, "summary") }), expectedRevision: requiredRevision(value.expectedRevision), idempotencyKey: requiredString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey };
+}
+
+export function parseUpdateArcBody(body: unknown): V2UpdateArcRequest {
+  const value = requireRevisionedBody(body, ["title", "summary"]);
+  return { title: requiredString(value.title, "title"), ...(value.summary === undefined ? {} : { summary: requiredString(value.summary, "summary") }), expectedRevision: requiredRevision(value.expectedRevision), idempotencyKey: requiredString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey };
+}
+
+export function parseUpdateSceneBody(body: unknown): V2UpdateSceneRequest {
+  const value = requireRevisionedBody(body, ["arcId", "title", "body", "isEntry"]);
+  return { ...(value.arcId === undefined ? {} : { arcId: requiredString(value.arcId, "arcId") as V2ArcId }), title: requiredString(value.title, "title"), ...(value.body === undefined ? {} : { body: requiredString(value.body, "body") }), isEntry: requiredBoolean(value.isEntry, "isEntry"), expectedRevision: requiredRevision(value.expectedRevision), idempotencyKey: requiredString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey };
+}
+
+export function parseUpdateChoiceBody(body: unknown): V2UpdateChoiceRequest {
+  const value = requireRevisionedBody(body, ["sourceSceneId", "targetSceneId", "label", "gates", "consequences"]);
+  return { sourceSceneId: requiredString(value.sourceSceneId, "sourceSceneId") as V2SceneId, ...(value.targetSceneId === undefined ? {} : { targetSceneId: requiredString(value.targetSceneId, "targetSceneId") as V2SceneId }), label: requiredString(value.label, "label"), ...(value.gates === undefined ? {} : { gates: requiredGates(value.gates) }), ...(value.consequences === undefined ? {} : { consequences: requiredDeltas(value.consequences, "consequences") }), expectedRevision: requiredRevision(value.expectedRevision), idempotencyKey: requiredString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey };
+}
+
+export function parseUpdateStateVariableBody(body: unknown): V2UpdateStateVariableRequest {
+  const value = requireRevisionedBody(body, ["defaultValue"]);
+  return { defaultValue: requiredStateValue(value.defaultValue, "defaultValue"), expectedRevision: requiredRevision(value.expectedRevision), idempotencyKey: requiredString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey };
+}
+
 export function parsePreviewStateDeltaBody(body: unknown): V2PreviewStateDeltaRequest {
   const value = requireBody(body);
   assertKeys(value, ["currentValues", "deltas"]);
@@ -287,6 +352,20 @@ function requiredRevision(value: unknown): V2Revision {
     throw new V2HttpError(400, "BAD_REQUEST", "expectedRevision must be a positive integer");
   }
   return value as V2Revision;
+}
+
+function requiredFactVisibility(value: unknown): V2FactVisibility {
+  if (value !== "creator_only" && value !== "player_visible") {
+    throw new V2HttpError(400, "BAD_REQUEST", "visibility must be creator_only or player_visible");
+  }
+  return value;
+}
+
+function requiredRuleSeverity(value: unknown): V2RuleSeverity {
+  if (value !== "guideline" && value !== "required") {
+    throw new V2HttpError(400, "BAD_REQUEST", "severity must be guideline or required");
+  }
+  return value;
 }
 
 function requiredValueType(value: unknown): V2StateValueType {

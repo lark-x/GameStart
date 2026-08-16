@@ -117,3 +117,34 @@ export interface V2CanonWriteResponse<T> {
   readonly item: T;
   readonly revision: V2Revision;
 }
+export interface V2UpdateStoryWorldRequest extends V2RevisionedCommandRequest {
+  readonly name: string;
+  readonly summary?: string;
+}
+
+export interface V2UpdateLocationRequest extends V2RevisionedCommandRequest {
+  readonly name: string;
+  readonly summary?: string;
+}
+
+export interface V2UpdateCharacterRequest extends V2RevisionedCommandRequest {
+  readonly name: string;
+  readonly summary?: string;
+  readonly homeLocationId?: V2LocationId;
+}
+
+export interface V2UpdateFactRequest extends V2RevisionedCommandRequest {
+  readonly text: string;
+  readonly visibility: V2FactVisibility;
+}
+
+export interface V2UpdateRuleRequest extends V2RevisionedCommandRequest {
+  readonly text: string;
+  readonly severity: V2RuleSeverity;
+}
+
+export interface V2UpdateTimelineEventRequest extends V2RevisionedCommandRequest {
+  readonly localDate: string;
+  readonly title: string;
+  readonly summary?: string;
+}

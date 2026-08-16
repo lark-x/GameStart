@@ -243,6 +243,20 @@ test("V2 core API creates graph records, validates reachability, and previews ty
     assert.equal(next.statusCode, 201);
     assert.equal(next.json().revision, 4);
 
+    const variable = await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds/world_graph_api/state/variables",
+      payload: {
+        key: "Trust",
+        valueType: "number",
+        defaultValue: 0,
+        expectedRevision: 4,
+        idempotencyKey: "key_state_trust",
+      },
+    });
+    assert.equal(variable.statusCode, 201);
+    assert.equal(variable.json().revision, 5);
+
     const choice = await app.inject({
       method: "POST",
       url: "/api/v2/core/worlds/world_graph_api/choices",
@@ -253,26 +267,12 @@ test("V2 core API creates graph records, validates reachability, and previews ty
         label: "Go",
         gates: [{ stateKey: "Trust", operator: "gte", value: 1 }],
         consequences: [{ stateKey: "Trust", operation: "increment", value: 1 }],
-        expectedRevision: 4,
+        expectedRevision: 5,
         idempotencyKey: "key_choice_go",
       },
     });
     assert.equal(choice.statusCode, 201);
-    assert.equal(choice.json().revision, 5);
-
-    const variable = await app.inject({
-      method: "POST",
-      url: "/api/v2/core/worlds/world_graph_api/state/variables",
-      payload: {
-        key: "Trust",
-        valueType: "number",
-        defaultValue: 0,
-        expectedRevision: 5,
-        idempotencyKey: "key_state_trust",
-      },
-    });
-    assert.equal(variable.statusCode, 201);
-    assert.equal(variable.json().revision, 6);
+    assert.equal(choice.json().revision, 6);
 
     const graph = await app.inject({
       method: "GET",

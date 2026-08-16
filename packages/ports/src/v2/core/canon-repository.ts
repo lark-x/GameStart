@@ -49,6 +49,13 @@ export interface V2CanonRepository {
   listTimelineEvents(storyWorldId: V2StoryWorldId): Promise<readonly V2CanonTimelineEvent[]>;
   createTimelineEvent(input: V2CanonTimelineEvent): Promise<V2CanonTimelineEvent>;
 
+  updateWorld(input: V2CanonWorld): Promise<V2CanonWorld>;
+  updateLocation(input: V2CanonLocation): Promise<V2CanonLocation>;
+  updateCharacter(input: V2CanonCharacter): Promise<V2CanonCharacter>;
+  updateFact(input: V2CanonFact): Promise<V2CanonFact>;
+  updateRule(input: V2CanonRule): Promise<V2CanonRule>;
+  updateTimelineEvent(input: V2CanonTimelineEvent): Promise<V2CanonTimelineEvent>;
+
   advanceRevision(storyWorldId: V2StoryWorldId, expectedRevision: V2Revision): Promise<V2Revision>;
   readMutation<TResult>(input: {
     readonly key: V2IdempotencyKey;
