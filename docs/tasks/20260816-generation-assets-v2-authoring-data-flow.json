@@ -44,8 +44,16 @@
   "delivery": {
     "branch": "codex/generation-assets/v2-authoring-data-flow",
     "baseSha": "7c573d31b42a5c0a4aaeb8902860846d625a3188",
-    "pullRequest": null,
-    "commits": ["352d9704ebad269eee6c095ddc8911a40a19ba24"],
-    "results": ["typecheck", "test", "build"]
+    "pullRequest": "https://github.com/lark-x/GameStart/pull/10",
+    "commits": [
+      "352d9704ebad269eee6c095ddc8911a40a19ba24",
+      "4fb98e132a1e60525de1c14116a77be29adb7c7a",
+      "822140ac1f0aa28ab70f6aa03a53440c0c44b5cc"
+    ],
+    "results": [
+      "typecheck",
+      "test",
+      "build"
+    ]
   }
 }
