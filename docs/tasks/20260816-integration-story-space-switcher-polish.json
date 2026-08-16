@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "id": "20260816-integration-story-space-switcher-polish",
+  "title": "Fix V2 story space switcher jitter and topbar polish",
+  "module": "integration",
+  "risk": "low",
+  "changeClass": "normal",
+  "status": "approved",
+  "userOutcome": "Top-right story space switcher no longer jitters when clicked and the V2 topbar looks clean.",
+  "allowedPaths": [
+    "apps/web/src/v2/V2Shell.vue",
+    "docs/tasks/20260816-integration-story-space-switcher-polish.json"
+  ],
+  "forbiddenPaths": [],
+  "nonGoals": [
+    "Full V2 visual redesign",
+    "Data model or API changes"
+  ],
+  "interfaceRequests": [],
+  "acceptanceCommands": [
+    "pnpm check:scope",
+    "pnpm check:boundaries",
+    "pnpm --filter @living-network/web typecheck",
+    "pnpm --filter @living-network/web build",
+    "pnpm --filter @living-network/web test"
+  ],
+  "approval": {
+    "required": false,
+    "confirmed": false
+  },
+  "delivery": {
+    "branch": "codex/integration/v2-story-space-switcher-polish",
+    "baseSha": "2edd34b389675a35d1d529af0c0f686eb0c29543",
+    "pullRequest": null,
+    "commits": [],
+    "results": []
+  }
+}
