@@ -111,9 +111,11 @@ function toSceneJobSummary(job: V2GenerationJobListApiResponse["jobs"][number]) 
   return {
     jobId: job.jobId,
     status: job.status,
+    readableStatus: job.status === "succeeded" && job.candidateId !== undefined ? "candidate-ready" as const : job.status,
     createdAt: job.createdAt,
     updatedAt: job.updatedAt,
     promptPreview: job.prompt,
+    ...(job.candidateId === undefined ? {} : { candidateId: job.candidateId }),
     ...(job.failureReason === undefined ? {} : { terminalMessage: job.failureReason }),
   };
 }
@@ -122,11 +124,13 @@ function toAssetJobSummary(job: V2AssetGenerationJobListApiResponse["jobs"][numb
   return {
     jobId: job.jobId,
     status: job.status,
+    readableStatus: job.status === "succeeded" && job.candidateId !== undefined ? "candidate-ready" : job.status,
     createdAt: job.createdAt,
     updatedAt: job.updatedAt,
     workflowVersion: job.workflowVersion,
     seed: job.seed ?? 0,
     promptPreview: job.prompt,
+    ...(job.candidateId === undefined ? {} : { candidateId: job.candidateId }),
     ...(job.failureReason === undefined ? {} : { terminalMessage: job.failureReason }),
   };
 }

@@ -176,7 +176,9 @@ export interface V2GenerationContextSummary {
 }
 
 export interface V2GenerationJobSummary extends V2JobRef {
+  readonly readableStatus: V2JobRef["status"] | "candidate-ready";
   readonly promptPreview: string;
+  readonly candidateId?: string;
   readonly terminalMessage?: string;
 }
 
@@ -250,9 +252,11 @@ export interface V2AssetWorkbenchSummary {
 }
 
 export interface V2AssetJobSummary extends V2JobRef {
+  readonly readableStatus: V2JobRef["status"] | "candidate-ready";
   readonly workflowVersion: string;
   readonly seed: number;
   readonly promptPreview: string;
+  readonly candidateId?: string;
   readonly terminalMessage?: string;
 }
 

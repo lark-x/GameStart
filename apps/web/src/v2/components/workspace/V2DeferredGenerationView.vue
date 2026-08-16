@@ -32,6 +32,7 @@ function statusLabel(status: string | undefined): string {
     claimed: "已领取",
     running: "执行中",
     succeeded: "已完成",
+    "candidate-ready": "候选已回写",
     pending: "待审核",
     approved: "已通过",
     changes_requested: "要求修改",
@@ -72,7 +73,7 @@ function reviewAsset(action: V2CandidateReviewAction): void {
         </h2>
       </div>
       <Badge :tone="job?.status === 'failed' ? 'danger' : job ? 'info' : 'neutral'">
-        {{ statusLabel(job?.status) }}
+        {{ statusLabel(job?.readableStatus ?? job?.status) }}
       </Badge>
     </header>
 
@@ -142,9 +143,10 @@ function reviewAsset(action: V2CandidateReviewAction): void {
         <Activity :size="22" aria-hidden="true" />
         <div>
           <strong>{{ job.jobId }}</strong>
-          <span>状态：{{ statusLabel(job.status) }}</span>
+          <span>状态：{{ statusLabel(job.readableStatus ?? job.status) }}</span>
           <span>创建：{{ job.createdAt }}</span>
           <span>更新：{{ job.updatedAt }}</span>
+          <span v-if="job.candidateId">候选：{{ job.candidateId }}</span>
           <span v-if="'workflowVersion' in job">Workflow：{{ job.workflowVersion }} · Seed {{ job.seed }}</span>
           <span v-if="job.terminalMessage" class="error-line">{{ job.terminalMessage }}</span>
         </div>

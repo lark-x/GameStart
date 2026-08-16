@@ -234,9 +234,11 @@ export const v2WebFixtureGeneration = {
   job: {
     jobId: "job_scene_opening" as V2JobId,
     status: "succeeded",
+    readableStatus: "candidate-ready",
     createdAt: "2026-08-12T00:00:00.000Z" as V2IsoDateTime,
     updatedAt: "2026-08-12T00:01:10.000Z" as V2IsoDateTime,
     promptPreview: "Generate a single reviewed scene candidate at the archive door.",
+    candidateId: "candidate_scene_opening",
     terminalMessage: "Candidate submitted for creator review.",
   },
   diff: {
@@ -353,11 +355,13 @@ export const v2WebFixtureAssets = {
   job: {
     jobId: "asset_job_station_bg" as V2JobId,
     status: "succeeded",
+    readableStatus: "candidate-ready",
     createdAt: "2026-08-12T00:04:00.000Z" as V2IsoDateTime,
     updatedAt: "2026-08-12T00:05:00.000Z" as V2IsoDateTime,
     workflowVersion: "comfyui-scene-bg@1",
     seed: 424242,
     promptPreview: "Rain Station background, soft dusk lighting.",
+    candidateId: "asset_candidate_station_bg",
     terminalMessage: "Asset candidate ready for review.",
   },
   candidate: {

@@ -310,8 +310,10 @@ export function createV2MockAdapter(): V2WorkspaceAdapter {
         ...v2WebFixtureGeneration.job,
         jobId: jobId as V2JobId,
         status: "succeeded" as const,
+        readableStatus: "candidate-ready" as const,
         createdAt: now,
         updatedAt: now,
+        candidateId: v2WebFixtureCandidate.candidateId,
       };
     },
     async getAssetGenerationJob(jobId: string) {
@@ -319,8 +321,10 @@ export function createV2MockAdapter(): V2WorkspaceAdapter {
         ...v2WebFixtureAssets.job,
         jobId: jobId as V2JobId,
         status: "succeeded" as const,
+        readableStatus: "candidate-ready" as const,
         createdAt: now,
         updatedAt: now,
+        candidateId: v2WebFixtureAssets.candidate.candidateId,
       };
     },
     async reviewCandidate(request: V2CandidateReviewRequest): Promise<V2CandidateReviewResult> {
@@ -405,6 +409,7 @@ export function createV2MockAdapter(): V2WorkspaceAdapter {
       assetJob = {
         ...v2WebFixtureAssets.job,
         status: "queued",
+        readableStatus: "queued",
         promptPreview: request.prompt.trim() || v2WebFixtureAssets.prompt,
         workflowVersion: request.workflowVersion,
         seed: request.seed ?? 0,

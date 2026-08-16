@@ -31,6 +31,7 @@ const statusLabels: Readonly<Record<string, string>> = {
   claimed: "已领取",
   running: "执行中",
   succeeded: "已完成",
+  "candidate-ready": "候选已回写",
   pending: "待审核",
   approved: "已通过",
   changes_requested: "要求修改",
@@ -471,6 +472,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
           job: {
             ...(snapshot.value.generation.job ?? {}),
             ...response.job,
+            readableStatus: response.job.status,
             promptPreview: generationPrompt.value,
             ...(terminalMessage ? { terminalMessage } : {}),
           },
