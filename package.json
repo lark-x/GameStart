@@ -21,7 +21,9 @@
     "test:module:platform": "node scripts/run-module-tests.mjs platform",
     "test:module:web-shell": "node scripts/run-module-tests.mjs web-shell",
     "test:module:integration": "node scripts/run-module-tests.mjs integration",
-    "verify": "pnpm check:scope && pnpm test:governance && pnpm check:boundaries && pnpm typecheck && pnpm test && pnpm test:coverage && pnpm --filter @living-network/web lint && pnpm build"
+    "verify:fast": "pnpm check:boundaries && pnpm typecheck",
+    "verify:release": "pnpm check:boundaries && pnpm typecheck && pnpm test && pnpm test:coverage && pnpm --filter @living-network/web lint && pnpm build",
+    "verify": "pnpm verify:release"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",

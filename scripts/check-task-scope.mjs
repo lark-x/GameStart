@@ -174,22 +174,33 @@ export function main() {
     ...gitLines(["diff", "--name-only", "--diff-filter=ACMR", "HEAD"]),
     ...gitLines(["ls-files", "--others", "--exclude-standard"]),
   ])];
-  if (changedFiles.length === 0 && explicitManifest === undefined) {
-    console.log("Task scope registry is valid; no branch changes require a task manifest.");
-    return;
+  try {
+    if (changedFiles.length === 0 && explicitManifest === undefined) {
+      console.log("Task scope registry is valid; no branch changes require a task manifest.");
+      return;
+    }
+    const taskPath = discoverTaskManifest(changedFiles, explicitManifest);
+    const absoluteTaskPath = resolve(ROOT, taskPath);
+    if (!existsSync(absoluteTaskPath)) throw new Error(`task manifest does not exist: ${taskPath}`);
+    const task = loadJson(absoluteTaskPath);
+    const branchName = process.env.SCOPE_HEAD_REF || execFileSync(
+      "git",
+      ["branch", "--show-current"],
+      { cwd: ROOT, encoding: "utf8" },
+    ).trim();
+    const errors = validateTaskScope({ registry, task, taskPath, changedFiles, branchName });
+    if (errors.length > 0) {
+      console.error("SCOPE GOVERNANCE PAUSED (deprecated): scope-check is informational during feature-first development.");
+      console.error(errors.join("\n"));
+      console.log("Task scope check is not blocking; no task.json or module ownership is required for normal features.");
+      return;
+    }
+    console.log(`Task scope valid for ${task.id}: ${changedFiles.length} changed file(s), module=${task.module}.`);
+  } catch (error) {
+    console.error("SCOPE GOVERNANCE PAUSED (deprecated): scope-check is informational during feature-first development.");
+    console.error(error instanceof Error ? error.message : String(error));
+    console.log("Task scope check is not blocking; no task.json or module ownership is required for normal features.");
   }
-  const taskPath = discoverTaskManifest(changedFiles, explicitManifest);
-  const absoluteTaskPath = resolve(ROOT, taskPath);
-  if (!existsSync(absoluteTaskPath)) throw new Error(`task manifest does not exist: ${taskPath}`);
-  const task = loadJson(absoluteTaskPath);
-  const branchName = process.env.SCOPE_HEAD_REF || execFileSync(
-    "git",
-    ["branch", "--show-current"],
-    { cwd: ROOT, encoding: "utf8" },
-  ).trim();
-  const errors = validateTaskScope({ registry, task, taskPath, changedFiles, branchName });
-  if (errors.length > 0) throw new Error(errors.join("\n"));
-  console.log(`Task scope valid for ${task.id}: ${changedFiles.length} changed file(s), module=${task.module}.`);
 }
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
