@@ -11,6 +11,7 @@ import type {
   V2IsoDateTime,
   V2ReviewAssetCandidateInput,
   V2SceneGenerationJobRecord,
+  V2StoryWorldId,
 } from "@living-network/contracts/v2";
 import type { V2JobId, V2JobStatus } from "@living-network/contracts/v2";
 import type { ApprovedAssetReaderPort } from "../shared/index.ts";
@@ -72,6 +73,7 @@ export interface V2AssetGenerationDispatchRepository {
 export interface V2AssetCandidateRepository {
   createAssetCandidate(input: V2AssetCandidateRecord): Promise<{ readonly candidate: V2AssetCandidateRecord; readonly inserted: boolean }>;
   getAssetCandidate(candidateId: V2CandidateId): Promise<V2AssetCandidateRecord | undefined>;
+  listAssetCandidates(storyWorldId: V2StoryWorldId): Promise<readonly V2AssetCandidateRecord[]>;
 }
 
 export interface V2AssetGenerationJobQueuePayload {
@@ -108,4 +110,5 @@ export interface V2AssetCandidateReviewResult {
 
 export interface V2AssetReviewRepository extends ApprovedAssetReaderPort {
   reviewAssetCandidate(input: V2ReviewAssetCandidateInput): Promise<V2AssetCandidateReviewResult>;
+  listApprovedAssets(storyWorldId: V2StoryWorldId): Promise<readonly V2ApprovedAssetRecord[]>;
 }

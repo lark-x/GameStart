@@ -343,6 +343,14 @@ class FakeAssetStore implements V2AssetGenerationJobRepository, V2AssetCandidate
     return this.candidates.get(candidateId);
   }
 
+  public async listAssetCandidates(storyWorldId: V2StoryWorldId): Promise<readonly V2AssetCandidateRecord[]> {
+    return [...this.candidates.values()].filter((candidate) => candidate.storyWorldId === storyWorldId);
+  }
+
+  public async listApprovedAssets(storyWorldId: V2StoryWorldId): Promise<readonly V2ApprovedAssetRecord[]> {
+    return [...this.approvedAssets.values()].filter((asset) => asset.storyWorldId === storyWorldId);
+  }
+
   public async reviewAssetCandidate(input: V2ReviewAssetCandidateInput): Promise<V2AssetCandidateReviewResult> {
     const candidate = this.candidates.get(input.candidateId);
     if (candidate === undefined) throw new Error("asset candidate not found");

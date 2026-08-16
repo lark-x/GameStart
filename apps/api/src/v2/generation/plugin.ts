@@ -4,6 +4,8 @@ import type { FastifyPluginAsync, FastifyReply } from "fastify";
 import type {
   V2AssetCandidateApiResponse,
   V2AssetReviewAction,
+  V2AssetCandidateListApiResponse,
+  V2ApprovedAssetListApiResponse,
   V2AssetGenerationJobApiResponse,
   V2CreateAssetGenerationJobApiRequest,
   V2CreateAssetGenerationJobApiResponse,
@@ -156,6 +158,11 @@ function paramsCandidateId(value: unknown): V2CandidateId {
   return nonEmptyString(value.candidateId, "candidateId") as V2CandidateId;
 }
 
+
+function paramsStoryWorldId(value: unknown): V2StoryWorldId {
+  if (!isRecord(value)) throw new TypeError("route params must be an object");
+  return nonEmptyString(value.storyWorldId, "storyWorldId") as V2StoryWorldId;
+}
 function assetReviewAction(value: unknown): V2AssetReviewAction {
   if (value === "approve" || value === "reject" || value === "request_changes") return value;
   throw new TypeError("action must be approve, reject, or request_changes");
@@ -369,6 +376,24 @@ export function createV2GenerationPlugin(
           ...(input.reason === undefined ? {} : { reason: input.reason }),
         });
         return reply.code(result.inserted ? 201 : 200).send(result satisfies V2ReviewAssetCandidateApiResponse);
+      } catch (error) {
+        return replyWithError(reply, error);
+      }
+    });
+
+    app.get("/assets/worlds/:storyWorldId/candidates", async (request, reply) => {
+      try {
+        if (dependencies.assetCandidates === undefined) return replyMissingCapability(reply, "asset candidate repository");
+        return { candidates: await dependencies.assetCandidates.listAssetCandidates(paramsStoryWorldId(request.params)) } satisfies V2AssetCandidateListApiResponse;
+      } catch (error) {
+        return replyWithError(reply, error);
+      }
+    });
+
+    app.get("/assets/worlds/:storyWorldId/library", async (request, reply) => {
+      try {
+        if (dependencies.assetReviews === undefined) return replyMissingCapability(reply, "asset review repository");
+        return { assets: await dependencies.assetReviews.listApprovedAssets(paramsStoryWorldId(request.params)) } satisfies V2ApprovedAssetListApiResponse;
       } catch (error) {
         return replyWithError(reply, error);
       }
