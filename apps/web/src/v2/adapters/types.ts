@@ -327,8 +327,8 @@ export interface V2WorkspaceAdapter {
   createGraphEntity(input: V2GraphCreateInput & { readonly storyWorldId: string; readonly expectedRevision: number }): Promise<void>;
   updateGraphEntity(input: V2GraphUpdateInput & { readonly storyWorldId: string; readonly expectedRevision: number }): Promise<void>;
   createSceneGenerationJob(request: V2CreateSceneGenerationJobRequest): Promise<V2CreateSceneGenerationJobResponse>;
-  getSceneGenerationJob(jobId: string): Promise<V2JobRef>;
-  getAssetGenerationJob(jobId: string): Promise<V2JobRef>;
+  getSceneGenerationJob(jobId: string): Promise<V2GenerationJobSummary>;
+  getAssetGenerationJob(jobId: string): Promise<V2AssetJobSummary>;
   reviewCandidate(request: V2CandidateReviewRequest): Promise<V2CandidateReviewResult>;
   createRelease(): Promise<V2ReleasePackageSummary>;
   startRun(): Promise<{ readonly run: V2RunSummary; readonly player: V2PlayerRuntimeSummary }>;

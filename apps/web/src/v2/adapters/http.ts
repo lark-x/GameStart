@@ -20,8 +20,8 @@ import type {
 } from "@living-network/contracts/v2";
 
 import type { V2AssetCandidateListApiResponse, V2ApprovedAssetListApiResponse } from "@living-network/contracts/v2";
-import type { V2AssetGenerationJobApiResponse } from "@living-network/contracts/v2";
-import type { V2GenerationJobApiResponse } from "@living-network/contracts/v2";
+import type { V2AssetGenerationJobApiResponse, V2AssetGenerationJobListApiResponse } from "@living-network/contracts/v2";
+import type { V2GenerationJobApiResponse, V2GenerationJobListApiResponse } from "@living-network/contracts/v2";
 import {
   V2AdapterError,
   type V2ApprovedAssetSummary,
@@ -99,6 +99,30 @@ function toRun(runtime: V2RuntimeSceneDto): V2RunSummary {
     runId: runtime.run.runId,
     releaseVersion: runtime.run.releaseVersion,
     currentSceneId: runtime.run.currentSceneId,
+  };
+}
+
+function toSceneJobSummary(job: V2GenerationJobListApiResponse["jobs"][number]) {
+  return {
+    jobId: job.jobId,
+    status: job.status,
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
+    promptPreview: job.prompt,
+    ...(job.failureReason === undefined ? {} : { terminalMessage: job.failureReason }),
+  };
+}
+
+function toAssetJobSummary(job: V2AssetGenerationJobListApiResponse["jobs"][number]): V2AssetJobSummary {
+  return {
+    jobId: job.jobId,
+    status: job.status,
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
+    workflowVersion: job.workflowVersion,
+    seed: job.seed ?? 0,
+    promptPreview: job.prompt,
+    ...(job.failureReason === undefined ? {} : { terminalMessage: job.failureReason }),
   };
 }
 
@@ -185,7 +209,7 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
       worldId = world.storyWorldId;
       revision = world.revision;
       const encodedWorld = encodeURIComponent(worldId);
-      const [canon, graph, validation, variables, initial, candidates, preflight, releases, assetCandidates, assetLibrary] = await Promise.all([
+      const [canon, graph, validation, variables, initial, candidates, preflight, releases, sceneJobs, assetJobs, assetCandidates, assetLibrary] = await Promise.all([
         get<V2CanonSnapshotDto>(`/api/v2/core/worlds/${encodedWorld}/canon`),
         get<V2GraphSnapshotDto>(`/api/v2/core/worlds/${encodedWorld}/graph`),
         get<V2GraphValidationDto>(`/api/v2/core/worlds/${encodedWorld}/graph/validation`),
@@ -196,11 +220,15 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
         ),
         get<V2ReleasePreflightDto>(`/api/v2/core/worlds/${encodedWorld}/releases/preflight`),
         get<readonly V2ReleaseManifestDto[]>(`/api/v2/core/worlds/${encodedWorld}/releases`),
+        get<V2GenerationJobListApiResponse>(`/api/v2/generation/worlds/${encodedWorld}/jobs`),
+        get<V2AssetGenerationJobListApiResponse>(`/api/v2/generation/assets/worlds/${encodedWorld}/jobs`),
         get<V2AssetCandidateListApiResponse>(`/api/v2/generation/assets/worlds/${encodedWorld}/candidates`),
         get<V2ApprovedAssetListApiResponse>(`/api/v2/generation/assets/worlds/${encodedWorld}/library`),
       ]);
       const candidate = candidates.find((item) => item.status === "pending" || item.status === "changes_requested") ?? candidates.at(-1) ?? null;
       const release = releases.at(-1) ?? null;
+      const sceneJob = sceneJobs.jobs[0] ?? null;
+      const assetJob = assetJobs.jobs[0] ?? null;
       if (release) {
         releaseId = release.releaseId;
         releaseVersion = release.version;
@@ -293,9 +321,9 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
         },
         generation: {
           context: {
-            baseCanonRevision: world.revision,
-            contextHash: candidate?.provenance.contextHash ?? "not-generated",
-            tokenBudget: 4096,
+            baseCanonRevision: sceneJob?.baseCanonRevision ?? world.revision,
+            contextHash: sceneJob?.contextHash ?? candidate?.provenance.contextHash ?? "not-generated",
+            tokenBudget: sceneJob?.context.tokenBudget ?? 4096,
             sources: [
               { id: world.storyWorldId, label: world.name, kind: "world" },
               ...canon.characters.map((character) => ({ id: character.characterId, label: character.name, kind: "character" as const })),
@@ -303,7 +331,7 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
               ...canon.facts.map((fact) => ({ id: fact.factId, label: fact.text, kind: "fact" as const })),
             ],
           },
-          job: null,
+          job: sceneJob === null ? null : toSceneJobSummary(sceneJob),
           diff: {
             title: candidate?.payload.scene.title ?? "No generated candidate",
             scope: candidate ? ["scene", `${candidate.payload.choices.length} choices`] : [],
@@ -337,7 +365,13 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
           savedAt: save.createdAt,
         },
         exportBundle: null,
-        assets: { workflowName: "local-comfyui", prompt: "", job: null, candidate: assetCandidateSummary, library: approvedAssetSummaries },
+        assets: {
+          workflowName: "local-comfyui",
+          prompt: assetJob?.prompt ?? "",
+          job: assetJob === null ? null : toAssetJobSummary(assetJob),
+          candidate: assetCandidateSummary,
+          library: approvedAssetSummaries,
+        },
       };
     },
     async createGraphEntity(input: V2GraphCreateInput & { readonly storyWorldId: string; readonly expectedRevision: number }): Promise<void> {
@@ -350,7 +384,7 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
       if (input.kind === "state") await post(`${path}/state/variables`, { ...input.input, ...common });
     },
     async getAssetGenerationJob(jobId: string) {
-      return (await get<V2AssetGenerationJobApiResponse>(`/api/v2/generation/assets/jobs/${encodeURIComponent(jobId)}`)).job;
+      return toAssetJobSummary((await get<V2AssetGenerationJobApiResponse>(`/api/v2/generation/assets/jobs/${encodeURIComponent(jobId)}`)).job);
     },
     async createCanonEntity(input: V2CanonCreateInput & { readonly storyWorldId: string; readonly expectedRevision: number }): Promise<void> {
       const suffix = crypto.randomUUID();
@@ -387,13 +421,19 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
       return { job: response.job };
     },
     async getSceneGenerationJob(jobId: string) {
-      return (await get<V2GenerationJobApiResponse>(`/api/v2/generation/jobs/${encodeURIComponent(jobId)}`)).job;
+      return toSceneJobSummary((await get<V2GenerationJobApiResponse>(`/api/v2/generation/jobs/${encodeURIComponent(jobId)}`)).job);
     },
     async reviewCandidate(request: V2CandidateReviewRequest): Promise<V2CandidateReviewResult> {
       if (!worldId || revision === undefined) throw new V2AdapterError({ code: "NOT_FOUND", message: "Load a workspace before reviewing a candidate." });
       const response = await post<V2CandidateReviewResponse>(
         `/api/v2/core/worlds/${encodeURIComponent(worldId)}/candidates/scenes/${encodeURIComponent(request.candidateId)}/review`,
-        { ...request, expectedRevision: revision, idempotencyKey: uniqueCommandKey("review") },
+        {
+          action: request.action,
+          reviewer: request.reviewer,
+          reason: request.reason,
+          expectedRevision: revision,
+          idempotencyKey: uniqueCommandKey("review"),
+        },
       );
       revision = response.revision;
       return {

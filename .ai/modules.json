@@ -149,6 +149,7 @@
         "apps/worker/src/v2/sentinel.test.ts",
         "docs/**",
         "infra/**",
+        "integration/**",
         "package.json",
         "packages/*/package.json",
         "packages/AGENTS.md",

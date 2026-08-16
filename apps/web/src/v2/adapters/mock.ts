@@ -272,6 +272,7 @@ export function createV2MockAdapter(): V2WorkspaceAdapter {
     },
     async getSceneGenerationJob(jobId: string) {
       return {
+        ...v2WebFixtureGeneration.job,
         jobId: jobId as V2JobId,
         status: "succeeded" as const,
         createdAt: now,
@@ -280,6 +281,7 @@ export function createV2MockAdapter(): V2WorkspaceAdapter {
     },
     async getAssetGenerationJob(jobId: string) {
       return {
+        ...v2WebFixtureAssets.job,
         jobId: jobId as V2JobId,
         status: "succeeded" as const,
         createdAt: now,

@@ -127,3 +127,63 @@ test("V2 authoring loop completes at 360px", async ({ page }) => {
   }));
   expect(widths.scroll).toBeLessThanOrEqual(widths.client);
 });
+
+test("V2 HTTP workspace persists reviewed candidates across a browser refresh", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("living-network-v2-adapter", "http");
+  });
+  await page.goto("/v2/workspace/canon");
+  await expect(page.getByRole("heading", { name: "还没有故事世界" })).toBeVisible();
+
+  await page.getByRole("button", { name: "新建故事", exact: true }).click();
+  await page.getByLabel("故事名称").fill("HTTP E2E World");
+  await page.getByLabel("故事前提 / 世界观背景").last().fill("真实 API 与 SQLite 驱动的浏览器验收。");
+  await page.getByRole("button", { name: "创建故事", exact: true }).click();
+  await expect(page.getByLabel("故事空间名称")).toHaveValue("HTTP E2E World");
+
+  const worldsResponse = await page.request.get("/api/v2/core/worlds");
+  expect(worldsResponse.ok()).toBeTruthy();
+  const worlds = await worldsResponse.json() as Array<{ storyWorldId: string; name: string; revision: number }>;
+  const world = worlds.find((item) => item.name === "HTTP E2E World");
+  expect(world).toBeTruthy();
+
+  const candidateId = "candidate_http_e2e";
+  const candidateResponse = await page.request.post(
+    `/api/v2/core/worlds/${encodeURIComponent(world!.storyWorldId)}/candidates/scenes`,
+    {
+      data: {
+        candidateId,
+        baseCanonRevision: world!.revision,
+        payload: {
+          scene: {
+            sceneId: "scene_http_e2e",
+            title: "HTTP Persisted Scene",
+            body: "This scene crossed the real HTTP and SQLite boundary.",
+            participantCharacterIds: [],
+          },
+          choices: [{ label: "Remain in the persisted scene" }],
+          validationNotes: [],
+        },
+        provenance: { source: "human", summary: "Playwright real API candidate" },
+        idempotencyKey: "candidate-http-e2e",
+      },
+    },
+  );
+  expect(candidateResponse.status()).toBe(201);
+
+  await navigateTo(page, "候选审核");
+  await page.getByRole("button", { name: "刷新状态", exact: true }).click();
+  await expect(page.getByText("HTTP Persisted Scene", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "通过", exact: true }).click();
+  await expect(page.getByText("候选内容已通过。", { exact: true })).toBeVisible();
+
+  await page.reload();
+  await navigateTo(page, "故事结构");
+  await expect(page.getByRole("heading", { name: "HTTP Persisted Scene", exact: true })).toBeVisible();
+
+  const persistedCandidate = await page.request.get(
+    `/api/v2/core/worlds/${encodeURIComponent(world!.storyWorldId)}/candidates/scenes/${candidateId}`,
+  );
+  expect(persistedCandidate.ok()).toBeTruthy();
+  expect((await persistedCandidate.json() as { status: string }).status).toBe("approved");
+});

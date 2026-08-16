@@ -21,6 +21,7 @@ const runtimeEnv = (import.meta as ImportMeta & { readonly env?: Record<string, 
 
 const statusLabels: Readonly<Record<string, string>> = {
   queued: "排队中",
+  claimed: "已领取",
   running: "执行中",
   succeeded: "已完成",
   pending: "待审核",
@@ -28,6 +29,7 @@ const statusLabels: Readonly<Record<string, string>> = {
   changes_requested: "要求修改",
   rejected: "已驳回",
   failed: "失败",
+  cancelled: "已取消",
 };
 
 function statusLabel(status: string): string {
@@ -238,6 +240,18 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
       exportMessage.value = null;
       assetMessage.value = null;
       assetReviewMessage.value = null;
+      const sceneJob = snapshot.value.generation.job;
+      if (adapter.value.mode === "http" && sceneJob !== null && (sceneJob.status === "queued" || sceneJob.status === "claimed" || sceneJob.status === "running")) {
+        startGenerationPolling(sceneJob.jobId);
+      } else {
+        stopGenerationPolling();
+      }
+      const assetJob = snapshot.value.assets.job;
+      if (adapter.value.mode === "http" && assetJob !== null && (assetJob.status === "queued" || assetJob.status === "claimed" || assetJob.status === "running")) {
+        startAssetPolling(assetJob.jobId);
+      } else {
+        stopAssetPolling();
+      }
     } catch (err) {
       error.value = operationErrorMessage(err, "无法读取 V2 工作区状态");
     } finally {
@@ -379,7 +393,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
         storyWorldId: snapshot.value.world.storyWorldId as V2StoryWorldId,
         baseCanonRevision: snapshot.value.world.revision as V2Revision,
         prompt: generationPrompt.value,
-        idempotencyKey: `idem_web_${snapshot.value.world.revision}_${generationPrompt.value.length}` as V2IdempotencyKey,
+        idempotencyKey: `generation:${crypto.randomUUID()}` as V2IdempotencyKey,
       });
       const terminalMessage =
         response.job.status === "queued"
@@ -431,6 +445,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
           reviewReason: result.reviewReason,
         },
       };
+      if (adapter.value.mode === "http") await loadSnapshot();
       reviewMessage.value = `候选内容已${reviewActionLabel(result.status)}。`;
     } catch (err) {
       const msg = operationErrorMessage(err, "审核候选内容失败");

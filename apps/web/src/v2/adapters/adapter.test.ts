@@ -143,6 +143,17 @@ test("V2 HTTP adapter drives bootstrap and the complete local creator loop", asy
     if (url.endsWith("/state/variables")) return Response.json([]);
     if (url.endsWith("/state/initial")) return Response.json({ values: {} });
     if (url.endsWith("/candidates/scenes")) return Response.json([]);
+    if (url.includes("/generation/worlds/") && url.endsWith("/jobs")) return Response.json({ jobs: [{
+      jobId: "job_scene_persisted", storyWorldId: "world_http", kind: "scene", status: "failed",
+      idempotencyKey: "scene-persisted", baseCanonRevision: 2, contextHash: "context-persisted",
+      context: { storyWorldId: "world_http", baseCanonRevision: 2, requestedAt: "2026-01-01", prompt: "persisted prompt", promptPreview: "persisted prompt", tokenBudget: 512, contextHash: "context-persisted", sourceFactIds: [], sourceCharacterIds: [], sourceSceneIds: [], facts: [], characters: [], scenes: [] },
+      prompt: "persisted prompt", attempts: 1, maxAttempts: 1, createdAt: "2026-01-01", updatedAt: "2026-01-02", failureReason: "provider unavailable",
+    }] });
+    if (url.includes("/generation/assets/worlds/") && url.endsWith("/jobs")) return Response.json({ jobs: [{
+      jobId: "asset_job_persisted", storyWorldId: "world_http", status: "succeeded", idempotencyKey: "asset-persisted",
+      prompt: "persisted asset", workflowVersion: "workflow-v1", workflow: {}, seed: 7, attempts: 0, maxAttempts: 3,
+      createdAt: "2026-01-01", updatedAt: "2026-01-02", candidateId: "asset_candidate_persisted",
+    }] });
     if (url.includes("/generation/assets/worlds/") && url.endsWith("/candidates")) return Response.json({ candidates: [] });
     if (url.includes("/generation/assets/worlds/") && url.endsWith("/library")) return Response.json({ assets: [] });
     if (url.endsWith("/releases/preflight")) return Response.json({ valid: true, diagnostics: [] });
@@ -174,9 +185,19 @@ test("V2 HTTP adapter drives bootstrap and the complete local creator loop", asy
   await adapter.bootstrapWorkspace();
   const snapshot = await adapter.getSnapshot();
   assert.equal(snapshot.world.storyWorldId, "world_http");
+  assert.equal(snapshot.generation.job?.jobId, "job_scene_persisted");
+  assert.equal(snapshot.generation.job?.status, "failed");
+  assert.equal(snapshot.generation.job?.terminalMessage, "provider unavailable");
+  assert.equal(snapshot.assets.job?.jobId, "asset_job_persisted");
+  assert.equal(snapshot.assets.job?.status, "succeeded");
+  assert.equal(snapshot.assets.prompt, "persisted asset");
   const job = await adapter.createSceneGenerationJob({ storyWorldId: "world_http", baseCanonRevision: 2, prompt: "prompt", idempotencyKey: "scene-idem" });
   assert.equal(job.job.jobId, "job_scene");
   assert.equal((await adapter.reviewCandidate({ candidateId: "candidate", action: "approve", reviewer: "creator", reason: "ok" })).status, "approved");
+  const reviewBody = calls.find((call) => call.url.endsWith("/candidates/scenes/candidate/review"))?.body as Record<string, unknown>;
+  assert.deepEqual(Object.keys(reviewBody).sort(), ["action", "expectedRevision", "idempotencyKey", "reason", "reviewer"]);
+  assert.equal(reviewBody.action, "approve");
+  assert.equal(reviewBody.expectedRevision, 2);
   assert.equal((await adapter.createRelease()).version, "1.0.0");
   assert.equal((await adapter.startRun()).run.runId, "run_http");
   assert.equal((await adapter.submitChoice("choice")).sceneId, "scene_next");
@@ -217,6 +238,8 @@ test("V2 HTTP adapter maps optional snapshot values and player choices", async (
     if (url.endsWith("/state/variables")) return Response.json([{ key: "Flag", valueType: "boolean", defaultValue: false }, { key: "Count", valueType: "number", defaultValue: 0 }, { key: "Name", valueType: "string", defaultValue: "" }]);
     if (url.endsWith("/state/initial")) return Response.json({ values: { Flag: false, Count: 0, Name: "" } });
     if (url.endsWith("/candidates/scenes")) return Response.json([{ candidateId: "candidate", kind: "scene", status: "changes_requested", storyWorldId: "world", baseCanonRevision: 1, payload: { scene: { sceneId: "candidate_scene", title: "Candidate", body: "Body", participantCharacterIds: [] }, choices: [{ label: "Choice" }], validationNotes: ["note"] }, provenance: { source: "llm", contextHash: "context" } }]);
+    if (url.includes("/generation/worlds/") && url.endsWith("/jobs")) return Response.json({ jobs: [] });
+    if (url.includes("/generation/assets/worlds/") && url.endsWith("/jobs")) return Response.json({ jobs: [] });
     if (url.includes("/generation/assets/worlds/") && url.endsWith("/candidates")) return Response.json({ candidates: [] });
     if (url.includes("/generation/assets/worlds/") && url.endsWith("/library")) return Response.json({ assets: [] });
     if (url.endsWith("/releases/preflight")) return Response.json({ valid: false, diagnostics: [{ code: "BAD", severity: "error", message: "Bad release" }] });
@@ -329,6 +352,8 @@ test("V2 http adapter creates a story world and prefers it on the next snapshot"
     if (url.endsWith("/state/variables")) return Response.json([]);
     if (url.endsWith("/state/initial")) return Response.json({ values: {} });
     if (url.endsWith("/candidates/scenes")) return Response.json([]);
+    if (url.includes("/generation/worlds/") && url.endsWith("/jobs")) return Response.json({ jobs: [] });
+    if (url.includes("/generation/assets/worlds/") && url.endsWith("/jobs")) return Response.json({ jobs: [] });
     if (url.includes("/generation/assets/worlds/") && url.endsWith("/candidates")) return Response.json({ candidates: [] });
     if (url.includes("/generation/assets/worlds/") && url.endsWith("/library")) return Response.json({ assets: [] });
     if (url.endsWith("/releases/preflight")) return Response.json({ valid: true, diagnostics: [] });
@@ -378,6 +403,8 @@ test("V2 HTTP adapter covers authoring CRUD and optional asset/timeline mapping"
     if (url.endsWith("/state/variables")) return Response.json([{ key: "flag", valueType: "boolean", defaultValue: false, createdAt: "2026-01-01" }]);
     if (url.endsWith("/state/initial")) return Response.json({ values: { flag: false } });
     if (url.endsWith("/candidates/scenes")) return Response.json([]);
+    if (url.includes("/generation/worlds/") && url.endsWith("/jobs")) return Response.json({ jobs: [] });
+    if (url.includes("/generation/assets/worlds/") && url.endsWith("/jobs")) return Response.json({ jobs: [] });
     if (url.endsWith("/releases/preflight")) return Response.json({ valid: true, diagnostics: [] });
     if (url.endsWith("/releases")) return Response.json([]);
     if (url.includes("/generation/assets/worlds/") && url.endsWith("/candidates")) return Response.json({

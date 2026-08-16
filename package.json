@@ -9,7 +9,7 @@
     "test": "pnpm -r --if-present test",
     "test:local": "node scripts/local-regression.mjs",
     "test:coverage": "node --experimental-test-coverage --test --test-coverage-lines=100 --test-coverage-exclude=**/*.test.ts --test-coverage-include=apps/api/src/v2/**/*.ts --test-coverage-include=apps/worker/src/v2/**/*.ts --test-coverage-include=apps/web/src/v2/**/*.ts --test-coverage-include=packages/ai/src/v2*.ts --test-coverage-include=packages/config/src/v2.ts --test-coverage-include=packages/contracts/src/v2/**/*.ts --test-coverage-include=packages/domain/src/v2/**/*.ts --test-coverage-include=packages/ports/src/v2/**/*.ts --test-coverage-include=packages/database/src/v2/**/*.ts packages/ai/src/v2-scene-generation.test.ts packages/config/src/v2.test.ts packages/contracts/src/v2/shared/sentinel.test.ts packages/domain/src/v2/**/*.test.ts packages/database/src/v2/**/*.test.ts apps/api/src/v2/**/*.test.ts apps/worker/src/v2/**/*.test.ts apps/web/src/v2/**/*.test.ts",
-    "test:integration": "node --test integration/v2-real-services.test.ts infra/compose/compose.test.ts",
+    "test:integration": "node --test integration/v2-authoring-chain.test.ts integration/v2-real-services.test.ts infra/compose/compose.test.ts",
     "test:e2e": "playwright test",
     "test:all": "pnpm test && pnpm test:integration",
     "build": "pnpm -r --if-present build",

@@ -6,13 +6,18 @@ import {
   applyV2Migrations,
   openV2SqliteConnection,
   V2SqliteAssetGenerationRepository,
+  V2SqliteCanonUnitOfWork,
   V2SqliteCanonSnapshotReader,
+  V2SqliteCandidateReviewUnitOfWork,
   V2SqliteGenerationJobRepository,
+  V2SqliteGraphStateUnitOfWork,
   V2SqlitePlatformRepository,
+  V2SqliteReleaseRuntimeUnitOfWork,
 } from "@living-network/database/v2";
 import type { V2CapabilitiesResponse } from "@living-network/contracts/v2";
 
 import { createV2GenerationPlugin } from "../generation/index.ts";
+import { createV2CoreUseCases } from "../core/use-cases.ts";
 import { createV2FastifyApp } from "./app.ts";
 import { createV2PlatformPlugin, getV2PlatformCapabilities } from "./plugin.ts";
 
@@ -44,8 +49,14 @@ export function createV2ApiRuntime(options: {
   };
   const jobs = new V2SqliteGenerationJobRepository(db);
   const assets = new V2SqliteAssetGenerationRepository(db);
+  const coreUseCases = createV2CoreUseCases(
+    new V2SqliteCanonUnitOfWork(db),
+    new V2SqliteGraphStateUnitOfWork(db),
+    new V2SqliteCandidateReviewUnitOfWork(db),
+    new V2SqliteReleaseRuntimeUnitOfWork(db),
+  );
   const app = createV2FastifyApp({
-    coreOptions: { sqlite: db },
+    coreOptions: { useCases: coreUseCases },
     ...(options.mediaRoot === undefined ? {} : { mediaRoot: options.mediaRoot }),
     ...(options.capabilities === undefined ? {} : { capabilities: options.capabilities }),
     capabilitiesProvider: () => getV2PlatformCapabilities(platformDependencies),
