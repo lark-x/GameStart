@@ -70,7 +70,8 @@
       "typecheck",
       "test",
       "lint",
-      "build"
+      "build",
+      "e2e"
     ]
   }
 }
