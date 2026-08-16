@@ -1,14 +1,14 @@
 # Living Network 开发进度
 
-最后核对：2026-08-15（`codex/integration/ai-scope-governance`）
+最后核对：2026-08-17（`codex/integration/v2-authoring-data-chain`）
 
 本文是当前能力、切换状态和验证证据的进度视图。当前架构见 [architecture.md](./architecture.md)，历史 V1 报告不替代当前代码和测试证据。
 
 ## 1. 当前阶段
 
-V2 已完成 Core/Generation/Assets/Web 集成并完成正式运行时切换验收：V2 是默认 API、Worker、Web、Compose 和 CI 路径；V1 已冻结并归档。当前不删除 V1 数据或历史 migration，物理删除另行审批。
+V2 进入六阶段创作闭环集成期：前端信息架构已按“项目、人工创作、AI 场景生成、ComfyUI 素材生成、发布与运行、外部服务”重排；Web 默认使用真实 HTTP API 和 SQLite，不再把 Mock 作为默认产品路径。当前目标是让真实页面、API、Worker 和 SQLite 串成可持续创建数据的纵向闭环。
 
-AI 开发治理已进入落地阶段：五区机器可读所有权、任务范围记录、越界 CI 门禁和模块依赖检查已建立；现有混合热点仍待后续行为等价拆分。
+当前仍处于功能闭环优先期：任务/scope 治理暂停，模块依赖边界继续保留。V1 已冻结并归档，不作为新功能入口。
 
 ## 2. 当前能力矩阵
 
@@ -17,13 +17,13 @@ AI 开发治理已进入落地阶段：五区机器可读所有权、任务范�
 | World Canon | 已实现 | SQLite、revision/idempotency、世界/地点/角色/事实/规则/时间线与 FTS5 |
 | Narrative Graph | 已实现 | Arc/Scene/Choice、入口/可达性/引用校验和图诊断 |
 | Typed State | 已实现 | 类型化 schema、初始状态、delta preview、gate/consequence 校验 |
-| Candidate Review | 已实现 | 场景/资产候选、approve/reject/request changes、审计和原子应用 |
+| Candidate Review | 已实现 | 场景/资产候选、approve/reject/request changes、审计和原子应用；场景候选归 AI 模块，素材候选归 ComfyUI 模块 |
 | Immutable Release | 已实现 | preflight、稳定 content hash、release manifest 与导出 |
 | Play Runtime/Save | 已实现 | Release 绑定运行、选择、条件、保存、恢复和版本校验 |
-| Generation/Assets API | 已实现 | Job、上下文快照、资产 Job、受控媒体引用和能力 503 |
-| V2 Worker | 已实现 | SQLite outbox 派发、BullMQ、有限重试、租约恢复、候选提交和本地媒体 |
-| Web `/v2` | 已实现 | 中文单语言分组侧栏、独立路由页面、HTTP 默认 adapter、显式 Mock、创作/审核/发布/游玩/导出工作区、旧路由重定向 |
-| Platform 配置 | 已实现 | V2 SQLite 持久化模型档案、能力绑定、ComfyUI 图片服务、外观主题；API 密钥服务端加密且不回显 |
+| Generation/Assets API | 已实现 | Job、prepare 预览、上下文快照、资产 Job、受控媒体引用、手动正式素材上传和能力状态 |
+| V2 Worker | 已实现 | SQLite outbox 派发、BullMQ、有限重试、租约恢复、场景候选提交、素材候选提交和本地媒体 |
+| Web `/v2` | 已实现 | 中文单语言分组侧栏、独立路由页面、HTTP 默认 adapter、显式 Mock、人工创作/AI/ComfyUI/发布/游玩/导出工作区、旧路由重定向 |
+| Platform 配置 | 已实现 | V2 SQLite 持久化模型档案、能力绑定、ComfyUI 图片服务、外观主题；API 密钥服务端加密且不回显，能力状态可区分 enabled/configuration/binding/connection |
 | 模型调用日志 | 已实现 | Worker 记录脱敏请求/响应、耗时、用量、错误和关联上下文；Web 支持筛选、详情、分页和 30 天清理 |
 | 触发器模块 | 边界已建立 | 独立路由和占位页面已提供，触发器引擎按计划后续实现 |
 | V1 运行时 | 已冻结 | 归档分支保留；不再作为默认入口、CI 或新功能依赖 |
@@ -31,34 +31,35 @@ AI 开发治理已进入落地阶段：五区机器可读所有权、任务范�
 
 ## 3. 已执行验证
 
-最终本地已执行并通过：
+最近本地已执行并通过：
 
-- `pnpm install --frozen-lockfile`：exit 0。
-- `pnpm check:boundaries`：exit 0。
-- `pnpm typecheck`：exit 0。
-- `pnpm test`：exit 0，162 个测试通过。
-- `pnpm test:coverage`：exit 0；161 个测试通过，V2 生产文件行覆盖率 100%，门槛保持 100%。
-- `pnpm build`：exit 0。
-- `pnpm --filter @living-network/web lint`：exit 0。
-- `pnpm test:integration`：exit 0；默认 lane 的 5 个 Compose/SQLite 检查通过，真实 Redis 项按未启用条件跳过。
-- `RUN_V2_REAL_INTEGRATION=1 REDIS_URL=redis://127.0.0.1:6380 pnpm test:integration`：exit 0，6/6 通过；使用临时 Redis 容器后已停止并移除。
-- `pnpm test:e2e`：exit 0，2/2 V2 Playwright 场景通过，覆盖旧入口重定向、分组导航、Mock 创作闭环、平台配置/日志/触发器页面和 360px 响应式交互。
-- `pnpm test:local`：exit 0，170 项通过、1 项真实 Redis 测试在未启用环境下跳过。
+- `apps/web/node_modules/.bin/vue-tsc -p apps/web/tsconfig.v2.json --noEmit`：exit 0。
+- `node_modules/.bin/tsc -p apps/worker/tsconfig.json --noEmit`：exit 0。
+- `node scripts/check-boundaries.mjs`：exit 0。
+- `node scripts/check-task-scope.mjs`：exit 0，功能闭环优先期 scope 治理按预期暂停。
+- `node --check scripts/run-with-env.mjs`：exit 0。
+- `node scripts/run-with-env.mjs CODEX_E2E_ENV_CHECK=ok -- node -e "if (process.env.CODEX_E2E_ENV_CHECK !== 'ok') process.exit(2)"`：exit 0。
+- `node scripts/run-with-env.mjs CODEX_E2E_ENV_CHECK=ok -- pnpm -v`：exit 0，输出 `11.1.2`。
 - `git diff --check`：exit 0。
+
+当前仓库包含一条真实 SQLite 集成证明：`integration/v2-authoring-chain.test.ts` 覆盖 API 创建故事、状态、场景、手动素材、发布、运行、存档、导出、Worker 生成场景候选、审核写入 Canon、Worker 生成素材候选、审核写入正式素材库、失败任务可观察，以及服务重启后读取。当前 Windows/WSL 混合环境直接执行 Node 集成测试会被 pnpm Linux symlink/workspace 包解析问题挡住；`pnpm` 在执行 workspace 命令前也可能卡在本机 store 状态检查。该问题属于本地工具链阻塞，CI/Linux 环境仍应运行完整验证。
 
 真实 LLM、ComfyUI、Qdrant 和生产级认证/TLS/备份恢复未配置或未执行，不能据此声称已验收；CI 已提供真实 Redis job。
 
 ## 4. 当前限制
 
-- Slice D 的 Qdrant 和 Social Temp 按主计划延期，不阻塞 Slice A–C 核心版本。
+- Playwright E2E 已改为真实 API/SQLite 人工创作路径，并补充跨平台环境变量启动脚本；当前本机 pnpm store/symlink 问题仍会阻塞实际启动。
 - 真实 LLM、ComfyUI、Qdrant 和生产级认证/TLS/备份恢复尚未验收。
-- Worker 的真实 Redis round-trip 已在本地显式 lane 通过；Fake/SQLite 测试仍不能替代真实 LLM、ComfyUI 或 Qdrant 证据。
+- Worker 的真实 Redis round-trip 需要在可用 Redis 环境或 CI lane 中继续验收；Fake/SQLite 测试仍不能替代真实 LLM、ComfyUI 或 Qdrant 证据。
 - V1 代码、PostgreSQL 迁移和旧文档仍存在于仓库历史/工作树，后续必须以独立删除任务清理，不能在本切换中误删或误改数据。
 
 ## 5. 后续优先顺序
 
-1. 按独立 Integration PR 渐进拆分 Core use cases、Canon Repository、Web Workspace/Store 和 Generation Plugin 混合热点。
-2. 真实 LLM/ComfyUI 与备份恢复验收。
-3. Slice D：可重建 Qdrant 索引和 Social Temp。
-4. 物理删除 V1 运行时、PostgreSQL 适配与旧入口（另行批准，保留归档和历史 migration）。
-5. 产品化安全、认证、监控和发布流程。
+1. 在可用 Linux/CI 工具链中运行 `pnpm test:integration` 和 `pnpm test:e2e`，确认真实 API/SQLite/Worker/Web 路径全部通过。
+2. 使用真实或可控本地替身验收阶段 4：AI 场景生成 prepare、dispatch、Worker 回写、候选审核入 Canon、刷新读取。
+3. 使用真实或可控本地替身验收阶段 5：ComfyUI 素材生成 prepare、dispatch、Worker 回写、候选审核入正式素材库、刷新读取。
+4. 修复当前 Windows/WSL 下 pnpm workspace symlink 与 store 检查阻塞，或提供稳定 Linux Node 运行环境。
+5. 真实 LLM/ComfyUI 与备份恢复验收。
+6. Slice D：可重建 Qdrant 索引和 Social Temp。
+7. 物理删除 V1 运行时、PostgreSQL 适配与旧入口（另行批准，保留归档和历史 migration）。
+8. 产品化安全、认证、监控和发布流程。
