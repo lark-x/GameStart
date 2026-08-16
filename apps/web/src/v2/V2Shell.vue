@@ -142,18 +142,20 @@ onMounted(() => {
           <p class="v2-topbar-kicker">Living Network / V2</p>
           <h1>{{ currentTitle }}</h1>
         </div>
-        <Button variant="secondary" size="md" :loading="store.loading" @click="store.loadSnapshot">
-        <div v-if="store.storyWorlds.length" class="v2-story-switcher">
-          <label for="v2-story-world">故事空间</label>
-          <Select id="v2-story-world" :model-value="store.activeStoryWorldId || ''" :disabled="store.loading" @update:model-value="store.selectStoryWorld">
-            <option v-for="world in store.storyWorlds" :key="world.storyWorldId" :value="world.storyWorldId">
-              {{ world.name }}
-            </option>
-          </Select>
+        <div class="v2-topbar-actions">
+          <div v-if="store.storyWorlds.length" class="v2-story-switcher">
+            <label for="v2-story-world">故事空间</label>
+            <Select id="v2-story-world" :model-value="store.activeStoryWorldId || ''" :disabled="store.loading" @update:model-value="store.selectStoryWorld">
+              <option v-for="world in store.storyWorlds" :key="world.storyWorldId" :value="world.storyWorldId">
+                {{ world.name }}
+              </option>
+            </Select>
+          </div>
+          <Button variant="secondary" size="md" :loading="store.loading" @click="store.loadSnapshot">
+            <Activity :size="16" aria-hidden="true" />
+            刷新状态
+          </Button>
         </div>
-          <Activity :size="16" aria-hidden="true" />
-          刷新状态
-        </Button>
       </header>
       <div class="v2-route-content">
         <RouterView />
@@ -322,24 +324,30 @@ onMounted(() => {
 }
 
 .v2-topbar-kicker {
+  margin: 0 0 var(--space-1);
+  color: var(--primary);
+  font-size: var(--text-xs);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.v2-topbar-actions {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
 .v2-story-switcher {
   display: grid;
   gap: var(--space-1);
-  min-width: min(260px, 36vw);
-  margin-left: auto;
+  min-width: min(240px, 36vw);
 }
 
 .v2-story-switcher label {
   color: var(--muted);
   font-size: var(--text-xs);
   font-weight: 700;
-}
-
-  margin: 0 0 var(--space-1);
-  color: var(--primary);
-  font-size: var(--text-xs);
-  font-weight: 800;
-  letter-spacing: 0.08em;
 }
 
 .v2-topbar h1 {
@@ -434,6 +442,16 @@ onMounted(() => {
   .v2-topbar {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .v2-topbar-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .v2-story-switcher {
+    flex: 1 1 100%;
+    min-width: 0;
   }
 }
 </style>
