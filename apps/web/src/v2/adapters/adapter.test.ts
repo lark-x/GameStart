@@ -326,7 +326,22 @@ test("V2 HTTP adapter maps optional snapshot values and player choices", async (
     if (url.endsWith("/state/variables")) return Response.json([{ key: "Flag", valueType: "boolean", defaultValue: false }, { key: "Count", valueType: "number", defaultValue: 0 }, { key: "Name", valueType: "string", defaultValue: "" }]);
     if (url.endsWith("/state/initial")) return Response.json({ values: { Flag: false, Count: 0, Name: "" } });
     if (url.endsWith("/candidates/scenes")) return Response.json([{ candidateId: "candidate", kind: "scene", status: "changes_requested", storyWorldId: "world", baseCanonRevision: 1, payload: { scene: { sceneId: "candidate_scene", title: "Candidate", body: "Body", participantCharacterIds: [] }, choices: [{ label: "Choice" }], validationNotes: ["note"] }, provenance: { source: "llm", contextHash: "context" } }]);
-    if (url.includes("/generation/worlds/") && url.endsWith("/jobs")) return Response.json({ jobs: [] });
+    if (url.includes("/generation/worlds/") && url.endsWith("/jobs")) return Response.json({ jobs: [{
+      jobId: "job_scene_done",
+      storyWorldId: "world",
+      kind: "scene",
+      status: "succeeded",
+      idempotencyKey: "job-scene-done",
+      baseCanonRevision: 1,
+      contextHash: "context",
+      context: { storyWorldId: "world", baseCanonRevision: 1, requestedAt: "2026-01-01", prompt: "Generate scene", promptPreview: "Generate scene", tokenBudget: 512, contextHash: "context", sourceFactIds: [], sourceCharacterIds: [], sourceSceneIds: [], facts: [], characters: [], scenes: [] },
+      prompt: "Generate scene",
+      attempts: 1,
+      maxAttempts: 3,
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+      candidateId: "candidate",
+    }] });
     if (url.includes("/generation/assets/worlds/") && url.endsWith("/jobs")) return Response.json({ jobs: [] });
     if (url.includes("/generation/assets/worlds/") && url.endsWith("/candidates")) return Response.json({ candidates: [] });
     if (url.includes("/generation/assets/worlds/") && url.endsWith("/library")) return Response.json({ assets: [] });
@@ -348,6 +363,9 @@ test("V2 HTTP adapter maps optional snapshot values and player choices", async (
   assert.equal(snapshot.typedState.variables[0]?.type, "flag");
   assert.equal(snapshot.typedState.variables[0]?.defaultValue, false);
   assert.equal(snapshot.candidate?.status, "changes_requested");
+  assert.equal(snapshot.generation.job?.readableStatus, "candidate-ready");
+  assert.equal(snapshot.generation.job?.candidateId, "candidate");
+  assert.equal(snapshot.generation.diff.title, "Candidate");
   const adapter = createV2HttpAdapter({ baseUrl: "http://localhost", fetchImpl: async (input) => {
     const url = String(input);
     return url.includes("/runtime/runs/") ? Response.json(runtime) : fetchImpl(input);
