@@ -20,6 +20,8 @@ export interface CreateV2FastifyAppOptions {
   readonly capabilitiesProvider?: () => V2CapabilitiesResponse | Promise<V2CapabilitiesResponse>;
   readonly platformPlugin?: FastifyPluginAsync;
   readonly platformOptions?: Record<string, unknown>;
+  readonly chatPlugin?: FastifyPluginAsync;
+  readonly chatOptions?: Record<string, unknown>;
   readonly mediaRoot?: string;
 }
 
@@ -90,6 +92,9 @@ export function createV2FastifyApp(options: CreateV2FastifyAppOptions = {}): Fas
     });
     if (options.platformPlugin !== undefined) {
       await v2.register(options.platformPlugin, { prefix: "/platform", ...(options.platformOptions ?? {}) });
+    }
+    if (options.chatPlugin !== undefined) {
+      await v2.register(options.chatPlugin, options.chatOptions ?? {});
     }
   }, { prefix: "/api/v2" });
   return app;

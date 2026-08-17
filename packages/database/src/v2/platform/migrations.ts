@@ -2,6 +2,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 import { v2CoreCanonMigrations } from "../core/migrations.ts";
 import { v2GenerationJobMigrations } from "../generation/migrations.ts";
+import { v2ChatMemoryMigration } from "../chat/migrations.ts";
 
 export interface V2SqliteMigration {
   readonly id: string;
@@ -132,8 +133,12 @@ export const v2PlatformMigrations: V2MigrationRegistry = {
 };
 
 export function getV2Migrations(): readonly V2SqliteMigration[] {
-  return [...v2CoreMigrations.migrations, ...v2GenerationMigrations.migrations, ...v2PlatformMigrations.migrations]
-    .sort((a, b) => a.id.localeCompare(b.id));
+  return [
+    ...v2CoreMigrations.migrations,
+    ...v2GenerationMigrations.migrations,
+    ...v2PlatformMigrations.migrations,
+    v2ChatMemoryMigration,
+  ].sort((a, b) => a.id.localeCompare(b.id));
 }
 
 export function applyV2Migrations(db: DatabaseSync, migrations: readonly V2SqliteMigration[] = getV2Migrations()): void {

@@ -5,11 +5,12 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./v2": "./src/v2.ts"
+    "./v2": "./src/v2.ts",
+    "./prompt-engine": "./src/prompt-engine/index.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "node --test src/v2-scene-generation.test.ts",
+    "test": "node --test src/v2-scene-generation.test.ts src/prompt-engine/prompt-engine.test.ts",
     "typecheck": "tsc -p tsconfig.json"
   }
 }

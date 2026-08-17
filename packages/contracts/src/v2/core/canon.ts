@@ -31,6 +31,7 @@ export interface V2CharacterDto {
   readonly storyWorldId: V2StoryWorldId;
   readonly name: string;
   readonly summary?: string;
+  readonly personaText?: string;
   readonly homeLocationId?: V2LocationId;
   readonly createdAt: string;
 }

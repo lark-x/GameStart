@@ -29,6 +29,7 @@ export interface V2CanonCharacter {
   readonly storyWorldId: V2CanonStoryWorldId;
   readonly name: string;
   readonly summary?: string;
+  readonly personaText?: string;
   readonly homeLocationId?: V2CanonLocationId;
   readonly createdAt?: string;
 }
@@ -90,6 +91,7 @@ export function createV2CanonCharacter(input: {
     readonly characterId: V2CanonCharacterId;
   readonly name: string;
   readonly summary?: string;
+  readonly personaText?: string;
   readonly homeLocation?: V2CanonLocation;
     readonly homeLocationId?: V2CanonLocationId;
 }): V2CanonCharacter {
@@ -102,6 +104,7 @@ export function createV2CanonCharacter(input: {
     characterId: assertNonEmptyId(input.characterId, "characterId"),
     name: assertNonEmptyText(input.name, "name", 120),
     ...(input.summary === undefined ? {} : { summary: assertOptionalText(input.summary, "summary", 1200) }),
+    ...(input.personaText === undefined ? {} : { personaText: assertOptionalText(input.personaText, "personaText", 4000) }),
     ...(homeLocationId === undefined ? {} : { homeLocationId: assertNonEmptyId(homeLocationId, "homeLocationId") }),
   };
 }

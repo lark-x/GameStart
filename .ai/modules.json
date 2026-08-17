@@ -59,6 +59,25 @@
         "packages/database/src/v2/core/*-repository.test.ts"
       ]
     },
+    "chat": {
+      "description": "Instant stories, chat conversations, messages, prompt engine and conversational memory",
+      "allowedDependencies": [
+        "chat",
+        "core",
+        "integration"
+      ],
+      "ownedPaths": [
+        "apps/api/src/v2/chat/**",
+        "apps/web/src/v2/chat/**",
+        "apps/web/src/v2/views/V2StartView.vue",
+        "apps/web/src/v2/views/V2ChatView.vue",
+        "packages/ai/src/prompt-engine/**",
+        "packages/contracts/src/v2/chat/**",
+        "packages/domain/src/v2/chat/**",
+        "packages/ports/src/v2/chat/**",
+        "packages/database/src/v2/chat/**"
+      ]
+    },
     "generation-assets": {
       "description": "Generation jobs, candidates, assets and external generation adapters",
       "allowedDependencies": [
@@ -111,6 +130,7 @@
       "description": "Composition roots, shared contracts, migrations, mixed hotspots and repository governance",
       "allowedDependencies": [
         "core",
+        "chat",
         "generation-assets",
         "platform",
         "web-shell",
