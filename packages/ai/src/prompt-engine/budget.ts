@@ -1,3 +1,6 @@
+export const V2_PROMPT_MESSAGE_OVERHEAD = 4;
+export const V2_PROMPT_IMAGE_TOKENS = 768;
+
 export function estimateV2PromptTokens(value: string): number {
   if (value.length === 0) return 0;
   let cjk = 0;
@@ -9,10 +12,28 @@ export function estimateV2PromptTokens(value: string): number {
   return Math.max(1, cjk + Math.ceil(ascii / 4));
 }
 
+export function estimateV2ChatMessageTokens(
+  input: { readonly text?: string; readonly imageCount?: number },
+  imageTokensPerImage = V2_PROMPT_IMAGE_TOKENS,
+): number {
+  return estimateV2PromptTokens(input.text?.trim() ?? "") + (input.imageCount ?? 0) * imageTokensPerImage;
+}
+
 export function estimateV2PromptMessagesTokens(messages: readonly { readonly content: string }[]): number {
   let total = 0;
   for (const message of messages) {
-    total += estimateV2PromptTokens(message.content) + 4;
+    total += estimateV2PromptTokens(message.content) + V2_PROMPT_MESSAGE_OVERHEAD;
+  }
+  return total;
+}
+
+export function estimateV2PromptMessagesTokensWithImages(
+  messages: readonly { readonly text?: string; readonly imageCount?: number }[],
+  imageTokensPerImage = V2_PROMPT_IMAGE_TOKENS,
+): number {
+  let total = 0;
+  for (const message of messages) {
+    total += estimateV2ChatMessageTokens(message, imageTokensPerImage) + V2_PROMPT_MESSAGE_OVERHEAD;
   }
   return total;
 }
