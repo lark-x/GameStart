@@ -13,10 +13,11 @@ export function estimateV2PromptTokens(value: string): number {
 }
 
 export function estimateV2ChatMessageTokens(
-  input: { readonly text?: string; readonly imageCount?: number },
+  input: { readonly text?: string; readonly imageCount?: number; readonly images?: readonly unknown[] },
   imageTokensPerImage = V2_PROMPT_IMAGE_TOKENS,
 ): number {
-  return estimateV2PromptTokens(input.text?.trim() ?? "") + (input.imageCount ?? 0) * imageTokensPerImage;
+  const imageCount = input.imageCount ?? input.images?.length ?? 0;
+  return estimateV2PromptTokens(input.text?.trim() ?? "") + imageCount * imageTokensPerImage;
 }
 
 export function estimateV2PromptMessagesTokens(messages: readonly { readonly content: string }[]): number {
@@ -28,7 +29,7 @@ export function estimateV2PromptMessagesTokens(messages: readonly { readonly con
 }
 
 export function estimateV2PromptMessagesTokensWithImages(
-  messages: readonly { readonly text?: string; readonly imageCount?: number }[],
+  messages: readonly { readonly text?: string; readonly imageCount?: number; readonly images?: readonly unknown[] }[],
   imageTokensPerImage = V2_PROMPT_IMAGE_TOKENS,
 ): number {
   let total = 0;

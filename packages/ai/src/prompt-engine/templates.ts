@@ -7,6 +7,7 @@ import {
 import { hashV2PromptContext } from "./hash.ts";
 import {
   PromptBudgetExceededError,
+  type ChatImageContext,
   type PreparedPrompt,
   type PromptBudgetDebug,
   type PromptContext,
@@ -102,7 +103,7 @@ function ensureRequiredFit(context: PromptContext, inputBudget: number): void {
 function selectRecentMessages(
   context: PromptContext,
   maxTokens: number,
-): { readonly messages: readonly ChatMessage[]; readonly sources: readonly PromptSource[]; readonly tokens: number } {
+): { readonly messages: readonly ChatMessage[]; readonly contexts: readonly PromptContext["recentMessages"][number][]; readonly sources: readonly PromptSource[]; readonly tokens: number } {
   const imageTokens = context.imageTokensPerImage ?? DEFAULT_IMAGE_TOKENS;
   const selected: PromptContext["recentMessages"][number][] = [];
   let used = 0;
@@ -130,7 +131,7 @@ function selectRecentMessages(
     label: (message.text ?? "").slice(0, 80),
     kind: "message" as const,
   }));
-  return { messages, sources, tokens: used };
+  return { messages, contexts: chronological, sources, tokens: used };
 }
 
 function selectMemories(
@@ -185,10 +186,11 @@ function selectSummary(
   return { text, selected: [{ id: "summary", label: context.sessionSummary!.slice(0, 80), kind: "summary" }], tokens };
 }
 
-function toChatMessage(input: { readonly role?: ChatRole; readonly text?: string; readonly imageCount?: number }, role?: ChatRole): ChatMessage {
+function toChatMessage(input: { readonly role?: ChatRole; readonly text?: string; readonly imageCount?: number; readonly images?: readonly unknown[] }, role?: ChatRole): ChatMessage {
   const selectedRole = role ?? input.role ?? "user";
   const text = input.text?.trim() ?? "";
-  const imageText = (input.imageCount ?? 0) > 0 ? ` [图片 × ${input.imageCount}]` : "";
+  const imageCount = input.imageCount ?? input.images?.length ?? 0;
+  const imageText = imageCount > 0 ? ` [图片 × ${imageCount}]` : "";
   return { role: selectedRole, content: `${text}${imageText}`.trim() };
 }
 
@@ -199,6 +201,7 @@ function estimateChatMessages(messages: readonly ChatMessage[]): number {
 interface BuiltChatReply {
   readonly messages: readonly ChatMessage[];
   readonly sources: readonly PromptSource[];
+  readonly messageImages: readonly { readonly messageIndex: number; readonly images: readonly ChatImageContext[] }[];
   readonly recentTokens: number;
   readonly memoryTokens: number;
   readonly canonTokens: number;
@@ -254,6 +257,13 @@ function buildChatReplyMessages(context: PromptContext): BuiltChatReply {
   if (worldText.length > 0) sources.push({ id: "world", label: "World", kind: "world" });
   sources.push(...canon.selected, ...memory.selected, ...summary.selected, ...recent.sources);
 
+  const messageImages: { readonly messageIndex: number; readonly images: readonly ChatImageContext[] }[] = [];
+  recent.contexts.forEach((message, index) => {
+    if (message.images !== undefined && message.images.length > 0) {
+      messageImages.push({ messageIndex: 1 + index, images: message.images });
+    }
+  });
+
   let currentInputTokens = 0;
   if (context.currentInput !== undefined) {
     currentInputTokens = estimateV2ChatMessageTokens(context.currentInput, context.imageTokensPerImage ?? DEFAULT_IMAGE_TOKENS) + V2_PROMPT_MESSAGE_OVERHEAD;
@@ -263,11 +273,15 @@ function buildChatReplyMessages(context: PromptContext): BuiltChatReply {
       label: (context.currentInput.text ?? "").slice(0, 80),
       kind: "input",
     });
+    if (context.currentInput.images !== undefined && context.currentInput.images.length > 0) {
+      messageImages.push({ messageIndex: messages.length - 1, images: context.currentInput.images });
+    }
   }
 
   return {
     messages,
     sources,
+    messageImages,
     recentTokens: recent.tokens,
     memoryTokens: memory.tokens,
     canonTokens: canon.tokens,
@@ -311,6 +325,7 @@ function buildStoryBootstrapMessages(context: PromptContext): BuiltChatReply {
       ...(personaText.length === 0 ? [] : [{ id: "persona", label: "Persona", kind: "persona" as const }]),
       ...(context.world === undefined ? [] : [{ id: "world", label: context.world.name, kind: "world" as const }]),
     ],
+    messageImages: [],
     recentTokens: 0,
     memoryTokens: 0,
     canonTokens: 0,
@@ -353,6 +368,7 @@ export function prepareV2ChatReply(context: PromptContext): PreparedPrompt {
     estimatedTokens,
     contextHash,
     sources: built.sources,
+    ...(built.messageImages.length === 0 ? {} : { messageImages: built.messageImages }),
     budget: buildPromptBudgetDebug(context, built, estimatedTokens),
   };
 }
@@ -369,6 +385,7 @@ export function prepareV2StoryBootstrap(context: PromptContext): PreparedPrompt 
     estimatedTokens,
     contextHash,
     sources: built.sources,
+    ...(built.messageImages.length === 0 ? {} : { messageImages: built.messageImages }),
     budget: buildPromptBudgetDebug(context, built, estimatedTokens),
   };
 }

@@ -23,6 +23,20 @@ class FakeChatProvider implements ChatProvider {
   }
 }
 
+class CapturingProvider implements ChatProvider {
+  public captured: ChatCompletionRequest["messages"][] = [];
+
+  public async complete(_request: ChatCompletionRequest): Promise<ChatCompletionResult> {
+    return { id: "capture", model: "capture-model", content: "ok" };
+  }
+
+  public async *stream(request: ChatCompletionRequest): AsyncIterable<ChatDelta> {
+    this.captured.push(request.messages);
+    yield { content: "我看到了图片。" };
+    yield { finishReason: "stop" };
+  }
+}
+
 class SlowAbortAwareProvider implements ChatProvider {
   public aborted = false;
 
@@ -279,6 +293,75 @@ test("V2 chat stop generation aborts provider and persists an interrupted messag
       assert.equal(assistant.length, 1);
       assert.equal(assistant[0]?.status, "interrupted");
       assert.equal(assistant[0]?.text, "第一段");
+    } finally {
+      await runtime.close();
+    }
+  } finally {
+    rmSync(mediaRoot, { recursive: true, force: true });
+    temp.cleanup();
+  }
+});
+
+test("V2 chat sends real image content to the provider", async () => {
+  const temp = openV2TempSqliteConnection();
+  const mediaRoot = mkdtempSync(path.join(tmpdir(), "v2-chat-media-"));
+  temp.db.close();
+  const provider = new CapturingProvider();
+  const onePixelPng = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/l2e3VwAAAABJRU5ErkJggg==",
+    "base64",
+  );
+  const boundary = `----v2-vision-${crypto.randomUUID()}`;
+  const body = Buffer.concat([
+    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="vision.png"\r\nContent-Type: image/png\r\n\r\n`, "utf8"),
+    onePixelPng,
+    Buffer.from(`\r\n--${boundary}--\r\n`, "utf8"),
+  ]);
+  try {
+    const runtime = createV2ApiRuntime({ sqlitePath: temp.path, mediaRoot, chatProvider: provider });
+    try {
+      const created = await runtime.app.inject({
+        method: "POST",
+        url: "/api/v2/instant-stories",
+        payload: { persona: "花火能看到图片", displayName: "花火", idempotencyKey: "instant-vision-test" },
+      });
+      assert.equal(created.statusCode, 201);
+      const instant = created.json() as V2CreateInstantStoryResponse;
+      const conversationId = instant.conversation.conversationId;
+
+      const upload = await runtime.app.inject({
+        method: "POST",
+        url: "/api/v2/chat/media",
+        headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+        payload: body,
+      });
+      assert.equal(upload.statusCode, 201);
+      const media = (upload.json() as { readonly media: { readonly mediaId: string } }).media;
+
+      const sent = await runtime.app.inject({
+        method: "POST",
+        url: `/api/v2/chat/conversations/${conversationId}/messages`,
+        payload: { text: "这是什么？", attachmentIds: [media.mediaId], idempotencyKey: "vision-message" },
+      });
+      assert.equal(sent.statusCode, 201);
+
+      const reply = await runtime.app.inject({
+        method: "POST",
+        url: `/api/v2/chat/conversations/${conversationId}/replies`,
+        payload: { idempotencyKey: "vision-reply" },
+      });
+      assert.equal(reply.statusCode, 200);
+      assert.match(reply.payload as string, /我看到了图片/);
+
+      assert.equal(provider.captured.length, 1);
+      const captured = provider.captured[0]!;
+      const userMessage = [...captured].reverse().find((message) => message.role === "user");
+      assert.ok(userMessage !== undefined);
+      const content = userMessage.content;
+      assert.ok(Array.isArray(content));
+      const imagePart = (content as readonly { readonly type?: string; readonly dataBase64?: string }[]).find((part) => part.type === "image");
+      assert.ok(imagePart !== undefined);
+      assert.ok((imagePart.dataBase64 ?? "").length > 0);
     } finally {
       await runtime.close();
     }
