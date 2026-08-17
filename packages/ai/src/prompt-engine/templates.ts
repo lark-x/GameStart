@@ -389,3 +389,62 @@ export function prepareV2StoryBootstrap(context: PromptContext): PreparedPrompt 
     budget: buildPromptBudgetDebug(context, built, estimatedTokens),
   };
 }
+
+export function prepareV2MemoryExtract(context: PromptContext): PreparedPrompt {
+  const inputBudget = calculateInputBudget(context);
+  ensureRequiredFit(context, inputBudget);
+  const personaText = personaBlock(context);
+  const recentText = context.recentMessages.map((message) => `${message.role === "user" ? "User" : "Assistant"}: ${message.text ?? ""}`).join("\n");
+  const memoryText = context.memories.map((memory) => `- [${memory.kind}] ${memory.content}`).join("\n");
+  const system: ChatMessage = {
+    role: "system",
+    content: [
+      "你是长期记忆提取器。只提取对未来故事有长期价值的信息，例如用户身份、偏好、关系、重大共同经历、世界长期事实。",
+      "不要提取寒暄、临时情绪、无信息量内容。",
+      "输出 JSON：{\"memories\":[{\"kind\":\"profile|preference|relationship|episodic|world_fact\",\"content\":\"...\",\"importance\":0~1,\"confidence\":0~1,\"sourceMessageIds\":[\"...\"]}]}",
+    ].join("\n"),
+  };
+  const user: ChatMessage = {
+    role: "user",
+    content: [
+      personaText,
+      "",
+      "RECENT MESSAGES",
+      recentText,
+      "",
+      "EXISTING MEMORIES",
+      memoryText,
+    ].filter((part) => part.length > 0).join("\n"),
+  };
+  const messages = [system, user];
+  const template = V2_PROMPT_TEMPLATES["memory.extract"];
+  const estimatedTokens = estimateChatMessages(messages);
+  const contextHash = hashV2PromptContext({ messages, templateId: template.id, templateVersion: template.version });
+  const built: BuiltChatReply = {
+    messages,
+    sources: [
+      ...(personaText.length === 0 ? [] : [{ id: "persona", label: "Persona", kind: "persona" as const }]),
+      ...context.memories.map((memory) => ({ id: memory.memoryId, label: memory.content, kind: "memory" as const })),
+    ],
+    messageImages: [],
+    recentTokens: estimateV2PromptTokens(recentText),
+    memoryTokens: estimateV2PromptTokens(memoryText),
+    canonTokens: 0,
+    summaryTokens: 0,
+    currentInputTokens: 0,
+    personaTokens: estimateV2PromptTokens(personaText),
+    inputBudget,
+    contextWindow: context.contextWindow ?? context.tokenBudget,
+    outputReserve: context.outputReserve ?? DEFAULT_OUTPUT_RESERVE,
+    safetyReserve: context.safetyReserve ?? DEFAULT_SAFETY_RESERVE,
+  };
+  return {
+    templateId: template.id,
+    templateVersion: template.version,
+    messages,
+    estimatedTokens,
+    contextHash,
+    sources: built.sources,
+    budget: buildPromptBudgetDebug(context, built, estimatedTokens),
+  };
+}
