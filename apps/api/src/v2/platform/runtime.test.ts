@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { openV2TempSqliteConnection } from "@living-network/database/v2";
+import { listV2Migrations, openV2TempSqliteConnection } from "@living-network/database/v2";
 
 import { createV2ApiRuntime } from "./runtime.ts";
 
@@ -12,21 +12,8 @@ test("V2 API runtime applies core and generation migrations and wires both plugi
   const runtime = createV2ApiRuntime({ sqlitePath: path });
   try {
     const migrations = runtime.db.prepare("SELECT id FROM v2_schema_migrations ORDER BY id").all() as Array<{ id: string }>;
-    assert.deepEqual(migrations.map((migration) => migration.id), [
-      "0001_v2_core_canon",
-      "0002_v2_core_graph_state",
-      "0003_v2_core_candidate_review",
-      "0004_v2_core_release_runtime",
-      "0005_v2_runtime_save_labels",
-      "0100_generation_jobs",
-      "0101_asset_generation_jobs",
-      "0102_asset_candidate_review",
-      "0103_manual_formal_assets",
-      "0200_v2_platform_configuration",
-      "0201_v2_model_call_logs",
-      "0202_v2_external_connection_checks",
-      "0300_v2_chat_memory",
-    ]);
+    const expected = listV2Migrations().map((migration) => migration.id).sort();
+    assert.deepEqual(migrations.map((migration) => migration.id), expected);
     const health = await runtime.app.inject({ method: "GET", url: "/api/v2/health" });
     assert.equal(health.statusCode, 200);
     const ready = await runtime.app.inject({ method: "GET", url: "/api/v2/ready" });

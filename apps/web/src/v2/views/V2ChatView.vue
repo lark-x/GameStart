@@ -43,10 +43,10 @@ async function loadChat(): Promise<void> {
   try {
     const [conversation, history] = await Promise.all([
       client.listConversations().then((items) => items.find((item) => item.conversationId === conversationId.value)),
-      client.listMessages(conversationId.value as V2ConversationId),
+      client.listMessages(conversationId.value as V2ConversationId, { limit: 50 }),
     ]);
     conversationTitle.value = conversation?.title ?? "故事对话";
-    messages.value = history;
+    messages.value = history.messages;
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : "加载对话失败";
   } finally {

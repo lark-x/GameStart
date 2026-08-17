@@ -87,6 +87,12 @@ export interface V2ChatMessageListResponse {
   readonly messages: readonly V2ChatMessageDto[];
 }
 
+export interface V2ChatMessagePageResponse {
+  readonly messages: readonly V2ChatMessageDto[];
+  readonly hasMore: boolean;
+  readonly nextBeforeMessageId?: V2MessageId;
+}
+
 export interface V2SendChatMessageRequest {
   readonly text?: string;
   readonly attachmentIds?: readonly V2MediaId[];

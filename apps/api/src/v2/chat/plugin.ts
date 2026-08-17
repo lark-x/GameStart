@@ -34,9 +34,18 @@ interface MultipartFile {
   readonly data: Buffer;
 }
 
+export interface V2ResolvedChatModel {
+  readonly provider: ChatProvider;
+  readonly model: string;
+  readonly temperature: number;
+  readonly maxTokens: number;
+  readonly contextWindow?: number;
+  readonly inputModalities: readonly ("text" | "image")[];
+}
+
 export interface V2ChatPluginDependencies {
   readonly useCases: V2ChatUseCases;
-  readonly provider: ChatProvider;
+  readonly resolveModel: () => Promise<V2ResolvedChatModel>;
   readonly mediaRoot?: string;
   readonly now?: () => Date;
 }
@@ -54,6 +63,22 @@ function routeId(value: unknown, field: string): string {
     throw new V2HttpError(400, "BAD_REQUEST", `${field} must be a non-empty string`);
   }
   return raw.trim();
+}
+
+function parseMessagesQuery(value: unknown): { readonly beforeMessageId?: V2MessageId; readonly limit?: number } {
+  if (!isRecord(value)) throw new V2HttpError(400, "BAD_REQUEST", "query must be an object");
+  const limit = value.limit === undefined ? undefined : Number(value.limit);
+  if (limit !== undefined && (!Number.isSafeInteger(limit) || limit < 1 || limit > 200)) {
+    throw new V2HttpError(400, "BAD_REQUEST", "limit must be an integer between 1 and 200");
+  }
+  const beforeMessageId = value.beforeMessageId;
+  if (beforeMessageId !== undefined && (typeof beforeMessageId !== "string" || beforeMessageId.trim().length === 0)) {
+    throw new V2HttpError(400, "BAD_REQUEST", "beforeMessageId must be a non-empty string");
+  }
+  return {
+    ...(limit === undefined ? {} : { limit }),
+    ...(beforeMessageId === undefined ? {} : { beforeMessageId: beforeMessageId as V2MessageId }),
+  };
 }
 
 function boundaryFrom(contentType: string | undefined): string {
@@ -170,7 +195,7 @@ export function createV2ChatPlugin(dependencies: V2ChatPluginDependencies): Fast
     });
     app.get("/chat/conversations/:conversationId/messages", async (request) => {
       const conversationId = routeId(request.params, "conversationId") as V2ConversationId;
-      return dependencies.useCases.listMessages(conversationId);
+      return dependencies.useCases.listMessages(conversationId, parseMessagesQuery(request.query));
     });
     app.post("/chat/conversations/:conversationId/messages", async (request, reply) => {
       const conversationId = routeId(request.params, "conversationId") as V2ConversationId;
@@ -195,12 +220,15 @@ export function createV2ChatPlugin(dependencies: V2ChatPluginDependencies): Fast
       const controller = new AbortController();
       const onClose = (): void => controller.abort();
       request.raw.on("close", onClose);
+      request.raw.on("aborted", onClose);
+      reply.raw.on("close", onClose);
       let content = "";
       try {
-        const deltas: AsyncIterable<ChatDelta> = dependencies.provider.stream({
+        const model = await dependencies.resolveModel();
+        const deltas: AsyncIterable<ChatDelta> = model.provider.stream({
           messages: prepared.prompt.messages,
-          temperature: 0.8,
-          maxTokens: 1024,
+          temperature: model.temperature,
+          maxTokens: model.maxTokens,
           trace: { correlationId: `v2:chat:${randomUUID()}` },
           signal: controller.signal,
         });
@@ -238,6 +266,8 @@ export function createV2ChatPlugin(dependencies: V2ChatPluginDependencies): Fast
         return reply.raw.end();
       } finally {
         request.raw.off("close", onClose);
+        request.raw.off("aborted", onClose);
+        reply.raw.off("close", onClose);
       }
     });
 

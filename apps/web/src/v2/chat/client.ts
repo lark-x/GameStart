@@ -1,12 +1,13 @@
 import type {
   V2ChatMediaDto,
   V2ChatMessageDto,
+  V2ChatMessagePageResponse,
   V2ConversationId,
   V2ConversationListResponse,
-  V2ChatMessageListResponse,
   V2CreateInstantStoryRequest,
   V2CreateInstantStoryResponse,
   V2ErrorEnvelope,
+  V2MessageId,
   V2SendChatMessageRequest,
   V2SendChatMessageResponse,
 } from "@living-network/contracts/v2";
@@ -122,8 +123,15 @@ export function createV2ChatClient(options: V2ChatClientOptions): V2ChatClient {
     async listConversations(): Promise<V2ConversationListResponse["conversations"]> {
       return (await readJson<V2ConversationListResponse>(await fetcher(`${base}/chat/conversations`, request("GET")))).conversations;
     },
-    async listMessages(conversationId: V2ConversationId): Promise<readonly V2ChatMessageDto[]> {
-      return (await readJson<V2ChatMessageListResponse>(await fetcher(`${base}/chat/conversations/${encodeURIComponent(conversationId)}/messages`, request("GET")))).messages;
+    async listMessages(
+      conversationId: V2ConversationId,
+      query?: { readonly beforeMessageId?: V2MessageId; readonly limit?: number },
+    ): Promise<V2ChatMessagePageResponse> {
+      const params = new URLSearchParams();
+      if (query?.limit !== undefined) params.set("limit", String(query.limit));
+      if (query?.beforeMessageId !== undefined) params.set("beforeMessageId", query.beforeMessageId);
+      const suffix = params.size === 0 ? "" : `?${params.toString()}`;
+      return readJson<V2ChatMessagePageResponse>(await fetcher(`${base}/chat/conversations/${encodeURIComponent(conversationId)}/messages${suffix}`, request("GET")));
     },
     async sendMessage(conversationId: V2ConversationId, input: V2SendChatMessageRequest): Promise<V2SendChatMessageResponse> {
       return readJson<V2SendChatMessageResponse>(await fetcher(`${base}/chat/conversations/${encodeURIComponent(conversationId)}/messages`, request("POST", input)));
@@ -166,7 +174,10 @@ export function createV2ChatClient(options: V2ChatClientOptions): V2ChatClient {
 export interface V2ChatClient {
   createInstantStory(input: V2CreateInstantStoryRequest): Promise<V2CreateInstantStoryResponse>;
   listConversations(): Promise<V2ConversationListResponse["conversations"]>;
-  listMessages(conversationId: V2ConversationId): Promise<readonly V2ChatMessageDto[]>;
+  listMessages(
+    conversationId: V2ConversationId,
+    query?: { readonly beforeMessageId?: V2MessageId; readonly limit?: number },
+  ): Promise<V2ChatMessagePageResponse>;
   sendMessage(conversationId: V2ConversationId, input: V2SendChatMessageRequest): Promise<V2SendChatMessageResponse>;
   streamReply(
     conversationId: V2ConversationId,
