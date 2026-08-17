@@ -192,6 +192,9 @@ export function createV2ChatPlugin(dependencies: V2ChatPluginDependencies): Fast
         throw new V2HttpError(500, "INTERNAL_ERROR", "Prompt was not prepared for reply");
       }
       sseHeaders(reply);
+      const controller = new AbortController();
+      const onClose = (): void => controller.abort();
+      request.raw.on("close", onClose);
       let content = "";
       try {
         const deltas: AsyncIterable<ChatDelta> = dependencies.provider.stream({
@@ -199,6 +202,7 @@ export function createV2ChatPlugin(dependencies: V2ChatPluginDependencies): Fast
           temperature: 0.8,
           maxTokens: 1024,
           trace: { correlationId: `v2:chat:${randomUUID()}` },
+          signal: controller.signal,
         });
         for await (const delta of deltas) {
           if (delta.content !== undefined) {
@@ -232,6 +236,8 @@ export function createV2ChatPlugin(dependencies: V2ChatPluginDependencies): Fast
         sseWrite(reply, { type: "error", code: toErrorCode(error), errorMessage: toErrorMessage(error) });
         sseWrite(reply, { type: "done", messageId: prepared.assistantMessageId, error: true });
         return reply.raw.end();
+      } finally {
+        request.raw.off("close", onClose);
       }
     });
 
@@ -258,7 +264,7 @@ export function createV2ChatPlugin(dependencies: V2ChatPluginDependencies): Fast
           if (!await fileExists(target)) await writeFile(target, file.data, { flag: "wx" });
           const media: V2ChatMediaDto = await dependencies.useCases.createMedia({
             mediaId: `media:chat:${hash.slice(0, 24)}` as V2MediaId,
-            contentHash: `sha256:${hash}`,
+            contentHash: hash,
             mediaRef: `media://local/v2/chat/${filename}`,
             mimeType,
             byteSize: file.data.byteLength,

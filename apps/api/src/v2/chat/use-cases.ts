@@ -189,6 +189,16 @@ async function sendMessage(
   return unitOfWork.withChatTransaction(async ({ conversations, messages, media }) => {
     const conversation = await requireConversation(conversations, conversationId);
     const attachmentIds = input.attachmentIds ?? [];
+    const existing = await messages.findByIdempotencyKey(conversationId, input.idempotencyKey);
+    if (existing !== undefined) {
+      const sameText = (existing.text ?? "") === (text ?? "");
+      const sameAttachments = attachmentIds.length === existing.attachments.length &&
+        existing.attachments.every((attachment, index) => attachment.mediaId === attachmentIds[index]);
+      if (!sameText || !sameAttachments) {
+        throw new V2HttpError(409, "IDEMPOTENCY_CONFLICT", "Idempotency key was already used with a different message payload");
+      }
+      return { message: toMessageDto(existing) };
+    }
     const mediaItems = await media.listByIds(attachmentIds);
     if (mediaItems.length !== attachmentIds.length) {
       throw new V2HttpError(422, "VALIDATION_FAILED", "One or more attachments do not exist");
@@ -231,7 +241,7 @@ async function prepareReply(
       characterId: conversation.primaryCharacterId as V2CharacterId,
     });
     const world = await canon.getWorld(conversation.storyWorldId as V2StoryWorldId);
-    const recentMessages = await messages.listByConversation(conversationId, 40);
+    const recentMessages = await messages.listRecentByConversation(conversationId, 40);
     const existing = recentMessages.find((message) => message.idempotencyKey === input.idempotencyKey && message.role === "assistant");
     if (existing !== undefined && existing.status === "completed") {
       return {
@@ -243,8 +253,11 @@ async function prepareReply(
       };
     }
 
-    const lastUser = [...recentMessages].reverse().find((message) => message.role === "user");
-    const query = lastUser?.text ?? "";
+    const currentUser = [...recentMessages].reverse().find((message) => message.role === "user");
+    const historyMessages = currentUser === undefined
+      ? recentMessages
+      : await messages.listBefore(conversationId, currentUser.messageId as V2MessageId, 40);
+    const query = currentUser?.text ?? "";
     const memoryRows = query.trim().length > 0
       ? await searchMemories(memories, conversation.storyWorldId as V2StoryWorldId, query)
       : await memories.listActiveByStoryWorld(conversation.storyWorldId as V2StoryWorldId);
@@ -252,14 +265,13 @@ async function prepareReply(
 
     const facts = await canon.listFacts(conversation.storyWorldId as V2StoryWorldId);
     const rules = await canon.listRules(conversation.storyWorldId as V2StoryWorldId);
-    const hasUserTurn = recentMessages.some((message) => message.role === "user");
-    const task = hasUserTurn ? "chat.reply" : "story.bootstrap";
+    const task = currentUser === undefined ? "story.bootstrap" : "chat.reply";
 
     const context: PromptContext = {
       task,
       tokenBudget: DEFAULT_TOKEN_BUDGET,
       memories: memoryRows.slice(0, 10).map(toV2MemoryContext),
-      recentMessages: recentMessages.slice(-24).map(toV2ChatMessageContext),
+      recentMessages: historyMessages.slice(-24).map(toV2ChatMessageContext),
       ...(character === undefined ? {} : {
         persona: {
           name: character.name,
@@ -280,10 +292,10 @@ async function prepareReply(
         ],
       }),
       ...(summary === undefined ? {} : { sessionSummary: summary.summary }),
-      ...(lastUser === undefined ? {} : {
+      ...(currentUser === undefined ? {} : {
         currentInput: {
-          ...(lastUser.text === undefined ? {} : { text: lastUser.text }),
-          imageCount: lastUser.attachments.length,
+          ...(currentUser.text === undefined ? {} : { text: currentUser.text }),
+          imageCount: currentUser.attachments.length,
         },
       }),
     };

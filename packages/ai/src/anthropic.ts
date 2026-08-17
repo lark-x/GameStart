@@ -198,16 +198,22 @@ export class AnthropicProvider implements ChatProvider {
     const context = { ...(request.trace ? { trace: request.trace } : {}), ...this.profileContext, model, requestMessages: request.messages };
     await emitObservation(this.observationHook, { name: "request_started", ...context });
     const streamController = new AbortController();
+    const externalSignal = request.signal;
     let idleTimer: ReturnType<typeof setTimeout> | undefined;
     const resetIdle = (): void => {
       if (idleTimer !== undefined) clearTimeout(idleTimer);
       idleTimer = setTimeout(() => streamController.abort(), this.timeoutMs);
     };
     let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    const onExternalAbort = (): void => {
+      if (reader) { try { reader.cancel(); } catch { /* ignore */ } }
+      streamController.abort();
+    };
     try {
-      const response = await this.request(request, model, true);
+      const response = await this.request(request, model, true, externalSignal);
       if (!response.body) throw new ProviderError("STREAM_ERROR", "Anthropic response has no stream body");
       reader = response.body.getReader();
+      externalSignal?.addEventListener("abort", onExternalAbort, { once: true });
       const decoder = new TextDecoder();
       let buffer = "";
       resetIdle();
@@ -265,18 +271,25 @@ export class AnthropicProvider implements ChatProvider {
       terminal = true;
       await emitObservation(this.observationHook, { name: "completed", ...context, durationMs: Date.now() - started, preview: responsePreview, outcome: "success" });
     } catch (error) {
-      const normalized = error instanceof ProviderError ? error : new ProviderError("STREAM_ERROR", "Anthropic stream failed", { retryable: true });
+      const aborted = externalSignal?.aborted === true;
+      const normalized = aborted
+        ? new ProviderError("STREAM_ERROR", "Anthropic stream aborted", { retryable: false })
+        : error instanceof ProviderError ? error : new ProviderError("STREAM_ERROR", "Anthropic stream failed", { retryable: true });
       terminal = true;
       await emitObservation(this.observationHook, { name: "error", ...context, durationMs: Date.now() - started, error: { code: normalized.code, ...(normalized.status === undefined ? {} : { status: normalized.status }), retryable: normalized.retryable, message: normalized.message } });
-      throw error instanceof ProviderError ? error : normalized;
+      throw normalized;
     } finally {
+      externalSignal?.removeEventListener("abort", onExternalAbort);
       if (idleTimer !== undefined) clearTimeout(idleTimer);
       if (reader) { try { reader.releaseLock(); } catch { /* already released */ } }
       if (!terminal) await emitObservation(this.observationHook, { name: "completed", ...context, durationMs: Date.now() - started, outcome: "cancelled" });
     }
   }
-  private async request(request: ChatCompletionRequest, model: string, stream: boolean): Promise<Response> {
+  private async request(request: ChatCompletionRequest, model: string, stream: boolean, externalSignal?: AbortSignal): Promise<Response> {
     const controller = new AbortController();
+    const onExternalAbort = (): void => controller.abort();
+    if (externalSignal?.aborted === true) controller.abort();
+    else externalSignal?.addEventListener("abort", onExternalAbort, { once: true });
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     const input = splitMessages(request.messages);
     const payload: Record<string, unknown> = {
@@ -301,10 +314,12 @@ export class AnthropicProvider implements ChatProvider {
       throw new ProviderError("HTTP_ERROR", detail, { status: response.status, retryable: errorRetryable(response.status) });
     } catch (error) {
       if (error instanceof ProviderError) throw error;
+      if (externalSignal?.aborted === true) throw new ProviderError("STREAM_ERROR", "Anthropic request aborted", { retryable: false });
       if (controller.signal.aborted) throw new ProviderError("TIMEOUT", "Anthropic request timed out", { retryable: true });
       throw new ProviderError("NETWORK_ERROR", "Anthropic request failed", { retryable: true });
     } finally {
       clearTimeout(timer);
+      externalSignal?.removeEventListener("abort", onExternalAbort);
     }
   }
 }

@@ -295,6 +295,45 @@ export class V2SqliteChatMessageRepository implements V2ChatMessageRepository {
     `).all(conversationId, limit) as MessageRow[];
     return rows.map(mapMessage);
   }
+
+  public async listRecentByConversation(conversationId: V2ConversationId, limit = 40): Promise<readonly V2ChatMessage[]> {
+    const rows = this.db.prepare(`
+      SELECT * FROM (
+        SELECT *
+        FROM v2_chat_messages
+        WHERE conversation_id = ?
+        ORDER BY created_at DESC, message_id DESC
+        LIMIT ?
+      )
+      ORDER BY created_at ASC, message_id ASC
+    `).all(conversationId, limit) as MessageRow[];
+    return rows.map(mapMessage);
+  }
+
+  public async listBefore(conversationId: V2ConversationId, beforeMessageId: V2MessageId, limit = 40): Promise<readonly V2ChatMessage[]> {
+    const before = this.db.prepare("SELECT created_at FROM v2_chat_messages WHERE conversation_id = ? AND message_id = ?").get(conversationId, beforeMessageId) as { readonly created_at: string } | undefined;
+    if (before === undefined) return [];
+    const rows = this.db.prepare(`
+      SELECT * FROM (
+        SELECT *
+        FROM v2_chat_messages
+        WHERE conversation_id = ? AND (created_at < ? OR (created_at = ? AND message_id < ?))
+        ORDER BY created_at DESC, message_id DESC
+        LIMIT ?
+      )
+      ORDER BY created_at ASC, message_id ASC
+    `).all(conversationId, before.created_at, before.created_at, beforeMessageId, limit) as MessageRow[];
+    return rows.map(mapMessage);
+  }
+
+  public async findByIdempotencyKey(conversationId: V2ConversationId, idempotencyKey: string): Promise<V2ChatMessage | undefined> {
+    const row = this.db.prepare(`
+      SELECT * FROM v2_chat_messages
+      WHERE conversation_id = ? AND idempotency_key = ?
+      LIMIT 1
+    `).get(conversationId, idempotencyKey) as MessageRow | undefined;
+    return row === undefined ? undefined : mapMessage(row);
+  }
 }
 
 export class V2SqliteChatMediaRepository implements V2ChatMediaRepository {

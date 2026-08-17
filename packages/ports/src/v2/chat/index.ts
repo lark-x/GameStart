@@ -28,6 +28,9 @@ export interface V2ChatMessageRepository {
   create(input: V2ChatMessage): Promise<V2ChatMessage>;
   get(messageId: V2MessageId): Promise<V2ChatMessage | undefined>;
   listByConversation(conversationId: V2ConversationId, limit?: number): Promise<readonly V2ChatMessage[]>;
+  listRecentByConversation(conversationId: V2ConversationId, limit?: number): Promise<readonly V2ChatMessage[]>;
+  listBefore(conversationId: V2ConversationId, beforeMessageId: V2MessageId, limit?: number): Promise<readonly V2ChatMessage[]>;
+  findByIdempotencyKey(conversationId: V2ConversationId, idempotencyKey: string): Promise<V2ChatMessage | undefined>;
 }
 
 export interface V2ChatMediaRepository {

@@ -60,6 +60,51 @@ test("V2 chat SQLite repository persists conversations, messages, and memories",
 
     const history = await unit.withChatTransaction(async ({ messages }) => messages.listByConversation("conversation:one" as never));
     assert.equal(history.length, 1);
+    const byKey = await unit.withChatTransaction(async ({ messages }) => messages.findByIdempotencyKey("conversation:one" as never, "key:one"));
+    assert.equal(byKey?.messageId, "message:one");
+  } finally {
+    temp.db.close();
+    temp.cleanup();
+  }
+});
+
+test("V2 chat message repository returns the latest recent messages and supports idempotency lookup", async () => {
+  const temp = openV2TempSqliteConnection();
+  try {
+    applyV2Migrations(temp.db);
+    const unit = new V2SqliteChatUnitOfWork(temp.db);
+    await unit.withChatTransaction(async ({ canon }) => canon.createWorld(createV2CanonWorld({
+      storyWorldId: "world:recent",
+      name: "Recent World",
+    })));
+    await unit.withChatTransaction(async ({ conversations }) => conversations.create(createV2ChatConversation({
+      conversationId: "conversation:recent",
+      storyWorldId: "world:recent",
+      primaryCharacterId: "character:one",
+    })));
+
+    for (let index = 1; index <= 500; index += 1) {
+      await unit.withChatTransaction(async ({ messages }) => messages.create(createV2ChatMessage({
+        messageId: `message:recent:${index}`,
+        conversationId: "conversation:recent",
+        role: index % 2 === 0 ? "assistant" : "user",
+        text: `消息 ${index}`,
+        idempotencyKey: `recent-key:${index}`,
+        createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString(),
+      })));
+    }
+
+    const recent = await unit.withChatTransaction(async ({ messages }) => messages.listRecentByConversation("conversation:recent" as never, 40));
+    assert.equal(recent.length, 40);
+    assert.equal(recent[0]?.messageId, "message:recent:461");
+    assert.equal(recent.at(-1)?.messageId, "message:recent:500");
+
+    const before = await unit.withChatTransaction(async ({ messages }) => messages.listBefore("conversation:recent" as never, "message:recent:100" as never, 10));
+    assert.equal(before.length, 10);
+    assert.equal(before.at(-1)?.messageId, "message:recent:99");
+
+    const existing = await unit.withChatTransaction(async ({ messages }) => messages.findByIdempotencyKey("conversation:recent" as never, "recent-key:123"));
+    assert.equal(existing?.messageId, "message:recent:123");
   } finally {
     temp.db.close();
     temp.cleanup();

@@ -59,6 +59,27 @@ test("V2 chat API creates an instant story, sends a message, and streams a persi
       const sentMessage = (sent.json() as V2SendChatMessageResponse).message;
       assert.equal(sentMessage.role, "user");
 
+      const replayed = await runtime.app.inject({
+        method: "POST",
+        url: `/api/v2/chat/conversations/${instant.conversation.conversationId}/messages`,
+        payload: {
+          text: "你好，花火！",
+          idempotencyKey: "message-test-1",
+        },
+      });
+      assert.equal(replayed.statusCode, 201);
+      assert.equal((replayed.json() as V2SendChatMessageResponse).message.messageId, sentMessage.messageId);
+
+      const conflict = await runtime.app.inject({
+        method: "POST",
+        url: `/api/v2/chat/conversations/${instant.conversation.conversationId}/messages`,
+        payload: {
+          text: "不同的内容",
+          idempotencyKey: "message-test-1",
+        },
+      });
+      assert.equal(conflict.statusCode, 409);
+
       const reply = await runtime.app.inject({
         method: "POST",
         url: `/api/v2/chat/conversations/${instant.conversation.conversationId}/replies`,
@@ -89,6 +110,46 @@ test("V2 chat API creates an instant story, sends a message, and streams a persi
       assert.equal(repeated.statusCode, 200);
       const repeatedText = repeated.payload as string;
       assert.match(repeatedText, /"type":"message"/);
+    } finally {
+      await runtime.close();
+    }
+  } finally {
+    rmSync(mediaRoot, { recursive: true, force: true });
+    temp.cleanup();
+  }
+});
+
+test("V2 chat media upload stores a pure sha256 hash and serves identical bytes", async () => {
+  const temp = openV2TempSqliteConnection();
+  const mediaRoot = mkdtempSync(path.join(tmpdir(), "v2-chat-media-"));
+  temp.db.close();
+  const onePixelPng = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/l2e3VwAAAABJRU5ErkJggg==",
+    "base64",
+  );
+  const boundary = `----v2-chat-${crypto.randomUUID()}`;
+  const body = Buffer.concat([
+    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="one.png"\r\nContent-Type: image/png\r\n\r\n`, "utf8"),
+    onePixelPng,
+    Buffer.from(`\r\n--${boundary}--\r\n`, "utf8"),
+  ]);
+  try {
+    const runtime = createV2ApiRuntime({ sqlitePath: temp.path, mediaRoot, chatProvider: new FakeChatProvider() });
+    try {
+      const upload = await runtime.app.inject({
+        method: "POST",
+        url: "/api/v2/chat/media",
+        headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+        payload: body,
+      });
+      assert.equal(upload.statusCode, 201);
+      const media = (upload.json() as { readonly media: { readonly contentHash: string; readonly mediaRef: string } }).media;
+      assert.match(media.contentHash, /^[a-f0-9]{64}$/);
+      assert.equal(media.contentHash.startsWith("sha256:"), false);
+      const filename = media.mediaRef.replace("media://local/v2/chat/", "");
+      const fetched = await runtime.app.inject({ method: "GET", url: `/api/v2/chat/media/${filename}` });
+      assert.equal(fetched.statusCode, 200);
+      assert.deepEqual(fetched.rawPayload, onePixelPng);
     } finally {
       await runtime.close();
     }

@@ -20,6 +20,8 @@ test("prompt engine assembles chat.reply with persona and memory", () => {
   assert.ok(prompt.contextHash.length === 64);
   assert.ok(prompt.messages[0]?.role === "system");
   assert.ok(prompt.sources.some((source) => source.kind === "memory"));
+  assert.ok(prompt.budget.inputBudget > 0);
+  assert.ok(prompt.budget.usedTokens > 0);
 });
 
 test("prompt engine supports story.bootstrap and deterministic context hash", () => {

@@ -189,7 +189,7 @@ function parseBindingRequest(value: unknown): V2SetModelBindingRequest {
 }
 
 function capability(value: unknown): V2ModelCapability {
-  if (value === "scene_generation") return value;
+  if (value === "chat" || value === "scene_generation") return value;
   throw new TypeError("unsupported model capability");
 }
 

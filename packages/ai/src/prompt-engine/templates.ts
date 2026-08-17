@@ -213,6 +213,32 @@ function buildStoryBootstrapMessages(context: PromptContext): { readonly message
   };
 }
 
+function buildPromptBudgetDebug(context: PromptContext, estimatedTokens: number): import("./types.ts").PromptBudgetDebug {
+  const totalBudget = context.tokenBudget;
+  const outputReserve = context.outputReserve ?? 512;
+  const inputBudget = Math.max(256, totalBudget - outputReserve);
+  const personaTokens = context.persona === undefined ? 0 : estimateV2PromptTokens(personaBlock(context));
+  const canonTokens = (context.canon ?? []).length === 0 ? 0 : estimateV2PromptTokens(canonBlock(context));
+  const memoryTokens = context.memories.length === 0 ? 0 : estimateV2PromptTokens(memoryBlock(context, Math.floor(inputBudget * 0.2)).text);
+  const summaryTokens = context.sessionSummary === undefined || context.sessionSummary.trim().length === 0 ? 0 : estimateV2PromptTokens(summaryBlock(context));
+  const recentMessageTokens = context.recentMessages.reduce((total, message) => total + estimateV2PromptTokens(`${message.text ?? ""}${message.imageCount > 0 ? `[图片 × ${message.imageCount}]` : ""}`), 0);
+  const currentInputTokens = context.currentInput === undefined
+    ? 0
+    : estimateV2PromptTokens(`${context.currentInput.text ?? ""}${context.currentInput.imageCount > 0 ? `[图片 × ${context.currentInput.imageCount}]` : ""}`);
+  return {
+    totalBudget,
+    outputReserve,
+    inputBudget,
+    usedTokens: estimatedTokens,
+    personaTokens,
+    canonTokens,
+    memoryTokens,
+    summaryTokens,
+    recentMessageTokens,
+    currentInputTokens,
+  };
+}
+
 export function prepareV2ChatReply(context: PromptContext): PreparedPrompt {
   const { messages, sources } = buildChatReplyMessages({ ...context, task: "chat.reply" });
   const template = V2_PROMPT_TEMPLATES["chat.reply"];
@@ -225,6 +251,7 @@ export function prepareV2ChatReply(context: PromptContext): PreparedPrompt {
     estimatedTokens,
     contextHash,
     sources,
+    budget: buildPromptBudgetDebug(context, estimatedTokens),
   };
 }
 
@@ -240,5 +267,6 @@ export function prepareV2StoryBootstrap(context: PromptContext): PreparedPrompt 
     estimatedTokens,
     contextHash,
     sources,
+    budget: buildPromptBudgetDebug(context, estimatedTokens),
   };
 }
