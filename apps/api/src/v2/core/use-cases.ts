@@ -828,6 +828,7 @@ function toCharacterDto(character: Awaited<ReturnType<V2CanonRepository["getChar
     storyWorldId: character.storyWorldId as V2StoryWorldId,
     name: character.name,
     ...(character.summary === undefined ? {} : { summary: character.summary }),
+    ...(character.personaText === undefined ? {} : { personaText: character.personaText }),
     ...(character.homeLocationId === undefined ? {} : { homeLocationId: character.homeLocationId as V2LocationId }),
     createdAt: character.createdAt ?? "1970-01-01T00:00:00.000Z",
   };

@@ -276,9 +276,9 @@ export class V2SqliteCanonRepository implements V2CanonRepository {
 
   public async createCharacter(input: V2CanonCharacter): Promise<V2CanonCharacter> {
     this.db.prepare(`
-      INSERT INTO v2_characters (character_id, story_world_id, name, summary, home_location_id)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(input.characterId, input.storyWorldId, input.name, input.summary ?? null, input.homeLocationId ?? null);
+      INSERT INTO v2_characters (character_id, story_world_id, name, summary, persona_text, home_location_id)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(input.characterId, input.storyWorldId, input.name, input.summary ?? null, input.personaText ?? null, input.homeLocationId ?? null);
     const created = await this.getCharacter({
       storyWorldId: input.storyWorldId as V2StoryWorldId,
       characterId: input.characterId as V2CharacterId,
@@ -359,7 +359,7 @@ export class V2SqliteCanonRepository implements V2CanonRepository {
   }
 
   public async updateCharacter(input: V2CanonCharacter): Promise<V2CanonCharacter> {
-    const result = this.db.prepare("UPDATE v2_characters SET name = ?, summary = ?, home_location_id = ? WHERE story_world_id = ? AND character_id = ?").run(input.name, input.summary ?? null, input.homeLocationId ?? null, input.storyWorldId, input.characterId);
+    const result = this.db.prepare("UPDATE v2_characters SET name = ?, summary = ?, persona_text = ?, home_location_id = ? WHERE story_world_id = ? AND character_id = ?").run(input.name, input.summary ?? null, input.personaText ?? null, input.homeLocationId ?? null, input.storyWorldId, input.characterId);
     if (result.changes !== 1) throw new Error("V2 character update did not find a row");
     return (await this.getCharacter({ storyWorldId: input.storyWorldId as V2StoryWorldId, characterId: input.characterId as V2CharacterId }))!;
   }
@@ -706,6 +706,7 @@ function mapCharacter(row: unknown): V2CanonCharacter {
     storyWorldId: requireString(record.story_world_id, "story_world_id") as V2StoryWorldId,
     name: requireString(record.name, "name"),
     ...(record.summary === null ? {} : { summary: requireString(record.summary, "summary") }),
+    ...(record.persona_text === null ? {} : { personaText: requireString(record.persona_text, "persona_text") }),
     ...(record.home_location_id === null ? {} : { homeLocationId: requireString(record.home_location_id, "home_location_id") as V2LocationId }),
     createdAt: requireString(record.created_at, "created_at"),
   };

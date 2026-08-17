@@ -14,6 +14,15 @@ async function main(): Promise<void> {
       assetGeneration: { enabled: config.asset.enabled },
     },
     ...(config.integrationSecretKey === undefined ? {} : { integrationSecretKey: config.integrationSecretKey }),
+    ...(config.scene.baseUrl !== undefined && config.scene.model !== undefined ? {
+      chatEnvironment: {
+        protocol: config.scene.protocol,
+        baseUrl: config.scene.baseUrl,
+        ...(config.scene.apiKey === undefined ? {} : { apiKey: config.scene.apiKey }),
+        model: config.scene.model,
+        timeoutMs: config.scene.timeoutMs,
+      },
+    } : {}),
     environmentSceneConfigured: config.scene.baseUrl !== undefined &&
       config.scene.model !== undefined &&
       (config.scene.protocol !== "anthropic" || config.scene.apiKey !== undefined),

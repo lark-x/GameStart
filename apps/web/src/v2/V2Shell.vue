@@ -37,6 +37,12 @@ interface NavGroup {
 
 const groups: readonly NavGroup[] = [
   {
+    label: "即时故事",
+    items: [
+      { to: "/v2/start", label: "开始新故事", icon: Sparkles },
+    ],
+  },
+  {
     label: "项目",
     items: [
       { to: "/v2/workspace/project", label: "项目首页", icon: LayoutDashboard },
