@@ -448,3 +448,55 @@ export function prepareV2MemoryExtract(context: PromptContext): PreparedPrompt {
     budget: buildPromptBudgetDebug(context, built, estimatedTokens),
   };
 }
+
+export function prepareV2MemoryConsolidate(context: PromptContext): PreparedPrompt {
+  const inputBudget = calculateInputBudget(context);
+  ensureRequiredFit(context, inputBudget);
+  const system: ChatMessage = {
+    role: "system",
+    content: [
+      "你是长期记忆整理器。判断两条记忆的关系，只输出 JSON：",
+      "{\"action\":\"keep_both|merge|supersede|ignore\",\"mergedContent\":\"...\",\"confidence\":0~1}",
+      "merge/supersede 时必须提供 mergedContent。",
+    ].join("\n"),
+  };
+  const existing = context.memories[0];
+  const user: ChatMessage = {
+    role: "user",
+    content: [
+      "EXISTING MEMORY",
+      existing === undefined ? "(无)" : `[${existing.kind}] ${existing.content}`,
+      "",
+      "NEW MEMORY CANDIDATE",
+      context.currentInput?.text ?? "",
+    ].join("\n"),
+  };
+  const messages = [system, user];
+  const template = V2_PROMPT_TEMPLATES["memory.consolidate"];
+  const estimatedTokens = estimateChatMessages(messages);
+  const contextHash = hashV2PromptContext({ messages, templateId: template.id, templateVersion: template.version });
+  const built: BuiltChatReply = {
+    messages,
+    sources: existing === undefined ? [] : [{ id: existing.memoryId, label: existing.content, kind: "memory" }],
+    messageImages: [],
+    recentTokens: 0,
+    memoryTokens: estimateV2PromptTokens(existing?.content ?? ""),
+    canonTokens: 0,
+    summaryTokens: 0,
+    currentInputTokens: estimateV2PromptTokens(context.currentInput?.text ?? ""),
+    personaTokens: 0,
+    inputBudget,
+    contextWindow: context.contextWindow ?? context.tokenBudget,
+    outputReserve: context.outputReserve ?? DEFAULT_OUTPUT_RESERVE,
+    safetyReserve: context.safetyReserve ?? DEFAULT_SAFETY_RESERVE,
+  };
+  return {
+    templateId: template.id,
+    templateVersion: template.version,
+    messages,
+    estimatedTokens,
+    contextHash,
+    sources: built.sources,
+    budget: buildPromptBudgetDebug(context, built, estimatedTokens),
+  };
+}
