@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createV2CanonWorld, createV2ChatConversation, createV2ChatMessage, createV2Memory } from "@living-network/domain/v2";
+import { createV2CanonWorld, createV2ChatConversation, createV2ChatMaintenanceJob, createV2ChatMessage, createV2Memory } from "@living-network/domain/v2";
 
 import { applyV2Migrations, openV2TempSqliteConnection } from "../platform/index.ts";
 import { V2SqliteChatUnitOfWork } from "./repository.ts";
@@ -105,6 +105,53 @@ test("V2 chat message repository returns the latest recent messages and supports
 
     const existing = await unit.withChatTransaction(async ({ messages }) => messages.findByIdempotencyKey("conversation:recent" as never, "recent-key:123"));
     assert.equal(existing?.messageId, "message:recent:123");
+  } finally {
+    temp.db.close();
+    temp.cleanup();
+  }
+});
+
+test("V2 chat maintenance job repository persists and dedupes jobs", async () => {
+  const temp = openV2TempSqliteConnection();
+  try {
+    applyV2Migrations(temp.db);
+    const unit = new V2SqliteChatUnitOfWork(temp.db);
+    await unit.withChatTransaction(async ({ canon }) => canon.createWorld(createV2CanonWorld({
+      storyWorldId: "world:jobs",
+      name: "Jobs World",
+    })));
+    await unit.withChatTransaction(async ({ conversations }) => conversations.create(createV2ChatConversation({
+      conversationId: "conversation:jobs",
+      storyWorldId: "world:jobs",
+      primaryCharacterId: "character:one",
+    })));
+
+    const job = await unit.withChatTransaction(async ({ maintenanceJobs }) => maintenanceJobs.create(createV2ChatMaintenanceJob({
+      jobId: "job:memory:one",
+      conversationId: "conversation:jobs",
+      jobType: "memory_extract",
+      payload: { coveredMessageId: "message:1" },
+      dedupeKey: "memory_extract:conversation:jobs:message:1",
+    })));
+    assert.equal(job.status, "pending");
+
+    const duplicate = await unit.withChatTransaction(async ({ maintenanceJobs }) => maintenanceJobs.create(createV2ChatMaintenanceJob({
+      jobId: "job:memory:duplicate",
+      conversationId: "conversation:jobs",
+      jobType: "memory_extract",
+      payload: { coveredMessageId: "message:1" },
+      dedupeKey: "memory_extract:conversation:jobs:message:1",
+    })));
+    assert.equal(duplicate.jobId, "job:memory:one");
+
+    const pending = await unit.withChatTransaction(async ({ maintenanceJobs }) => maintenanceJobs.listPending());
+    assert.equal(pending.length, 1);
+    const claimed = await unit.withChatTransaction(async ({ maintenanceJobs }) => maintenanceJobs.markClaimed({
+      jobId: "job:memory:one",
+      claimedAt: new Date().toISOString(),
+      leaseExpiresAt: new Date(Date.now() + 60000).toISOString(),
+    }));
+    assert.equal(claimed.status, "claimed");
   } finally {
     temp.db.close();
     temp.cleanup();

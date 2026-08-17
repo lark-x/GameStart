@@ -5,6 +5,22 @@ export type V2ChatMessageRole = "user" | "assistant" | "system";
 export type V2ChatMessageStatus = "pending" | "completed" | "failed" | "interrupted";
 export type V2MemoryKind = "profile" | "preference" | "relationship" | "episodic" | "world_fact";
 export type V2MemoryStatus = "active" | "superseded" | "forgotten";
+export type V2ChatMaintenanceJobType = "memory_extract" | "conversation_summary" | "memory_consolidate" | "story_analyze";
+export type V2ChatMaintenanceJobStatus = "pending" | "claimed" | "running" | "succeeded" | "failed" | "cancelled";
+
+export interface V2ChatMaintenanceJob {
+  readonly jobId: string;
+  readonly conversationId: string;
+  readonly jobType: V2ChatMaintenanceJobType;
+  readonly status: V2ChatMaintenanceJobStatus;
+  readonly payload: Record<string, unknown>;
+  readonly attempts: number;
+  readonly availableAt: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  readonly lastError?: string;
+  readonly dedupeKey: string;
+}
 
 export interface V2ChatConversation {
   readonly conversationId: string;
@@ -246,6 +262,33 @@ export function createV2ConversationSummary(input: {
     sourceMessageCount: input.sourceMessageCount,
     ...(input.updatedAt === undefined ? {} : { updatedAt: assertIsoTime(input.updatedAt, "updatedAt") }),
     version: input.version,
+  };
+}
+
+export function createV2ChatMaintenanceJob(input: {
+  readonly jobId: string;
+  readonly conversationId: string;
+  readonly jobType: V2ChatMaintenanceJobType;
+  readonly payload: Record<string, unknown>;
+  readonly availableAt?: string;
+  readonly dedupeKey: string;
+}): V2ChatMaintenanceJob {
+  const jobTypes = new Set<V2ChatMaintenanceJobType>(["memory_extract", "conversation_summary", "memory_consolidate", "story_analyze"]);
+  if (!jobTypes.has(input.jobType)) {
+    throw new V2DomainError("INVALID_INPUT", "unsupported maintenance job type");
+  }
+  const now = new Date().toISOString();
+  return {
+    jobId: assertNonEmptyId(input.jobId, "jobId"),
+    conversationId: assertNonEmptyId(input.conversationId, "conversationId"),
+    jobType: input.jobType,
+    status: "pending",
+    payload: input.payload,
+    attempts: 0,
+    availableAt: input.availableAt ?? now,
+    createdAt: now,
+    updatedAt: now,
+    dedupeKey: assertNonEmptyId(input.dedupeKey, "dedupeKey"),
   };
 }
 

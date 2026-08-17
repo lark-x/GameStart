@@ -7,6 +7,7 @@ import type {
 } from "@living-network/contracts/v2";
 import type {
   V2ChatConversation,
+  V2ChatMaintenanceJob,
   V2ChatMedia,
   V2ChatMessage,
   V2ConversationSummary,
@@ -31,6 +32,8 @@ export interface V2ChatMessageRepository {
   listRecentByConversation(conversationId: V2ConversationId, limit?: number): Promise<readonly V2ChatMessage[]>;
   listBefore(conversationId: V2ConversationId, beforeMessageId: V2MessageId, limit?: number): Promise<readonly V2ChatMessage[]>;
   findByIdempotencyKey(conversationId: V2ConversationId, idempotencyKey: string): Promise<V2ChatMessage | undefined>;
+  countByConversation(conversationId: V2ConversationId): Promise<number>;
+  countUserMessagesByConversation(conversationId: V2ConversationId): Promise<number>;
 }
 
 export interface V2ChatMediaRepository {
@@ -60,6 +63,23 @@ export interface V2ConversationSummaryRepository {
   save(input: V2ConversationSummary): Promise<V2ConversationSummary>;
 }
 
+export interface V2ChatMaintenanceJobRepository {
+  create(input: V2ChatMaintenanceJob): Promise<V2ChatMaintenanceJob>;
+  findByDedupeKey(input: {
+    readonly conversationId: V2ConversationId;
+    readonly jobType: V2ChatMaintenanceJob["jobType"];
+    readonly dedupeKey: string;
+  }): Promise<V2ChatMaintenanceJob | undefined>;
+  listPending(limit?: number): Promise<readonly V2ChatMaintenanceJob[]>;
+  markClaimed(input: {
+    readonly jobId: string;
+    readonly claimedAt: string;
+    readonly leaseExpiresAt: string;
+  }): Promise<V2ChatMaintenanceJob>;
+  complete(input: { readonly jobId: string; readonly completedAt: string }): Promise<V2ChatMaintenanceJob>;
+  fail(input: { readonly jobId: string; readonly error: string; readonly updatedAt: string }): Promise<V2ChatMaintenanceJob>;
+}
+
 export interface V2ChatUnitOfWork {
   withChatTransaction<T>(fn: (repositories: {
     readonly canon: V2CanonRepository;
@@ -68,5 +88,6 @@ export interface V2ChatUnitOfWork {
     readonly media: V2ChatMediaRepository;
     readonly memories: V2MemoryRepository;
     readonly summaries: V2ConversationSummaryRepository;
+    readonly maintenanceJobs: V2ChatMaintenanceJobRepository;
   }) => Promise<T>): Promise<T>;
 }
