@@ -5,6 +5,7 @@ export type PromptTask =
   | "chat.reply"
   | "memory.extract"
   | "memory.consolidate"
+  | "conversation.summary"
   | "scene.generate";
 
 export interface PersonaContext {

@@ -24,6 +24,7 @@ import { processV2AssetGenerationJob } from "./asset-generation-worker.ts";
 import { processV2SceneGenerationJob } from "./scene-generation-worker.ts";
 import { V2DynamicComfyUiClient } from "./dynamic-comfyui-client.ts";
 import { processPendingMemoryExtractionJobs } from "./memory-extraction-worker.ts";
+import { processPendingConversationSummaryJobs } from "./conversation-summary-worker.ts";
 import { V2DynamicModelProvider } from "./model-provider.ts";
 
 export interface V2WorkerProcess {
@@ -182,6 +183,11 @@ export async function startV2Worker(
       if (stopped) return;
       await pump.runOnce();
       await processPendingMemoryExtractionJobs({
+        jobs: maintenanceJobs,
+        unitOfWork: chatUnitOfWork,
+        provider: memoryProvider,
+      });
+      await processPendingConversationSummaryJobs({
         jobs: maintenanceJobs,
         unitOfWork: chatUnitOfWork,
         provider: memoryProvider,

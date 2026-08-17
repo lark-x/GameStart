@@ -31,6 +31,10 @@ export const V2_PROMPT_TEMPLATES = {
     id: "memory-consolidate-v1",
     version: "1.0.0",
   },
+  "conversation.summary": {
+    id: "conversation-summary-v1",
+    version: "1.0.0",
+  },
   "scene.generate": {
     id: "scene-generate-v2",
     version: "2.0.0",
@@ -484,6 +488,59 @@ export function prepareV2MemoryConsolidate(context: PromptContext): PreparedProm
     canonTokens: 0,
     summaryTokens: 0,
     currentInputTokens: estimateV2PromptTokens(context.currentInput?.text ?? ""),
+    personaTokens: 0,
+    inputBudget,
+    contextWindow: context.contextWindow ?? context.tokenBudget,
+    outputReserve: context.outputReserve ?? DEFAULT_OUTPUT_RESERVE,
+    safetyReserve: context.safetyReserve ?? DEFAULT_SAFETY_RESERVE,
+  };
+  return {
+    templateId: template.id,
+    templateVersion: template.version,
+    messages,
+    estimatedTokens,
+    contextHash,
+    sources: built.sources,
+    budget: buildPromptBudgetDebug(context, built, estimatedTokens),
+  };
+}
+
+export function prepareV2ConversationSummary(context: PromptContext): PreparedPrompt {
+  const inputBudget = calculateInputBudget(context);
+  ensureRequiredFit(context, inputBudget);
+  const previous = context.sessionSummary ?? "(无)";
+  const messagesText = context.recentMessages.map((message) => `${message.role === "user" ? "User" : "Assistant"}: ${message.text ?? ""}`).join("\n");
+  const system: ChatMessage = {
+    role: "system",
+    content: [
+      "你是故事会话摘要器。把之前摘要和最新消息合并成一段 500～1200 中文字符的新摘要。",
+      "保留：当前场景、重要事件、关系变化、未解决冲突、当前目标、重要角色状态。",
+      "避免：大量原文、寒暄、重复 Memory。",
+    ].join("\n"),
+  };
+  const user: ChatMessage = {
+    role: "user",
+    content: [
+      "PREVIOUS SUMMARY",
+      previous,
+      "",
+      "NEXT MESSAGES",
+      messagesText,
+    ].join("\n"),
+  };
+  const messages = [system, user];
+  const template = V2_PROMPT_TEMPLATES["conversation.summary"];
+  const estimatedTokens = estimateChatMessages(messages);
+  const contextHash = hashV2PromptContext({ messages, templateId: template.id, templateVersion: template.version });
+  const built: BuiltChatReply = {
+    messages,
+    sources: context.sessionSummary === undefined ? [] : [{ id: "summary", label: context.sessionSummary.slice(0, 80), kind: "summary" }],
+    messageImages: [],
+    recentTokens: estimateV2PromptTokens(messagesText),
+    memoryTokens: 0,
+    canonTokens: 0,
+    summaryTokens: estimateV2PromptTokens(previous),
+    currentInputTokens: 0,
     personaTokens: 0,
     inputBudget,
     contextWindow: context.contextWindow ?? context.tokenBudget,
