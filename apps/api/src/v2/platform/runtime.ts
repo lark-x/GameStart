@@ -23,7 +23,7 @@ import {
 import type { V2CapabilitiesResponse } from "@living-network/contracts/v2";
 
 import { createV2AssetsPlugin } from "../assets/index.ts";
-import { createV2ChatPlugin, type V2ResolvedChatModel } from "../chat/index.ts";
+import { createV2ChatPlugin, V2LocalChatMediaResolver, type V2ResolvedChatModel } from "../chat/index.ts";
 import { createV2ChatUseCases } from "../chat/use-cases.ts";
 import { createV2GenerationPlugin } from "../generation/index.ts";
 import { createV2CoreUseCases } from "../core/use-cases.ts";
@@ -150,7 +150,7 @@ export function createV2ApiRuntime(options: {
         model: "test-model",
         temperature: 0.8,
         maxTokens: 1024,
-        inputModalities: ["text"],
+        inputModalities: ["text", "image"],
       })
     : () => resolver.resolve();
   const app = createV2FastifyApp({
@@ -158,7 +158,10 @@ export function createV2ApiRuntime(options: {
     chatPlugin: createV2ChatPlugin({
       useCases: chatUseCases,
       resolveModel,
-      ...(options.mediaRoot === undefined ? {} : { mediaRoot: options.mediaRoot }),
+      ...(options.mediaRoot === undefined ? {} : {
+        mediaRoot: options.mediaRoot,
+        mediaResolver: new V2LocalChatMediaResolver(options.mediaRoot),
+      }),
     }),
     ...(options.mediaRoot === undefined ? {} : { mediaRoot: options.mediaRoot }),
     ...(options.mediaRoot === undefined ? {} : { assetsPlugin: createV2AssetsPlugin({ repository: assets, mediaRoot: options.mediaRoot }) }),

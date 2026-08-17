@@ -19,12 +19,27 @@ export function toV2MemoryContext(memory: {
 export function toV2ChatMessageContext(message: {
   readonly role: "user" | "assistant" | "system";
   readonly text?: string;
-  readonly attachments?: readonly { readonly kind: "image" }[];
+  readonly attachments?: readonly {
+    readonly kind: "image";
+    readonly mediaId: string;
+    readonly mediaRef: string;
+    readonly mimeType: string;
+    readonly byteSize?: number;
+  }[];
 }): ChatMessageContext {
+  const images = (message.attachments ?? [])
+    .filter((attachment) => attachment.kind === "image")
+    .map((attachment) => ({
+      mediaId: attachment.mediaId,
+      mediaRef: attachment.mediaRef,
+      mimeType: attachment.mimeType,
+      byteSize: attachment.byteSize ?? 0,
+    }));
   return {
     role: message.role,
     ...(message.text === undefined ? {} : { text: message.text }),
-    imageCount: message.attachments?.filter((attachment) => attachment.kind === "image").length ?? 0,
+    imageCount: images.length,
+    ...(images.length === 0 ? {} : { images }),
   };
 }
 

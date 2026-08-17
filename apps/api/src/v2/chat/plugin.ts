@@ -14,6 +14,11 @@ import type {
 
 import { V2HttpError, toV2HttpError } from "../core/errors.ts";
 import {
+  assertModelSupportsImages,
+  resolvePromptImages,
+  type V2ChatMediaResolver,
+} from "./media-resolver.ts";
+import {
   parseCreateInstantStoryRequest,
   parseGenerateChatReplyRequest,
   parseSendChatMessageRequest,
@@ -46,6 +51,7 @@ export interface V2ResolvedChatModel {
 export interface V2ChatPluginDependencies {
   readonly useCases: V2ChatUseCases;
   readonly resolveModel: () => Promise<V2ResolvedChatModel>;
+  readonly mediaResolver?: V2ChatMediaResolver;
   readonly mediaRoot?: string;
   readonly now?: () => Date;
 }
@@ -225,8 +231,16 @@ export function createV2ChatPlugin(dependencies: V2ChatPluginDependencies): Fast
       let content = "";
       try {
         const model = await dependencies.resolveModel();
+        assertModelSupportsImages(model, prepared.prompt);
+        const hasImages = (prepared.prompt.messageImages ?? []).length > 0;
+        if (hasImages && dependencies.mediaResolver === undefined) {
+          throw new V2HttpError(422, "INVALID_MEDIA_REF", "Chat media resolver is not configured");
+        }
+        const messages = hasImages
+          ? await resolvePromptImages(prepared.prompt, dependencies.mediaResolver!)
+          : prepared.prompt.messages;
         const deltas: AsyncIterable<ChatDelta> = model.provider.stream({
-          messages: prepared.prompt.messages,
+          messages,
           temperature: model.temperature,
           maxTokens: model.maxTokens,
           trace: { correlationId: `v2:chat:${randomUUID()}` },

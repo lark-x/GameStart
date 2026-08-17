@@ -334,6 +334,12 @@ async function prepareReply(
         currentInput: {
           ...(currentUser.text === undefined ? {} : { text: currentUser.text }),
           imageCount: currentUser.attachments.length,
+          images: currentUser.attachments.map((attachment) => ({
+            mediaId: attachment.mediaId,
+            mediaRef: attachment.mediaRef,
+            mimeType: attachment.mimeType,
+            byteSize: 0,
+          })),
         },
       }),
     };
