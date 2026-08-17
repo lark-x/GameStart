@@ -5,6 +5,7 @@ import type { ChatCompletionRequest, ChatCompletionResult, ChatDelta, ChatProvid
 import type { V2CreateInstantStoryResponse, V2SendChatMessageResponse } from "@living-network/contracts/v2";
 import { openV2TempSqliteConnection } from "@living-network/database/v2";
 import { mkdtempSync, rmSync } from "node:fs";
+import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -19,6 +20,32 @@ class FakeChatProvider implements ChatProvider {
     yield { id: "fake", model: "fake-model", content: "你好，" };
     yield { id: "fake", model: "fake-model", content: "我是花火。" };
     yield { finishReason: "stop" };
+  }
+}
+
+class SlowAbortAwareProvider implements ChatProvider {
+  public aborted = false;
+
+  public async complete(_request: ChatCompletionRequest): Promise<ChatCompletionResult> {
+    return { id: "slow", model: "slow-model", content: "" };
+  }
+
+  public async *stream(request: ChatCompletionRequest): AsyncIterable<ChatDelta> {
+    let resolveAbort: () => void = () => undefined;
+    const aborted = new Promise<void>((resolve) => { resolveAbort = resolve; });
+    const onAbort = (): void => {
+      this.aborted = true;
+      resolveAbort();
+    };
+    if (request.signal?.aborted === true) onAbort();
+    else request.signal?.addEventListener("abort", onAbort, { once: true });
+    try {
+      yield { content: "第一段" };
+      await aborted;
+      throw new Error("aborted by client");
+    } finally {
+      request.signal?.removeEventListener("abort", onAbort);
+    }
   }
 }
 
@@ -46,6 +73,29 @@ test("V2 chat API creates an instant story, sends a message, and streams a persi
       const instant = created.json() as V2CreateInstantStoryResponse;
       assert.ok(instant.conversation.conversationId);
       assert.equal(instant.character.name, "花火");
+
+      const instantReplay = await runtime.app.inject({
+        method: "POST",
+        url: "/api/v2/instant-stories",
+        payload: {
+          persona: "花火是一个爱笑、嘴硬心软的角色。",
+          displayName: "花火",
+          idempotencyKey: "instant-test-1",
+        },
+      });
+      assert.equal(instantReplay.statusCode, 201);
+      assert.equal((instantReplay.json() as V2CreateInstantStoryResponse).conversation.conversationId, instant.conversation.conversationId);
+
+      const instantConflict = await runtime.app.inject({
+        method: "POST",
+        url: "/api/v2/instant-stories",
+        payload: {
+          persona: "完全不同的人设",
+          displayName: "花火",
+          idempotencyKey: "instant-test-1",
+        },
+      });
+      assert.equal(instantConflict.statusCode, 409);
 
       const sent = await runtime.app.inject({
         method: "POST",
@@ -143,13 +193,92 @@ test("V2 chat media upload stores a pure sha256 hash and serves identical bytes"
         payload: body,
       });
       assert.equal(upload.statusCode, 201);
-      const media = (upload.json() as { readonly media: { readonly contentHash: string; readonly mediaRef: string } }).media;
+      const media = (upload.json() as { readonly media: { readonly mediaId: string; readonly contentHash: string; readonly mediaRef: string } }).media;
       assert.match(media.contentHash, /^[a-f0-9]{64}$/);
       assert.equal(media.contentHash.startsWith("sha256:"), false);
       const filename = media.mediaRef.replace("media://local/v2/chat/", "");
       const fetched = await runtime.app.inject({ method: "GET", url: `/api/v2/chat/media/${filename}` });
       assert.equal(fetched.statusCode, 200);
       assert.deepEqual(fetched.rawPayload, onePixelPng);
+
+      const duplicate = await runtime.app.inject({
+        method: "POST",
+        url: "/api/v2/chat/media",
+        headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+        payload: body,
+      });
+      assert.equal(duplicate.statusCode, 201);
+      const duplicateMedia = (duplicate.json() as { readonly media: { readonly mediaId: string } }).media;
+      assert.equal(duplicateMedia.mediaId, media.mediaId);
+      const mediaRows = runtime.db.prepare("SELECT COUNT(*) AS count FROM v2_chat_media").get() as { readonly count: number };
+      assert.equal(mediaRows.count, 1);
+    } finally {
+      await runtime.close();
+    }
+  } finally {
+    rmSync(mediaRoot, { recursive: true, force: true });
+    temp.cleanup();
+  }
+});
+
+test("V2 chat stop generation aborts provider and persists an interrupted message", async () => {
+  const temp = openV2TempSqliteConnection();
+  const mediaRoot = mkdtempSync(path.join(tmpdir(), "v2-chat-media-"));
+  temp.db.close();
+  const provider = new SlowAbortAwareProvider();
+  try {
+    const runtime = createV2ApiRuntime({ sqlitePath: temp.path, mediaRoot, chatProvider: provider });
+    try {
+      const created = await runtime.app.inject({
+        method: "POST",
+        url: "/api/v2/instant-stories",
+        payload: { persona: "花火是慢速测试角色", displayName: "花火", idempotencyKey: "instant-stop-test" },
+      });
+      assert.equal(created.statusCode, 201);
+      const instant = created.json() as V2CreateInstantStoryResponse;
+      const conversationId = instant.conversation.conversationId;
+
+      const sent = await runtime.app.inject({
+        method: "POST",
+        url: `/api/v2/chat/conversations/${conversationId}/messages`,
+        payload: { text: "请开始", idempotencyKey: "stop-message" },
+      });
+      assert.equal(sent.statusCode, 201);
+
+      await runtime.app.listen({ port: 0, host: "127.0.0.1" });
+      const address = runtime.app.server.address();
+      assert.ok(address !== null && typeof address === "object");
+      const url = `http://127.0.0.1:${address.port}/api/v2/chat/conversations/${conversationId}/replies`;
+      await new Promise<void>((resolve, reject) => {
+        const req = httpRequest(url, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+        }, (res) => {
+          res.once("data", () => {
+            req.destroy();
+            resolve();
+          });
+          res.on("error", reject);
+        });
+        req.on("error", reject);
+        req.end(JSON.stringify({ idempotencyKey: "stop-reply" }));
+      });
+      const deadline = Date.now() + 2000;
+      while (!provider.aborted && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      assert.equal(provider.aborted, true);
+
+      const history = await runtime.app.inject({
+        method: "GET",
+        url: `/api/v2/chat/conversations/${conversationId}/messages?limit=50`,
+      });
+      assert.equal(history.statusCode, 200);
+      const messages = (history.json() as { readonly messages: readonly { readonly role: string; readonly text?: string; readonly status: string }[] }).messages;
+      const assistant = messages.filter((message) => message.role === "assistant");
+      assert.equal(assistant.length, 1);
+      assert.equal(assistant[0]?.status, "interrupted");
+      assert.equal(assistant[0]?.text, "第一段");
     } finally {
       await runtime.close();
     }

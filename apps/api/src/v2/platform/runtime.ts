@@ -4,9 +4,6 @@ import { SecretCipher } from "@living-network/ai";
 import {
   createV2ChatProvider,
   ProviderError,
-  type ChatCompletionRequest,
-  type ChatCompletionResult,
-  type ChatDelta,
   type ChatProvider,
 } from "@living-network/ai/v2";
 
@@ -26,7 +23,7 @@ import {
 import type { V2CapabilitiesResponse } from "@living-network/contracts/v2";
 
 import { createV2AssetsPlugin } from "../assets/index.ts";
-import { createV2ChatPlugin } from "../chat/index.ts";
+import { createV2ChatPlugin, type V2ResolvedChatModel } from "../chat/index.ts";
 import { createV2ChatUseCases } from "../chat/use-cases.ts";
 import { createV2GenerationPlugin } from "../generation/index.ts";
 import { createV2CoreUseCases } from "../core/use-cases.ts";
@@ -47,7 +44,7 @@ export interface V2ApiRuntimeChatEnvironment {
   readonly timeoutMs?: number;
 }
 
-class V2ResolvingChatProvider implements ChatProvider {
+class V2ResolvingChatModelResolver {
   private readonly repository: V2SqlitePlatformRepository;
   private readonly secretCipher: SecretCipher | undefined;
   private readonly environment: V2ApiRuntimeChatEnvironment | undefined;
@@ -62,7 +59,7 @@ class V2ResolvingChatProvider implements ChatProvider {
     this.environment = options.environment;
   }
 
-  private async resolve(): Promise<ChatProvider> {
+  public async resolve(): Promise<V2ResolvedChatModel> {
     const binding = await this.repository.getModelBinding("chat")
       ?? await this.repository.getModelBinding("scene_generation");
     if (binding?.profileId !== undefined) {
@@ -75,34 +72,37 @@ class V2ResolvingChatProvider implements ChatProvider {
           }
           apiKey = this.secretCipher.decrypt({ ciphertext: profile.encryptedApiKey, iv: profile.encryptionIv });
         }
-        return createV2ChatProvider({
-          protocol: profile.protocol,
-          baseUrl: profile.baseUrl,
-          ...(apiKey === undefined ? {} : { apiKey }),
+        return {
+          provider: createV2ChatProvider({
+            protocol: profile.protocol,
+            baseUrl: profile.baseUrl,
+            ...(apiKey === undefined ? {} : { apiKey }),
+            model: profile.model,
+            timeoutMs: profile.timeoutMs,
+          }),
           model: profile.model,
-          timeoutMs: profile.timeoutMs,
-        });
+          temperature: profile.temperature,
+          maxTokens: profile.maxTokens,
+          inputModalities: ["text"],
+        };
       }
     }
     if (this.environment?.baseUrl !== undefined && this.environment.model !== undefined) {
-      return createV2ChatProvider({
-        protocol: this.environment.protocol,
-        baseUrl: this.environment.baseUrl,
-        ...(this.environment.apiKey === undefined ? {} : { apiKey: this.environment.apiKey }),
+      return {
+        provider: createV2ChatProvider({
+          protocol: this.environment.protocol,
+          baseUrl: this.environment.baseUrl,
+          ...(this.environment.apiKey === undefined ? {} : { apiKey: this.environment.apiKey }),
+          model: this.environment.model,
+          ...(this.environment.timeoutMs === undefined ? {} : { timeoutMs: this.environment.timeoutMs }),
+        }),
         model: this.environment.model,
-        ...(this.environment.timeoutMs === undefined ? {} : { timeoutMs: this.environment.timeoutMs }),
-      });
+        temperature: 0.8,
+        maxTokens: 1024,
+        inputModalities: ["text"],
+      };
     }
     throw new ProviderError("CONFIGURATION", "V2 chat model is not configured");
-  }
-
-  public async complete(request: ChatCompletionRequest): Promise<ChatCompletionResult> {
-    return (await this.resolve()).complete(request);
-  }
-
-  public async *stream(request: ChatCompletionRequest): AsyncIterable<ChatDelta> {
-    const provider = await this.resolve();
-    yield* provider.stream(request);
   }
 }
 
@@ -137,16 +137,27 @@ export function createV2ApiRuntime(options: {
     new V2SqliteReleaseRuntimeUnitOfWork(db),
   );
   const chatUseCases = createV2ChatUseCases(new V2SqliteChatUnitOfWork(db));
-  const chatProvider = options.chatProvider ?? new V2ResolvingChatProvider({
-    repository: platformRepository,
-    ...(secretCipher === undefined ? {} : { secretCipher }),
-    ...(options.chatEnvironment === undefined ? {} : { environment: options.chatEnvironment }),
-  });
+  const resolver = options.chatProvider === undefined
+    ? new V2ResolvingChatModelResolver({
+        repository: platformRepository,
+        ...(secretCipher === undefined ? {} : { secretCipher }),
+        ...(options.chatEnvironment === undefined ? {} : { environment: options.chatEnvironment }),
+      })
+    : undefined;
+  const resolveModel: () => Promise<V2ResolvedChatModel> = resolver === undefined
+    ? async () => ({
+        provider: options.chatProvider!,
+        model: "test-model",
+        temperature: 0.8,
+        maxTokens: 1024,
+        inputModalities: ["text"],
+      })
+    : () => resolver.resolve();
   const app = createV2FastifyApp({
     coreOptions: { useCases: coreUseCases },
     chatPlugin: createV2ChatPlugin({
       useCases: chatUseCases,
-      provider: chatProvider,
+      resolveModel,
       ...(options.mediaRoot === undefined ? {} : { mediaRoot: options.mediaRoot }),
     }),
     ...(options.mediaRoot === undefined ? {} : { mediaRoot: options.mediaRoot }),

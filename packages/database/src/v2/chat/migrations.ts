@@ -121,3 +121,16 @@ export const v2ChatMemoryMigration: V2SqliteMigration = {
     `);
   },
 };
+
+export const v2ChatCoreFinalizationMigration: V2SqliteMigration = {
+  id: "0310_v2_chat_core_finalization",
+  up: (db) => {
+    db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS v2_chat_media_content_hash_idx
+      ON v2_chat_media(content_hash);
+    `);
+  },
+  down: (db) => {
+    db.exec("DROP INDEX IF EXISTS v2_chat_media_content_hash_idx;");
+  },
+};

@@ -2,7 +2,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 import { v2CoreCanonMigrations } from "../core/migrations.ts";
 import { v2GenerationJobMigrations } from "../generation/migrations.ts";
-import { v2ChatMemoryMigration } from "../chat/migrations.ts";
+import { v2ChatCoreFinalizationMigration, v2ChatMemoryMigration } from "../chat/migrations.ts";
 
 export interface V2SqliteMigration {
   readonly id: string;
@@ -138,7 +138,12 @@ export function getV2Migrations(): readonly V2SqliteMigration[] {
     ...v2GenerationMigrations.migrations,
     ...v2PlatformMigrations.migrations,
     v2ChatMemoryMigration,
+    v2ChatCoreFinalizationMigration,
   ].sort((a, b) => a.id.localeCompare(b.id));
+}
+
+export function listV2Migrations(): readonly V2SqliteMigration[] {
+  return getV2Migrations();
 }
 
 export function applyV2Migrations(db: DatabaseSync, migrations: readonly V2SqliteMigration[] = getV2Migrations()): void {

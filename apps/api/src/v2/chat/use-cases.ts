@@ -12,6 +12,7 @@ import type {
   V2ChatConversationDto,
   V2ChatMediaDto,
   V2ChatMessageDto,
+  V2ChatMessagePageResponse,
   V2CharacterId,
   V2ConversationId,
   V2ConversationListResponse,
@@ -61,7 +62,10 @@ export interface V2ChatUseCases {
   createInstantStory(input: V2CreateInstantStoryRequest): Promise<V2CreateInstantStoryResponse>;
   listConversations(): Promise<V2ConversationListResponse>;
   getConversation(conversationId: V2ConversationId): Promise<V2ChatConversationDto>;
-  listMessages(conversationId: V2ConversationId): Promise<V2ChatMessageListResponse>;
+  listMessages(
+    conversationId: V2ConversationId,
+    query?: { readonly beforeMessageId?: V2MessageId; readonly limit?: number },
+  ): Promise<V2ChatMessagePageResponse>;
   sendMessage(conversationId: V2ConversationId, input: V2SendChatMessageRequest): Promise<V2SendChatMessageResponse>;
   prepareReply(conversationId: V2ConversationId, input: V2GenerateChatReplyRequest): Promise<V2PreparedChatReply>;
   saveReply(input: {
@@ -96,9 +100,20 @@ export function createV2ChatUseCases(unitOfWork: V2ChatUnitOfWork): V2ChatUseCas
       const conversation = await requireConversation(conversations, conversationId);
       return toConversationDto(conversation);
     }),
-    listMessages: async (conversationId) => unitOfWork.withChatTransaction(async ({ conversations, messages }) => {
+    listMessages: async (conversationId, query) => unitOfWork.withChatTransaction(async ({ conversations, messages }) => {
       await requireConversation(conversations, conversationId);
-      return { messages: (await messages.listByConversation(conversationId, 200)).map(toMessageDto) };
+      const limit = Math.min(Math.max(query?.limit ?? 50, 1), 200);
+      const beforeMessageId = query?.beforeMessageId;
+      const rows = beforeMessageId === undefined
+        ? await messages.listRecentByConversation(conversationId, limit + 1)
+        : await messages.listBefore(conversationId, beforeMessageId, limit + 1);
+      const hasMore = rows.length > limit;
+      const pageRows = rows.slice(0, limit);
+      return {
+        messages: pageRows.map(toMessageDto),
+        hasMore,
+        ...(pageRows.length === 0 ? {} : { nextBeforeMessageId: pageRows[0]!.messageId as V2MessageId }),
+      };
     }),
     sendMessage: (conversationId, input) => sendMessage(unitOfWork, conversationId, input),
     prepareReply: (conversationId, input) => prepareReply(unitOfWork, conversationId, input),
@@ -117,8 +132,18 @@ async function createInstantStory(
   const characterId = `character:instant:${hash}` as V2CanonCharacter["characterId"];
   const conversationId = `conversation:instant:${hash}` as V2ConversationId;
   const displayName = input.displayName?.trim();
+  const payloadHash = createHash("sha256")
+    .update(JSON.stringify({ persona, displayName: displayName ?? null }))
+    .digest("hex");
 
   return unitOfWork.withChatTransaction(async ({ canon, conversations }) => {
+    const mutation = await canon.readMutation<{ readonly conversationId: V2ConversationId }>({
+      key: input.idempotencyKey,
+      operation: "createInstantStory",
+    });
+    if (mutation !== undefined && mutation.payloadHash !== payloadHash) {
+      throw new V2HttpError(409, "IDEMPOTENCY_CONFLICT", "Idempotency key was already used with a different instant story payload");
+    }
     const existingWorld = await canon.getWorld(storyWorldId);
     if (existingWorld !== undefined) {
       const character = await canon.getCharacter({ storyWorldId, characterId: characterId as V2CharacterId });
@@ -159,6 +184,12 @@ async function createInstantStory(
       primaryCharacterId: character.characterId,
       ...(displayName === undefined ? {} : { title: displayName }),
     }));
+    await canon.saveMutation({
+      key: input.idempotencyKey,
+      operation: "createInstantStory",
+      payloadHash,
+      result: { conversationId },
+    });
 
     void world;
     return {
@@ -192,9 +223,10 @@ async function sendMessage(
     const existing = await messages.findByIdempotencyKey(conversationId, input.idempotencyKey);
     if (existing !== undefined) {
       const sameText = (existing.text ?? "") === (text ?? "");
+      const sameReplyTo = (existing.replyToMessageId ?? undefined) === (input.replyToMessageId ?? undefined);
       const sameAttachments = attachmentIds.length === existing.attachments.length &&
         existing.attachments.every((attachment, index) => attachment.mediaId === attachmentIds[index]);
-      if (!sameText || !sameAttachments) {
+      if (!sameText || !sameReplyTo || !sameAttachments) {
         throw new V2HttpError(409, "IDEMPOTENCY_CONFLICT", "Idempotency key was already used with a different message payload");
       }
       return { message: toMessageDto(existing) };
@@ -203,7 +235,13 @@ async function sendMessage(
     if (mediaItems.length !== attachmentIds.length) {
       throw new V2HttpError(422, "VALIDATION_FAILED", "One or more attachments do not exist");
     }
-    const attachments = mediaItems.map((item) => ({
+    const mediaById = new Map(mediaItems.map((item) => [item.mediaId, item]));
+    const orderedMediaItems = attachmentIds.map((id) => {
+      const item = mediaById.get(id);
+      if (item === undefined) throw new V2HttpError(422, "VALIDATION_FAILED", "One or more attachments do not exist");
+      return item;
+    });
+    const attachments = orderedMediaItems.map((item) => ({
       attachmentId: `att:${item.mediaId}`,
       kind: "image" as const,
       mediaId: item.mediaId as V2MediaId,
@@ -357,6 +395,19 @@ async function createMedia(
   },
 ): Promise<V2ChatMediaDto> {
   return unitOfWork.withChatTransaction(async ({ media }) => {
+    const existing = await media.get(input.mediaId);
+    if (existing !== undefined) {
+      return {
+        mediaId: existing.mediaId as V2MediaId,
+        contentHash: existing.contentHash,
+        mediaRef: existing.mediaRef,
+        mimeType: existing.mimeType,
+        byteSize: existing.byteSize,
+        ...(existing.width === undefined ? {} : { width: existing.width }),
+        ...(existing.height === undefined ? {} : { height: existing.height }),
+        createdAt: (existing.createdAt ?? input.createdAt) as V2IsoDateTime,
+      };
+    }
     const created = await media.create(createV2ChatMedia(input));
     return {
       mediaId: created.mediaId as V2MediaId,
