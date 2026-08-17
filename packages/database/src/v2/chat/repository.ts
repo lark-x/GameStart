@@ -475,7 +475,12 @@ export class V2SqliteMemoryRepository implements V2MemoryRepository {
     readonly limit?: number;
   }): Promise<readonly V2Memory[]> {
     const limit = Math.min(input.limit ?? 10, 20);
-    const tokens = input.query.trim().split(/\s+/).filter(Boolean).slice(0, 8);
+    const rawTokens = input.query.trim().split(/\s+/).filter(Boolean).slice(0, 8);
+    const tokens = rawTokens.flatMap((token) =>
+      /[\u3000-\u9fff]/.test(token)
+        ? Array.from(token).filter((char) => /[\u3000-\u9fff]/.test(char))
+        : [token],
+    ).filter(Boolean).slice(0, 16);
     if (tokens.length === 0) {
       return (await this.listActiveByStoryWorld(input.storyWorldId)).slice(0, limit);
     }
@@ -494,13 +499,14 @@ export class V2SqliteMemoryRepository implements V2MemoryRepository {
       rows = [];
     }
     if (rows.length === 0) {
+      const conditions = tokens.map(() => "content LIKE '%' || ? || '%'").join(" OR ");
       rows = this.db.prepare(`
         SELECT * FROM v2_memories
         WHERE story_world_id = ? AND status = 'active'
-          AND (content LIKE '%' || ? || '%')
+          AND (${conditions})
         ORDER BY importance DESC, updated_at DESC
         LIMIT ?
-      `).all(input.storyWorldId, input.query, limit) as MemoryRow[];
+      `).all(input.storyWorldId, ...tokens, limit) as MemoryRow[];
     }
     return rows.map(mapMemory);
   }
