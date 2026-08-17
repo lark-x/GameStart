@@ -203,6 +203,15 @@ export function createV2ChatPlugin(dependencies: V2ChatPluginDependencies): Fast
       const conversationId = routeId(request.params, "conversationId") as V2ConversationId;
       return dependencies.useCases.listMessages(conversationId, parseMessagesQuery(request.query));
     });
+    app.get("/chat/conversations/:conversationId/memories", async (request) => {
+      const conversationId = routeId(request.params, "conversationId") as V2ConversationId;
+      return dependencies.useCases.listMemories(conversationId);
+    });
+    app.get("/chat/conversations/:conversationId/summary", async (request) => {
+      const conversationId = routeId(request.params, "conversationId") as V2ConversationId;
+      const summary = await dependencies.useCases.getSummary(conversationId);
+      return summary ?? { summary: undefined };
+    });
     app.post("/chat/conversations/:conversationId/messages", async (request, reply) => {
       const conversationId = routeId(request.params, "conversationId") as V2ConversationId;
       const result = await dependencies.useCases.sendMessage(conversationId, parseSendChatMessageRequest(request.body));

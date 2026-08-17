@@ -16,7 +16,9 @@ import type {
   V2CharacterId,
   V2ConversationId,
   V2ConversationListResponse,
+  V2ConversationSummaryDto,
   V2ChatMessageListResponse,
+  V2MemoryDto,
   V2CreateInstantStoryRequest,
   V2CreateInstantStoryResponse,
   V2GenerateChatReplyRequest,
@@ -87,6 +89,8 @@ export interface V2ChatUseCases {
     readonly height?: number;
     readonly createdAt: string;
   }): Promise<V2ChatMediaDto>;
+  listMemories(conversationId: V2ConversationId): Promise<readonly V2MemoryDto[]>;
+  getSummary(conversationId: V2ConversationId): Promise<V2ConversationSummaryDto | undefined>;
 }
 
 const DEFAULT_TOKEN_BUDGET = 4096;
@@ -120,6 +124,15 @@ export function createV2ChatUseCases(unitOfWork: V2ChatUnitOfWork): V2ChatUseCas
     prepareReply: (conversationId, input) => prepareReply(unitOfWork, conversationId, input),
     saveReply: (input) => saveReply(unitOfWork, input),
     createMedia: (input) => createMedia(unitOfWork, input),
+    listMemories: async (conversationId) => unitOfWork.withChatTransaction(async ({ conversations, memories }) => {
+      const conversation = await requireConversation(conversations, conversationId);
+      return (await memories.listActiveByStoryWorld(conversation.storyWorldId as V2StoryWorldId)).map(toMemoryDto);
+    }),
+    getSummary: async (conversationId) => unitOfWork.withChatTransaction(async ({ conversations, summaries }) => {
+      await requireConversation(conversations, conversationId);
+      const summary = await summaries.get(conversationId);
+      return summary === undefined ? undefined : toSummaryDto(summary);
+    }),
   };
 }
 
@@ -509,5 +522,35 @@ function toMessageDto(message: V2ChatMessage): V2ChatMessageDto {
     createdAt: (message.createdAt ?? "1970-01-01T00:00:00.000Z") as V2IsoDateTime,
     idempotencyKey: message.idempotencyKey as V2IdempotencyKey,
     ...(message.replyToMessageId === undefined ? {} : { replyToMessageId: message.replyToMessageId as V2MessageId }),
+  };
+}
+
+function toMemoryDto(memory: V2Memory): V2MemoryDto {
+  return {
+    memoryId: memory.memoryId as V2MemoryDto["memoryId"],
+    storyWorldId: memory.storyWorldId as V2StoryWorldId,
+    ...(memory.conversationId === undefined ? {} : { conversationId: memory.conversationId as V2ConversationId }),
+    ...(memory.characterId === undefined ? {} : { characterId: memory.characterId as V2CharacterId }),
+    kind: memory.kind,
+    content: memory.content,
+    importance: memory.importance,
+    confidence: memory.confidence,
+    sourceMessageIds: memory.sourceMessageIds as V2MessageId[],
+    status: memory.status,
+    ...(memory.supersedesMemoryId === undefined ? {} : { supersedesMemoryId: memory.supersedesMemoryId as NonNullable<V2MemoryDto["supersedesMemoryId"]> }),
+    createdAt: (memory.createdAt ?? "1970-01-01T00:00:00.000Z") as V2IsoDateTime,
+    updatedAt: (memory.updatedAt ?? "1970-01-01T00:00:00.000Z") as V2IsoDateTime,
+    ...(memory.lastAccessedAt === undefined ? {} : { lastAccessedAt: memory.lastAccessedAt as V2IsoDateTime }),
+  };
+}
+
+function toSummaryDto(summary: V2ConversationSummary): V2ConversationSummaryDto {
+  return {
+    conversationId: summary.conversationId as V2ConversationId,
+    summary: summary.summary,
+    coveredUntilMessageId: summary.coveredUntilMessageId as V2MessageId,
+    sourceMessageCount: summary.sourceMessageCount,
+    updatedAt: (summary.updatedAt ?? "1970-01-01T00:00:00.000Z") as V2IsoDateTime,
+    version: summary.version,
   };
 }
