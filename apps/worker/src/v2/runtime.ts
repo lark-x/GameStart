@@ -6,6 +6,8 @@ import {
   openV2SqliteConnection,
   V2SqliteAssetGenerationRepository,
   V2SqliteCandidateSubmissionPort,
+  V2SqliteChatMaintenanceJobRepository,
+  V2SqliteChatUnitOfWork,
   V2SqliteGenerationJobRepository,
   V2SqlitePlatformRepository,
 } from "@living-network/database/v2";
@@ -21,6 +23,7 @@ import { V2LocalAssetMediaStore } from "./local-asset-media-store.ts";
 import { processV2AssetGenerationJob } from "./asset-generation-worker.ts";
 import { processV2SceneGenerationJob } from "./scene-generation-worker.ts";
 import { V2DynamicComfyUiClient } from "./dynamic-comfyui-client.ts";
+import { processPendingMemoryExtractionJobs } from "./memory-extraction-worker.ts";
 import { V2DynamicModelProvider } from "./model-provider.ts";
 
 export interface V2WorkerProcess {
@@ -86,6 +89,20 @@ export async function startV2Worker(
       lastModelLogMaintenance = current.getTime();
     };
     await maintainModelLogs();
+
+    const chatUnitOfWork = new V2SqliteChatUnitOfWork(db);
+    const maintenanceJobs = new V2SqliteChatMaintenanceJobRepository(db);
+    const memoryProvider = new V2DynamicModelProvider({
+      repository: platformRepository,
+      ...(secretCipher === undefined ? {} : { secretCipher }),
+      fallback: {
+        protocol: config.scene.protocol,
+        ...(config.scene.baseUrl === undefined ? {} : { baseUrl: config.scene.baseUrl }),
+        ...(config.scene.apiKey === undefined ? {} : { apiKey: config.scene.apiKey }),
+        ...(config.scene.model === undefined ? {} : { model: config.scene.model }),
+        timeoutMs: config.scene.timeoutMs,
+      },
+    });
 
     const scene = config.scene.enabled
       ? (() => {
@@ -164,6 +181,11 @@ export async function startV2Worker(
     const tick = async (): Promise<void> => {
       if (stopped) return;
       await pump.runOnce();
+      await processPendingMemoryExtractionJobs({
+        jobs: maintenanceJobs,
+        unitOfWork: chatUnitOfWork,
+        provider: memoryProvider,
+      });
       if (Date.now() - lastModelLogMaintenance >= MODEL_LOG_MAINTENANCE_MS) {
         await maintainModelLogs();
       }

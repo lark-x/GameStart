@@ -68,6 +68,7 @@
       ],
       "ownedPaths": [
         "apps/api/src/v2/chat/**",
+        "apps/worker/src/v2/memory-extraction-worker*.ts",
         "apps/web/src/v2/chat/**",
         "apps/web/src/v2/views/V2StartView.vue",
         "apps/web/src/v2/views/V2ChatView.vue",
