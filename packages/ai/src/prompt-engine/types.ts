@@ -53,6 +53,20 @@ export interface PromptContext {
   readonly recentMessages: readonly ChatMessageContext[];
   readonly currentInput?: ChatInput;
   readonly tokenBudget: number;
+  readonly outputReserve?: number;
+}
+
+export interface PromptBudgetDebug {
+  readonly totalBudget: number;
+  readonly outputReserve: number;
+  readonly inputBudget: number;
+  readonly usedTokens: number;
+  readonly personaTokens: number;
+  readonly canonTokens: number;
+  readonly memoryTokens: number;
+  readonly summaryTokens: number;
+  readonly recentMessageTokens: number;
+  readonly currentInputTokens: number;
 }
 
 export interface PromptSource {
@@ -68,4 +82,5 @@ export interface PreparedPrompt {
   readonly estimatedTokens: number;
   readonly contextHash: string;
   readonly sources: readonly PromptSource[];
+  readonly budget: PromptBudgetDebug;
 }

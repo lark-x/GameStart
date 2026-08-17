@@ -23,7 +23,7 @@ import {
   V2SqlitePlatformRepository,
   V2SqliteReleaseRuntimeUnitOfWork,
 } from "@living-network/database/v2";
-import type { V2CapabilitiesResponse, V2ModelCapability } from "@living-network/contracts/v2";
+import type { V2CapabilitiesResponse } from "@living-network/contracts/v2";
 
 import { createV2AssetsPlugin } from "../assets/index.ts";
 import { createV2ChatPlugin } from "../chat/index.ts";
@@ -63,7 +63,7 @@ class V2ResolvingChatProvider implements ChatProvider {
   }
 
   private async resolve(): Promise<ChatProvider> {
-    const binding = await this.repository.getModelBinding("chat" as V2ModelCapability)
+    const binding = await this.repository.getModelBinding("chat")
       ?? await this.repository.getModelBinding("scene_generation");
     if (binding?.profileId !== undefined) {
       const profile = await this.repository.getModelProfile(binding.profileId);

@@ -1,6 +1,12 @@
 export function estimateV2PromptTokens(value: string): number {
   if (value.length === 0) return 0;
-  return Math.max(1, Math.ceil(value.length / 4));
+  let cjk = 0;
+  let ascii = 0;
+  for (const char of value) {
+    if (/[\u3000-\u9fff\uf900-\ufaff]/.test(char)) cjk += 1;
+    else ascii += 1;
+  }
+  return Math.max(1, cjk + Math.ceil(ascii / 4));
 }
 
 export function estimateV2PromptMessagesTokens(messages: readonly { readonly content: string }[]): number {
@@ -13,7 +19,7 @@ export function estimateV2PromptMessagesTokens(messages: readonly { readonly con
 
 export function truncateV2PromptText(value: string, maxTokens: number, suffix = "…"): string {
   if (estimateV2PromptTokens(value) <= maxTokens) return value;
-  const budgetChars = Math.max(1, maxTokens * 4 - suffix.length);
+  const budgetChars = Math.max(1, maxTokens - suffix.length);
   return value.slice(0, budgetChars) + suffix;
 }
 

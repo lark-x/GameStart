@@ -55,7 +55,7 @@ async function loadChat(): Promise<void> {
 }
 
 async function generateOpening(): Promise<void> {
-  await startAssistantReply();
+  await startAssistantReply(`story-bootstrap:${conversationId.value}`);
 }
 
 async function sendMessage(attachmentIds: readonly string[] = []): Promise<void> {
@@ -100,12 +100,13 @@ async function onImageSelected(event: Event): Promise<void> {
   }
 }
 
-async function startAssistantReply(): Promise<void> {
+async function startAssistantReply(openingIdempotencyKey?: string): Promise<void> {
   if (streaming.value) return;
   streaming.value = true;
   errorMessage.value = "";
   abortController = new AbortController();
   const placeholderId = `assistant:${Date.now()}:${crypto.randomUUID()}`;
+  const idempotencyKey = openingIdempotencyKey ?? `reply:${Date.now()}:${crypto.randomUUID()}`;
   const placeholder: V2ChatMessageDto = {
     messageId: placeholderId as V2ChatMessageDto["messageId"],
     conversationId: conversationId.value as V2ConversationId,
@@ -114,7 +115,7 @@ async function startAssistantReply(): Promise<void> {
     attachments: [],
     status: "pending",
     createdAt: new Date().toISOString() as V2ChatMessageDto["createdAt"],
-    idempotencyKey: `reply:${Date.now()}:${crypto.randomUUID()}` as V2ChatMessageDto["idempotencyKey"],
+    idempotencyKey: idempotencyKey as V2ChatMessageDto["idempotencyKey"],
   };
   messages.value = [...messages.value, placeholder];
   let content = "";

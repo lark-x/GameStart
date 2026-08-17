@@ -26,6 +26,7 @@ export interface ChatCompletionRequest {
   maxTokens?: number;
   responseFormat?: "text" | "json_object";
   trace?: import("./observability.ts").ChatTraceContext;
+  signal?: AbortSignal;
 }
 
 export interface ChatUsage {
@@ -309,8 +310,13 @@ export class OpenAICompatibleProvider implements ChatProvider {
     const context = { ...(request.trace ? { trace: request.trace } : {}), ...this.profileContext, model, requestMessages: request.messages };
     await emitObservation(this.observationHook, { name: "request_started", ...context });
     const streamController = new AbortController();
+    const externalSignal = request.signal;
     let idleTimer: ReturnType<typeof setTimeout> | undefined;
     let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    const onExternalAbort = (): void => {
+      if (reader) { try { reader.cancel(); } catch { /* ignore */ } }
+      streamController.abort();
+    };
     const resetIdle = (): void => {
       if (idleTimer !== undefined) clearTimeout(idleTimer);
       idleTimer = setTimeout(() => {
@@ -319,9 +325,10 @@ export class OpenAICompatibleProvider implements ChatProvider {
       }, this.timeoutMs);
     };
     try {
-      const response = await this.request(request, model, true);
+      const response = await this.request(request, model, true, externalSignal);
       if (response.body === null) throw new ProviderError("STREAM_ERROR", "LLM response has no stream body");
       reader = response.body.getReader();
+      externalSignal?.addEventListener("abort", onExternalAbort, { once: true });
       const decoder = new TextDecoder();
       let buffer = "";
       const pending: string[] = [];
@@ -375,11 +382,15 @@ export class OpenAICompatibleProvider implements ChatProvider {
       terminal = true;
       await emitObservation(this.observationHook, { name: "completed", ...context, durationMs: Date.now() - started, preview: responsePreview, outcome: "success" });
     } catch (error) {
-      const normalized = error instanceof ProviderError ? error : new ProviderError("STREAM_ERROR", "LLM stream failed", { retryable: true });
+      const aborted = externalSignal?.aborted === true;
+      const normalized = aborted
+        ? new ProviderError("STREAM_ERROR", "LLM stream aborted", { retryable: false })
+        : error instanceof ProviderError ? error : new ProviderError("STREAM_ERROR", "LLM stream failed", { retryable: true });
       terminal = true;
       await emitObservation(this.observationHook, { name: "error", ...context, durationMs: Date.now() - started, error: { code: normalized.code, ...(normalized.status === undefined ? {} : { status: normalized.status }), retryable: normalized.retryable, message: normalized.message } });
-      throw error instanceof ProviderError ? error : normalized;
+      throw normalized;
     } finally {
+      externalSignal?.removeEventListener("abort", onExternalAbort);
       if (idleTimer !== undefined) clearTimeout(idleTimer);
       if (reader) { try { reader.releaseLock(); } catch { /* already released */ } }
       if (!terminal) await emitObservation(this.observationHook, { name: "completed", ...context, durationMs: Date.now() - started, outcome: "cancelled" });
@@ -389,8 +400,12 @@ export class OpenAICompatibleProvider implements ChatProvider {
     request: ChatCompletionRequest,
     model: string,
     stream: boolean,
+    externalSignal?: AbortSignal,
   ): Promise<Response> {
     const controller = new AbortController();
+    const onExternalAbort = (): void => controller.abort();
+    if (externalSignal?.aborted === true) controller.abort();
+    else externalSignal?.addEventListener("abort", onExternalAbort, { once: true });
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     const headers: Record<string, string> = {
       "content-type": "application/json",
@@ -417,6 +432,9 @@ export class OpenAICompatibleProvider implements ChatProvider {
         signal: controller.signal,
       });
     } catch (error) {
+      if (externalSignal?.aborted === true) {
+        throw new ProviderError("STREAM_ERROR", "LLM request aborted", { retryable: false });
+      }
       if (controller.signal.aborted) {
         throw new ProviderError("TIMEOUT", "LLM request timed out", { retryable: true });
       }
@@ -427,6 +445,7 @@ export class OpenAICompatibleProvider implements ChatProvider {
       );
     } finally {
       clearTimeout(timer);
+      externalSignal?.removeEventListener("abort", onExternalAbort);
     }
 
     if (!response.ok) {

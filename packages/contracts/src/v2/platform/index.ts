@@ -1,6 +1,7 @@
 import type { V2PageRequest, V2Page } from "../shared/primitives.ts";
 
 export const V2ModelCapability = {
+  CHAT: "chat",
   SCENE_GENERATION: "scene_generation",
 } as const;
 
