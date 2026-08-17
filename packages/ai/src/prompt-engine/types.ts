@@ -53,12 +53,17 @@ export interface PromptContext {
   readonly recentMessages: readonly ChatMessageContext[];
   readonly currentInput?: ChatInput;
   readonly tokenBudget: number;
+  readonly contextWindow?: number;
   readonly outputReserve?: number;
+  readonly safetyReserve?: number;
+  readonly imageTokensPerImage?: number;
 }
 
 export interface PromptBudgetDebug {
+  readonly contextWindow: number;
   readonly totalBudget: number;
   readonly outputReserve: number;
+  readonly safetyReserve: number;
   readonly inputBudget: number;
   readonly usedTokens: number;
   readonly personaTokens: number;
@@ -67,6 +72,15 @@ export interface PromptBudgetDebug {
   readonly summaryTokens: number;
   readonly recentMessageTokens: number;
   readonly currentInputTokens: number;
+}
+
+export class PromptBudgetExceededError extends Error {
+  public readonly code = "PROMPT_BUDGET_EXCEEDED";
+
+  public constructor(message: string) {
+    super(message);
+    this.name = "PromptBudgetExceededError";
+  }
 }
 
 export interface PromptSource {

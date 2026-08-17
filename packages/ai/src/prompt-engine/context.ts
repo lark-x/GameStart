@@ -39,5 +39,9 @@ export function baseV2PromptContext(partial: Omit<PromptContext, "task"> & { rea
     ...(partial.canon === undefined ? {} : { canon: partial.canon }),
     ...(partial.sessionSummary === undefined ? {} : { sessionSummary: partial.sessionSummary }),
     ...(partial.currentInput === undefined ? {} : { currentInput: partial.currentInput }),
+    ...(partial.contextWindow === undefined ? {} : { contextWindow: partial.contextWindow }),
+    ...(partial.outputReserve === undefined ? {} : { outputReserve: partial.outputReserve }),
+    ...(partial.safetyReserve === undefined ? {} : { safetyReserve: partial.safetyReserve }),
+    ...(partial.imageTokensPerImage === undefined ? {} : { imageTokensPerImage: partial.imageTokensPerImage }),
   };
 }
