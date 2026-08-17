@@ -412,3 +412,52 @@ test("V2 chat creates durable maintenance jobs after user turns", async () => {
     temp.cleanup();
   }
 });
+
+test("V2 chat diagnostics expose memories and summary", async () => {
+  const temp = openV2TempSqliteConnection();
+  const mediaRoot = mkdtempSync(path.join(tmpdir(), "v2-chat-media-"));
+  temp.db.close();
+  try {
+    const runtime = createV2ApiRuntime({ sqlitePath: temp.path, mediaRoot, chatProvider: new FakeChatProvider() });
+    try {
+      const created = await runtime.app.inject({
+        method: "POST",
+        url: "/api/v2/instant-stories",
+        payload: { persona: "花火", displayName: "花火", idempotencyKey: "instant-diagnostics" },
+      });
+      assert.equal(created.statusCode, 201);
+      const instant = created.json() as V2CreateInstantStoryResponse;
+      const conversationId = instant.conversation.conversationId;
+      const now = new Date().toISOString();
+      runtime.db.prepare(`
+        INSERT INTO v2_memories (
+          memory_id, story_world_id, conversation_id, kind, content, importance, confidence,
+          source_message_ids_json, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
+      `).run(
+        "memory:diag",
+        instant.storyWorld.storyWorldId,
+        conversationId,
+        "preference",
+        "用户不喜欢香菜",
+        0.7,
+        0.95,
+        "[]",
+        now,
+        now,
+      );
+
+      const memories = await runtime.app.inject({ method: "GET", url: `/api/v2/chat/conversations/${conversationId}/memories` });
+      assert.equal(memories.statusCode, 200);
+      assert.equal((memories.json() as readonly { readonly memoryId: string }[]).length, 1);
+
+      const summary = await runtime.app.inject({ method: "GET", url: `/api/v2/chat/conversations/${conversationId}/summary` });
+      assert.equal(summary.statusCode, 200);
+    } finally {
+      await runtime.close();
+    }
+  } finally {
+    rmSync(mediaRoot, { recursive: true, force: true });
+    temp.cleanup();
+  }
+});
