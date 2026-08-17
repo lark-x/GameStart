@@ -9,6 +9,7 @@ import type {
 } from "@living-network/contracts/v2";
 import type {
   V2ChatConversation,
+  V2ChatMaintenanceJob,
   V2ChatMedia,
   V2ChatMessage,
   V2ConversationSummary,
@@ -17,6 +18,7 @@ import type {
 import type {
   V2CanonRepository,
   V2ChatConversationRepository,
+  V2ChatMaintenanceJobRepository,
   V2ChatMediaRepository,
   V2ChatMessageRepository,
   V2ChatUnitOfWork,
@@ -85,6 +87,20 @@ type SummaryRow = {
   source_message_count: number;
   version: number;
   updated_at: string;
+};
+
+type MaintenanceRow = {
+  job_id: string;
+  conversation_id: string;
+  job_type: "memory_extract" | "conversation_summary" | "memory_consolidate" | "story_analyze";
+  status: "pending" | "claimed" | "running" | "succeeded" | "failed" | "cancelled";
+  payload_json: string;
+  attempts: number;
+  available_at: string;
+  created_at: string;
+  updated_at: string;
+  last_error: string | null;
+  dedupe_key: string;
 };
 
 function mapConversation(row: ConversationRow): V2ChatConversation {
@@ -178,6 +194,22 @@ function mapSummary(row: SummaryRow): V2ConversationSummary {
   };
 }
 
+function mapMaintenance(row: MaintenanceRow): V2ChatMaintenanceJob {
+  return {
+    jobId: row.job_id,
+    conversationId: row.conversation_id,
+    jobType: row.job_type,
+    status: row.status,
+    payload: JSON.parse(row.payload_json) as Record<string, unknown>,
+    attempts: row.attempts,
+    availableAt: row.available_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    ...(row.last_error === null ? {} : { lastError: row.last_error }),
+    dedupeKey: row.dedupe_key,
+  };
+}
+
 export class V2SqliteChatUnitOfWork implements V2ChatUnitOfWork {
   private readonly db: DatabaseSync;
 
@@ -192,6 +224,7 @@ export class V2SqliteChatUnitOfWork implements V2ChatUnitOfWork {
     readonly media: V2ChatMediaRepository;
     readonly memories: V2MemoryRepository;
     readonly summaries: V2ConversationSummaryRepository;
+    readonly maintenanceJobs: V2ChatMaintenanceJobRepository;
   }) => Promise<T>): Promise<T> {
     return withV2SqliteAsyncTransaction(this.db, () => fn({
       canon: new V2SqliteCanonRepository(this.db),
@@ -200,6 +233,7 @@ export class V2SqliteChatUnitOfWork implements V2ChatUnitOfWork {
       media: new V2SqliteChatMediaRepository(this.db),
       memories: new V2SqliteMemoryRepository(this.db),
       summaries: new V2SqliteConversationSummaryRepository(this.db),
+      maintenanceJobs: new V2SqliteChatMaintenanceJobRepository(this.db),
     }));
   }
 }
@@ -333,6 +367,16 @@ export class V2SqliteChatMessageRepository implements V2ChatMessageRepository {
       LIMIT 1
     `).get(conversationId, idempotencyKey) as MessageRow | undefined;
     return row === undefined ? undefined : mapMessage(row);
+  }
+
+  public async countByConversation(conversationId: V2ConversationId): Promise<number> {
+    const row = this.db.prepare("SELECT COUNT(*) AS count FROM v2_chat_messages WHERE conversation_id = ?").get(conversationId) as { readonly count: number };
+    return row.count;
+  }
+
+  public async countUserMessagesByConversation(conversationId: V2ConversationId): Promise<number> {
+    const row = this.db.prepare("SELECT COUNT(*) AS count FROM v2_chat_messages WHERE conversation_id = ? AND role = 'user'").get(conversationId) as { readonly count: number };
+    return row.count;
   }
 }
 
@@ -511,5 +555,102 @@ export class V2SqliteConversationSummaryRepository implements V2ConversationSumm
     const saved = await this.get(input.conversationId as V2ConversationId);
     if (saved === undefined) throw new Error("V2 conversation summary save did not return a row");
     return saved;
+  }
+}
+
+export class V2SqliteChatMaintenanceJobRepository implements V2ChatMaintenanceJobRepository {
+  private readonly db: DatabaseSync;
+
+  public constructor(db: DatabaseSync) {
+    this.db = db;
+  }
+
+  public async create(input: V2ChatMaintenanceJob): Promise<V2ChatMaintenanceJob> {
+    this.db.prepare(`
+      INSERT INTO v2_chat_maintenance_jobs (
+        job_id, conversation_id, job_type, status, payload_json, attempts, available_at,
+        created_at, updated_at, last_error, dedupe_key
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(conversation_id, job_type, dedupe_key) DO NOTHING
+    `).run(
+      input.jobId,
+      input.conversationId,
+      input.jobType,
+      input.status,
+      JSON.stringify(input.payload),
+      input.attempts,
+      input.availableAt,
+      input.createdAt,
+      input.updatedAt,
+      input.lastError ?? null,
+      input.dedupeKey,
+    );
+    const existing = await this.findByDedupeKey({
+      conversationId: input.conversationId as V2ConversationId,
+      jobType: input.jobType,
+      dedupeKey: input.dedupeKey,
+    });
+    if (existing === undefined) throw new Error("V2 chat maintenance job insert did not return a row");
+    return existing;
+  }
+
+  public async findByDedupeKey(input: {
+    readonly conversationId: V2ConversationId;
+    readonly jobType: V2ChatMaintenanceJob["jobType"];
+    readonly dedupeKey: string;
+  }): Promise<V2ChatMaintenanceJob | undefined> {
+    const row = this.db.prepare(`
+      SELECT * FROM v2_chat_maintenance_jobs
+      WHERE conversation_id = ? AND job_type = ? AND dedupe_key = ?
+      LIMIT 1
+    `).get(input.conversationId, input.jobType, input.dedupeKey) as MaintenanceRow | undefined;
+    return row === undefined ? undefined : mapMaintenance(row);
+  }
+
+  public async listPending(limit = 50): Promise<readonly V2ChatMaintenanceJob[]> {
+    const rows = this.db.prepare(`
+      SELECT * FROM v2_chat_maintenance_jobs
+      WHERE status = 'pending' AND available_at <= ?
+      ORDER BY created_at ASC
+      LIMIT ?
+    `).all(new Date().toISOString(), limit) as MaintenanceRow[];
+    return rows.map(mapMaintenance);
+  }
+
+  public async markClaimed(input: {
+    readonly jobId: string;
+    readonly claimedAt: string;
+    readonly leaseExpiresAt: string;
+  }): Promise<V2ChatMaintenanceJob> {
+    this.db.prepare(`
+      UPDATE v2_chat_maintenance_jobs
+      SET status = 'claimed', updated_at = ?
+      WHERE job_id = ? AND status = 'pending'
+    `).run(input.claimedAt, input.jobId);
+    return this.requireJob(input.jobId);
+  }
+
+  public async complete(input: { readonly jobId: string; readonly completedAt: string }): Promise<V2ChatMaintenanceJob> {
+    this.db.prepare(`
+      UPDATE v2_chat_maintenance_jobs
+      SET status = 'succeeded', updated_at = ?, last_error = NULL
+      WHERE job_id = ?
+    `).run(input.completedAt, input.jobId);
+    return this.requireJob(input.jobId);
+  }
+
+  public async fail(input: { readonly jobId: string; readonly error: string; readonly updatedAt: string }): Promise<V2ChatMaintenanceJob> {
+    this.db.prepare(`
+      UPDATE v2_chat_maintenance_jobs
+      SET status = 'failed', attempts = attempts + 1, last_error = ?, updated_at = ?
+      WHERE job_id = ?
+    `).run(input.error, input.updatedAt, input.jobId);
+    return this.requireJob(input.jobId);
+  }
+
+  private requireJob(jobId: string): V2ChatMaintenanceJob {
+    const row = this.db.prepare("SELECT * FROM v2_chat_maintenance_jobs WHERE job_id = ?").get(jobId) as MaintenanceRow | undefined;
+    if (row === undefined) throw new Error(`V2 chat maintenance job not found: ${jobId}`);
+    return mapMaintenance(row);
   }
 }

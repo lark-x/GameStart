@@ -33,6 +33,7 @@ import {
   createV2CanonCharacter,
   createV2CanonWorld,
   createV2ChatConversation,
+  createV2ChatMaintenanceJob,
   createV2ChatMedia,
   createV2ChatMessage,
   type V2CanonCharacter,
@@ -367,7 +368,7 @@ async function saveReply(
     readonly replyToMessageId?: V2MessageId;
   },
 ): Promise<V2ChatMessageDto> {
-  return unitOfWork.withChatTransaction(async ({ conversations, messages }) => {
+  return unitOfWork.withChatTransaction(async ({ conversations, messages, summaries, maintenanceJobs }) => {
     await requireConversation(conversations, input.conversationId);
     const existing = await messages.get(input.messageId);
     if (existing !== undefined) return toMessageDto(existing);
@@ -383,6 +384,34 @@ async function saveReply(
     const created = await messages.create(message);
     const createdAt = created.createdAt ?? new Date().toISOString();
     await conversations.touchLastMessage({ conversationId: input.conversationId, lastMessageAt: createdAt });
+
+    if (input.status === "completed") {
+      const [userCount, totalCount] = await Promise.all([
+        messages.countUserMessagesByConversation(input.conversationId),
+        messages.countByConversation(input.conversationId),
+      ]);
+      const summary = await summaries.get(input.conversationId);
+      const coveredCount = summary?.sourceMessageCount ?? 0;
+      if (userCount > 0 && userCount % 4 === 0) {
+        await maintenanceJobs.create(createV2ChatMaintenanceJob({
+          jobId: `job:memory:${randomUUID()}`,
+          conversationId: input.conversationId,
+          jobType: "memory_extract",
+          payload: { coveredMessageId: created.messageId, coveredMessageCount: totalCount },
+          dedupeKey: `memory_extract:${input.conversationId}:${created.messageId}`,
+        }));
+      }
+      if (totalCount - coveredCount >= 30) {
+        await maintenanceJobs.create(createV2ChatMaintenanceJob({
+          jobId: `job:summary:${randomUUID()}`,
+          conversationId: input.conversationId,
+          jobType: "conversation_summary",
+          payload: { coveredMessageId: created.messageId, coveredMessageCount: totalCount },
+          dedupeKey: `conversation_summary:${input.conversationId}:${created.messageId}`,
+        }));
+      }
+    }
+
     return toMessageDto(created);
   });
 }

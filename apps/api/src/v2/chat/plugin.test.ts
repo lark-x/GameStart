@@ -370,3 +370,45 @@ test("V2 chat sends real image content to the provider", async () => {
     temp.cleanup();
   }
 });
+
+test("V2 chat creates durable maintenance jobs after user turns", async () => {
+  const temp = openV2TempSqliteConnection();
+  const mediaRoot = mkdtempSync(path.join(tmpdir(), "v2-chat-media-"));
+  temp.db.close();
+  try {
+    const runtime = createV2ApiRuntime({ sqlitePath: temp.path, mediaRoot, chatProvider: new FakeChatProvider() });
+    try {
+      const created = await runtime.app.inject({
+        method: "POST",
+        url: "/api/v2/instant-stories",
+        payload: { persona: "花火", displayName: "花火", idempotencyKey: "instant-jobs-test" },
+      });
+      assert.equal(created.statusCode, 201);
+      const instant = created.json() as V2CreateInstantStoryResponse;
+      const conversationId = instant.conversation.conversationId;
+
+      for (let index = 1; index <= 4; index += 1) {
+        const sent = await runtime.app.inject({
+          method: "POST",
+          url: `/api/v2/chat/conversations/${conversationId}/messages`,
+          payload: { text: `第 ${index} 条`, idempotencyKey: `jobs-message-${index}` },
+        });
+        assert.equal(sent.statusCode, 201);
+        const reply = await runtime.app.inject({
+          method: "POST",
+          url: `/api/v2/chat/conversations/${conversationId}/replies`,
+          payload: { idempotencyKey: `jobs-reply-${index}` },
+        });
+        assert.equal(reply.statusCode, 200);
+      }
+
+      const jobCount = runtime.db.prepare("SELECT COUNT(*) AS count FROM v2_chat_maintenance_jobs WHERE job_type = 'memory_extract'").get() as { readonly count: number };
+      assert.equal(jobCount.count, 1);
+    } finally {
+      await runtime.close();
+    }
+  } finally {
+    rmSync(mediaRoot, { recursive: true, force: true });
+    temp.cleanup();
+  }
+});

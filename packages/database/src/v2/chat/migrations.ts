@@ -134,3 +134,37 @@ export const v2ChatCoreFinalizationMigration: V2SqliteMigration = {
     db.exec("DROP INDEX IF EXISTS v2_chat_media_content_hash_idx;");
   },
 };
+
+export const v2ChatMaintenanceJobsMigration: V2SqliteMigration = {
+  id: "0320_v2_chat_maintenance_jobs",
+  up: (db) => {
+    db.exec(`
+      CREATE TABLE v2_chat_maintenance_jobs (
+        job_id TEXT PRIMARY KEY,
+        conversation_id TEXT NOT NULL REFERENCES v2_conversations(conversation_id) ON DELETE CASCADE,
+        job_type TEXT NOT NULL CHECK (job_type IN ('memory_extract', 'conversation_summary', 'memory_consolidate', 'story_analyze')),
+        status TEXT NOT NULL CHECK (status IN ('pending', 'claimed', 'running', 'succeeded', 'failed', 'cancelled')),
+        payload_json TEXT NOT NULL DEFAULT '{}',
+        attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+        available_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        last_error TEXT,
+        dedupe_key TEXT NOT NULL,
+        UNIQUE (conversation_id, job_type, dedupe_key)
+      );
+
+      CREATE INDEX v2_chat_maintenance_jobs_status_idx
+        ON v2_chat_maintenance_jobs(status, available_at, created_at);
+      CREATE INDEX v2_chat_maintenance_jobs_conversation_idx
+        ON v2_chat_maintenance_jobs(conversation_id, created_at);
+    `);
+  },
+  down: (db) => {
+    db.exec(`
+      DROP INDEX IF EXISTS v2_chat_maintenance_jobs_conversation_idx;
+      DROP INDEX IF EXISTS v2_chat_maintenance_jobs_status_idx;
+      DROP TABLE IF EXISTS v2_chat_maintenance_jobs;
+    `);
+  },
+};
