@@ -79,6 +79,20 @@
         "apps/worker/src/v2/maintenance-dispatch-pump*.ts"
       ]
     },
+    "facts": {
+      "description": "Fact layer: unified fact extraction contracts, ledger persistence and memory engine offsets",
+      "allowedDependencies": [
+        "facts",
+        "chat",
+        "integration"
+      ],
+      "ownedPaths": [
+        "packages/contracts/src/v2/fact/**",
+        "packages/domain/src/v2/fact/**",
+        "packages/ports/src/v2/fact/**",
+        "packages/database/src/v2/fact/**"
+      ]
+    },
     "generation-assets": {
       "description": "Generation jobs, candidates, assets and external generation adapters",
       "allowedDependencies": [
@@ -135,6 +149,7 @@
         "chat",
         "generation-assets",
         "platform",
+        "facts",
         "web-shell",
         "integration"
       ],
