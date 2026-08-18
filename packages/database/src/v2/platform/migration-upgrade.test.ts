@@ -159,3 +159,64 @@ test("V2 platform 0203 down migration drops context columns without losing data"
     cleanup();
   }
 });
+
+test("V2 platform transitional DB (columns exist without 0203 record) upgrades without duplicate columns", async () => {
+  const { db, cleanup } = openV2TempSqliteConnection();
+  try {
+    const oldMigrations = getV2Migrations().filter((migration) => migration.id !== CONTEXT_MODALITIES_MIGRATION_ID);
+    applyV2Migrations(db, oldMigrations);
+
+    // Simulate PR #32 transitional state: columns were added directly to 0200,
+    // so they exist even though 0203 was never registered.
+    db.exec(`
+      ALTER TABLE v2_model_profiles ADD COLUMN context_window INTEGER;
+      ALTER TABLE v2_model_profiles ADD COLUMN input_modalities_json TEXT;
+    `);
+    db.prepare(`
+      INSERT INTO v2_model_profiles (
+        profile_id, name, protocol, base_url, model, timeout_ms, max_tokens,
+        temperature, created_at, updated_at, context_window, input_modalities_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      "profile:transitional",
+      "Transitional",
+      "openai-compatible",
+      "http://localhost:4000/v1",
+      "transitional-model",
+      30000,
+      4096,
+      0.2,
+      "2026-08-15T00:00:00.000Z",
+      "2026-08-15T00:00:00.000Z",
+      8192,
+      JSON.stringify(["text"]),
+    );
+
+    applyV2Migrations(db);
+
+    const columns = db.prepare("PRAGMA table_info(v2_model_profiles)").all() as unknown as readonly {
+      name: string;
+    }[];
+    const names = new Set(columns.map((column) => column.name));
+    assert.ok(names.has("context_window"));
+    assert.ok(names.has("input_modalities_json"));
+
+    const repository = new V2SqlitePlatformRepository(db);
+    const profile = await repository.getModelProfile("profile:transitional");
+    assert.ok(profile);
+    assert.equal(profile.contextWindow, 8192);
+    assert.deepEqual(profile.inputModalities, ["text"]);
+
+    const updated = await repository.saveModelProfile({
+      ...profile,
+      contextWindow: 128000,
+      inputModalities: ["text", "image"],
+      updatedAt: "2026-08-18T00:00:00.000Z",
+    });
+    assert.equal(updated.contextWindow, 128000);
+    assert.deepEqual(updated.inputModalities, ["text", "image"]);
+  } finally {
+    db.close();
+    cleanup();
+  }
+});

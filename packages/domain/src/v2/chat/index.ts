@@ -274,6 +274,7 @@ export interface V2ChatMaintenanceJob {
   readonly jobType: V2ChatMaintenanceJobType;
   readonly status: V2ChatMaintenanceJobStatus;
   readonly payload: unknown;
+  readonly dedupeKey?: string;
   readonly attempts: number;
   readonly maxAttempts: number;
   readonly availableAt: string;
@@ -291,6 +292,7 @@ export function createV2ChatMaintenanceJob(input: {
   readonly jobType: V2ChatMaintenanceJobType;
   readonly status?: V2ChatMaintenanceJobStatus;
   readonly payload: unknown;
+  readonly dedupeKey?: string;
   readonly attempts?: number;
   readonly maxAttempts?: number;
   readonly availableAt?: string;
@@ -327,6 +329,7 @@ export function createV2ChatMaintenanceJob(input: {
     jobType: input.jobType,
     status,
     payload: input.payload,
+    ...(input.dedupeKey === undefined ? {} : { dedupeKey: input.dedupeKey }),
     attempts: input.attempts ?? 0,
     maxAttempts: input.maxAttempts ?? 3,
     availableAt: input.availableAt ?? new Date().toISOString(),

@@ -223,10 +223,77 @@ export const v2ChatTracesMigration: V2SqliteMigration = {
   `),
 };
 
+export const v2ChatStoryAnalyzeCursorMigration: V2SqliteMigration = {
+  id: "0360_v2_chat_story_analyze_cursor",
+  up: (db) => db.exec(`
+    ALTER TABLE v2_chat_maintenance_cursors
+      ADD COLUMN story_analyzed_until_message_id TEXT;
+  `),
+  down: (db) => {
+    db.exec(`
+      CREATE TABLE v2_chat_maintenance_cursors_0360_backup (
+        conversation_id TEXT PRIMARY KEY REFERENCES v2_conversations(conversation_id) ON DELETE CASCADE,
+        memory_extracted_until_message_id TEXT,
+        updated_at TEXT NOT NULL
+      );
+      INSERT INTO v2_chat_maintenance_cursors_0360_backup (
+        conversation_id, memory_extracted_until_message_id, updated_at
+      )
+      SELECT conversation_id, memory_extracted_until_message_id, updated_at
+      FROM v2_chat_maintenance_cursors;
+      DROP TABLE v2_chat_maintenance_cursors;
+      ALTER TABLE v2_chat_maintenance_cursors_0360_backup RENAME TO v2_chat_maintenance_cursors;
+    `);
+  },
+};
+
+export const v2ChatMaintenanceDedupeKeyMigration: V2SqliteMigration = {
+  id: "0370_v2_chat_maintenance_dedupe_key",
+  up: (db) => db.exec(`
+    ALTER TABLE v2_chat_maintenance_jobs
+      ADD COLUMN dedupe_key TEXT;
+
+    CREATE INDEX idx_v2_maintenance_job_dedupe
+      ON v2_chat_maintenance_jobs(job_type, dedupe_key);
+  `),
+  down: (db) => {
+    db.exec(`
+      DROP INDEX IF EXISTS idx_v2_maintenance_job_dedupe;
+      CREATE TABLE v2_chat_maintenance_jobs_0370_backup (
+        job_id TEXT PRIMARY KEY,
+        conversation_id TEXT NOT NULL,
+        job_type TEXT NOT NULL,
+        status TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        max_attempts INTEGER NOT NULL DEFAULT 3,
+        available_at TEXT NOT NULL,
+        lease_expires_at TEXT,
+        claimed_by TEXT,
+        last_started_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        last_error TEXT
+      );
+      INSERT INTO v2_chat_maintenance_jobs_0370_backup (
+        job_id, conversation_id, job_type, status, payload, attempts, max_attempts,
+        available_at, lease_expires_at, claimed_by, last_started_at, created_at, updated_at, last_error
+      )
+      SELECT job_id, conversation_id, job_type, status, payload, attempts, max_attempts,
+        available_at, lease_expires_at, claimed_by, last_started_at, created_at, updated_at, last_error
+      FROM v2_chat_maintenance_jobs;
+      DROP TABLE v2_chat_maintenance_jobs;
+      ALTER TABLE v2_chat_maintenance_jobs_0370_backup RENAME TO v2_chat_maintenance_jobs;
+    `);
+  },
+};
+
 export const v2ChatMigrations: readonly V2SqliteMigration[] = [
   v2ChatMemoryMigration,
   v2ChatCoreFinalizationMigration,
   v2ChatMaintenanceJobsMigration,
   v2ChatMaintenanceCursorsMigration,
   v2ChatTracesMigration,
+  v2ChatStoryAnalyzeCursorMigration,
+  v2ChatMaintenanceDedupeKeyMigration,
 ];
