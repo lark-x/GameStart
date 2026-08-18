@@ -10,7 +10,6 @@ import {
   Menu,
   MessageSquare,
   Plus,
-  RefreshCw,
   Settings2,
   Sparkles,
   X,
