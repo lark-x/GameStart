@@ -1,3 +1,4 @@
+<script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { Activity, ArrowLeft, BookOpen, ImagePlus, RefreshCw, Send, Sparkles, Square, X } from "@lucide/vue";
