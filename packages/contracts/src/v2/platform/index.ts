@@ -3,9 +3,12 @@ import type { V2PageRequest, V2Page } from "../shared/primitives.ts";
 export const V2ModelCapability = {
   CHAT: "chat",
   SCENE_GENERATION: "scene_generation",
+  MEMORY: "memory",
+  STORY_ANALYSIS: "story_analysis",
 } as const;
 
 export type V2ModelCapability = (typeof V2ModelCapability)[keyof typeof V2ModelCapability];
+export type V2ModelInputModality = "text" | "image";
 export type V2ModelProtocol = "openai-compatible" | "anthropic";
 export type V2ModelCallStatus = "running" | "success" | "error" | "interrupted";
 export type V2ExternalCapabilityConfiguration = "complete" | "incomplete";

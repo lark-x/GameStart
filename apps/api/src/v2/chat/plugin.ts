@@ -13,6 +13,7 @@ import type {
 } from "@living-network/contracts/v2";
 
 import { V2HttpError, toV2HttpError } from "../core/errors.ts";
+import { createV2ChatMediaResolver, type V2ChatMediaResolver } from "./media-resolver.ts";
 import {
   parseCreateInstantStoryRequest,
   parseGenerateChatReplyRequest,
@@ -48,6 +49,7 @@ export interface V2ChatPluginDependencies {
   readonly useCases: V2ChatUseCases;
   readonly resolveModel: () => Promise<V2ResolvedChatModel>;
   readonly mediaRoot?: string;
+  readonly mediaResolver?: V2ChatMediaResolver;
   readonly now?: () => Date;
 }
 
@@ -181,6 +183,7 @@ function toErrorMessage(error: unknown): string {
 
 export function createV2ChatPlugin(dependencies: V2ChatPluginDependencies): FastifyPluginAsync {
   const now = dependencies.now ?? (() => new Date());
+  const mediaResolver = dependencies.mediaResolver ?? createV2ChatMediaResolver();
   return async (app) => {
     app.setErrorHandler((error, _request, reply) => {
       const httpError = toV2HttpError(error);
@@ -249,9 +252,38 @@ export function createV2ChatPlugin(dependencies: V2ChatPluginDependencies): Fast
       request.raw.on("aborted", onClose);
       reply.raw.on("close", onClose);
       let content = "";
+      const startedAt = Date.now();
+      let firstTokenAt: number | undefined;
+      const traceId = `trace:chat:${randomUUID()}`;
+      const traceSources = prepared.prompt.sources;
+      const memoryIds = traceSources.filter((source) => source.kind === "memory").map((source) => source.id);
+      const canonIds = traceSources.filter((source) => source.kind === "canon").map((source) => source.id);
+      const recentMessageCount = traceSources.filter((source) => source.kind === "message").length;
+      const imageCount = (prepared.prompt.messageImages ?? []).reduce((total, entry) => total + entry.images.length, 0);
+      await dependencies.useCases.recordTrace({
+        traceId,
+        conversationId,
+        messageId: prepared.assistantMessageId,
+        task: prepared.task,
+        templateId: prepared.prompt.templateId,
+        templateVersion: prepared.prompt.templateVersion,
+        contextHash: prepared.prompt.contextHash,
+        model: model.model,
+        ...(model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow }),
+        inputBudget: prepared.prompt.budget.inputBudget,
+        estimatedTokens: prepared.prompt.estimatedTokens,
+        recentMessageCount,
+        memoryIds,
+        canonIds,
+        imageCount,
+      }).catch(() => undefined);
       try {
+        const resolvedMessages = await mediaResolver.resolveMessageImages({
+          prompt: prepared.prompt,
+          mediaRoot: dependencies.mediaRoot ?? "",
+        });
         const deltas: AsyncIterable<ChatDelta> = model.provider.stream({
-          messages: prepared.prompt.messages,
+          messages: resolvedMessages,
           temperature: model.temperature,
           maxTokens: model.maxTokens,
           trace: { correlationId: `v2:chat:${randomUUID()}` },
@@ -260,6 +292,16 @@ export function createV2ChatPlugin(dependencies: V2ChatPluginDependencies): Fast
         for await (const delta of deltas) {
           if (delta.content !== undefined) {
             content += delta.content;
+            if (firstTokenAt === undefined) {
+              firstTokenAt = Date.now();
+              await dependencies.useCases.updateTrace({
+                traceId,
+                patch: {
+                  status: "streaming",
+                  firstTokenLatencyMs: firstTokenAt - startedAt,
+                },
+              }).catch(() => undefined);
+            }
             sseWrite(reply, { type: "delta", content: delta.content });
           }
           if (delta.finishReason !== undefined) {
@@ -275,6 +317,13 @@ export function createV2ChatPlugin(dependencies: V2ChatPluginDependencies): Fast
         });
         sseWrite(reply, { type: "message", message });
         sseWrite(reply, { type: "done", messageId: prepared.assistantMessageId });
+        await dependencies.useCases.updateTrace({
+          traceId,
+          patch: {
+            status: "completed",
+            totalLatencyMs: Date.now() - startedAt,
+          },
+        }).catch(() => undefined);
         return reply.raw.end();
       } catch (error) {
         if (content.trim().length > 0) {
@@ -286,6 +335,14 @@ export function createV2ChatPlugin(dependencies: V2ChatPluginDependencies): Fast
             status: "interrupted",
           }).catch(() => undefined);
         }
+        await dependencies.useCases.updateTrace({
+          traceId,
+          patch: {
+            status: "failed",
+            totalLatencyMs: Date.now() - startedAt,
+            errorCode: toErrorCode(error),
+          },
+        }).catch(() => undefined);
         sseWrite(reply, { type: "error", code: toErrorCode(error), errorMessage: toErrorMessage(error) });
         sseWrite(reply, { type: "done", messageId: prepared.assistantMessageId, error: true });
         return reply.raw.end();

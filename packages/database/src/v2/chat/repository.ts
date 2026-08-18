@@ -12,6 +12,8 @@ import type {
   V2ChatMaintenanceJob,
   V2ChatMedia,
   V2ChatMessage,
+  V2ChatTrace,
+  V2ChatTraceStatus,
   V2ConversationSummary,
   V2Memory,
 } from "@living-network/domain/v2";
@@ -21,6 +23,7 @@ import type {
   V2ChatMaintenanceJobRepository,
   V2ChatMediaRepository,
   V2ChatMessageRepository,
+  V2ChatTraceRepository,
   V2ChatUnitOfWork,
   V2ConversationSummaryRepository,
   V2MemoryRepository,
@@ -237,6 +240,7 @@ export class V2SqliteChatUnitOfWork implements V2ChatUnitOfWork {
     readonly media: V2ChatMediaRepository;
     readonly memories: V2MemoryRepository;
     readonly summaries: V2ConversationSummaryRepository;
+    readonly traces: V2ChatTraceRepository;
     readonly maintenanceJobs: V2ChatMaintenanceJobRepository;
   }) => Promise<T>): Promise<T> {
     return withV2SqliteAsyncTransaction(this.db, () => fn({
@@ -247,6 +251,7 @@ export class V2SqliteChatUnitOfWork implements V2ChatUnitOfWork {
       media: new V2SqliteChatMediaRepository(this.db),
       memories: new V2SqliteMemoryRepository(this.db),
       summaries: new V2SqliteConversationSummaryRepository(this.db),
+      traces: new V2SqliteChatTraceRepository(this.db),
       maintenanceJobs: new V2SqliteChatMaintenanceJobRepository(this.db),
     }));
   }
@@ -372,6 +377,55 @@ export class V2SqliteChatMessageRepository implements V2ChatMessageRepository {
       ORDER BY created_at ASC, message_id ASC
     `).all(conversationId, before.created_at, before.created_at, beforeMessageId, limit) as MessageRow[];
     return rows.map(mapMessage);
+  }
+
+  public async listByIds(conversationId: V2ConversationId, messageIds: readonly V2MessageId[]): Promise<readonly V2ChatMessage[]> {
+    if (messageIds.length === 0) return [];
+    const uniqueIds = [...new Set(messageIds)];
+    const placeholders = uniqueIds.map(() => "?").join(", ");
+    const rows = this.db.prepare(`
+      SELECT * FROM v2_chat_messages
+      WHERE conversation_id = ? AND message_id IN (${placeholders})
+    `).all(conversationId, ...uniqueIds) as MessageRow[];
+    const byId = new Map(rows.map((row) => [row.message_id, mapMessage(row)]));
+    return messageIds.flatMap((id) => {
+      const message = byId.get(id);
+      return message === undefined ? [] : [message];
+    });
+  }
+
+  public async listAfter(conversationId: V2ConversationId, afterMessageId: V2MessageId | undefined, limit: number): Promise<readonly V2ChatMessage[]> {
+    const safeLimit = Math.min(Math.max(1, limit), 500);
+    if (afterMessageId === undefined) {
+      return (this.db.prepare(`
+        SELECT * FROM v2_chat_messages
+        WHERE conversation_id = ?
+        ORDER BY created_at ASC, message_id ASC
+        LIMIT ?
+      `).all(conversationId, safeLimit) as MessageRow[]).map(mapMessage);
+    }
+    const after = this.db.prepare("SELECT created_at FROM v2_chat_messages WHERE conversation_id = ? AND message_id = ?").get(conversationId, afterMessageId) as { readonly created_at: string } | undefined;
+    if (after === undefined) return [];
+    return (this.db.prepare(`
+      SELECT * FROM v2_chat_messages
+      WHERE conversation_id = ? AND (created_at > ? OR (created_at = ? AND message_id > ?))
+      ORDER BY created_at ASC, message_id ASC
+      LIMIT ?
+    `).all(conversationId, after.created_at, after.created_at, afterMessageId, safeLimit) as MessageRow[]).map(mapMessage);
+  }
+
+  public async countAfter(conversationId: V2ConversationId, afterMessageId: V2MessageId | undefined): Promise<number> {
+    if (afterMessageId === undefined) {
+      const row = this.db.prepare("SELECT COUNT(*) AS count FROM v2_chat_messages WHERE conversation_id = ?").get(conversationId) as { readonly count: number };
+      return row.count;
+    }
+    const after = this.db.prepare("SELECT created_at FROM v2_chat_messages WHERE conversation_id = ? AND message_id = ?").get(conversationId, afterMessageId) as { readonly created_at: string } | undefined;
+    if (after === undefined) return 0;
+    const row = this.db.prepare(`
+      SELECT COUNT(*) AS count FROM v2_chat_messages
+      WHERE conversation_id = ? AND (created_at > ? OR (created_at = ? AND message_id > ?))
+    `).get(conversationId, after.created_at, after.created_at, afterMessageId) as { readonly count: number };
+    return row.count;
   }
 
   public async findByIdempotencyKey(conversationId: V2ConversationId, idempotencyKey: string): Promise<V2ChatMessage | undefined> {
@@ -577,6 +631,158 @@ export class V2SqliteConversationSummaryRepository implements V2ConversationSumm
   }
 }
 
+type TraceRow = {
+  trace_id: string;
+  conversation_id: string;
+  message_id: string | null;
+  task: string | null;
+  template_id: string | null;
+  template_version: string | null;
+  context_hash: string | null;
+  profile_id: string | null;
+  model: string | null;
+  context_window: number | null;
+  input_budget: number | null;
+  estimated_tokens: number | null;
+  recent_message_count: number | null;
+  memory_ids_json: string | null;
+  canon_ids_json: string | null;
+  summary_version: number | null;
+  image_count: number | null;
+  started_at: string;
+  first_token_latency_ms: number | null;
+  total_latency_ms: number | null;
+  status: "pending" | "streaming" | "completed" | "failed";
+  error_code: string | null;
+};
+
+function mapTrace(row: TraceRow): V2ChatTrace {
+  const parseJsonArray = (value: string | null): readonly string[] | undefined => {
+    if (value === null) return undefined;
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  const memoryIds = parseJsonArray(row.memory_ids_json);
+  const canonIds = parseJsonArray(row.canon_ids_json);
+  return {
+    traceId: row.trace_id,
+    conversationId: row.conversation_id,
+    status: row.status,
+    startedAt: row.started_at,
+    ...(row.message_id === null ? {} : { messageId: row.message_id }),
+    ...(row.task === null ? {} : { task: row.task }),
+    ...(row.template_id === null ? {} : { templateId: row.template_id }),
+    ...(row.template_version === null ? {} : { templateVersion: row.template_version }),
+    ...(row.context_hash === null ? {} : { contextHash: row.context_hash }),
+    ...(row.profile_id === null ? {} : { profileId: row.profile_id }),
+    ...(row.model === null ? {} : { model: row.model }),
+    ...(row.context_window === null ? {} : { contextWindow: row.context_window }),
+    ...(row.input_budget === null ? {} : { inputBudget: row.input_budget }),
+    ...(row.estimated_tokens === null ? {} : { estimatedTokens: row.estimated_tokens }),
+    ...(row.recent_message_count === null ? {} : { recentMessageCount: row.recent_message_count }),
+    ...(memoryIds === undefined ? {} : { memoryIds }),
+    ...(canonIds === undefined ? {} : { canonIds }),
+    ...(row.summary_version === null ? {} : { summaryVersion: row.summary_version }),
+    ...(row.image_count === null ? {} : { imageCount: row.image_count }),
+    ...(row.first_token_latency_ms === null ? {} : { firstTokenLatencyMs: row.first_token_latency_ms }),
+    ...(row.total_latency_ms === null ? {} : { totalLatencyMs: row.total_latency_ms }),
+    ...(row.error_code === null ? {} : { errorCode: row.error_code }),
+  };
+}
+
+export class V2SqliteChatTraceRepository implements V2ChatTraceRepository {
+  private readonly db: DatabaseSync;
+
+  public constructor(db: DatabaseSync) {
+    this.db = db;
+  }
+
+  public async create(input: V2ChatTrace): Promise<V2ChatTrace> {
+    this.db.prepare(`
+      INSERT INTO v2_chat_traces (
+        trace_id, conversation_id, message_id, task, template_id, template_version, context_hash,
+        profile_id, model, context_window, input_budget, estimated_tokens, recent_message_count,
+        memory_ids_json, canon_ids_json, summary_version, image_count, started_at,
+        first_token_latency_ms, total_latency_ms, status, error_code
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      input.traceId,
+      input.conversationId,
+      input.messageId ?? null,
+      input.task ?? null,
+      input.templateId ?? null,
+      input.templateVersion ?? null,
+      input.contextHash ?? null,
+      input.profileId ?? null,
+      input.model ?? null,
+      input.contextWindow ?? null,
+      input.inputBudget ?? null,
+      input.estimatedTokens ?? null,
+      input.recentMessageCount ?? null,
+      input.memoryIds === undefined ? null : JSON.stringify(input.memoryIds),
+      input.canonIds === undefined ? null : JSON.stringify(input.canonIds),
+      input.summaryVersion ?? null,
+      input.imageCount ?? null,
+      input.startedAt,
+      input.firstTokenLatencyMs ?? null,
+      input.totalLatencyMs ?? null,
+      input.status,
+      input.errorCode ?? null,
+    );
+    return input;
+  }
+
+  public async update(input: {
+    readonly traceId: string;
+    readonly patch: {
+      readonly status?: V2ChatTraceStatus;
+      readonly messageId?: string;
+      readonly firstTokenLatencyMs?: number;
+      readonly totalLatencyMs?: number;
+      readonly errorCode?: string;
+    };
+  }): Promise<void> {
+    const fields: string[] = [];
+    const values: (string | number)[] = [];
+    if (input.patch.status !== undefined) {
+      fields.push("status = ?");
+      values.push(input.patch.status);
+    }
+    if (input.patch.messageId !== undefined) {
+      fields.push("message_id = ?");
+      values.push(input.patch.messageId);
+    }
+    if (input.patch.firstTokenLatencyMs !== undefined) {
+      fields.push("first_token_latency_ms = ?");
+      values.push(input.patch.firstTokenLatencyMs);
+    }
+    if (input.patch.totalLatencyMs !== undefined) {
+      fields.push("total_latency_ms = ?");
+      values.push(input.patch.totalLatencyMs);
+    }
+    if (input.patch.errorCode !== undefined) {
+      fields.push("error_code = ?");
+      values.push(input.patch.errorCode);
+    }
+    if (fields.length === 0) return;
+    this.db.prepare(`UPDATE v2_chat_traces SET ${fields.join(", ")} WHERE trace_id = ?`).run(...values, input.traceId);
+  }
+
+  public async getLatest(conversationId: V2ConversationId): Promise<V2ChatTrace | undefined> {
+    const row = this.db.prepare(`
+      SELECT * FROM v2_chat_traces
+      WHERE conversation_id = ?
+      ORDER BY started_at DESC, trace_id DESC
+      LIMIT 1
+    `).get(conversationId) as TraceRow | undefined;
+    return row === undefined ? undefined : mapTrace(row);
+  }
+}
+
 export class V2SqliteChatMaintenanceJobRepository implements V2ChatMaintenanceJobRepository {
   private readonly db: DatabaseSync;
 
@@ -625,6 +831,27 @@ export class V2SqliteChatMaintenanceJobRepository implements V2ChatMaintenanceJo
       LIMIT 1
     `).get(conversationId, jobType);
     return row !== undefined;
+  }
+
+  public async getMemoryExtractCursor(conversationId: V2ConversationId): Promise<V2MessageId | undefined> {
+    const row = this.db.prepare(`
+      SELECT memory_extracted_until_message_id AS cursor_message_id
+      FROM v2_chat_maintenance_cursors
+      WHERE conversation_id = ?
+    `).get(conversationId) as { readonly cursor_message_id: string | null } | undefined;
+    return row?.cursor_message_id === undefined || row.cursor_message_id === null
+      ? undefined
+      : (row.cursor_message_id as V2MessageId);
+  }
+
+  public async setMemoryExtractCursor(conversationId: V2ConversationId, messageId: V2MessageId): Promise<void> {
+    this.db.prepare(`
+      INSERT INTO v2_chat_maintenance_cursors (conversation_id, memory_extracted_until_message_id, updated_at)
+      VALUES (?, ?, ?)
+      ON CONFLICT(conversation_id) DO UPDATE SET
+        memory_extracted_until_message_id = excluded.memory_extracted_until_message_id,
+        updated_at = excluded.updated_at
+    `).run(conversationId, messageId, new Date().toISOString());
   }
 
   public async claimNext(input: {
@@ -692,16 +919,17 @@ export class V2SqliteChatMaintenanceJobRepository implements V2ChatMaintenanceJo
     readonly jobId: string;
     readonly workerId: string;
     readonly now: string;
-  }): Promise<void> {
-    this.db.prepare(`
+  }): Promise<boolean> {
+    const result = this.db.prepare(`
       UPDATE v2_chat_maintenance_jobs
       SET
         status = 'completed',
         lease_expires_at = NULL,
         updated_at = ?,
         last_error = NULL
-      WHERE job_id = ?
-    `).run(input.now, input.jobId);
+      WHERE job_id = ? AND claimed_by = ? AND status IN ('claimed', 'running')
+    `).run(input.now, input.jobId, input.workerId);
+    return Number(result.changes) > 0;
   }
 
   public async markFailed(input: {
@@ -711,11 +939,11 @@ export class V2SqliteChatMaintenanceJobRepository implements V2ChatMaintenanceJo
     readonly retryAvailableAt?: string;
     readonly isTerminal: boolean;
     readonly now: string;
-  }): Promise<void> {
+  }): Promise<boolean> {
     const nextStatus = input.isTerminal ? "failed" : "pending";
     const availableAt = input.retryAvailableAt ?? input.now;
 
-    this.db.prepare(`
+    const result = this.db.prepare(`
       UPDATE v2_chat_maintenance_jobs
       SET
         status = ?,
@@ -724,7 +952,26 @@ export class V2SqliteChatMaintenanceJobRepository implements V2ChatMaintenanceJo
         claimed_by = NULL,
         updated_at = ?,
         last_error = ?
-      WHERE job_id = ?
-    `).run(nextStatus, availableAt, input.now, input.error, input.jobId);
+      WHERE job_id = ? AND claimed_by = ? AND status IN ('claimed', 'running')
+    `).run(nextStatus, availableAt, input.now, input.error, input.jobId, input.workerId);
+    return Number(result.changes) > 0;
+  }
+
+  public async hasJobWithPayloadKey(jobType: string, payloadKey: string): Promise<boolean> {
+    const row = this.db.prepare(`
+      SELECT 1 FROM v2_chat_maintenance_jobs
+      WHERE job_type = ? AND payload LIKE ?
+      LIMIT 1
+    `).get(jobType, `%${payloadKey}%`);
+    return row !== undefined;
+  }
+
+  public async findJobByPayloadKey(jobType: string, payloadKey: string): Promise<V2ChatMaintenanceJob | undefined> {
+    const row = this.db.prepare(`
+      SELECT * FROM v2_chat_maintenance_jobs
+      WHERE job_type = ? AND payload LIKE ?
+      LIMIT 1
+    `).get(jobType, `%${payloadKey}%`) as MaintenanceJobRow | undefined;
+    return row === undefined ? undefined : mapMaintenanceJob(row);
   }
 }

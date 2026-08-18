@@ -117,6 +117,7 @@ export function createV2ApiRuntime(options: {
   readonly environmentAssetConfigured?: boolean;
   readonly chatProvider?: ChatProvider;
   readonly chatEnvironment?: V2ApiRuntimeChatEnvironment;
+  readonly chatInputModalities?: readonly ("text" | "image")[];
 }): V2ApiRuntime {
   const db = openV2SqliteConnection({ path: options.sqlitePath });
   applyV2Migrations(db);
@@ -153,7 +154,7 @@ export function createV2ApiRuntime(options: {
         temperature: 0.8,
         maxTokens: 1024,
         contextWindow: 128000,
-        inputModalities: ["text"],
+        inputModalities: options.chatInputModalities ?? ["text"],
       })
     : () => resolver.resolve();
   const app = createV2FastifyApp({

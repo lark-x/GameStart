@@ -246,6 +246,7 @@ export interface V2MemoryConsolidatePayload {
   readonly characterId?: V2CharacterId;
   readonly existingMemoryId: V2MemoryId;
   readonly candidate: V2MemoryConsolidateCandidate;
+  readonly idempotencyKey: string;
 }
 
 export interface V2StoryAnalyzePayload {
@@ -255,6 +256,7 @@ export interface V2StoryAnalyzePayload {
   readonly sourceMessageIds: readonly V2MessageId[];
   readonly fromMessageId?: V2MessageId;
   readonly toMessageId?: V2MessageId;
+  readonly idempotencyKey: string;
 }
 
 export type V2MaintenanceJobPayload =

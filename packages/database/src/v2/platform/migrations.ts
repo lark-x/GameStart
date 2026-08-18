@@ -4,8 +4,10 @@ import { v2CoreCanonMigrations } from "../core/migrations.ts";
 import { v2GenerationJobMigrations } from "../generation/migrations.ts";
 import {
   v2ChatCoreFinalizationMigration,
+  v2ChatMaintenanceCursorsMigration,
   v2ChatMaintenanceJobsMigration,
   v2ChatMemoryMigration,
+  v2ChatTracesMigration,
 } from "../chat/migrations.ts";
 
 export interface V2SqliteMigration {
@@ -184,6 +186,8 @@ export function getV2Migrations(): readonly V2SqliteMigration[] {
     v2ChatMemoryMigration,
     v2ChatCoreFinalizationMigration,
     v2ChatMaintenanceJobsMigration,
+    v2ChatMaintenanceCursorsMigration,
+    v2ChatTracesMigration,
   ].sort((a, b) => a.id.localeCompare(b.id));
 }
 

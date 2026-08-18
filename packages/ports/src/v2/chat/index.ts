@@ -10,6 +10,8 @@ import type {
   V2ChatMaintenanceJob,
   V2ChatMedia,
   V2ChatMessage,
+  V2ChatTrace,
+  V2ChatTraceStatus,
   V2ConversationSummary,
   V2Memory,
 } from "@living-network/domain/v2";
@@ -31,6 +33,9 @@ export interface V2ChatMessageRepository {
   listByConversation(conversationId: V2ConversationId, limit?: number): Promise<readonly V2ChatMessage[]>;
   listRecentByConversation(conversationId: V2ConversationId, limit?: number): Promise<readonly V2ChatMessage[]>;
   listBefore(conversationId: V2ConversationId, beforeMessageId: V2MessageId, limit?: number): Promise<readonly V2ChatMessage[]>;
+  listByIds(conversationId: V2ConversationId, messageIds: readonly V2MessageId[]): Promise<readonly V2ChatMessage[]>;
+  listAfter(conversationId: V2ConversationId, afterMessageId: V2MessageId | undefined, limit: number): Promise<readonly V2ChatMessage[]>;
+  countAfter(conversationId: V2ConversationId, afterMessageId: V2MessageId | undefined): Promise<number>;
   findByIdempotencyKey(conversationId: V2ConversationId, idempotencyKey: string): Promise<V2ChatMessage | undefined>;
 }
 
@@ -62,10 +67,29 @@ export interface V2ConversationSummaryRepository {
   save(input: V2ConversationSummary): Promise<V2ConversationSummary>;
 }
 
+export interface V2ChatTraceRepository {
+  create(input: V2ChatTrace): Promise<V2ChatTrace>;
+  update(input: {
+    readonly traceId: string;
+    readonly patch: {
+      readonly status?: V2ChatTraceStatus;
+      readonly messageId?: string;
+      readonly firstTokenLatencyMs?: number;
+      readonly totalLatencyMs?: number;
+      readonly errorCode?: string;
+    };
+  }): Promise<void>;
+  getLatest(conversationId: V2ConversationId): Promise<V2ChatTrace | undefined>;
+}
+
 export interface V2ChatMaintenanceJobRepository {
   enqueue(input: V2ChatMaintenanceJob): Promise<V2ChatMaintenanceJob>;
   get(jobId: string): Promise<V2ChatMaintenanceJob | undefined>;
   hasActiveJob(conversationId: V2ConversationId, jobType: string): Promise<boolean>;
+  getMemoryExtractCursor(conversationId: V2ConversationId): Promise<V2MessageId | undefined>;
+  setMemoryExtractCursor(conversationId: V2ConversationId, messageId: V2MessageId): Promise<void>;
+  hasJobWithPayloadKey(jobType: string, payloadKey: string): Promise<boolean>;
+  findJobByPayloadKey(jobType: string, payloadKey: string): Promise<V2ChatMaintenanceJob | undefined>;
   claimNext(input: {
     readonly workerId: string;
     readonly leaseDurationMs: number;
@@ -81,7 +105,7 @@ export interface V2ChatMaintenanceJobRepository {
     readonly jobId: string;
     readonly workerId: string;
     readonly now: string;
-  }): Promise<void>;
+  }): Promise<boolean>;
   markFailed(input: {
     readonly jobId: string;
     readonly workerId: string;
@@ -89,7 +113,8 @@ export interface V2ChatMaintenanceJobRepository {
     readonly retryAvailableAt?: string;
     readonly isTerminal: boolean;
     readonly now: string;
-  }): Promise<void>;
+  }): Promise<boolean>;
+  hasJobWithPayloadKey(jobType: string, payloadKey: string): Promise<boolean>;
 }
 
 export interface V2ChatUnitOfWork {
@@ -101,6 +126,7 @@ export interface V2ChatUnitOfWork {
     readonly media: V2ChatMediaRepository;
     readonly memories: V2MemoryRepository;
     readonly summaries: V2ConversationSummaryRepository;
+    readonly traces: V2ChatTraceRepository;
     readonly maintenanceJobs: V2ChatMaintenanceJobRepository;
   }) => Promise<T>): Promise<T>;
 }
