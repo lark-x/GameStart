@@ -67,6 +67,7 @@ export interface PromptBudgetDebug {
   readonly inputBudget: number;
   readonly usedTokens: number;
   readonly personaTokens: number;
+  readonly worldTokens: number;
   readonly canonTokens: number;
   readonly memoryTokens: number;
   readonly summaryTokens: number;

@@ -83,7 +83,8 @@ class V2ResolvingChatModelResolver {
           model: profile.model,
           temperature: profile.temperature,
           maxTokens: profile.maxTokens,
-          inputModalities: ["text"],
+          ...(profile.contextWindow === undefined ? {} : { contextWindow: profile.contextWindow }),
+          inputModalities: (profile.inputModalities as readonly ("text" | "image")[]) ?? ["text"],
         };
       }
     }
@@ -99,6 +100,7 @@ class V2ResolvingChatModelResolver {
         model: this.environment.model,
         temperature: 0.8,
         maxTokens: 1024,
+        contextWindow: 128000,
         inputModalities: ["text"],
       };
     }
@@ -150,6 +152,7 @@ export function createV2ApiRuntime(options: {
         model: "test-model",
         temperature: 0.8,
         maxTokens: 1024,
+        contextWindow: 128000,
         inputModalities: ["text"],
       })
     : () => resolver.resolve();

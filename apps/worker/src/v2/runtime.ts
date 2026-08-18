@@ -6,6 +6,7 @@ import {
   openV2SqliteConnection,
   V2SqliteAssetGenerationRepository,
   V2SqliteCandidateSubmissionPort,
+  V2SqliteChatUnitOfWork,
   V2SqliteGenerationJobRepository,
   V2SqlitePlatformRepository,
 } from "@living-network/database/v2";
@@ -17,6 +18,7 @@ import type {
 
 import { BullMqTaskQueue, BullMqTaskWorker, type TaskQueue } from "../queue.ts";
 import { createV2GenerationDispatchPump } from "./generation-dispatch-pump.ts";
+import { V2MaintenanceDispatchPump } from "./maintenance-dispatch-pump.ts";
 import { V2LocalAssetMediaStore } from "./local-asset-media-store.ts";
 import { processV2AssetGenerationJob } from "./asset-generation-worker.ts";
 import { processV2SceneGenerationJob } from "./scene-generation-worker.ts";
@@ -157,6 +159,26 @@ export async function startV2Worker(
       })()
       : undefined;
 
+    const chatUnitOfWork = new V2SqliteChatUnitOfWork(db);
+    const chatProvider = new V2DynamicModelProvider({
+      repository: platformRepository,
+      ...(secretCipher === undefined ? {} : { secretCipher }),
+      fallback: {
+        protocol: config.scene.protocol,
+        ...(config.scene.baseUrl === undefined ? {} : { baseUrl: config.scene.baseUrl }),
+        ...(config.scene.apiKey === undefined ? {} : { apiKey: config.scene.apiKey }),
+        ...(config.scene.model === undefined ? {} : { model: config.scene.model }),
+        timeoutMs: config.scene.timeoutMs,
+      },
+    });
+    const maintenancePump = new V2MaintenanceDispatchPump({
+      workerId: `worker_${process.pid}_${Math.random().toString(36).slice(2, 7)}`,
+      unitOfWork: chatUnitOfWork,
+      provider: chatProvider,
+      pollIntervalMs: 2000,
+    });
+    maintenancePump.start();
+
     const pump = createV2GenerationDispatchPump({
       ...(scene === undefined ? {} : { scene }),
       ...(asset === undefined ? {} : { asset }),
@@ -176,6 +198,7 @@ export async function startV2Worker(
       async stop(): Promise<void> {
         if (stopped) return;
         stopped = true;
+        maintenancePump.stop();
         if (timer !== undefined) clearInterval(timer);
         for (const consumer of consumers) await consumer.close();
         for (const queue of queues) await queue.close();

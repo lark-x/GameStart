@@ -87,3 +87,27 @@ test("registry dispatches by task", () => {
   });
   assert.equal(prompt.templateId, "chat-reply-v1");
 });
+
+test("prompt engine correctly factors world token and output reserve", () => {
+  const prompt = prepareV2ChatReply({
+    task: "chat.reply",
+    tokenBudget: 4000,
+    contextWindow: 4000,
+    outputReserve: 1000,
+    safetyReserve: 200,
+    world: {
+      storyWorldId: "world-1",
+      name: "星穹铁道",
+      summary: "星际探索与开拓的世界背景设定",
+    },
+    persona: { name: "三月七", personaText: "热情的粉发少女" },
+    memories: [],
+    recentMessages: [],
+    currentInput: { text: "你好", imageCount: 0 },
+  });
+  assert.equal(prompt.budget.contextWindow, 4000);
+  assert.equal(prompt.budget.outputReserve, 1000);
+  assert.equal(prompt.budget.inputBudget, 2800);
+  assert.ok(prompt.budget.worldTokens > 0);
+  assert.ok(prompt.estimatedTokens <= 2800);
+});

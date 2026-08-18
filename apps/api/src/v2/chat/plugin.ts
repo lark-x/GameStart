@@ -17,6 +17,7 @@ import {
   parseCreateInstantStoryRequest,
   parseGenerateChatReplyRequest,
   parseSendChatMessageRequest,
+  parseTriggerStoryAnalyzeRequest,
 } from "./parsers.ts";
 import type { V2ChatUseCases } from "./use-cases.ts";
 
@@ -71,13 +72,13 @@ function parseMessagesQuery(value: unknown): { readonly beforeMessageId?: V2Mess
   if (limit !== undefined && (!Number.isSafeInteger(limit) || limit < 1 || limit > 200)) {
     throw new V2HttpError(400, "BAD_REQUEST", "limit must be an integer between 1 and 200");
   }
-  const beforeMessageId = value.beforeMessageId;
-  if (beforeMessageId !== undefined && (typeof beforeMessageId !== "string" || beforeMessageId.trim().length === 0)) {
+  const rawBefore = value.beforeMessageId ?? value.before;
+  if (rawBefore !== undefined && (typeof rawBefore !== "string" || rawBefore.trim().length === 0)) {
     throw new V2HttpError(400, "BAD_REQUEST", "beforeMessageId must be a non-empty string");
   }
   return {
     ...(limit === undefined ? {} : { limit }),
-    ...(beforeMessageId === undefined ? {} : { beforeMessageId: beforeMessageId as V2MessageId }),
+    ...(rawBefore === undefined ? {} : { beforeMessageId: rawBefore.trim() as V2MessageId }),
   };
 }
 
@@ -162,6 +163,9 @@ function sseWrite(reply: FastifyReply, event: unknown): void {
 
 function toErrorCode(error: unknown): string {
   if (error instanceof V2HttpError) return error.code;
+  if (error instanceof Error && (error.name === "PromptBudgetExceededError" || (error as { code?: string }).code === "PROMPT_BUDGET_EXCEEDED")) {
+    return "PROMPT_BUDGET_EXCEEDED";
+  }
   if (error instanceof Error && error.name === "ProviderError") {
     const code = (error as { code?: string }).code;
     if (code === "CONFIGURATION") return "MODEL_NOT_CONFIGURED";
@@ -197,16 +201,38 @@ export function createV2ChatPlugin(dependencies: V2ChatPluginDependencies): Fast
       const conversationId = routeId(request.params, "conversationId") as V2ConversationId;
       return dependencies.useCases.listMessages(conversationId, parseMessagesQuery(request.query));
     });
+    app.get("/chat/conversations/:conversationId/diagnostics/latest", async (request) => {
+      const conversationId = routeId(request.params, "conversationId") as V2ConversationId;
+      if (dependencies.useCases.getLatestDiagnostics === undefined) {
+        return {};
+      }
+      return dependencies.useCases.getLatestDiagnostics(conversationId);
+    });
     app.post("/chat/conversations/:conversationId/messages", async (request, reply) => {
       const conversationId = routeId(request.params, "conversationId") as V2ConversationId;
       const result = await dependencies.useCases.sendMessage(conversationId, parseSendChatMessageRequest(request.body));
       return reply.status(201).send(result);
     });
 
+    app.post("/chat/conversations/:conversationId/analyze", async (request, reply) => {
+      const conversationId = routeId(request.params, "conversationId") as V2ConversationId;
+      const input = parseTriggerStoryAnalyzeRequest(request.body);
+      if (dependencies.useCases.triggerStoryAnalyze === undefined) {
+        throw new V2HttpError(501, "NOT_IMPLEMENTED", "Story analyzer is not implemented");
+      }
+      const result = await dependencies.useCases.triggerStoryAnalyze(conversationId, input);
+      return reply.status(202).send(result);
+    });
+
     app.post("/chat/conversations/:conversationId/replies", async (request, reply) => {
       const conversationId = routeId(request.params, "conversationId") as V2ConversationId;
       const input = parseGenerateChatReplyRequest(request.body);
-      const prepared = await dependencies.useCases.prepareReply(conversationId, input);
+      const model = await dependencies.resolveModel();
+      const prepared = await dependencies.useCases.prepareReply(conversationId, input, {
+        ...(model.contextWindow !== undefined ? { contextWindow: model.contextWindow } : {}),
+        maxTokens: model.maxTokens,
+        inputModalities: model.inputModalities,
+      });
       if (prepared.existingMessage !== undefined) {
         sseHeaders(reply);
         sseWrite(reply, { type: "message", message: prepared.existingMessage });
@@ -224,7 +250,6 @@ export function createV2ChatPlugin(dependencies: V2ChatPluginDependencies): Fast
       reply.raw.on("close", onClose);
       let content = "";
       try {
-        const model = await dependencies.resolveModel();
         const deltas: AsyncIterable<ChatDelta> = model.provider.stream({
           messages: prepared.prompt.messages,
           temperature: model.temperature,
@@ -317,7 +342,7 @@ export function createV2ChatPlugin(dependencies: V2ChatPluginDependencies): Fast
           const info = await stat(target);
           if (!info.isFile()) throw new Error("not a file");
         } catch {
-          return reply.code(404).send({ error: { code: "NOT_FOUND", message: "V2 chat media not found" } });
+          return reply.code(404).send({ error: { code: "MEDIA_NOT_FOUND", message: "V2 chat media not found" } });
         }
         return reply
           .header("Content-Type", mediaContentType(filename))

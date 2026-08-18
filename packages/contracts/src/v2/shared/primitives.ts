@@ -15,6 +15,7 @@ export type V2ConversationId = Brand<string, "V2ConversationId">;
 export type V2MessageId = Brand<string, "V2MessageId">;
 export type V2MediaId = Brand<string, "V2MediaId">;
 export type V2MemoryId = Brand<string, "V2MemoryId">;
+export type V2MaintenanceJobId = Brand<string, "V2MaintenanceJobId">;
 
 export type V2IsoDateTime = Brand<string, "V2IsoDateTime">;
 export type V2Revision = Brand<number, "V2Revision">;

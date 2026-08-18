@@ -71,3 +71,10 @@ export function parseGenerateChatReplyRequest(value: unknown): V2GenerateChatRep
     idempotencyKey: nonEmptyString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey,
   };
 }
+
+export function parseTriggerStoryAnalyzeRequest(value: unknown): { readonly idempotencyKey: V2IdempotencyKey } {
+  if (!isRecord(value)) throw new V2HttpError(422, "VALIDATION_FAILED", "request body must be an object");
+  return {
+    idempotencyKey: nonEmptyString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey,
+  };
+}

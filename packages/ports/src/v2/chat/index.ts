@@ -7,12 +7,13 @@ import type {
 } from "@living-network/contracts/v2";
 import type {
   V2ChatConversation,
+  V2ChatMaintenanceJob,
   V2ChatMedia,
   V2ChatMessage,
   V2ConversationSummary,
   V2Memory,
 } from "@living-network/domain/v2";
-import type { V2CanonRepository } from "../core/index.ts";
+import type { V2CanonRepository, V2CandidateReviewRepository } from "../core/index.ts";
 
 export interface V2ChatConversationRepository {
   create(input: V2ChatConversation): Promise<V2ChatConversation>;
@@ -42,6 +43,7 @@ export interface V2ChatMediaRepository {
 export interface V2MemoryRepository {
   create(input: V2Memory): Promise<V2Memory>;
   get(memoryId: V2MemoryId): Promise<V2Memory | undefined>;
+  listByConversation(conversationId: V2ConversationId): Promise<readonly V2Memory[]>;
   listActiveByStoryWorld(storyWorldId: V2StoryWorldId): Promise<readonly V2Memory[]>;
   searchActive(input: {
     readonly storyWorldId: V2StoryWorldId;
@@ -60,13 +62,45 @@ export interface V2ConversationSummaryRepository {
   save(input: V2ConversationSummary): Promise<V2ConversationSummary>;
 }
 
+export interface V2ChatMaintenanceJobRepository {
+  enqueue(input: V2ChatMaintenanceJob): Promise<V2ChatMaintenanceJob>;
+  get(jobId: string): Promise<V2ChatMaintenanceJob | undefined>;
+  hasActiveJob(conversationId: V2ConversationId, jobType: string): Promise<boolean>;
+  claimNext(input: {
+    readonly workerId: string;
+    readonly leaseDurationMs: number;
+    readonly now: string;
+  }): Promise<V2ChatMaintenanceJob | undefined>;
+  renewLease(input: {
+    readonly jobId: string;
+    readonly workerId: string;
+    readonly leaseExpiresAt: string;
+    readonly now: string;
+  }): Promise<boolean>;
+  markCompleted(input: {
+    readonly jobId: string;
+    readonly workerId: string;
+    readonly now: string;
+  }): Promise<void>;
+  markFailed(input: {
+    readonly jobId: string;
+    readonly workerId: string;
+    readonly error: string;
+    readonly retryAvailableAt?: string;
+    readonly isTerminal: boolean;
+    readonly now: string;
+  }): Promise<void>;
+}
+
 export interface V2ChatUnitOfWork {
   withChatTransaction<T>(fn: (repositories: {
     readonly canon: V2CanonRepository;
+    readonly candidateReviews: V2CandidateReviewRepository;
     readonly conversations: V2ChatConversationRepository;
     readonly messages: V2ChatMessageRepository;
     readonly media: V2ChatMediaRepository;
     readonly memories: V2MemoryRepository;
     readonly summaries: V2ConversationSummaryRepository;
+    readonly maintenanceJobs: V2ChatMaintenanceJobRepository;
   }) => Promise<T>): Promise<T>;
 }

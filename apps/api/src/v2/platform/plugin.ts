@@ -156,6 +156,12 @@ function validUrl(value: string, field: string, allowEmpty = false): string {
   return normalized;
 }
 
+function parseModalities(value: unknown): readonly string[] | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (!Array.isArray(value)) throw new TypeError("inputModalities must be an array");
+  return value.map((item) => requiredString(item, "inputModalities element"));
+}
+
 function parseProfileRequest(value: unknown): V2SaveModelProfileRequest {
   if (!isRecord(value)) throw new TypeError("request body must be an object");
   return {
@@ -166,6 +172,8 @@ function parseProfileRequest(value: unknown): V2SaveModelProfileRequest {
     model: requiredString(value.model, "model"),
     timeoutMs: positiveInteger(value.timeoutMs, "timeoutMs", 30000),
     maxTokens: positiveInteger(value.maxTokens, "maxTokens", 4096),
+    ...(value.contextWindow === undefined || value.contextWindow === null ? {} : { contextWindow: positiveInteger(value.contextWindow, "contextWindow", 8192) }),
+    ...(value.inputModalities === undefined ? {} : { inputModalities: parseModalities(value.inputModalities) }),
     temperature: temperature(value.temperature, 0.2),
     ...(value.apiKey === undefined ? {} : { apiKey: typeof value.apiKey === "string" ? value.apiKey.trim() : requiredString(value.apiKey, "apiKey") }),
     ...(typeof value.sourceProfileId === "string" && value.sourceProfileId.trim().length > 0 ? { sourceProfileId: value.sourceProfileId.trim() } : {}),
@@ -252,6 +260,8 @@ function publicProfile(profile: V2StoredModelProfile): V2ModelProfileDto {
     model: profile.model,
     timeoutMs: profile.timeoutMs,
     maxTokens: profile.maxTokens,
+    ...(profile.contextWindow === undefined ? {} : { contextWindow: profile.contextWindow }),
+    ...(profile.inputModalities === undefined ? {} : { inputModalities: profile.inputModalities }),
     temperature: profile.temperature,
     hasApiKey: profile.encryptedApiKey !== undefined && profile.encryptionIv !== undefined,
     createdAt: profile.createdAt,
@@ -398,7 +408,21 @@ export function createV2PlatformPlugin(dependencies: V2PlatformPluginDependencie
         if (sourceProfile?.encryptedApiKey !== undefined) encrypted.encryptedApiKey = sourceProfile.encryptedApiKey;
         if (sourceProfile?.encryptionIv !== undefined) encrypted.encryptionIv = sourceProfile.encryptionIv;
       }
-      const saved = await dependencies.repository.saveModelProfile({ id, name: input.name, protocol: input.protocol, baseUrl: input.baseUrl, model: input.model, timeoutMs: input.timeoutMs ?? 30000, maxTokens: input.maxTokens ?? 4096, temperature: input.temperature ?? 0.2, ...encrypted, createdAt: existing?.createdAt ?? now().toISOString(), updatedAt: now().toISOString() });
+      const saved = await dependencies.repository.saveModelProfile({
+        id,
+        name: input.name,
+        protocol: input.protocol,
+        baseUrl: input.baseUrl,
+        model: input.model,
+        timeoutMs: input.timeoutMs ?? 30000,
+        maxTokens: input.maxTokens ?? 4096,
+        ...(input.contextWindow !== undefined ? { contextWindow: input.contextWindow } : existing?.contextWindow !== undefined ? { contextWindow: existing.contextWindow } : {}),
+        ...(input.inputModalities !== undefined ? { inputModalities: input.inputModalities } : existing?.inputModalities !== undefined ? { inputModalities: existing.inputModalities } : {}),
+        temperature: input.temperature ?? 0.2,
+        ...encrypted,
+        createdAt: existing?.createdAt ?? now().toISOString(),
+        updatedAt: now().toISOString(),
+      });
       return reply.code(existing === undefined ? 201 : 200).send({ profile: publicProfile(saved) });
     }));
     app.put("/model-profiles/:profileId", async (request, reply) => withError(reply, async () => {
@@ -414,7 +438,21 @@ export function createV2PlatformPlugin(dependencies: V2PlatformPluginDependencie
           const value = dependencies.secretCipher.encrypt(input.apiKey);
           return { encryptedApiKey: value.ciphertext, encryptionIv: value.iv };
         })();
-      const saved = await dependencies.repository.saveModelProfile({ id, name: input.name, protocol: input.protocol, baseUrl: input.baseUrl, model: input.model, timeoutMs: input.timeoutMs ?? 30000, maxTokens: input.maxTokens ?? 4096, temperature: input.temperature ?? 0.2, ...encrypted, createdAt: existing.createdAt, updatedAt: now().toISOString() });
+      const saved = await dependencies.repository.saveModelProfile({
+        id,
+        name: input.name,
+        protocol: input.protocol,
+        baseUrl: input.baseUrl,
+        model: input.model,
+        timeoutMs: input.timeoutMs ?? 30000,
+        maxTokens: input.maxTokens ?? 4096,
+        ...(input.contextWindow !== undefined ? { contextWindow: input.contextWindow } : existing.contextWindow !== undefined ? { contextWindow: existing.contextWindow } : {}),
+        ...(input.inputModalities !== undefined ? { inputModalities: input.inputModalities } : existing.inputModalities !== undefined ? { inputModalities: existing.inputModalities } : {}),
+        temperature: input.temperature ?? 0.2,
+        ...encrypted,
+        createdAt: existing.createdAt,
+        updatedAt: now().toISOString(),
+      });
       return { profile: publicProfile(saved) };
     }));
     app.delete("/model-profiles/:profileId", async (request, reply) => withError(reply, async () => {

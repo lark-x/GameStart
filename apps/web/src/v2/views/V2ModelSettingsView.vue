@@ -26,6 +26,8 @@ interface ModelForm {
   model: string;
   timeoutMs: string;
   maxTokens: string;
+  contextWindow: string;
+  inputModalitiesText: string;
   temperature: string;
   apiKey: string;
 }
@@ -56,6 +58,8 @@ function emptyForm(): ModelForm {
     model: "",
     timeoutMs: "30000",
     maxTokens: "4096",
+    contextWindow: "8192",
+    inputModalitiesText: "text",
     temperature: "0.2",
     apiKey: "",
   };
@@ -91,6 +95,8 @@ function selectProfile(profile: V2ModelProfileDto): void {
     model: profile.model,
     timeoutMs: String(profile.timeoutMs),
     maxTokens: String(profile.maxTokens),
+    contextWindow: profile.contextWindow !== undefined ? String(profile.contextWindow) : "8192",
+    inputModalitiesText: profile.inputModalities ? profile.inputModalities.join(", ") : "text",
     temperature: String(profile.temperature),
     apiKey: "",
   };
@@ -181,6 +187,11 @@ async function refresh(): Promise<void> {
 }
 
 function requestFromForm(): V2SaveModelProfileRequest {
+  const modalities = form.value.inputModalitiesText
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
   const input: V2SaveModelProfileRequest = {
     name: form.value.name.trim(),
     protocol: form.value.protocol,
@@ -189,6 +200,8 @@ function requestFromForm(): V2SaveModelProfileRequest {
     timeoutMs: Number(form.value.timeoutMs),
     maxTokens: Number(form.value.maxTokens),
     temperature: Number(form.value.temperature),
+    ...(form.value.contextWindow ? { contextWindow: Number(form.value.contextWindow) } : {}),
+    ...(modalities.length > 0 ? { inputModalities: modalities } : {}),
     ...(form.value.id === undefined ? {} : { id: form.value.id }),
     ...(form.value.apiKey.trim().length === 0 ? {} : { apiKey: form.value.apiKey.trim() }),
     ...(form.value.sourceProfileId && form.value.apiKey.trim().length === 0 ? { sourceProfileId: form.value.sourceProfileId } : {}),
@@ -418,8 +431,14 @@ onMounted(() => {
           <Field for-id="v2-model-timeout" label="超时（毫秒）">
             <Input id="v2-model-timeout" v-model="form.timeoutMs" type="number" min="1" />
           </Field>
+          <Field for-id="v2-model-context-window" label="上下文窗口（Context Window Token）" hint="模型的总上下文限制，默认 8192">
+            <Input id="v2-model-context-window" v-model="form.contextWindow" type="number" min="1" />
+          </Field>
           <Field for-id="v2-model-max-tokens" label="最大输出 Token">
             <Input id="v2-model-max-tokens" v-model="form.maxTokens" type="number" min="1" />
+          </Field>
+          <Field for-id="v2-model-input-modalities" label="支持模态（英文逗号隔开）" hint="例如: text 或 text, image">
+            <Input id="v2-model-input-modalities" v-model="form.inputModalitiesText" placeholder="text, image" />
           </Field>
           <Field for-id="v2-model-temperature" label="温度（0 - 2）">
             <Input id="v2-model-temperature" v-model="form.temperature" type="number" min="0" max="2" step="0.1" />

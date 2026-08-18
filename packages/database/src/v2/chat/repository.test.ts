@@ -101,6 +101,7 @@ test("V2 chat message repository returns the latest recent messages and supports
 
     const before = await unit.withChatTransaction(async ({ messages }) => messages.listBefore("conversation:recent" as never, "message:recent:100" as never, 10));
     assert.equal(before.length, 10);
+    assert.equal(before[0]?.messageId, "message:recent:90");
     assert.equal(before.at(-1)?.messageId, "message:recent:99");
 
     const existing = await unit.withChatTransaction(async ({ messages }) => messages.findByIdempotencyKey("conversation:recent" as never, "recent-key:123"));

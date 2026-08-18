@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
-import { Sparkles } from "@lucide/vue";
-import type { V2IdempotencyKey } from "@living-network/contracts/v2";
+import { MessageSquare, Sparkles } from "@lucide/vue";
+import type { V2ChatConversationDto, V2IdempotencyKey } from "@living-network/contracts/v2";
 
 import Button from "../../components/ui/Button.vue";
 import Input from "../../components/ui/Input.vue";
@@ -19,6 +19,24 @@ const persona = ref("");
 const displayName = ref("");
 const loading = ref(false);
 const errorMessage = ref("");
+const recentConversations = ref<readonly V2ChatConversationDto[]>([]);
+const loadingRecent = ref(false);
+
+onMounted(async () => {
+  await loadRecentStories();
+});
+
+async function loadRecentStories(): Promise<void> {
+  loadingRecent.value = true;
+  try {
+    const list = await client.listConversations();
+    recentConversations.value = list;
+  } catch (error) {
+    console.error("加载最近故事失败:", error);
+  } finally {
+    loadingRecent.value = false;
+  }
+}
 
 async function startStory(): Promise<void> {
   const personaText = persona.value.trim();
@@ -50,27 +68,53 @@ async function startStory(): Promise<void> {
       title="创建新的故事"
       description="只需要描述你想遇到的角色，马上就能开始聊天。世界会随着故事自然生长。"
     />
-    <section class="v2-start-card">
-      <div class="v2-start-icon"><Sparkles :size="24" aria-hidden="true" /></div>
-      <h2>描述你想遇到的角色</h2>
-      <p class="v2-start-hint">可以写性格、说话方式、与你的关系，以及任何你希望 AI 记住的细节。</p>
-      <form class="v2-start-form" @submit.prevent="startStory">
-        <label for="v2-persona">角色人设</label>
-        <Textarea
-          id="v2-persona"
-          v-model="persona"
-          placeholder="花火是一个……\n性格……\n说话方式……\n与我的关系……"
-          :rows="8"
-          :disabled="loading"
-        />
-        <label for="v2-display-name">角色名称（可选）</label>
-        <Input id="v2-display-name" v-model="displayName" placeholder="例如：花火" :disabled="loading" />
-        <p v-if="errorMessage" class="v2-start-error">{{ errorMessage }}</p>
-        <Button variant="primary" size="lg" type="submit" :loading="loading" :disabled="!persona.trim()">
-          开始故事
-        </Button>
-      </form>
-    </section>
+
+    <div class="v2-start-layout">
+      <section class="v2-start-card">
+        <div class="v2-start-icon"><Sparkles :size="24" aria-hidden="true" /></div>
+        <h2>描述你想遇到的角色</h2>
+        <p class="v2-start-hint">可以写性格、说话方式、与你的关系，以及任何你希望 AI 记住的细节。</p>
+        <form class="v2-start-form" @submit.prevent="startStory">
+          <label for="v2-persona">角色人设</label>
+          <Textarea
+            id="v2-persona"
+            v-model="persona"
+            placeholder="花火是一个……\n性格……\n说话方式……\n与我的关系……"
+            :rows="6"
+            :disabled="loading"
+          />
+          <label for="v2-display-name">角色名称（可选）</label>
+          <Input id="v2-display-name" v-model="displayName" placeholder="例如：花火" :disabled="loading" />
+          <p v-if="errorMessage" class="v2-start-error">{{ errorMessage }}</p>
+          <Button variant="primary" size="lg" type="submit" :loading="loading" :disabled="!persona.trim()">
+            开始故事
+          </Button>
+        </form>
+      </section>
+
+      <section v-if="recentConversations.length > 0" class="v2-recent-card">
+        <div class="v2-recent-header">
+          <MessageSquare :size="20" aria-hidden="true" />
+          <h3>进行中的故事</h3>
+        </div>
+        <div class="v2-recent-list">
+          <article
+            v-for="conv in recentConversations"
+            :key="conv.conversationId"
+            class="v2-recent-item"
+            role="button"
+            tabindex="0"
+            @click="router.push(`/v2/chat/${encodeURIComponent(conv.conversationId)}`)"
+          >
+            <div class="v2-recent-info">
+              <h4>{{ conv.title || "故事对话" }}</h4>
+              <p>{{ conv.conversationId }}</p>
+            </div>
+            <Button variant="secondary" size="sm">继续对话</Button>
+          </article>
+        </div>
+      </section>
+    </div>
   </div>
 </template>
 
@@ -80,10 +124,22 @@ async function startStory(): Promise<void> {
   gap: var(--space-5);
 }
 
+.v2-start-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 640px) minmax(280px, 400px);
+  gap: var(--space-5);
+  align-items: start;
+  justify-content: center;
+}
+
+@media (max-width: 900px) {
+  .v2-start-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
 .v2-start-card {
-  max-width: 640px;
   width: 100%;
-  margin: 0 auto;
   padding: var(--space-6);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -130,5 +186,67 @@ async function startStory(): Promise<void> {
   margin: 0;
   color: var(--danger);
   font-size: var(--text-sm);
+}
+
+.v2-recent-card {
+  padding: var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  display: grid;
+  gap: var(--space-3);
+}
+
+.v2-recent-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text);
+}
+
+.v2-recent-header h3 {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: 600;
+}
+
+.v2-recent-list {
+  display: grid;
+  gap: var(--space-2);
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.v2-recent-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--background);
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.v2-recent-item:hover {
+  border-color: var(--primary);
+}
+
+.v2-recent-info h4 {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text);
+}
+
+.v2-recent-info p {
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
 }
 </style>

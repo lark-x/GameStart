@@ -75,7 +75,8 @@
         "packages/contracts/src/v2/chat/**",
         "packages/domain/src/v2/chat/**",
         "packages/ports/src/v2/chat/**",
-        "packages/database/src/v2/chat/**"
+        "packages/database/src/v2/chat/**",
+        "apps/worker/src/v2/maintenance-dispatch-pump*.ts"
       ]
     },
     "generation-assets": {
