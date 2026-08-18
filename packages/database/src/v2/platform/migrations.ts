@@ -34,8 +34,6 @@ export const v2PlatformMigrations: V2MigrationRegistry = {
           model TEXT NOT NULL,
           timeout_ms INTEGER NOT NULL CHECK (timeout_ms >= 1),
           max_tokens INTEGER NOT NULL CHECK (max_tokens >= 1),
-          context_window INTEGER,
-          input_modalities_json TEXT,
           temperature REAL NOT NULL CHECK (temperature >= 0 AND temperature <= 2),
           encrypted_api_key TEXT,
           encryption_iv TEXT,
@@ -134,6 +132,46 @@ export const v2PlatformMigrations: V2MigrationRegistry = {
         );
       `),
       down: (db) => db.exec(`DROP TABLE v2_external_connection_checks;`),
+    },
+    {
+      id: "0203_v2_model_profile_context_modalities",
+      up: (db) => db.exec(`
+        ALTER TABLE v2_model_profiles
+          ADD COLUMN context_window INTEGER;
+        ALTER TABLE v2_model_profiles
+          ADD COLUMN input_modalities_json TEXT;
+      `),
+      down: (db) => {
+        // SQLite cannot drop columns before 3.35; recreate the table without the new columns.
+        db.exec(`
+          CREATE TABLE v2_model_profiles_0203_backup (
+            profile_id TEXT PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            protocol TEXT NOT NULL CHECK (protocol IN ('openai-compatible', 'anthropic')),
+            base_url TEXT NOT NULL,
+            model TEXT NOT NULL,
+            timeout_ms INTEGER NOT NULL CHECK (timeout_ms >= 1),
+            max_tokens INTEGER NOT NULL CHECK (max_tokens >= 1),
+            temperature REAL NOT NULL CHECK (temperature >= 0 AND temperature <= 2),
+            encrypted_api_key TEXT,
+            encryption_iv TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            CHECK ((encrypted_api_key IS NULL AND encryption_iv IS NULL) OR
+                   (encrypted_api_key IS NOT NULL AND encryption_iv IS NOT NULL))
+          );
+          INSERT INTO v2_model_profiles_0203_backup (
+            profile_id, name, protocol, base_url, model, timeout_ms, max_tokens,
+            temperature, encrypted_api_key, encryption_iv, created_at, updated_at
+          )
+          SELECT
+            profile_id, name, protocol, base_url, model, timeout_ms, max_tokens,
+            temperature, encrypted_api_key, encryption_iv, created_at, updated_at
+          FROM v2_model_profiles;
+          DROP TABLE v2_model_profiles;
+          ALTER TABLE v2_model_profiles_0203_backup RENAME TO v2_model_profiles;
+        `);
+      },
     },
   ],
 };
