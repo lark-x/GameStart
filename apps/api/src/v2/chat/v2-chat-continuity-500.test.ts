@@ -12,9 +12,13 @@ import type {
   V2MemoryId,
   V2MessageId,
 } from "@living-network/contracts/v2";
-import { openV2TempSqliteConnection, V2SqliteChatUnitOfWork } from "@living-network/database/v2";
+import {
+  openV2TempSqliteConnection,
+  V2SqliteChatUnitOfWork,
+  V2SqliteMemoryEngineRunRepository,
+} from "@living-network/database/v2";
 import { createV2ChatMaintenanceJob } from "@living-network/domain/v2";
-import { V2MaintenanceDispatchPump } from "@living-network/worker";
+import { V2BuiltinStructuredEngine, V2MaintenanceDispatchPump } from "@living-network/worker";
 import { createV2ApiRuntime } from "../platform/runtime.ts";
 import { createV2ChatUseCases } from "./use-cases.ts";
 
@@ -31,8 +35,8 @@ class DeterministicChatProvider implements ChatProvider {
       throw new Error("HTTP 429: Too Many Requests / Rate limit exceeded");
     }
 
-    // Memory extraction prompt handling
-    if (lastMessage.includes("memory extraction agent")) {
+    // Fact extraction prompt handling
+    if (lastMessage.includes("Extractor version")) {
       const allIds = Array.from(lastMessage.matchAll(/\[ID: (message:[^\]]+)\]/g)).map((m) => m[1]!);
       const sourceIds = allIds.length > 0 ? allIds : ["message:user:fallback"];
 
@@ -42,10 +46,14 @@ class DeterministicChatProvider implements ChatProvider {
           model: "fake-chat",
           content: JSON.stringify([
             {
+              subject: { entityType: "user", entityId: "user:local" },
+              predicate: "birthday",
+              object: { type: "text", value: "3 月 12 日" },
               kind: "profile",
-              content: "用户的生日是 3 月 12 日",
-              importance: 5,
+              text: "用户的生日是 3 月 12 日",
+              changeHint: "new",
               confidence: 0.95,
+              importanceHint: 0.8,
               sourceMessageIds: sourceIds,
             },
           ]),
@@ -58,10 +66,14 @@ class DeterministicChatProvider implements ChatProvider {
           model: "fake-chat",
           content: JSON.stringify([
             {
+              subject: { entityType: "user", entityId: "user:local" },
+              predicate: "preferred_drink",
+              object: { type: "text", value: "coffee" },
               kind: "preference",
-              content: "用户喜欢喝咖啡",
-              importance: 4,
+              text: "用户喜欢喝咖啡",
+              changeHint: "new",
               confidence: 0.9,
+              importanceHint: 0.8,
               sourceMessageIds: sourceIds,
             },
           ]),
@@ -74,10 +86,14 @@ class DeterministicChatProvider implements ChatProvider {
           model: "fake-chat",
           content: JSON.stringify([
             {
+              subject: { entityType: "user", entityId: "user:local" },
+              predicate: "preferred_drink",
+              object: { type: "text", value: "tea" },
               kind: "preference",
-              content: "用户现在不喝咖啡了，更喜欢喝茶",
-              importance: 4,
+              text: "用户现在不喝咖啡了，更喜欢喝茶",
+              changeHint: "replaces_previous",
               confidence: 0.95,
+              importanceHint: 0.95,
               sourceMessageIds: sourceIds,
             },
           ]),
@@ -153,6 +169,10 @@ test("500 Turn System-level E2E Continuity and Stability Test", async () => {
   });
 
   const getUnitOfWork = () => new V2SqliteChatUnitOfWork(runtime.db);
+  const makeEngine = () => new V2BuiltinStructuredEngine({
+    unitOfWork: getUnitOfWork(),
+    runs: new V2SqliteMemoryEngineRunRepository(runtime.db),
+  });
   let simulatedTime = Date.now();
   const getNow = () => new Date(simulatedTime);
 
@@ -161,6 +181,7 @@ test("500 Turn System-level E2E Continuity and Stability Test", async () => {
     unitOfWork: getUnitOfWork(),
     provider,
     pollIntervalMs: 50,
+    engines: [makeEngine()],
     now: getNow,
   });
 
@@ -281,6 +302,7 @@ test("500 Turn System-level E2E Continuity and Stability Test", async () => {
           provider,
           pollIntervalMs: 50,
           now: getNow,
+          engines: [makeEngine()],
         });
         pump.start();
         await drainPump();
@@ -309,6 +331,7 @@ test("500 Turn System-level E2E Continuity and Stability Test", async () => {
           provider,
           pollIntervalMs: 50,
           now: getNow,
+          engines: [makeEngine()],
         });
         pump.start();
 

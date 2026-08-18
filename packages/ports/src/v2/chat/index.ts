@@ -133,5 +133,6 @@ export interface V2ChatUnitOfWork {
     readonly summaries: V2ConversationSummaryRepository;
     readonly traces: V2ChatTraceRepository;
     readonly maintenanceJobs: V2ChatMaintenanceJobRepository;
+    readonly facts: import("../fact/index.ts").V2FactRepository;
   }) => Promise<T>): Promise<T>;
 }

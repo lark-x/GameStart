@@ -5,3 +5,4 @@ export * from "./templates.ts";
 export * from "./registry.ts";
 export * from "./context.ts";
 export * from "./story-analyzer.ts";
+export * from "./fact/index.ts";

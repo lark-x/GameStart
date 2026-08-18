@@ -200,7 +200,8 @@ export type V2MaintenanceJobType =
   | "memory_extract"
   | "conversation_summary"
   | "memory_consolidate"
-  | "story_analyze";
+  | "story_analyze"
+  | "memory_engine_consume";
 
 export type V2MaintenanceJobStatus = "pending" | "claimed" | "running" | "completed" | "failed";
 
@@ -249,6 +250,12 @@ export interface V2MemoryConsolidatePayload {
   readonly idempotencyKey: string;
 }
 
+export interface V2MemoryEngineConsumePayload {
+  readonly conversationId: V2ConversationId;
+  readonly engineId: string;
+  readonly batchId: string;
+}
+
 export interface V2StoryAnalyzePayload {
   readonly conversationId: V2ConversationId;
   readonly storyWorldId?: V2StoryWorldId;
@@ -263,7 +270,8 @@ export type V2MaintenanceJobPayload =
   | ({ readonly jobType: "memory_extract" } & V2MemoryExtractPayload)
   | ({ readonly jobType: "conversation_summary" } & V2ConversationSummaryPayload)
   | ({ readonly jobType: "memory_consolidate" } & V2MemoryConsolidatePayload)
-  | ({ readonly jobType: "story_analyze" } & V2StoryAnalyzePayload);
+  | ({ readonly jobType: "story_analyze" } & V2StoryAnalyzePayload)
+  | ({ readonly jobType: "memory_engine_consume" } & V2MemoryEngineConsumePayload);
 
 export interface V2ChatMaintenanceJobDto {
   readonly jobId: string;

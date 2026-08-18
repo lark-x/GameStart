@@ -9,6 +9,8 @@ import type {
   V2MemoryConsolidateCandidate,
   V2MemoryConsolidatePayload,
   V2MemoryExtractPayload,
+  V2MemoryEngineConsumePayload,
+  V2FactExtractorVersion,
   V2MemoryId,
   V2MemoryKind,
   V2MessageId,
@@ -18,24 +20,30 @@ import type {
   V2StoryWorldId,
   V2CharacterId,
 } from "@living-network/contracts/v2";
-import type { V2ChatMessageRepository, V2ChatUnitOfWork } from "@living-network/ports/v2";
+import type { V2ChatMessageRepository, V2ChatUnitOfWork, V2MemoryEngine } from "@living-network/ports/v2";
 import type { ChatProvider } from "@living-network/ai/v2";
 import {
   buildStoryAnalyzerPrompt,
+  buildFactExtractionPrompt,
+  parseFactExtractionOutput,
   parseStoryAnalyzerOutput,
   StructuredOutputError,
 } from "@living-network/ai/prompt-engine";
 import {
   createV2ConversationSummary,
+  createV2FactAssertion,
+  createV2FactAssertionBatch,
   createV2ChatMaintenanceJob,
   createV2Memory,
   createV2SceneCandidate,
   type V2ChatMaintenanceJob,
   type V2ChatMessage,
   type V2ConversationSummary,
+  type V2FactAssertion,
+  type V2FactAssertionBatch,
   type V2Memory,
 } from "@living-network/domain/v2";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 export interface V2MaintenanceDispatchPumpOptions {
   readonly workerId: string;
@@ -43,18 +51,12 @@ export interface V2MaintenanceDispatchPumpOptions {
   readonly provider?: ChatProvider;
   readonly memoryProvider?: ChatProvider;
   readonly storyAnalysisProvider?: ChatProvider;
+  readonly structuredEngine?: import("./memory/index.ts").V2BuiltinStructuredEngine;
+  readonly engines?: readonly V2MemoryEngine[];
   readonly pollIntervalMs?: number;
   readonly leaseDurationMs?: number;
   readonly heartbeatIntervalMs?: number;
   readonly now?: () => Date;
-}
-
-export interface V2ParsedMemoryCandidate {
-  readonly kind: V2MemoryKind;
-  readonly content: string;
-  readonly importance: number;
-  readonly confidence: number;
-  readonly sourceMessageIds: readonly V2MessageId[];
 }
 
 export interface V2ConsolidationDecision {
@@ -81,15 +83,15 @@ export class LeaseLostError extends Error {
   }
 }
 
-function normalizedImportance(importance: number): number {
-  return importance / 5;
-}
+type V2FactAssertionSubjectEntityType = "user" | "character" | "location" | "item" | "faction" | "concept";
 
 export class V2MaintenanceDispatchPump {
   private readonly workerId: string;
   private readonly unitOfWork: V2ChatUnitOfWork;
   private readonly memoryProvider: ChatProvider;
   private readonly storyAnalysisProvider: ChatProvider;
+  private readonly structuredEngine: import("./memory/index.ts").V2BuiltinStructuredEngine | undefined;
+  private readonly engines: readonly V2MemoryEngine[];
   private readonly pollIntervalMs: number;
   private readonly leaseDurationMs: number;
   private readonly heartbeatIntervalMs: number;
@@ -106,6 +108,8 @@ export class V2MaintenanceDispatchPump {
     this.unitOfWork = options.unitOfWork;
     this.memoryProvider = options.memoryProvider ?? options.provider!;
     this.storyAnalysisProvider = options.storyAnalysisProvider ?? options.provider!;
+    this.structuredEngine = options.structuredEngine;
+    this.engines = options.engines ?? (options.structuredEngine === undefined ? [] : [options.structuredEngine]);
     this.pollIntervalMs = options.pollIntervalMs ?? 2000;
     this.leaseDurationMs = options.leaseDurationMs ?? 30000;
     this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? 10000;
@@ -206,6 +210,8 @@ export class V2MaintenanceDispatchPump {
         await this.handleConversationSummary(job);
       } else if (job.jobType === "story_analyze") {
         await this.handleStoryAnalyze(job);
+      } else if (job.jobType === "memory_engine_consume") {
+        await this.handleMemoryEngineConsume(job);
       } else {
         throw new Error(`Unknown maintenance job type: ${job.jobType}`);
       }
@@ -255,107 +261,108 @@ export class V2MaintenanceDispatchPump {
       return this.resolveSourceMessages(repos.messages, payload.conversationId, payload.sourceMessageIds);
     });
 
-    const messagesText = sortedMessages
-      .map((m) => `[ID: ${m.messageId}] ${m.role.toUpperCase()}: ${m.text ?? ""}`)
-      .join("\n");
+    const extractorVersion = "fact.extract:v1" as V2FactExtractorVersion;
+    const fromMessageId = (payload.range?.fromMessageId ?? sortedMessages[0]?.messageId) as V2MessageId | undefined;
+    const toMessageId = (payload.range?.toMessageId ?? sortedMessages[sortedMessages.length - 1]?.messageId) as V2MessageId | undefined;
+    if (fromMessageId === undefined || toMessageId === undefined) {
+      throw new SourceMessageNotFoundError("Memory extract job has no message range");
+    }
+    const sourceHash = createHash("sha256")
+      .update(JSON.stringify([...payload.sourceMessageIds].sort()))
+      .digest("hex");
 
-    const prompt = `You are a memory extraction agent. Extract important factual memories about the user, character, or world from this chat segment.
-Output MUST be a JSON array of objects with keys: "kind" ("profile"|"preference"|"relationship"|"episodic"|"world_fact"), "content" (string), "importance" (number 1-5), "confidence" (number 0-1), "sourceMessageIds" (array of message IDs cited).
+    // 1. Resolve the immutable fact batch for this exact source range + extractor version.
+    const existingBatch = await this.unitOfWork.withChatTransaction(async (repos) =>
+      repos.facts.findBatchByRange({
+        conversationId: payload.conversationId,
+        fromMessageId,
+        toMessageId,
+        extractorVersion,
+      }));
 
-Chat Messages:
-${messagesText}
-
-Respond ONLY with valid JSON array:`;
-
-    const completion = await this.memoryProvider.complete({
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.1,
-    });
-
-    const candidates = this.parseMemoryCandidates((completion as any).reply ?? completion.content ?? "");
-    const validSourceSet = new Set(payload.sourceMessageIds);
-
-    for (const candidate of candidates) {
-      const invalidCitations = candidate.sourceMessageIds.filter((id) => !validSourceSet.has(id));
-      if (invalidCitations.length > 0) {
-        throw new StructuredOutputError(
-          "INVALID_SCHEMA",
-          `Memory candidate cites source message ids outside the job range: ${invalidCitations.join(", ")}`,
-        );
+    let batchId: string;
+    if (existingBatch !== undefined) {
+      batchId = existingBatch.batchId;
+      // Replay the ledger through engine consume jobs (idempotent) so any
+      // engine work lost after the fact commit is recovered.
+      await this.enqueueEngineConsumeJobs(job, existingBatch);
+    } else {
+      // 2. Run the unified fact extractor (single LLM call; engines never re-extract).
+      const { system, user } = buildFactExtractionPrompt({
+        extractorVersion,
+        messages: sortedMessages.map((message) => ({
+          role: message.role,
+          messageId: message.messageId,
+          ...(message.text === undefined ? {} : { text: message.text }),
+        })),
+      });
+      const completion = await this.memoryProvider.complete({
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: user },
+        ],
+        temperature: 0.1,
+      });
+      const parsed = parseFactExtractionOutput((completion as { reply?: string }).reply ?? completion.content ?? "");
+      const validSourceSet = new Set<string>(payload.sourceMessageIds);
+      for (const fact of parsed) {
+        const invalidCitations = fact.sourceMessageIds.filter((id) => !validSourceSet.has(id));
+        if (invalidCitations.length > 0) {
+          throw new StructuredOutputError(
+            "INVALID_SCHEMA",
+            `Fact assertion cites source message ids outside the job range: ${invalidCitations.join(", ")}`,
+          );
+        }
       }
-      const citedIds = candidate.sourceMessageIds;
 
+      // 3. Persist the fact batch + assertions (fact ledger commit is the recovery boundary).
+      const nowIso = this.now().toISOString();
+      const conversation = await this.unitOfWork.withChatTransaction(async (repos) => repos.conversations.get(payload.conversationId));
+      const storyWorldId = (payload.storyWorldId ?? conversation?.storyWorldId ?? "default_world") as V2StoryWorldId;
+      batchId = `fact_batch:${randomUUID()}`;
+      const batch = createV2FactAssertionBatch({
+        batchId,
+        storyWorldId,
+        conversationId: payload.conversationId,
+        fromMessageId,
+        toMessageId,
+        sourceMessageIds: payload.sourceMessageIds,
+        sourceHash,
+        extractorVersion,
+        status: "completed",
+        createdAt: nowIso,
+        completedAt: nowIso,
+      });
+      const assertions = parsed.map((fact, index) => createV2FactAssertion({
+        assertionId: `fact:${batchId}:${index}`,
+        batchId,
+        storyWorldId,
+        conversationId: payload.conversationId,
+        scopeType: this.scopeTypeForSubject(fact.subject.entityType),
+        scopeId: fact.subject.entityType === "user" || fact.subject.entityType === "character"
+          ? fact.subject.entityId
+          : storyWorldId,
+        subject: fact.subject,
+        predicate: fact.predicate,
+        object: fact.object,
+        kind: fact.kind,
+        text: fact.text,
+        changeHint: fact.changeHint,
+        ...(fact.epistemicStatus === undefined ? {} : { epistemicStatus: fact.epistemicStatus }),
+        confidence: fact.confidence,
+        importanceHint: fact.importanceHint,
+        sourceMessageIds: fact.sourceMessageIds,
+        observedAt: nowIso,
+        extractorVersion,
+      }));
       await this.unitOfWork.withChatTransaction(async (repos) => {
         await this.assertLeaseOwner(job.jobId, repos);
-        const conversation = await repos.conversations.get(payload.conversationId);
-        const storyWorldId = (payload.storyWorldId ?? conversation?.storyWorldId ?? "default_world") as V2StoryWorldId;
-        const existingMemories = await repos.memories.listByConversation(payload.conversationId);
-        const exactMatch = existingMemories.find(
-          (m: V2Memory) => m.status === "active" && m.kind === candidate.kind && m.content.trim() === candidate.content.trim(),
-        );
-        if (exactMatch) {
-          return;
-        }
-
-        const similarCandidates = await repos.memories.searchActive({
-          storyWorldId,
-          query: candidate.content,
-          limit: 5,
-        });
-        const similarMemory = similarCandidates.find(
-          (m: V2Memory) => m.status === "active" && m.kind === candidate.kind,
-        );
-
-        if (similarMemory) {
-          const idempotencyKey = `memory_consolidate:${similarMemory.memoryId}:${candidate.content.trim()}`;
-          const alreadyQueued = await repos.maintenanceJobs.findJobByDedupeKey("memory_consolidate", idempotencyKey) !== undefined;
-          if (alreadyQueued) {
-            return;
-          }
-          const consolidatePayload: V2MemoryConsolidatePayload = {
-            conversationId: payload.conversationId,
-            ...(payload.storyWorldId ? { storyWorldId: payload.storyWorldId } : {}),
-            ...(payload.characterId ? { characterId: payload.characterId } : {}),
-            existingMemoryId: similarMemory.memoryId as V2MemoryId,
-            idempotencyKey,
-            candidate: {
-              kind: candidate.kind,
-              content: candidate.content,
-              importance: normalizedImportance(candidate.importance),
-              confidence: candidate.confidence,
-              sourceMessageIds: citedIds,
-            },
-          };
-
-          const newJob = createV2ChatMaintenanceJob({
-            jobId: randomUUID(),
-            conversationId: payload.conversationId,
-            jobType: "memory_consolidate",
-            payload: consolidatePayload,
-            status: "pending",
-            dedupeKey: idempotencyKey,
-            now: this.now().toISOString(),
-          } as any);
-
-          await repos.maintenanceJobs.enqueue(newJob);
-        } else {
-          const newMemory = createV2Memory({
-            memoryId: randomUUID(),
-            storyWorldId,
-            conversationId: payload.conversationId,
-            ...(payload.characterId ? { characterId: payload.characterId } : {}),
-            kind: candidate.kind,
-            content: candidate.content,
-            importance: normalizedImportance(candidate.importance),
-            confidence: candidate.confidence,
-            sourceMessageIds: citedIds,
-            status: "active",
-            createdAt: this.now().toISOString(),
-            updatedAt: this.now().toISOString(),
-          });
-          await repos.memories.create(newMemory);
-        }
+        await repos.facts.createBatch(batch);
+        await repos.facts.createAssertions(assertions);
       });
+
+      // 4. Fan out engine consume jobs (fact ledger commit is the recovery boundary).
+      await this.enqueueEngineConsumeJobs(job, batch);
     }
 
     const cursorMessageId = payload.range?.toMessageId ?? sortedMessages[sortedMessages.length - 1]?.messageId;
@@ -365,6 +372,76 @@ Respond ONLY with valid JSON array:`;
         await repos.maintenanceJobs.setMemoryExtractCursor(payload.conversationId, cursorMessageId as V2MessageId);
       });
     }
+  }
+
+  private async enqueueEngineConsumeJobs(
+    job: V2ChatMaintenanceJob,
+    batch: V2FactAssertionBatch,
+  ): Promise<void> {
+    await this.unitOfWork.withChatTransaction(async (repos) => {
+      await this.assertLeaseOwner(job.jobId, repos);
+      for (const engine of this.engines) {
+        const dedupeKey = `memory_engine_consume:${engine.id}:${batch.batchId}`;
+        const existing = await repos.maintenanceJobs.findJobByDedupeKey("memory_engine_consume", dedupeKey);
+        if (existing !== undefined) continue;
+        const payload: V2MemoryEngineConsumePayload = {
+          conversationId: batch.conversationId as V2MemoryEngineConsumePayload["conversationId"],
+          engineId: engine.id,
+          batchId: batch.batchId,
+        };
+        await repos.maintenanceJobs.enqueue(createV2ChatMaintenanceJob({
+          jobId: randomUUID(),
+          conversationId: batch.conversationId,
+          jobType: "memory_engine_consume",
+          status: "pending",
+          payload,
+          dedupeKey,
+          attempts: 0,
+          maxAttempts: 3,
+          availableAt: this.now().toISOString(),
+        }));
+      }
+    });
+  }
+
+  private async handleMemoryEngineConsume(job: V2ChatMaintenanceJob): Promise<void> {
+    const payload = job.payload as unknown as V2MemoryEngineConsumePayload;
+    if (!payload || !payload.engineId || !payload.batchId) {
+      throw new SourceMessageNotFoundError("Memory engine consume job payload is incomplete");
+    }
+    const engine = this.engines.find((item) => item.id === payload.engineId);
+    if (engine === undefined) {
+      throw new Error(`Unknown memory engine: ${payload.engineId}`);
+    }
+    const { batch, assertions } = await this.unitOfWork.withChatTransaction(async (repos) => {
+      const found = await repos.facts.getBatch(payload.batchId);
+      if (found === undefined) {
+        throw new SourceMessageNotFoundError(`Fact batch not found: ${payload.batchId}`);
+      }
+      return {
+        batch: found,
+        assertions: await repos.facts.listAssertionsByBatch(payload.batchId),
+      };
+    });
+
+    const ownsLease = await this.unitOfWork.withChatTransaction(async (repos) =>
+      repos.maintenanceJobs.isLeaseOwner({ jobId: job.jobId, workerId: this.workerId, now: this.now().toISOString() }));
+    if (!ownsLease) {
+      throw new LeaseLostError(`Lease lost for job ${job.jobId}; refusing to consume memory engine`);
+    }
+
+    await engine.consume({ batch, assertions });
+
+    await this.unitOfWork.withChatTransaction(async (repos) => {
+      await this.assertLeaseOwner(job.jobId, repos);
+      await repos.facts.setEngineOffset(engine.id, `conversation:${payload.conversationId}`, payload.batchId);
+    });
+  }
+
+  private scopeTypeForSubject(entityType: V2FactAssertionSubjectEntityType): "user" | "world" | "character" | "conversation" {
+    if (entityType === "user") return "user";
+    if (entityType === "character") return "character";
+    return "world";
   }
 
   private async handleMemoryConsolidate(job: V2ChatMaintenanceJob): Promise<void> {
@@ -418,7 +495,7 @@ Output JSON with format:
           ...(payload.characterId ? { characterId: payload.characterId } : {}),
           kind: payload.candidate.kind,
           content: payload.candidate.content,
-          importance: normalizedImportance(payload.candidate.importance),
+          importance: payload.candidate.importance,
           confidence: payload.candidate.confidence,
           sourceMessageIds: payload.candidate.sourceMessageIds,
           status: "active",
@@ -441,7 +518,7 @@ Output JSON with format:
           ...(payload.characterId ? { characterId: payload.characterId } : {}),
           kind: payload.candidate.kind,
           content: payload.candidate.content,
-          importance: normalizedImportance(payload.candidate.importance),
+          importance: payload.candidate.importance,
           confidence: payload.candidate.confidence,
           sourceMessageIds: payload.candidate.sourceMessageIds,
           status: "active",
@@ -469,7 +546,7 @@ Output JSON with format:
           ...(payload.characterId ? { characterId: payload.characterId } : {}),
           kind: payload.candidate.kind,
           content: mergedText,
-          importance: Math.max(existingMemory.importance, normalizedImportance(payload.candidate.importance)),
+          importance: Math.max(existingMemory.importance, payload.candidate.importance),
           confidence: Math.max(existingMemory.confidence, payload.candidate.confidence),
           sourceMessageIds: combinedSourceIds,
           status: "active",
@@ -658,52 +735,6 @@ Respond with the summary text only:`;
         await this.assertLeaseOwner(job.jobId, repos);
         await repos.maintenanceJobs.setStoryAnalyzeCursor(payload.conversationId, cursorMessageId as V2MessageId);
       });
-    }
-  }
-
-  private parseMemoryCandidates(raw: string): readonly V2ParsedMemoryCandidate[] {
-    try {
-      const parsed = JSON.parse(raw);
-      const list = Array.isArray(parsed) ? parsed : parsed.memories || parsed.candidates || [];
-      if (!Array.isArray(list)) {
-        throw new StructuredOutputError("INVALID_SCHEMA", "Memory extraction output must be a JSON array");
-      }
-      return list.map((item) => {
-        if (!item || typeof item !== "object" || typeof item.content !== "string" || typeof item.kind !== "string") {
-          throw new StructuredOutputError("INVALID_SCHEMA", "Memory extraction item must have string kind and content");
-        }
-        const kind = item.kind;
-        const validKinds: readonly V2MemoryKind[] = ["profile", "preference", "relationship", "episodic", "world_fact"];
-        if (!validKinds.includes(kind as V2MemoryKind)) {
-          throw new StructuredOutputError("INVALID_SCHEMA", `Unknown memory kind: ${kind}`);
-        }
-        const content = String(item.content).trim();
-        if (content.length < 2 || content.length > 1000) {
-          throw new StructuredOutputError("INVALID_SCHEMA", "Memory content must be between 2 and 1000 characters");
-        }
-        const importance = typeof item.importance === "number" ? item.importance : NaN;
-        const confidence = typeof item.confidence === "number" ? item.confidence : NaN;
-        if (!Number.isFinite(importance) || importance < 1 || importance > 5) {
-          throw new StructuredOutputError("INVALID_SCHEMA", "Memory importance must be a number between 1 and 5");
-        }
-        if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
-          throw new StructuredOutputError("INVALID_SCHEMA", "Memory confidence must be a number between 0 and 1");
-        }
-        if (!Array.isArray(item.sourceMessageIds) || item.sourceMessageIds.length === 0 ||
-            !item.sourceMessageIds.every((id: unknown) => typeof id === "string")) {
-          throw new StructuredOutputError("INVALID_SCHEMA", "Memory item must have a non-empty sourceMessageIds array of strings");
-        }
-        return {
-          kind: kind as V2MemoryKind,
-          content,
-          importance,
-          confidence,
-          sourceMessageIds: item.sourceMessageIds.map(String) as unknown as V2MessageId[],
-        };
-      });
-    } catch (error) {
-      if (error instanceof StructuredOutputError) throw error;
-      throw new StructuredOutputError("INVALID_JSON", "Memory extraction output is not valid JSON");
     }
   }
 

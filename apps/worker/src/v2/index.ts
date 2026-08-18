@@ -4,4 +4,5 @@ export * from "./asset-generation-worker.ts";
 export * from "./generation-dispatch-pump.ts";
 export * from "./local-asset-media-store.ts";
 export * from "./maintenance-dispatch-pump.ts";
+export * from "./memory/index.ts";
 export * from "./scene-generation-worker.ts";
