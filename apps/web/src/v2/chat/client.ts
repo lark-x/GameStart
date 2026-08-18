@@ -8,8 +8,6 @@ import type {
   V2CreateInstantStoryRequest,
   V2CreateInstantStoryResponse,
   V2ErrorEnvelope,
-  V2IdempotencyKey,
-  V2MediaId,
   V2MessageId,
   V2SendChatMessageRequest,
   V2SendChatMessageResponse,

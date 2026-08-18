@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { V2ChatMessagePageResponse, V2ConversationId, V2MessageId } from "@living-network/contracts/v2";
+import type {
+  V2ChatMessagePageResponse,
+  V2ConversationId,
+  V2IdempotencyKey,
+  V2IsoDateTime,
+  V2MessageId,
+} from "@living-network/contracts/v2";
 import { createV2ChatClient, V2ChatClientError } from "./client.ts";
 
 test("V2ChatClient listMessages builds beforeMessageId and limit query parameters", async () => {
@@ -17,8 +23,8 @@ test("V2ChatClient listMessages builds beforeMessageId and limit query parameter
           text: "hello",
           attachments: [],
           status: "completed",
-          createdAt: "2026-08-17T00:00:00.000Z" as any,
-          idempotencyKey: "idem_1" as any,
+          createdAt: "2026-08-17T00:00:00.000Z" as V2IsoDateTime,
+          idempotencyKey: "idem_1" as V2IdempotencyKey,
         },
       ],
       hasMore: true,
