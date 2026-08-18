@@ -94,6 +94,7 @@ export async function startV2Worker(
         const provider = new V2DynamicModelProvider({
           repository: platformRepository,
           ...(secretCipher === undefined ? {} : { secretCipher }),
+          capability: "scene_generation",
           fallback: {
             protocol: config.scene.protocol,
             ...(config.scene.baseUrl === undefined ? {} : { baseUrl: config.scene.baseUrl }),
@@ -163,6 +164,31 @@ export async function startV2Worker(
     const chatProvider = new V2DynamicModelProvider({
       repository: platformRepository,
       ...(secretCipher === undefined ? {} : { secretCipher }),
+      capability: "chat",
+      fallback: {
+        protocol: config.scene.protocol,
+        ...(config.scene.baseUrl === undefined ? {} : { baseUrl: config.scene.baseUrl }),
+        ...(config.scene.apiKey === undefined ? {} : { apiKey: config.scene.apiKey }),
+        ...(config.scene.model === undefined ? {} : { model: config.scene.model }),
+        timeoutMs: config.scene.timeoutMs,
+      },
+    });
+    const memoryProvider = new V2DynamicModelProvider({
+      repository: platformRepository,
+      ...(secretCipher === undefined ? {} : { secretCipher }),
+      capability: "memory",
+      fallback: {
+        protocol: config.scene.protocol,
+        ...(config.scene.baseUrl === undefined ? {} : { baseUrl: config.scene.baseUrl }),
+        ...(config.scene.apiKey === undefined ? {} : { apiKey: config.scene.apiKey }),
+        ...(config.scene.model === undefined ? {} : { model: config.scene.model }),
+        timeoutMs: config.scene.timeoutMs,
+      },
+    });
+    const storyAnalysisProvider = new V2DynamicModelProvider({
+      repository: platformRepository,
+      ...(secretCipher === undefined ? {} : { secretCipher }),
+      capability: "story_analysis",
       fallback: {
         protocol: config.scene.protocol,
         ...(config.scene.baseUrl === undefined ? {} : { baseUrl: config.scene.baseUrl }),
@@ -174,7 +200,8 @@ export async function startV2Worker(
     const maintenancePump = new V2MaintenanceDispatchPump({
       workerId: `worker_${process.pid}_${Math.random().toString(36).slice(2, 7)}`,
       unitOfWork: chatUnitOfWork,
-      provider: chatProvider,
+      memoryProvider,
+      storyAnalysisProvider,
       pollIntervalMs: 2000,
     });
     maintenancePump.start();

@@ -288,3 +288,44 @@ test("V2 maintenance job CAS prevents a stale worker from completing or failing 
     temp.cleanup();
   }
 });
+
+test("V2 maintenance job dedupe key prevents duplicate job creation", async () => {
+  const temp = openV2TempSqliteConnection();
+  try {
+    applyV2Migrations(temp.db);
+    const unit = new V2SqliteChatUnitOfWork(temp.db);
+    await unit.withChatTransaction(async ({ canon }) => canon.createWorld(createV2CanonWorld({
+      storyWorldId: "world:dedupe",
+      name: "Dedupe World",
+    })));
+    await unit.withChatTransaction(async ({ conversations }) => conversations.create(createV2ChatConversation({
+      conversationId: "conversation:dedupe",
+      storyWorldId: "world:dedupe",
+      primaryCharacterId: "character:one",
+    })));
+
+    const job = await unit.withChatTransaction(async ({ maintenanceJobs }) => maintenanceJobs.enqueue({
+      jobId: "job:dedupe:1",
+      conversationId: "conversation:dedupe" as never,
+      jobType: "story_analyze",
+      status: "pending",
+      payload: { conversationId: "conversation:dedupe" as never, sourceMessageIds: [] },
+      dedupeKey: "story_analyze:conversation:dedupe:key-1",
+      attempts: 0,
+      maxAttempts: 3,
+      availableAt: "2026-08-12T03:00:00.000Z",
+    }));
+    assert.equal(job.dedupeKey, "story_analyze:conversation:dedupe:key-1");
+
+    const found = await unit.withChatTransaction(async ({ maintenanceJobs }) =>
+      maintenanceJobs.findJobByDedupeKey("story_analyze", "story_analyze:conversation:dedupe:key-1"));
+    assert.equal(found?.jobId, "job:dedupe:1");
+
+    const differentKey = await unit.withChatTransaction(async ({ maintenanceJobs }) =>
+      maintenanceJobs.findJobByDedupeKey("story_analyze", "story_analyze:conversation:dedupe:other-key"));
+    assert.equal(differentKey, undefined);
+  } finally {
+    temp.db.close();
+    temp.cleanup();
+  }
+});

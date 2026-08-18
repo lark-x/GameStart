@@ -40,7 +40,9 @@ import { randomUUID } from "node:crypto";
 export interface V2MaintenanceDispatchPumpOptions {
   readonly workerId: string;
   readonly unitOfWork: V2ChatUnitOfWork;
-  readonly provider: ChatProvider;
+  readonly provider?: ChatProvider;
+  readonly memoryProvider?: ChatProvider;
+  readonly storyAnalysisProvider?: ChatProvider;
   readonly pollIntervalMs?: number;
   readonly leaseDurationMs?: number;
   readonly heartbeatIntervalMs?: number;
@@ -70,10 +72,24 @@ export class SourceMessageNotFoundError extends Error {
   }
 }
 
+export class LeaseLostError extends Error {
+  public readonly code = "LEASE_LOST";
+
+  public constructor(message: string) {
+    super(message);
+    this.name = "LeaseLostError";
+  }
+}
+
+function normalizedImportance(importance: number): number {
+  return importance / 5;
+}
+
 export class V2MaintenanceDispatchPump {
   private readonly workerId: string;
   private readonly unitOfWork: V2ChatUnitOfWork;
-  private readonly provider: ChatProvider;
+  private readonly memoryProvider: ChatProvider;
+  private readonly storyAnalysisProvider: ChatProvider;
   private readonly pollIntervalMs: number;
   private readonly leaseDurationMs: number;
   private readonly heartbeatIntervalMs: number;
@@ -88,7 +104,8 @@ export class V2MaintenanceDispatchPump {
   public constructor(options: V2MaintenanceDispatchPumpOptions) {
     this.workerId = options.workerId;
     this.unitOfWork = options.unitOfWork;
-    this.provider = options.provider;
+    this.memoryProvider = options.memoryProvider ?? options.provider!;
+    this.storyAnalysisProvider = options.storyAnalysisProvider ?? options.provider!;
     this.pollIntervalMs = options.pollIntervalMs ?? 2000;
     this.leaseDurationMs = options.leaseDurationMs ?? 30000;
     this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? 10000;
@@ -250,7 +267,7 @@ ${messagesText}
 
 Respond ONLY with valid JSON array:`;
 
-    const completion = await this.provider.complete({
+    const completion = await this.memoryProvider.complete({
       messages: [{ role: "user", content: prompt }],
       temperature: 0.1,
     });
@@ -259,12 +276,17 @@ Respond ONLY with valid JSON array:`;
     const validSourceSet = new Set(payload.sourceMessageIds);
 
     for (const candidate of candidates) {
-      const citedIds = candidate.sourceMessageIds.filter((id) => validSourceSet.has(id));
-      if (citedIds.length === 0) {
-        continue;
+      const invalidCitations = candidate.sourceMessageIds.filter((id) => !validSourceSet.has(id));
+      if (invalidCitations.length > 0) {
+        throw new StructuredOutputError(
+          "INVALID_SCHEMA",
+          `Memory candidate cites source message ids outside the job range: ${invalidCitations.join(", ")}`,
+        );
       }
+      const citedIds = candidate.sourceMessageIds;
 
       await this.unitOfWork.withChatTransaction(async (repos) => {
+        await this.assertLeaseOwner(job.jobId, repos);
         const conversation = await repos.conversations.get(payload.conversationId);
         const storyWorldId = (payload.storyWorldId ?? conversation?.storyWorldId ?? "default_world") as V2StoryWorldId;
         const existingMemories = await repos.memories.listByConversation(payload.conversationId);
@@ -286,7 +308,7 @@ Respond ONLY with valid JSON array:`;
 
         if (similarMemory) {
           const idempotencyKey = `memory_consolidate:${similarMemory.memoryId}:${candidate.content.trim()}`;
-          const alreadyQueued = await repos.maintenanceJobs.hasJobWithPayloadKey("memory_consolidate", idempotencyKey);
+          const alreadyQueued = await repos.maintenanceJobs.findJobByDedupeKey("memory_consolidate", idempotencyKey) !== undefined;
           if (alreadyQueued) {
             return;
           }
@@ -299,7 +321,7 @@ Respond ONLY with valid JSON array:`;
             candidate: {
               kind: candidate.kind,
               content: candidate.content,
-              importance: candidate.importance,
+              importance: normalizedImportance(candidate.importance),
               confidence: candidate.confidence,
               sourceMessageIds: citedIds,
             },
@@ -311,6 +333,7 @@ Respond ONLY with valid JSON array:`;
             jobType: "memory_consolidate",
             payload: consolidatePayload,
             status: "pending",
+            dedupeKey: idempotencyKey,
             now: this.now().toISOString(),
           } as any);
 
@@ -323,7 +346,7 @@ Respond ONLY with valid JSON array:`;
             ...(payload.characterId ? { characterId: payload.characterId } : {}),
             kind: candidate.kind,
             content: candidate.content,
-            importance: candidate.importance,
+            importance: normalizedImportance(candidate.importance),
             confidence: candidate.confidence,
             sourceMessageIds: citedIds,
             status: "active",
@@ -338,6 +361,7 @@ Respond ONLY with valid JSON array:`;
     const cursorMessageId = payload.range?.toMessageId ?? sortedMessages[sortedMessages.length - 1]?.messageId;
     if (cursorMessageId !== undefined) {
       await this.unitOfWork.withChatTransaction(async (repos) => {
+        await this.assertLeaseOwner(job.jobId, repos);
         await repos.maintenanceJobs.setMemoryExtractCursor(payload.conversationId, cursorMessageId as V2MessageId);
       });
     }
@@ -369,7 +393,7 @@ Decide the best consolidation action:
 Output JSON with format:
 {"action": "keep_both"|"ignore"|"merge"|"supersede", "rationale": string, "mergedContent"?: string}`;
 
-    const completion = await this.provider.complete({
+    const completion = await this.memoryProvider.complete({
       messages: [{ role: "user", content: prompt }],
       temperature: 0.1,
     });
@@ -382,6 +406,7 @@ Output JSON with format:
     }
 
     await this.unitOfWork.withChatTransaction(async (repos) => {
+      await this.assertLeaseOwner(job.jobId, repos);
       const conversation = await repos.conversations.get(payload.conversationId);
       const storyWorldId = (payload.storyWorldId ?? conversation?.storyWorldId ?? existingMemory.storyWorldId) as V2StoryWorldId;
 
@@ -393,7 +418,7 @@ Output JSON with format:
           ...(payload.characterId ? { characterId: payload.characterId } : {}),
           kind: payload.candidate.kind,
           content: payload.candidate.content,
-          importance: payload.candidate.importance,
+          importance: normalizedImportance(payload.candidate.importance),
           confidence: payload.candidate.confidence,
           sourceMessageIds: payload.candidate.sourceMessageIds,
           status: "active",
@@ -416,7 +441,7 @@ Output JSON with format:
           ...(payload.characterId ? { characterId: payload.characterId } : {}),
           kind: payload.candidate.kind,
           content: payload.candidate.content,
-          importance: payload.candidate.importance,
+          importance: normalizedImportance(payload.candidate.importance),
           confidence: payload.candidate.confidence,
           sourceMessageIds: payload.candidate.sourceMessageIds,
           status: "active",
@@ -444,7 +469,7 @@ Output JSON with format:
           ...(payload.characterId ? { characterId: payload.characterId } : {}),
           kind: payload.candidate.kind,
           content: mergedText,
-          importance: Math.max(existingMemory.importance, payload.candidate.importance),
+          importance: Math.max(existingMemory.importance, normalizedImportance(payload.candidate.importance)),
           confidence: Math.max(existingMemory.confidence, payload.candidate.confidence),
           sourceMessageIds: combinedSourceIds,
           status: "active",
@@ -492,7 +517,7 @@ ${sortedMessages.map((m) => `${m.role.toUpperCase()}: ${m.text ?? ""}`).join("\n
 
 Respond with the summary text only:`;
 
-    const completion = await this.provider.complete({
+    const completion = await this.memoryProvider.complete({
       messages: [{ role: "user", content: prompt }],
       temperature: 0.3,
     });
@@ -515,6 +540,7 @@ Respond with the summary text only:`;
     });
 
     await this.unitOfWork.withChatTransaction(async (repos) => {
+      await this.assertLeaseOwner(job.jobId, repos);
       await repos.summaries.save(summaryRecord);
     });
   }
@@ -581,7 +607,7 @@ Respond with the summary text only:`;
       messages: messagesToAnalyze,
     });
 
-    const completion = await this.provider.complete({
+    const completion = await this.storyAnalysisProvider.complete({
       messages: [
         { role: "system", content: prompt.system },
         { role: "user", content: prompt.user },
@@ -593,6 +619,7 @@ Respond with the summary text only:`;
 
     if (result.scenes.length > 0) {
       await this.unitOfWork.withChatTransaction(async (repos) => {
+        await this.assertLeaseOwner(job.jobId, repos);
         for (const scene of result.scenes) {
           const candidateId = `candidate:scene:${randomUUID()}` as V2CandidateId;
           const sceneId = `scene:${randomUUID()}` as V2SceneId;
@@ -624,6 +651,14 @@ Respond with the summary text only:`;
         }
       });
     }
+
+    const cursorMessageId = payload.toMessageId ?? payload.sourceMessageIds[payload.sourceMessageIds.length - 1];
+    if (cursorMessageId !== undefined) {
+      await this.unitOfWork.withChatTransaction(async (repos) => {
+        await this.assertLeaseOwner(job.jobId, repos);
+        await repos.maintenanceJobs.setStoryAnalyzeCursor(payload.conversationId, cursorMessageId as V2MessageId);
+      });
+    }
   }
 
   private parseMemoryCandidates(raw: string): readonly V2ParsedMemoryCandidate[] {
@@ -637,16 +672,33 @@ Respond with the summary text only:`;
         if (!item || typeof item !== "object" || typeof item.content !== "string" || typeof item.kind !== "string") {
           throw new StructuredOutputError("INVALID_SCHEMA", "Memory extraction item must have string kind and content");
         }
+        const kind = item.kind;
+        const validKinds: readonly V2MemoryKind[] = ["profile", "preference", "relationship", "episodic", "world_fact"];
+        if (!validKinds.includes(kind as V2MemoryKind)) {
+          throw new StructuredOutputError("INVALID_SCHEMA", `Unknown memory kind: ${kind}`);
+        }
+        const content = String(item.content).trim();
+        if (content.length < 2 || content.length > 1000) {
+          throw new StructuredOutputError("INVALID_SCHEMA", "Memory content must be between 2 and 1000 characters");
+        }
+        const importance = typeof item.importance === "number" ? item.importance : NaN;
+        const confidence = typeof item.confidence === "number" ? item.confidence : NaN;
+        if (!Number.isFinite(importance) || importance < 1 || importance > 5) {
+          throw new StructuredOutputError("INVALID_SCHEMA", "Memory importance must be a number between 1 and 5");
+        }
+        if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
+          throw new StructuredOutputError("INVALID_SCHEMA", "Memory confidence must be a number between 0 and 1");
+        }
+        if (!Array.isArray(item.sourceMessageIds) || item.sourceMessageIds.length === 0 ||
+            !item.sourceMessageIds.every((id: unknown) => typeof id === "string")) {
+          throw new StructuredOutputError("INVALID_SCHEMA", "Memory item must have a non-empty sourceMessageIds array of strings");
+        }
         return {
-          kind: this.sanitizeKind(item.kind),
-          content: String(item.content).trim(),
-          importance: typeof item.importance === "number"
-            ? (item.importance > 1 ? Math.max(0, Math.min(1, item.importance / 5)) : Math.max(0, Math.min(1, item.importance)))
-            : 0.6,
-          confidence: typeof item.confidence === "number" ? Math.max(0, Math.min(1, item.confidence)) : 0.8,
-          sourceMessageIds: Array.isArray(item.sourceMessageIds)
-            ? (item.sourceMessageIds.map(String) as unknown as V2MessageId[])
-            : [],
+          kind: kind as V2MemoryKind,
+          content,
+          importance,
+          confidence,
+          sourceMessageIds: item.sourceMessageIds.map(String) as unknown as V2MessageId[],
         };
       });
     } catch (error) {
@@ -677,9 +729,22 @@ Respond with the summary text only:`;
     });
   }
 
-  private sanitizeKind(kind: string): V2MemoryKind {
-    const validKinds: V2MemoryKind[] = ["profile", "preference", "relationship", "episodic", "world_fact"];
-    return validKinds.includes(kind as V2MemoryKind) ? (kind as V2MemoryKind) : "episodic";
+  private async assertLeaseOwner(
+    jobId: string,
+    repos: { readonly maintenanceJobs: { isLeaseOwner(input: {
+      readonly jobId: string;
+      readonly workerId: string;
+      readonly now: string;
+    }): Promise<boolean> } },
+  ): Promise<void> {
+    const ownsLease = await repos.maintenanceJobs.isLeaseOwner({
+      jobId,
+      workerId: this.workerId,
+      now: this.now().toISOString(),
+    });
+    if (!ownsLease) {
+      throw new LeaseLostError(`Lease lost for job ${jobId}; refusing to write business results`);
+    }
   }
 
   private parseConsolidationDecision(raw: string): V2ConsolidationDecision {

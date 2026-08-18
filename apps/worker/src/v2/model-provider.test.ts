@@ -53,6 +53,7 @@ test("V2 dynamic model provider resolves a bound profile and persists redacted c
     const provider = new V2DynamicModelProvider({
       repository,
       secretCipher: cipher,
+      capability: "scene_generation",
       fallback: { protocol: "openai-compatible", timeoutMs: 5000 },
       now: () => new Date("2026-08-14T10:01:00.000Z"),
     });
@@ -88,6 +89,7 @@ test("V2 dynamic model provider uses environment fallback and reports missing co
     }), { status: 200 });
     const provider = new V2DynamicModelProvider({
       repository,
+      capability: "chat",
       fallback: {
         protocol: "openai-compatible",
         baseUrl: "https://fallback.example/v1",
@@ -99,6 +101,7 @@ test("V2 dynamic model provider uses environment fallback and reports missing co
 
     const missing = new V2DynamicModelProvider({
       repository,
+      capability: "chat",
       fallback: { protocol: "openai-compatible", timeoutMs: 5000 },
     });
     await assert.rejects(
@@ -120,6 +123,7 @@ test("V2 dynamic model provider records provider failures and streamed responses
     const repository = new V2SqlitePlatformRepository(db);
     const provider = new V2DynamicModelProvider({
       repository,
+      capability: "memory",
       fallback: { protocol: "openai-compatible", baseUrl: "https://fallback.example/v1", model: "fallback-model", timeoutMs: 5000 },
       now: () => new Date("2026-08-14T10:02:00.000Z"),
     });
@@ -189,15 +193,15 @@ test("V2 dynamic model provider reports invalid bound profile and secret failure
     getModelProfile: async () => profile,
   } as unknown as V2PlatformRepository);
   await assert.rejects(
-    () => new V2DynamicModelProvider({ repository: repositoryFor(undefined), fallback: { protocol: "openai-compatible", timeoutMs: 5000 } }).complete({ messages: [{ role: "user", content: "x" }] }),
+    () => new V2DynamicModelProvider({ repository: repositoryFor(undefined), capability: "chat", fallback: { protocol: "openai-compatible", timeoutMs: 5000 } }).complete({ messages: [{ role: "user", content: "x" }] }),
     /Bound model profile was not found/,
   );
   await assert.rejects(
-    () => new V2DynamicModelProvider({ repository: repositoryFor({ ...baseProfile, encryptedApiKey: encrypted.ciphertext, encryptionIv: encrypted.iv }), fallback: { protocol: "openai-compatible", timeoutMs: 5000 } }).complete({ messages: [{ role: "user", content: "x" }] }),
+    () => new V2DynamicModelProvider({ repository: repositoryFor({ ...baseProfile, encryptedApiKey: encrypted.ciphertext, encryptionIv: encrypted.iv }), capability: "chat", fallback: { protocol: "openai-compatible", timeoutMs: 5000 } }).complete({ messages: [{ role: "user", content: "x" }] }),
     /INTEGRATION_SECRET_KEY/,
   );
   await assert.rejects(
-    () => new V2DynamicModelProvider({ repository: repositoryFor({ ...baseProfile, encryptedApiKey: encrypted.ciphertext, encryptionIv: encrypted.iv }), secretCipher: new SecretCipher(keyB), fallback: { protocol: "openai-compatible", timeoutMs: 5000 } }).complete({ messages: [{ role: "user", content: "x" }] }),
+    () => new V2DynamicModelProvider({ repository: repositoryFor({ ...baseProfile, encryptedApiKey: encrypted.ciphertext, encryptionIv: encrypted.iv }), secretCipher: new SecretCipher(keyB), capability: "chat", fallback: { protocol: "openai-compatible", timeoutMs: 5000 } }).complete({ messages: [{ role: "user", content: "x" }] }),
     /cannot be decrypted/,
   );
 });

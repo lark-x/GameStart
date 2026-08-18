@@ -74,6 +74,7 @@ export interface V2PreparedChatReply {
   readonly existingMessage?: V2ChatMessageDto;
   readonly prompt?: PreparedPrompt;
   readonly task: PromptContext["task"];
+  readonly summaryVersion?: number;
 }
 
 export interface V2ChatUseCases {
@@ -112,6 +113,7 @@ export interface V2ChatUseCases {
     readonly templateVersion?: string;
     readonly contextHash?: string;
     readonly model?: string;
+    readonly profileId?: string;
     readonly contextWindow?: number;
     readonly inputBudget?: number;
     readonly estimatedTokens?: number;
@@ -119,6 +121,7 @@ export interface V2ChatUseCases {
     readonly memoryIds?: readonly string[];
     readonly canonIds?: readonly string[];
     readonly imageCount?: number;
+    readonly summaryVersion?: number;
   }): Promise<void>;
   updateTrace(input: {
     readonly traceId: string;
@@ -143,6 +146,8 @@ export interface V2ChatUseCases {
 }
 
 const DEFAULT_TOKEN_BUDGET = 4096;
+const MEMORY_TRIGGER_THRESHOLD = 8;
+const MEMORY_BATCH_MAX = 16;
 
 function toTraceDto(trace: V2ChatTrace): V2ChatTraceDto {
   return {
@@ -184,6 +189,7 @@ export function createV2ChatUseCases(unitOfWork: V2ChatUnitOfWork): V2ChatUseCas
         ...(input.templateVersion === undefined ? {} : { templateVersion: input.templateVersion }),
         ...(input.contextHash === undefined ? {} : { contextHash: input.contextHash }),
         ...(input.model === undefined ? {} : { model: input.model }),
+        ...(input.profileId === undefined ? {} : { profileId: input.profileId }),
         ...(input.contextWindow === undefined ? {} : { contextWindow: input.contextWindow }),
         ...(input.inputBudget === undefined ? {} : { inputBudget: input.inputBudget }),
         ...(input.estimatedTokens === undefined ? {} : { estimatedTokens: input.estimatedTokens }),
@@ -191,6 +197,7 @@ export function createV2ChatUseCases(unitOfWork: V2ChatUnitOfWork): V2ChatUseCas
         ...(input.memoryIds === undefined ? {} : { memoryIds: input.memoryIds }),
         ...(input.canonIds === undefined ? {} : { canonIds: input.canonIds }),
         ...(input.imageCount === undefined ? {} : { imageCount: input.imageCount }),
+        ...(input.summaryVersion === undefined ? {} : { summaryVersion: input.summaryVersion }),
       }));
     }),
     updateTrace: (input) => unitOfWork.withChatTransaction(async ({ traces }) => {
@@ -240,12 +247,15 @@ export function createV2ChatUseCases(unitOfWork: V2ChatUnitOfWork): V2ChatUseCas
     }),
     triggerStoryAnalyze: async (conversationId, input) => unitOfWork.withChatTransaction(async ({ conversations, maintenanceJobs, messages }) => {
       const conversation = await requireConversation(conversations, conversationId);
-      const allMessages = await messages.listAfter(conversationId, undefined, 100);
+      const analyzerCursor = await maintenanceJobs.getStoryAnalyzeCursor(conversationId);
+      const allMessages = analyzerCursor === undefined
+        ? await messages.listRecentByConversation(conversationId, 80)
+        : await messages.listAfter(conversationId, analyzerCursor, 100);
       const sourceMessageIds = allMessages.map((m) => m.messageId as V2MessageId);
       const fromMessageId = sourceMessageIds[0];
       const toMessageId = sourceMessageIds[sourceMessageIds.length - 1];
       const idempotencyKey = `story_analyze:${conversationId}:${input.idempotencyKey}`;
-      const existing = await maintenanceJobs.findJobByPayloadKey("story_analyze", idempotencyKey);
+      const existing = await maintenanceJobs.findJobByDedupeKey("story_analyze", idempotencyKey);
       if (existing !== undefined) {
         const existingPayload = existing.payload as unknown as V2StoryAnalyzePayload;
         const sameIds = existingPayload.sourceMessageIds.length === sourceMessageIds.length &&
@@ -272,6 +282,7 @@ export function createV2ChatUseCases(unitOfWork: V2ChatUnitOfWork): V2ChatUseCas
           jobType: "story_analyze",
           status: "pending",
           payload,
+          dedupeKey: idempotencyKey,
           attempts: 0,
           maxAttempts: 3,
           availableAt: new Date().toISOString(),
@@ -524,6 +535,7 @@ async function prepareReply(
       idempotencyKey: input.idempotencyKey,
       prompt,
       task,
+      ...(summary === undefined ? {} : { summaryVersion: summary.version }),
     };
   });
 }
@@ -557,10 +569,11 @@ async function saveReply(
     await conversations.touchLastMessage({ conversationId: input.conversationId, lastMessageAt: createdAt });
 
     if (input.status === "completed") {
+      const hasActiveExtraction = await maintenanceJobs.hasActiveJob(input.conversationId, "memory_extract");
       const extractCursor = await maintenanceJobs.getMemoryExtractCursor(input.conversationId);
       const newMessageCount = await messages.countAfter(input.conversationId, extractCursor);
-      const sourceMessageIds = newMessageCount >= 8
-        ? (await messages.listAfter(input.conversationId, extractCursor, 50)).map((m) => m.messageId as V2MessageId)
+      const sourceMessageIds = !hasActiveExtraction && newMessageCount >= MEMORY_TRIGGER_THRESHOLD
+        ? (await messages.listAfter(input.conversationId, extractCursor, MEMORY_BATCH_MAX)).map((m) => m.messageId as V2MessageId)
         : [];
       if (sourceMessageIds.length > 0) {
         const fromMessageId = sourceMessageIds[0]!;

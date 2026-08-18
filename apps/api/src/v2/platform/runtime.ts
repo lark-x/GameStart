@@ -81,6 +81,7 @@ class V2ResolvingChatModelResolver {
             timeoutMs: profile.timeoutMs,
           }),
           model: profile.model,
+          profileId: profile.id,
           temperature: profile.temperature,
           maxTokens: profile.maxTokens,
           ...(profile.contextWindow === undefined ? {} : { contextWindow: profile.contextWindow }),

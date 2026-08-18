@@ -41,7 +41,13 @@ test("V2 API runtime upgrades an old database in place and preserves legacy prof
   const temp = openV2TempSqliteConnection();
   const path = temp.path;
   // Build an "old" schema: everything except the newest migrations.
-  const exclude = new Set(["0203_v2_model_profile_context_modalities", "0340_v2_chat_maintenance_cursors", "0350_v2_chat_traces"]);
+  const exclude = new Set([
+    "0203_v2_model_profile_context_modalities",
+    "0340_v2_chat_maintenance_cursors",
+    "0350_v2_chat_traces",
+    "0360_v2_chat_story_analyze_cursor",
+    "0370_v2_chat_maintenance_dedupe_key",
+  ]);
   const legacyMigrations = getV2Migrations().filter((migration) => !exclude.has(migration.id));
   applyV2Migrations(temp.db, legacyMigrations);
   temp.db.prepare(`
