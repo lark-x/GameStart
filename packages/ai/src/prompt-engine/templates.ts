@@ -84,6 +84,7 @@ function requiredTokens(context: PromptContext): number {
   const imageTokens = context.imageTokensPerImage ?? DEFAULT_IMAGE_TOKENS;
   let total = estimateV2PromptTokens(PLATFORM_RULES);
   if (context.persona !== undefined) total += estimateV2PromptTokens(personaBlock(context));
+  if (context.world !== undefined) total += estimateV2PromptTokens(worldBlock(context));
   if (context.currentInput !== undefined) {
     total += estimateV2ChatMessageTokens(context.currentInput, imageTokens) + V2_PROMPT_MESSAGE_OVERHEAD;
   }
@@ -205,6 +206,7 @@ interface BuiltChatReply {
   readonly summaryTokens: number;
   readonly currentInputTokens: number;
   readonly personaTokens: number;
+  readonly worldTokens: number;
   readonly inputBudget: number;
   readonly contextWindow: number;
   readonly outputReserve: number;
@@ -274,6 +276,7 @@ function buildChatReplyMessages(context: PromptContext): BuiltChatReply {
     summaryTokens: summary.tokens,
     currentInputTokens,
     personaTokens: estimateV2PromptTokens(personaText),
+    worldTokens: estimateV2PromptTokens(worldText),
     inputBudget,
     contextWindow,
     outputReserve,
@@ -317,6 +320,7 @@ function buildStoryBootstrapMessages(context: PromptContext): BuiltChatReply {
     summaryTokens: 0,
     currentInputTokens: estimateV2PromptTokens(typeof user.content === "string" ? user.content : JSON.stringify(user.content)) + V2_PROMPT_MESSAGE_OVERHEAD,
     personaTokens: estimateV2PromptTokens(personaText),
+    worldTokens: estimateV2PromptTokens(worldBlock(context)),
     inputBudget,
     contextWindow,
     outputReserve,
@@ -333,6 +337,7 @@ function buildPromptBudgetDebug(context: PromptContext, built: BuiltChatReply, e
     inputBudget: built.inputBudget,
     usedTokens: estimatedTokens,
     personaTokens: built.personaTokens,
+    worldTokens: built.worldTokens,
     canonTokens: built.canonTokens,
     memoryTokens: built.memoryTokens,
     summaryTokens: built.summaryTokens,
@@ -341,8 +346,22 @@ function buildPromptBudgetDebug(context: PromptContext, built: BuiltChatReply, e
   };
 }
 
+function ensurePromptFinalGuard(
+  messages: readonly ChatMessage[],
+  inputBudget: number,
+  contextWindow: number,
+): void {
+  const finalTokens = estimateChatMessages(messages);
+  if (finalTokens > inputBudget) {
+    throw new PromptBudgetExceededError(
+      `Prompt final guard failed: assembled prompt has ${finalTokens} tokens, which exceeds input budget (${inputBudget} tokens, context window ${contextWindow})`,
+    );
+  }
+}
+
 export function prepareV2ChatReply(context: PromptContext): PreparedPrompt {
   const built = buildChatReplyMessages({ ...context, task: "chat.reply" });
+  ensurePromptFinalGuard(built.messages, built.inputBudget, built.contextWindow);
   const template = V2_PROMPT_TEMPLATES["chat.reply"];
   const estimatedTokens = estimateChatMessages(built.messages);
   const contextHash = hashV2PromptContext({ messages: built.messages, templateId: template.id, templateVersion: template.version });
@@ -359,6 +378,7 @@ export function prepareV2ChatReply(context: PromptContext): PreparedPrompt {
 
 export function prepareV2StoryBootstrap(context: PromptContext): PreparedPrompt {
   const built = buildStoryBootstrapMessages({ ...context, task: "story.bootstrap" });
+  ensurePromptFinalGuard(built.messages, built.inputBudget, built.contextWindow);
   const template = V2_PROMPT_TEMPLATES["story.bootstrap"];
   const estimatedTokens = estimateChatMessages(built.messages);
   const contextHash = hashV2PromptContext({ messages: built.messages, templateId: template.id, templateVersion: template.version });

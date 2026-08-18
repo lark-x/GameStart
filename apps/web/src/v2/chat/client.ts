@@ -1,4 +1,5 @@
 import type {
+  V2ChatDiagnosticsResponse,
   V2ChatMediaDto,
   V2ChatMessageDto,
   V2ChatMessagePageResponse,
@@ -10,6 +11,7 @@ import type {
   V2MessageId,
   V2SendChatMessageRequest,
   V2SendChatMessageResponse,
+  V2TriggerStoryAnalyzeResponse,
 } from "@living-network/contracts/v2";
 
 export interface V2ChatClientOptions {
@@ -154,6 +156,18 @@ export function createV2ChatClient(options: V2ChatClientOptions): V2ChatClient {
         onEvent(event);
       }
     },
+    async getLatestDiagnostics(conversationId: V2ConversationId): Promise<V2ChatDiagnosticsResponse> {
+      return readJson<V2ChatDiagnosticsResponse>(await fetcher(`${base}/chat/conversations/${encodeURIComponent(conversationId)}/diagnostics/latest`, request("GET")));
+    },
+    async triggerStoryAnalyze(
+      conversationId: V2ConversationId,
+      input?: { readonly idempotencyKey?: string },
+    ): Promise<V2TriggerStoryAnalyzeResponse> {
+      const idempotencyKey = input?.idempotencyKey ?? `analyze:${Date.now()}:${crypto.randomUUID()}`;
+      return readJson<V2TriggerStoryAnalyzeResponse>(
+        await fetcher(`${base}/chat/conversations/${encodeURIComponent(conversationId)}/analyze`, request("POST", { idempotencyKey })),
+      );
+    },
     async uploadMedia(file: File): Promise<V2ChatMediaDto> {
       const form = new FormData();
       form.append("file", file, file.name);
@@ -185,6 +199,11 @@ export interface V2ChatClient {
     onEvent: (event: V2ChatStreamEvent) => void,
     signal?: AbortSignal,
   ): Promise<void>;
+  getLatestDiagnostics(conversationId: V2ConversationId): Promise<V2ChatDiagnosticsResponse>;
+  triggerStoryAnalyze(
+    conversationId: V2ConversationId,
+    input?: { readonly idempotencyKey?: string },
+  ): Promise<V2TriggerStoryAnalyzeResponse>;
   uploadMedia(file: File): Promise<V2ChatMediaDto>;
   mediaUrl(mediaRef: string): string;
 }

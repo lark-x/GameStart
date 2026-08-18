@@ -260,6 +260,85 @@ export function assertV2PersonaText(persona: string): string {
   return value;
 }
 
+export type V2ChatMaintenanceJobType =
+  | "memory_extract"
+  | "conversation_summary"
+  | "memory_consolidate"
+  | "story_analyze";
+
+export type V2ChatMaintenanceJobStatus = "pending" | "claimed" | "running" | "completed" | "failed";
+
+export interface V2ChatMaintenanceJob {
+  readonly jobId: string;
+  readonly conversationId: string;
+  readonly jobType: V2ChatMaintenanceJobType;
+  readonly status: V2ChatMaintenanceJobStatus;
+  readonly payload: unknown;
+  readonly attempts: number;
+  readonly maxAttempts: number;
+  readonly availableAt: string;
+  readonly leaseExpiresAt?: string;
+  readonly claimedBy?: string;
+  readonly lastStartedAt?: string;
+  readonly createdAt?: string;
+  readonly updatedAt?: string;
+  readonly lastError?: string;
+}
+
+export function createV2ChatMaintenanceJob(input: {
+  readonly jobId: string;
+  readonly conversationId: string;
+  readonly jobType: V2ChatMaintenanceJobType;
+  readonly status?: V2ChatMaintenanceJobStatus;
+  readonly payload: unknown;
+  readonly attempts?: number;
+  readonly maxAttempts?: number;
+  readonly availableAt?: string;
+  readonly leaseExpiresAt?: string;
+  readonly claimedBy?: string;
+  readonly lastStartedAt?: string;
+  readonly createdAt?: string;
+  readonly updatedAt?: string;
+  readonly lastError?: string;
+}): V2ChatMaintenanceJob {
+  const validJobTypes: readonly V2ChatMaintenanceJobType[] = [
+    "memory_extract",
+    "conversation_summary",
+    "memory_consolidate",
+    "story_analyze",
+  ];
+  if (!validJobTypes.includes(input.jobType)) {
+    throw new V2DomainError("INVALID_INPUT", `Invalid jobType: ${String(input.jobType)}`);
+  }
+  const status = input.status ?? "pending";
+  const validStatuses: readonly V2ChatMaintenanceJobStatus[] = [
+    "pending",
+    "claimed",
+    "running",
+    "completed",
+    "failed",
+  ];
+  if (!validStatuses.includes(status)) {
+    throw new V2DomainError("INVALID_INPUT", `Invalid status: ${String(status)}`);
+  }
+  return {
+    jobId: assertNonEmptyId(input.jobId, "jobId"),
+    conversationId: assertNonEmptyId(input.conversationId, "conversationId"),
+    jobType: input.jobType,
+    status,
+    payload: input.payload,
+    attempts: input.attempts ?? 0,
+    maxAttempts: input.maxAttempts ?? 3,
+    availableAt: input.availableAt ?? new Date().toISOString(),
+    ...(input.leaseExpiresAt === undefined ? {} : { leaseExpiresAt: assertIsoTime(input.leaseExpiresAt, "leaseExpiresAt") }),
+    ...(input.claimedBy === undefined ? {} : { claimedBy: assertNonEmptyId(input.claimedBy, "claimedBy") }),
+    ...(input.lastStartedAt === undefined ? {} : { lastStartedAt: assertIsoTime(input.lastStartedAt, "lastStartedAt") }),
+    ...(input.createdAt === undefined ? {} : { createdAt: assertIsoTime(input.createdAt, "createdAt") }),
+    ...(input.updatedAt === undefined ? {} : { updatedAt: assertIsoTime(input.updatedAt, "updatedAt") }),
+    ...(input.lastError === undefined ? {} : { lastError: input.lastError }),
+  };
+}
+
 function assertNonEmptyId<T extends string>(value: T, field: string): T {
   if (typeof value !== "string" || value.trim().length === 0 || value.length > 160) {
     throw new V2DomainError("INVALID_INPUT", `${field} must be a non-empty id up to 160 characters`);

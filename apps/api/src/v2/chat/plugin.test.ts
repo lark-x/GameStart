@@ -279,6 +279,106 @@ test("V2 chat stop generation aborts provider and persists an interrupted messag
       assert.equal(assistant.length, 1);
       assert.equal(assistant[0]?.status, "interrupted");
       assert.equal(assistant[0]?.text, "第一段");
+
+      // Verify pagination retains latest message when limit is smaller than total messages
+      const page1 = await runtime.app.inject({
+        method: "GET",
+        url: `/api/v2/chat/conversations/${conversationId}/messages?limit=1`,
+      });
+      assert.equal(page1.statusCode, 200);
+      const page1Data = page1.json() as { readonly messages: readonly { readonly role: string; readonly text?: string }[]; readonly nextBeforeMessageId?: string; readonly hasMore: boolean };
+      assert.equal(page1Data.messages.length, 1);
+      assert.equal(page1Data.messages[0]?.role, "assistant");
+      assert.equal(page1Data.hasMore, true);
+      assert.ok(page1Data.nextBeforeMessageId);
+
+      const page2 = await runtime.app.inject({
+        method: "GET",
+        url: `/api/v2/chat/conversations/${conversationId}/messages?limit=1&before=${page1Data.nextBeforeMessageId}`,
+      });
+      assert.equal(page2.statusCode, 200);
+      const page2Data = page2.json() as { readonly messages: readonly { readonly role: string; readonly text?: string }[]; readonly nextBeforeMessageId?: string; readonly hasMore: boolean };
+      assert.equal(page2Data.messages.length, 1);
+      assert.equal(page2Data.messages[0]?.role, "user");
+      assert.equal(page2Data.messages[0]?.text, "请开始");
+    } finally {
+      await runtime.close();
+    }
+  } finally {
+    rmSync(mediaRoot, { recursive: true, force: true });
+    temp.cleanup();
+  }
+});
+
+test("V2 chat rejects image attachments when model does not support vision modality", async () => {
+  const temp = openV2TempSqliteConnection();
+  const mediaRoot = mkdtempSync(path.join(tmpdir(), "v2-chat-media-vision-"));
+  temp.db.close();
+  const onePixelPng = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/l2e3VwAAAABJRU5ErkJggg==",
+    "base64",
+  );
+  const boundary = `----v2-chat-${crypto.randomUUID()}`;
+  const body = Buffer.concat([
+    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="test.png"\r\nContent-Type: image/png\r\n\r\n`, "utf8"),
+    onePixelPng,
+    Buffer.from(`\r\n--${boundary}--\r\n`, "utf8"),
+  ]);
+  try {
+    const runtime = createV2ApiRuntime({ sqlitePath: temp.path, mediaRoot, chatProvider: new FakeChatProvider() });
+    try {
+      const upload = await runtime.app.inject({
+        method: "POST",
+        url: "/api/v2/chat/media",
+        headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+        payload: body,
+      });
+      assert.equal(upload.statusCode, 201);
+      const media = (upload.json() as { readonly media: { readonly mediaId: string } }).media;
+
+      const created = await runtime.app.inject({
+        method: "POST",
+        url: "/api/v2/instant-stories",
+        payload: { persona: "纯文本角色", displayName: "花火", idempotencyKey: "vision-reject-test" },
+      });
+      assert.equal(created.statusCode, 201);
+      const instant = created.json() as V2CreateInstantStoryResponse;
+      const conversationId = instant.conversation.conversationId;
+
+      const sendRes = await runtime.app.inject({
+        method: "POST",
+        url: `/api/v2/chat/conversations/${conversationId}/messages`,
+        payload: {
+          text: "看看这张图",
+          attachmentIds: [media.mediaId],
+          idempotencyKey: "send-with-image",
+        },
+      });
+      assert.equal(sendRes.statusCode, 201);
+
+      const replyRes = await runtime.app.inject({
+        method: "POST",
+        url: `/api/v2/chat/conversations/${conversationId}/replies`,
+        payload: { idempotencyKey: "reply-with-image" },
+      });
+      assert.equal(replyRes.statusCode, 400);
+      assert.equal(replyRes.json().error.code, "VISION_NOT_SUPPORTED");
+
+      // Verify 404 MEDIA_NOT_FOUND code for non-existent media with valid hash filename
+      const missingMediaRes = await runtime.app.inject({
+        method: "GET",
+        url: `/api/v2/chat/media/${"a".repeat(64)}.png`,
+      });
+      assert.equal(missingMediaRes.statusCode, 404);
+      assert.equal(missingMediaRes.json().error.code, "MEDIA_NOT_FOUND");
+
+      // Verify 422 INVALID_MEDIA_REF code for invalid filename format
+      const invalidMediaRes = await runtime.app.inject({
+        method: "GET",
+        url: "/api/v2/chat/media/non-existent-media.png",
+      });
+      assert.equal(invalidMediaRes.statusCode, 422);
+      assert.equal(invalidMediaRes.json().error.code, "INVALID_MEDIA_REF");
     } finally {
       await runtime.close();
     }

@@ -9,6 +9,7 @@ import type {
 } from "@living-network/contracts/v2";
 import type {
   V2ChatConversation,
+  V2ChatMaintenanceJob,
   V2ChatMedia,
   V2ChatMessage,
   V2ConversationSummary,
@@ -17,13 +18,14 @@ import type {
 import type {
   V2CanonRepository,
   V2ChatConversationRepository,
+  V2ChatMaintenanceJobRepository,
   V2ChatMediaRepository,
   V2ChatMessageRepository,
   V2ChatUnitOfWork,
   V2ConversationSummaryRepository,
   V2MemoryRepository,
 } from "@living-network/ports/v2";
-import { V2SqliteCanonRepository } from "../core/index.ts";
+import { V2SqliteCandidateReviewRepository, V2SqliteCanonRepository } from "../core/index.ts";
 import { withV2SqliteAsyncTransaction } from "../platform/index.ts";
 
 type ConversationRow = {
@@ -86,6 +88,48 @@ type SummaryRow = {
   version: number;
   updated_at: string;
 };
+
+type MaintenanceJobRow = {
+  job_id: string;
+  conversation_id: string;
+  job_type: "memory_extract" | "conversation_summary" | "memory_consolidate" | "story_analyze";
+  status: "pending" | "claimed" | "running" | "completed" | "failed";
+  payload: string;
+  attempts: number;
+  max_attempts: number;
+  available_at: string;
+  lease_expires_at: string | null;
+  claimed_by: string | null;
+  last_started_at: string | null;
+  created_at: string;
+  updated_at: string;
+  last_error: string | null;
+};
+
+function mapMaintenanceJob(row: MaintenanceJobRow): V2ChatMaintenanceJob {
+  let parsedPayload: unknown;
+  try {
+    parsedPayload = JSON.parse(row.payload);
+  } catch {
+    parsedPayload = row.payload;
+  }
+  return {
+    jobId: row.job_id,
+    conversationId: row.conversation_id,
+    jobType: row.job_type,
+    status: row.status,
+    payload: parsedPayload,
+    attempts: row.attempts,
+    maxAttempts: row.max_attempts,
+    availableAt: row.available_at,
+    ...(row.lease_expires_at === null ? {} : { leaseExpiresAt: row.lease_expires_at }),
+    ...(row.claimed_by === null ? {} : { claimedBy: row.claimed_by }),
+    ...(row.last_started_at === null ? {} : { lastStartedAt: row.last_started_at }),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    ...(row.last_error === null ? {} : { lastError: row.last_error }),
+  };
+}
 
 function mapConversation(row: ConversationRow): V2ChatConversation {
   return {
@@ -187,19 +231,23 @@ export class V2SqliteChatUnitOfWork implements V2ChatUnitOfWork {
 
   public async withChatTransaction<T>(fn: (repositories: {
     readonly canon: V2CanonRepository;
+    readonly candidateReviews: V2SqliteCandidateReviewRepository;
     readonly conversations: V2ChatConversationRepository;
     readonly messages: V2ChatMessageRepository;
     readonly media: V2ChatMediaRepository;
     readonly memories: V2MemoryRepository;
     readonly summaries: V2ConversationSummaryRepository;
+    readonly maintenanceJobs: V2ChatMaintenanceJobRepository;
   }) => Promise<T>): Promise<T> {
     return withV2SqliteAsyncTransaction(this.db, () => fn({
       canon: new V2SqliteCanonRepository(this.db),
+      candidateReviews: new V2SqliteCandidateReviewRepository(this.db),
       conversations: new V2SqliteChatConversationRepository(this.db),
       messages: new V2SqliteChatMessageRepository(this.db),
       media: new V2SqliteChatMediaRepository(this.db),
       memories: new V2SqliteMemoryRepository(this.db),
       summaries: new V2SqliteConversationSummaryRepository(this.db),
+      maintenanceJobs: new V2SqliteChatMaintenanceJobRepository(this.db),
     }));
   }
 }
@@ -416,6 +464,15 @@ export class V2SqliteMemoryRepository implements V2MemoryRepository {
     return row === undefined ? undefined : mapMemory(row);
   }
 
+  public async listByConversation(conversationId: V2ConversationId): Promise<readonly V2Memory[]> {
+    const rows = this.db.prepare(`
+      SELECT * FROM v2_memories
+      WHERE conversation_id = ?
+      ORDER BY updated_at DESC
+    `).all(conversationId) as MemoryRow[];
+    return rows.map(mapMemory);
+  }
+
   public async listActiveByStoryWorld(storyWorldId: V2StoryWorldId): Promise<readonly V2Memory[]> {
     const rows = this.db.prepare(`
       SELECT * FROM v2_memories
@@ -431,11 +488,13 @@ export class V2SqliteMemoryRepository implements V2MemoryRepository {
     readonly limit?: number;
   }): Promise<readonly V2Memory[]> {
     const limit = Math.min(input.limit ?? 10, 20);
-    const tokens = input.query.trim().split(/\s+/).filter(Boolean).slice(0, 8);
-    if (tokens.length === 0) {
+    const rawTokens = input.query.trim().split(/\s+/).filter(Boolean);
+    const cjkWords = input.query.match(/[\u4e00-\u9fa5]{2,}|[a-zA-Z0-9]{2,}/g) ?? [];
+    const allTokens = Array.from(new Set([...rawTokens, ...cjkWords])).slice(0, 10);
+    if (allTokens.length === 0) {
       return (await this.listActiveByStoryWorld(input.storyWorldId)).slice(0, limit);
     }
-    const match = tokens.map((token) => `"${token.replace(/"/g, "")}"`).join(" OR ");
+    const match = allTokens.map((token) => `"${token.replace(/"/g, "")}"`).join(" OR ");
     let rows: MemoryRow[];
     try {
       rows = this.db.prepare(`
@@ -450,13 +509,17 @@ export class V2SqliteMemoryRepository implements V2MemoryRepository {
       rows = [];
     }
     if (rows.length === 0) {
+      const likeClauses = allTokens.map(() => "content LIKE '%' || ? || '%'").join(" OR ");
       rows = this.db.prepare(`
         SELECT * FROM v2_memories
         WHERE story_world_id = ? AND status = 'active'
-          AND (content LIKE '%' || ? || '%')
+          AND (${likeClauses})
         ORDER BY importance DESC, updated_at DESC
         LIMIT ?
-      `).all(input.storyWorldId, input.query, limit) as MemoryRow[];
+      `).all(input.storyWorldId, ...allTokens, limit) as MemoryRow[];
+    }
+    if (rows.length === 0) {
+      return (await this.listActiveByStoryWorld(input.storyWorldId)).slice(0, limit);
     }
     return rows.map(mapMemory);
   }
@@ -511,5 +574,157 @@ export class V2SqliteConversationSummaryRepository implements V2ConversationSumm
     const saved = await this.get(input.conversationId as V2ConversationId);
     if (saved === undefined) throw new Error("V2 conversation summary save did not return a row");
     return saved;
+  }
+}
+
+export class V2SqliteChatMaintenanceJobRepository implements V2ChatMaintenanceJobRepository {
+  private readonly db: DatabaseSync;
+
+  public constructor(db: DatabaseSync) {
+    this.db = db;
+  }
+
+  public async enqueue(input: V2ChatMaintenanceJob): Promise<V2ChatMaintenanceJob> {
+    const now = new Date().toISOString();
+    const payloadStr = typeof input.payload === "string" ? input.payload : JSON.stringify(input.payload);
+    this.db.prepare(`
+      INSERT INTO v2_chat_maintenance_jobs (
+        job_id, conversation_id, job_type, status, payload, attempts, max_attempts,
+        available_at, lease_expires_at, claimed_by, last_started_at, created_at, updated_at, last_error
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      input.jobId,
+      input.conversationId,
+      input.jobType,
+      input.status,
+      payloadStr,
+      input.attempts,
+      input.maxAttempts,
+      input.availableAt,
+      input.leaseExpiresAt ?? null,
+      input.claimedBy ?? null,
+      input.lastStartedAt ?? null,
+      input.createdAt ?? now,
+      input.updatedAt ?? now,
+      input.lastError ?? null,
+    );
+    const created = await this.get(input.jobId);
+    if (created === undefined) throw new Error("V2 maintenance job enqueue did not return a row");
+    return created;
+  }
+
+  public async get(jobId: string): Promise<V2ChatMaintenanceJob | undefined> {
+    const row = this.db.prepare("SELECT * FROM v2_chat_maintenance_jobs WHERE job_id = ?").get(jobId) as MaintenanceJobRow | undefined;
+    return row === undefined ? undefined : mapMaintenanceJob(row);
+  }
+
+  public async hasActiveJob(conversationId: V2ConversationId, jobType: string): Promise<boolean> {
+    const row = this.db.prepare(`
+      SELECT 1 FROM v2_chat_maintenance_jobs
+      WHERE conversation_id = ? AND job_type = ? AND status IN ('pending', 'claimed', 'running')
+      LIMIT 1
+    `).get(conversationId, jobType);
+    return row !== undefined;
+  }
+
+  public async claimNext(input: {
+    readonly workerId: string;
+    readonly leaseDurationMs: number;
+    readonly now: string;
+  }): Promise<V2ChatMaintenanceJob | undefined> {
+    const leaseExpiresAt = new Date(new Date(input.now).getTime() + input.leaseDurationMs).toISOString();
+
+    // Find candidate job: status is pending or (status is claimed/running with expired lease),
+    // and available_at <= now, and attempts < max_attempts
+    const candidate = this.db.prepare(`
+      SELECT job_id FROM v2_chat_maintenance_jobs
+      WHERE (
+        status = 'pending'
+        OR (status IN ('claimed', 'running') AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?)
+      )
+      AND available_at <= ?
+      AND attempts < max_attempts
+      ORDER BY available_at ASC, job_id ASC
+      LIMIT 1
+    `).get(input.now, input.now) as { job_id: string } | undefined;
+
+    if (!candidate) {
+      return undefined;
+    }
+
+    this.db.prepare(`
+      UPDATE v2_chat_maintenance_jobs
+      SET
+        status = 'claimed',
+        claimed_by = ?,
+        lease_expires_at = ?,
+        attempts = attempts + 1,
+        last_started_at = ?,
+        updated_at = ?
+      WHERE job_id = ?
+    `).run(
+      input.workerId,
+      leaseExpiresAt,
+      input.now,
+      input.now,
+      candidate.job_id,
+    );
+
+    const row = this.db.prepare("SELECT * FROM v2_chat_maintenance_jobs WHERE job_id = ?").get(candidate.job_id) as MaintenanceJobRow | undefined;
+    return row === undefined ? undefined : mapMaintenanceJob(row);
+  }
+
+  public async renewLease(input: {
+    readonly jobId: string;
+    readonly workerId: string;
+    readonly leaseExpiresAt: string;
+    readonly now: string;
+  }): Promise<boolean> {
+    const result = this.db.prepare(`
+      UPDATE v2_chat_maintenance_jobs
+      SET lease_expires_at = ?, updated_at = ?
+      WHERE job_id = ? AND claimed_by = ? AND status IN ('claimed', 'running')
+    `).run(input.leaseExpiresAt, input.now, input.jobId, input.workerId);
+    return Number(result.changes) > 0;
+  }
+
+  public async markCompleted(input: {
+    readonly jobId: string;
+    readonly workerId: string;
+    readonly now: string;
+  }): Promise<void> {
+    this.db.prepare(`
+      UPDATE v2_chat_maintenance_jobs
+      SET
+        status = 'completed',
+        lease_expires_at = NULL,
+        updated_at = ?,
+        last_error = NULL
+      WHERE job_id = ?
+    `).run(input.now, input.jobId);
+  }
+
+  public async markFailed(input: {
+    readonly jobId: string;
+    readonly workerId: string;
+    readonly error: string;
+    readonly retryAvailableAt?: string;
+    readonly isTerminal: boolean;
+    readonly now: string;
+  }): Promise<void> {
+    const nextStatus = input.isTerminal ? "failed" : "pending";
+    const availableAt = input.retryAvailableAt ?? input.now;
+
+    this.db.prepare(`
+      UPDATE v2_chat_maintenance_jobs
+      SET
+        status = ?,
+        available_at = ?,
+        lease_expires_at = NULL,
+        claimed_by = NULL,
+        updated_at = ?,
+        last_error = ?
+      WHERE job_id = ?
+    `).run(nextStatus, availableAt, input.now, input.error, input.jobId);
   }
 }

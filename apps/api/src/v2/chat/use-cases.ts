@@ -10,29 +10,37 @@ import {
 } from "@living-network/ai/prompt-engine";
 import type {
   V2ChatConversationDto,
+  V2ChatDiagnosticsResponse,
   V2ChatMediaDto,
   V2ChatMessageDto,
   V2ChatMessagePageResponse,
   V2CharacterId,
   V2ConversationId,
   V2ConversationListResponse,
+  V2ConversationSummaryPayload,
   V2ChatMessageListResponse,
   V2CreateInstantStoryRequest,
   V2CreateInstantStoryResponse,
   V2GenerateChatReplyRequest,
   V2IdempotencyKey,
   V2IsoDateTime,
+  V2MaintenanceJobId,
   V2MediaId,
+  V2MemoryExtractPayload,
+  V2MemoryId,
   V2MessageId,
   V2SendChatMessageRequest,
   V2SendChatMessageResponse,
+  V2StoryAnalyzePayload,
   V2StoryWorldId,
+  V2TriggerStoryAnalyzeResponse,
 } from "@living-network/contracts/v2";
 import {
   assertV2PersonaText,
   createV2CanonCharacter,
   createV2CanonWorld,
   createV2ChatConversation,
+  createV2ChatMaintenanceJob,
   createV2ChatMedia,
   createV2ChatMessage,
   type V2CanonCharacter,
@@ -48,6 +56,13 @@ import type {
 } from "@living-network/ports/v2";
 
 import { V2HttpError } from "../core/errors.ts";
+
+export interface V2PromptRuntimeBudget {
+  readonly contextWindow?: number;
+  readonly maxTokens?: number;
+  readonly safetyReserve?: number;
+  readonly inputModalities?: readonly string[];
+}
 
 export interface V2PreparedChatReply {
   readonly conversationId: V2ConversationId;
@@ -67,7 +82,16 @@ export interface V2ChatUseCases {
     query?: { readonly beforeMessageId?: V2MessageId; readonly limit?: number },
   ): Promise<V2ChatMessagePageResponse>;
   sendMessage(conversationId: V2ConversationId, input: V2SendChatMessageRequest): Promise<V2SendChatMessageResponse>;
-  prepareReply(conversationId: V2ConversationId, input: V2GenerateChatReplyRequest): Promise<V2PreparedChatReply>;
+  prepareReply(
+    conversationId: V2ConversationId,
+    input: V2GenerateChatReplyRequest,
+    runtimeBudget?: V2PromptRuntimeBudget,
+  ): Promise<V2PreparedChatReply>;
+  getLatestDiagnostics?(conversationId: V2ConversationId): Promise<V2ChatDiagnosticsResponse>;
+  triggerStoryAnalyze?(
+    conversationId: V2ConversationId,
+    input: { readonly idempotencyKey: V2IdempotencyKey },
+  ): Promise<V2TriggerStoryAnalyzeResponse>;
   saveReply(input: {
     readonly conversationId: V2ConversationId;
     readonly messageId: V2MessageId;
@@ -108,7 +132,7 @@ export function createV2ChatUseCases(unitOfWork: V2ChatUnitOfWork): V2ChatUseCas
         ? await messages.listRecentByConversation(conversationId, limit + 1)
         : await messages.listBefore(conversationId, beforeMessageId, limit + 1);
       const hasMore = rows.length > limit;
-      const pageRows = rows.slice(0, limit);
+      const pageRows = hasMore ? rows.slice(rows.length - limit) : rows;
       return {
         messages: pageRows.map(toMessageDto),
         hasMore,
@@ -116,8 +140,53 @@ export function createV2ChatUseCases(unitOfWork: V2ChatUnitOfWork): V2ChatUseCas
       };
     }),
     sendMessage: (conversationId, input) => sendMessage(unitOfWork, conversationId, input),
-    prepareReply: (conversationId, input) => prepareReply(unitOfWork, conversationId, input),
+    prepareReply: (conversationId, input, runtimeBudget) => prepareReply(unitOfWork, conversationId, input, runtimeBudget),
     saveReply: (input) => saveReply(unitOfWork, input),
+    getLatestDiagnostics: async (conversationId) => unitOfWork.withChatTransaction(async ({ conversations, memories, summaries, messages }) => {
+      await requireConversation(conversations, conversationId);
+      const summary = await summaries.get(conversationId);
+      const allMemories = await memories.listByConversation(conversationId);
+      const activeMemories = allMemories.filter((m) => m.status === "active");
+      const recent = await messages.listRecentByConversation(conversationId, 20);
+      const recentImages = recent.reduce((sum, m) => sum + m.attachments.length, 0);
+      return {
+        templateId: "chat:roleplay:v1",
+        inputBudget: DEFAULT_TOKEN_BUDGET,
+        selectedMemoryIds: activeMemories.map((m) => m.memoryId as V2MemoryId),
+        ...(summary?.version === undefined ? {} : { summaryVersion: summary.version }),
+        recentCount: recent.length,
+        imageCount: recentImages,
+      };
+    }),
+    triggerStoryAnalyze: async (conversationId) => unitOfWork.withChatTransaction(async ({ conversations, maintenanceJobs, messages }) => {
+      const conversation = await requireConversation(conversations, conversationId);
+      const allMessages = await messages.listByConversation(conversationId, 100);
+      const sourceMessageIds = allMessages.map((m) => m.messageId as V2MessageId);
+      const jobId = `job:maint:${randomUUID()}` as V2MaintenanceJobId;
+      const fromMessageId = sourceMessageIds[0];
+      const toMessageId = sourceMessageIds[sourceMessageIds.length - 1];
+      const payload: V2StoryAnalyzePayload = {
+        conversationId,
+        storyWorldId: conversation.storyWorldId as any,
+        characterId: conversation.primaryCharacterId as any,
+        sourceMessageIds,
+        ...(fromMessageId === undefined ? {} : { fromMessageId }),
+        ...(toMessageId === undefined ? {} : { toMessageId }),
+      };
+      await maintenanceJobs.enqueue(
+        createV2ChatMaintenanceJob({
+          jobId,
+          conversationId,
+          jobType: "story_analyze",
+          status: "pending",
+          payload,
+          attempts: 0,
+          maxAttempts: 3,
+          availableAt: new Date().toISOString(),
+        }),
+      );
+      return { jobId, conversationId };
+    }),
     createMedia: (input) => createMedia(unitOfWork, input),
   };
 }
@@ -271,6 +340,7 @@ async function prepareReply(
   unitOfWork: V2ChatUnitOfWork,
   conversationId: V2ConversationId,
   input: V2GenerateChatReplyRequest,
+  runtimeBudget?: V2PromptRuntimeBudget,
 ): Promise<V2PreparedChatReply> {
   return unitOfWork.withChatTransaction(async ({ canon, conversations, messages, memories, summaries }) => {
     const conversation = await requireConversation(conversations, conversationId);
@@ -292,6 +362,12 @@ async function prepareReply(
     }
 
     const currentUser = [...recentMessages].reverse().find((message) => message.role === "user");
+    if (currentUser !== undefined && currentUser.attachments.length > 0) {
+      const allowedModalities = runtimeBudget?.inputModalities ?? ["text"];
+      if (!allowedModalities.includes("image")) {
+        throw new V2HttpError(400, "VISION_NOT_SUPPORTED", "The configured model does not support image input modalities");
+      }
+    }
     const historyMessages = currentUser === undefined
       ? recentMessages
       : await messages.listBefore(conversationId, currentUser.messageId as V2MessageId, 40);
@@ -307,7 +383,10 @@ async function prepareReply(
 
     const context: PromptContext = {
       task,
-      tokenBudget: DEFAULT_TOKEN_BUDGET,
+      tokenBudget: runtimeBudget?.contextWindow ?? DEFAULT_TOKEN_BUDGET,
+      ...(runtimeBudget?.contextWindow !== undefined ? { contextWindow: runtimeBudget.contextWindow } : {}),
+      ...(runtimeBudget?.maxTokens !== undefined ? { outputReserve: runtimeBudget.maxTokens } : {}),
+      ...(runtimeBudget?.safetyReserve !== undefined ? { safetyReserve: runtimeBudget.safetyReserve } : {}),
       memories: memoryRows.slice(0, 10).map(toV2MemoryContext),
       recentMessages: historyMessages.slice(-24).map(toV2ChatMessageContext),
       ...(character === undefined ? {} : {
@@ -361,8 +440,8 @@ async function saveReply(
     readonly replyToMessageId?: V2MessageId;
   },
 ): Promise<V2ChatMessageDto> {
-  return unitOfWork.withChatTransaction(async ({ conversations, messages }) => {
-    await requireConversation(conversations, input.conversationId);
+  return unitOfWork.withChatTransaction(async ({ conversations, messages, maintenanceJobs, summaries }) => {
+    const conversation = await requireConversation(conversations, input.conversationId);
     const existing = await messages.get(input.messageId);
     if (existing !== undefined) return toMessageDto(existing);
     const message = createV2ChatMessage({
@@ -377,6 +456,69 @@ async function saveReply(
     const created = await messages.create(message);
     const createdAt = created.createdAt ?? new Date().toISOString();
     await conversations.touchLastMessage({ conversationId: input.conversationId, lastMessageAt: createdAt });
+
+    if (input.status === "completed") {
+      const recentMessages = await messages.listRecentByConversation(input.conversationId, 10);
+      const sourceMessageIds = recentMessages.map((m) => m.messageId as V2MessageId);
+      if (sourceMessageIds.length > 0) {
+        const payload: V2MemoryExtractPayload = {
+          conversationId: input.conversationId,
+          storyWorldId: conversation.storyWorldId as any,
+          characterId: conversation.primaryCharacterId as any,
+          sourceMessageIds,
+        };
+        const job = createV2ChatMaintenanceJob({
+          jobId: `job:maint:${randomUUID()}` as V2MaintenanceJobId,
+          jobType: "memory_extract",
+          conversationId: input.conversationId,
+          payload,
+          status: "pending",
+          attempts: 0,
+          maxAttempts: 3,
+        });
+        await maintenanceJobs.enqueue(job).catch(() => undefined);
+      }
+
+      const hasActiveSummary = await maintenanceJobs.hasActiveJob(input.conversationId, "conversation_summary");
+      if (!hasActiveSummary) {
+        const summary = await summaries.get(input.conversationId);
+        const allMessages = await messages.listByConversation(input.conversationId);
+        let unsummarized = allMessages;
+        if (summary?.coveredUntilMessageId) {
+          const coveredIndex = allMessages.findIndex((m) => m.messageId === summary.coveredUntilMessageId);
+          if (coveredIndex >= 0) {
+            unsummarized = allMessages.slice(coveredIndex + 1);
+          }
+        }
+        if (unsummarized.length >= 20) {
+          const batch = unsummarized.slice(0, 30);
+          const summarySourceIds = batch.map((m) => m.messageId as V2MessageId);
+          const fromMessageId = summarySourceIds[0]!;
+          const toMessageId = summarySourceIds[summarySourceIds.length - 1]!;
+          const summaryPayload: V2ConversationSummaryPayload = {
+            conversationId: input.conversationId,
+            storyWorldId: conversation.storyWorldId as any,
+            characterId: conversation.primaryCharacterId as any,
+            sourceMessageIds: summarySourceIds,
+            fromMessageId,
+            toMessageId,
+            ...(summary?.version === undefined ? {} : { previousSummaryVersion: summary.version }),
+            ...(summary?.coveredUntilMessageId === undefined ? {} : { coveredUntilMessageId: summary.coveredUntilMessageId as V2MessageId }),
+          };
+          const summaryJob = createV2ChatMaintenanceJob({
+            jobId: `job:maint:${randomUUID()}` as V2MaintenanceJobId,
+            jobType: "conversation_summary",
+            conversationId: input.conversationId,
+            payload: summaryPayload,
+            status: "pending",
+            attempts: 0,
+            maxAttempts: 3,
+          });
+          await maintenanceJobs.enqueue(summaryJob).catch(() => undefined);
+        }
+      }
+    }
+
     return toMessageDto(created);
   });
 }

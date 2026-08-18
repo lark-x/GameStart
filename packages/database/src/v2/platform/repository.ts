@@ -28,6 +28,8 @@ type ProfileRow = {
   model: string;
   timeout_ms: number;
   max_tokens: number;
+  context_window: number | null;
+  input_modalities_json: string | null;
   temperature: number;
   encrypted_api_key: string | null;
   encryption_iv: string | null;
@@ -103,6 +105,18 @@ function decodeCursor(value: string): LogCursor {
 }
 
 function mapProfile(row: ProfileRow): V2StoredModelProfile {
+  let inputModalities: readonly string[] | undefined;
+  if (row.input_modalities_json !== null) {
+    try {
+      const parsed = JSON.parse(row.input_modalities_json) as unknown;
+      if (Array.isArray(parsed)) {
+        inputModalities = parsed.filter((item): item is string => typeof item === "string");
+      }
+    } catch {
+      inputModalities = undefined;
+    }
+  }
+
   return {
     id: row.profile_id,
     name: row.name,
@@ -111,6 +125,8 @@ function mapProfile(row: ProfileRow): V2StoredModelProfile {
     model: row.model,
     timeoutMs: row.timeout_ms,
     maxTokens: row.max_tokens,
+    ...(row.context_window === null ? {} : { contextWindow: row.context_window }),
+    ...(inputModalities === undefined ? {} : { inputModalities }),
     temperature: row.temperature,
     ...(row.encrypted_api_key === null ? {} : { encryptedApiKey: row.encrypted_api_key }),
     ...(row.encryption_iv === null ? {} : { encryptionIv: row.encryption_iv }),
@@ -201,9 +217,9 @@ export class V2SqlitePlatformRepository implements V2PlatformRepository {
   public async saveModelProfile(profile: V2StoredModelProfile): Promise<V2StoredModelProfile> {
     this.db.prepare(`
       INSERT INTO v2_model_profiles (
-        profile_id, name, protocol, base_url, model, timeout_ms, max_tokens, temperature,
+        profile_id, name, protocol, base_url, model, timeout_ms, max_tokens, context_window, input_modalities_json, temperature,
         encrypted_api_key, encryption_iv, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(profile_id) DO UPDATE SET
         name = excluded.name,
         protocol = excluded.protocol,
@@ -211,6 +227,8 @@ export class V2SqlitePlatformRepository implements V2PlatformRepository {
         model = excluded.model,
         timeout_ms = excluded.timeout_ms,
         max_tokens = excluded.max_tokens,
+        context_window = excluded.context_window,
+        input_modalities_json = excluded.input_modalities_json,
         temperature = excluded.temperature,
         encrypted_api_key = excluded.encrypted_api_key,
         encryption_iv = excluded.encryption_iv,
@@ -223,6 +241,8 @@ export class V2SqlitePlatformRepository implements V2PlatformRepository {
       profile.model,
       profile.timeoutMs,
       profile.maxTokens,
+      profile.contextWindow ?? null,
+      profile.inputModalities ? JSON.stringify(profile.inputModalities) : null,
       profile.temperature,
       profile.encryptedApiKey ?? null,
       profile.encryptionIv ?? null,

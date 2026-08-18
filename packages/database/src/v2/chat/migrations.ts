@@ -134,3 +134,47 @@ export const v2ChatCoreFinalizationMigration: V2SqliteMigration = {
     db.exec("DROP INDEX IF EXISTS v2_chat_media_content_hash_idx;");
   },
 };
+
+export const v2ChatMaintenanceJobsMigration: V2SqliteMigration = {
+  id: "0330_v2_chat_maintenance_jobs",
+  up: (db) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS v2_chat_maintenance_jobs (
+        job_id TEXT PRIMARY KEY,
+        conversation_id TEXT NOT NULL,
+        job_type TEXT NOT NULL,
+        status TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        max_attempts INTEGER NOT NULL DEFAULT 3,
+        available_at TEXT NOT NULL,
+        lease_expires_at TEXT,
+        claimed_by TEXT,
+        last_started_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        last_error TEXT,
+        FOREIGN KEY (conversation_id) REFERENCES v2_conversations(conversation_id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_v2_chat_maint_poll
+      ON v2_chat_maintenance_jobs(status, available_at);
+
+      CREATE INDEX IF NOT EXISTS idx_v2_chat_maint_conv_type
+      ON v2_chat_maintenance_jobs(conversation_id, job_type, status);
+    `);
+  },
+  down: (db) => {
+    db.exec(`
+      DROP INDEX IF EXISTS idx_v2_chat_maint_conv_type;
+      DROP INDEX IF EXISTS idx_v2_chat_maint_poll;
+      DROP TABLE IF EXISTS v2_chat_maintenance_jobs;
+    `);
+  },
+};
+
+export const v2ChatMigrations: readonly V2SqliteMigration[] = [
+  v2ChatMemoryMigration,
+  v2ChatCoreFinalizationMigration,
+  v2ChatMaintenanceJobsMigration,
+];

@@ -21,5 +21,8 @@
     "@living-network/domain": "workspace:*",
     "@living-network/ports": "workspace:*",
     "fastify": "^5.11.3"
+  },
+  "devDependencies": {
+    "@living-network/worker": "workspace:*"
   }
 }

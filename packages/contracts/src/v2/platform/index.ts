@@ -21,6 +21,8 @@ export interface V2ModelProfileDto {
   readonly model: string;
   readonly timeoutMs: number;
   readonly maxTokens: number;
+  readonly contextWindow?: number | undefined;
+  readonly inputModalities?: readonly string[] | undefined;
   readonly temperature: number;
   readonly hasApiKey: boolean;
   readonly createdAt: string;
@@ -28,16 +30,18 @@ export interface V2ModelProfileDto {
 }
 
 export interface V2SaveModelProfileRequest {
-  readonly id?: string;
+  readonly id?: string | undefined;
   readonly name: string;
   readonly protocol: V2ModelProtocol;
   readonly baseUrl: string;
   readonly model: string;
-  readonly timeoutMs?: number;
-  readonly maxTokens?: number;
-  readonly temperature?: number;
-  readonly apiKey?: string;
-  readonly sourceProfileId?: string;
+  readonly timeoutMs?: number | undefined;
+  readonly maxTokens?: number | undefined;
+  readonly contextWindow?: number | undefined;
+  readonly inputModalities?: readonly string[] | undefined;
+  readonly temperature?: number | undefined;
+  readonly apiKey?: string | undefined;
+  readonly sourceProfileId?: string | undefined;
 }
 
 export interface V2DiscoverModelsRequest {
@@ -59,6 +63,8 @@ export interface V2StoredModelProfile {
   readonly model: string;
   readonly timeoutMs: number;
   readonly maxTokens: number;
+  readonly contextWindow?: number;
+  readonly inputModalities?: readonly string[];
   readonly temperature: number;
   readonly encryptedApiKey?: string;
   readonly encryptionIv?: string;

@@ -44,6 +44,10 @@ importers:
       fastify:
         specifier: ^5.11.3
         version: 5.11.3
+    devDependencies:
+      '@living-network/worker':
+        specifier: workspace:*
+        version: link:../worker
 
   apps/web:
     dependencies:
