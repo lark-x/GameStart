@@ -9,6 +9,7 @@ import type {
   V2MemoryConsolidateCandidate,
   V2MemoryConsolidatePayload,
   V2MemoryExtractPayload,
+  V2MemoryEngineConsumePayload,
   V2FactExtractorVersion,
   V2MemoryId,
   V2MemoryKind,
@@ -19,7 +20,7 @@ import type {
   V2StoryWorldId,
   V2CharacterId,
 } from "@living-network/contracts/v2";
-import type { V2ChatMessageRepository, V2ChatUnitOfWork } from "@living-network/ports/v2";
+import type { V2ChatMessageRepository, V2ChatUnitOfWork, V2MemoryEngine } from "@living-network/ports/v2";
 import type { ChatProvider } from "@living-network/ai/v2";
 import {
   buildStoryAnalyzerPrompt,
@@ -39,6 +40,7 @@ import {
   type V2ChatMessage,
   type V2ConversationSummary,
   type V2FactAssertion,
+  type V2FactAssertionBatch,
   type V2Memory,
 } from "@living-network/domain/v2";
 import { createHash, randomUUID } from "node:crypto";
@@ -50,6 +52,7 @@ export interface V2MaintenanceDispatchPumpOptions {
   readonly memoryProvider?: ChatProvider;
   readonly storyAnalysisProvider?: ChatProvider;
   readonly structuredEngine?: import("./memory/index.ts").V2BuiltinStructuredEngine;
+  readonly engines?: readonly V2MemoryEngine[];
   readonly pollIntervalMs?: number;
   readonly leaseDurationMs?: number;
   readonly heartbeatIntervalMs?: number;
@@ -88,6 +91,7 @@ export class V2MaintenanceDispatchPump {
   private readonly memoryProvider: ChatProvider;
   private readonly storyAnalysisProvider: ChatProvider;
   private readonly structuredEngine: import("./memory/index.ts").V2BuiltinStructuredEngine | undefined;
+  private readonly engines: readonly V2MemoryEngine[];
   private readonly pollIntervalMs: number;
   private readonly leaseDurationMs: number;
   private readonly heartbeatIntervalMs: number;
@@ -105,6 +109,7 @@ export class V2MaintenanceDispatchPump {
     this.memoryProvider = options.memoryProvider ?? options.provider!;
     this.storyAnalysisProvider = options.storyAnalysisProvider ?? options.provider!;
     this.structuredEngine = options.structuredEngine;
+    this.engines = options.engines ?? (options.structuredEngine === undefined ? [] : [options.structuredEngine]);
     this.pollIntervalMs = options.pollIntervalMs ?? 2000;
     this.leaseDurationMs = options.leaseDurationMs ?? 30000;
     this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? 10000;
@@ -205,6 +210,8 @@ export class V2MaintenanceDispatchPump {
         await this.handleConversationSummary(job);
       } else if (job.jobType === "story_analyze") {
         await this.handleStoryAnalyze(job);
+      } else if (job.jobType === "memory_engine_consume") {
+        await this.handleMemoryEngineConsume(job);
       } else {
         throw new Error(`Unknown maintenance job type: ${job.jobType}`);
       }
@@ -276,15 +283,9 @@ export class V2MaintenanceDispatchPump {
     let batchId: string;
     if (existingBatch !== undefined) {
       batchId = existingBatch.batchId;
-      // Replay the ledger through the structured engine (idempotent) so any
-      // engine work that was lost after the fact commit is recovered.
-      const existingAssertions = await this.unitOfWork.withChatTransaction(async (repos) =>
-        repos.facts.listAssertionsByBatch(existingBatch.batchId));
-      if (this.structuredEngine !== undefined) {
-        await this.structuredEngine.consume({ batch: existingBatch, assertions: existingAssertions });
-      } else {
-        await this.applyMemoryCandidates(job, payload, this.toMemoryCandidates(existingAssertions));
-      }
+      // Replay the ledger through engine consume jobs (idempotent) so any
+      // engine work lost after the fact commit is recovered.
+      await this.enqueueEngineConsumeJobs(job, existingBatch);
     } else {
       // 2. Run the unified fact extractor (single LLM call; engines never re-extract).
       const { system, user } = buildFactExtractionPrompt({
@@ -360,12 +361,8 @@ export class V2MaintenanceDispatchPump {
         await repos.facts.createAssertions(assertions);
       });
 
-      // 4. Feed the same assertions into the structured engine (primary memory).
-      if (this.structuredEngine !== undefined) {
-        await this.structuredEngine.consume({ batch, assertions });
-      } else {
-        await this.applyMemoryCandidates(job, payload, this.toMemoryCandidates(assertions));
-      }
+      // 4. Fan out engine consume jobs (fact ledger commit is the recovery boundary).
+      await this.enqueueEngineConsumeJobs(job, batch);
     }
 
     const cursorMessageId = payload.range?.toMessageId ?? sortedMessages[sortedMessages.length - 1]?.messageId;
@@ -377,118 +374,68 @@ export class V2MaintenanceDispatchPump {
     }
   }
 
-  private toMemoryCandidates(
-    assertions: readonly V2FactAssertion[],
-  ): readonly {
-    readonly kind: V2MemoryKind;
-    readonly content: string;
-    readonly importance: number;
-    readonly confidence: number;
-    readonly sourceMessageIds: readonly V2MessageId[];
-  }[] {
-    return assertions.map((assertion) => ({
-      kind: assertion.kind as V2MemoryKind,
-      content: assertion.text,
-      importance: assertion.importanceHint,
-      confidence: assertion.confidence,
-      sourceMessageIds: assertion.sourceMessageIds as V2MessageId[],
-    }));
+  private async enqueueEngineConsumeJobs(
+    job: V2ChatMaintenanceJob,
+    batch: V2FactAssertionBatch,
+  ): Promise<void> {
+    await this.unitOfWork.withChatTransaction(async (repos) => {
+      await this.assertLeaseOwner(job.jobId, repos);
+      for (const engine of this.engines) {
+        const dedupeKey = `memory_engine_consume:${engine.id}:${batch.batchId}`;
+        const existing = await repos.maintenanceJobs.findJobByDedupeKey("memory_engine_consume", dedupeKey);
+        if (existing !== undefined) continue;
+        const payload: V2MemoryEngineConsumePayload = {
+          conversationId: batch.conversationId as V2MemoryEngineConsumePayload["conversationId"],
+          engineId: engine.id,
+          batchId: batch.batchId,
+        };
+        await repos.maintenanceJobs.enqueue(createV2ChatMaintenanceJob({
+          jobId: randomUUID(),
+          conversationId: batch.conversationId,
+          jobType: "memory_engine_consume",
+          status: "pending",
+          payload,
+          dedupeKey,
+          attempts: 0,
+          maxAttempts: 3,
+          availableAt: this.now().toISOString(),
+        }));
+      }
+    });
   }
 
-  private async applyMemoryCandidates(
-    job: V2ChatMaintenanceJob,
-    payload: V2MemoryExtractPayload,
-    candidates: readonly {
-      readonly kind: V2MemoryKind;
-      readonly content: string;
-      readonly importance: number;
-      readonly confidence: number;
-      readonly sourceMessageIds: readonly V2MessageId[];
-    }[],
-  ): Promise<void> {
-    const validSourceSet = new Set(payload.sourceMessageIds);
-    for (const candidate of candidates) {
-      const invalidCitations = candidate.sourceMessageIds.filter((id) => !validSourceSet.has(id));
-      if (invalidCitations.length > 0) {
-        throw new StructuredOutputError(
-          "INVALID_SCHEMA",
-          `Memory candidate cites source message ids outside the job range: ${invalidCitations.join(", ")}`,
-        );
-      }
-      const citedIds = candidate.sourceMessageIds;
-
-      await this.unitOfWork.withChatTransaction(async (repos) => {
-        await this.assertLeaseOwner(job.jobId, repos);
-        const conversation = await repos.conversations.get(payload.conversationId);
-        const storyWorldId = (payload.storyWorldId ?? conversation?.storyWorldId ?? "default_world") as V2StoryWorldId;
-        const existingMemories = await repos.memories.listByConversation(payload.conversationId);
-        const exactMatch = existingMemories.find(
-          (m: V2Memory) => m.status === "active" && m.kind === candidate.kind && m.content.trim() === candidate.content.trim(),
-        );
-        if (exactMatch) {
-          return;
-        }
-
-        const similarCandidates = await repos.memories.searchActive({
-          storyWorldId,
-          query: candidate.content,
-          limit: 5,
-        });
-        const similarMemory = similarCandidates.find(
-          (m: V2Memory) => m.status === "active" && m.kind === candidate.kind,
-        );
-
-        if (similarMemory) {
-          const idempotencyKey = `memory_consolidate:${similarMemory.memoryId}:${candidate.content.trim()}`;
-          const alreadyQueued = await repos.maintenanceJobs.findJobByDedupeKey("memory_consolidate", idempotencyKey) !== undefined;
-          if (alreadyQueued) {
-            return;
-          }
-          const consolidatePayload: V2MemoryConsolidatePayload = {
-            conversationId: payload.conversationId,
-            ...(payload.storyWorldId ? { storyWorldId: payload.storyWorldId } : {}),
-            ...(payload.characterId ? { characterId: payload.characterId } : {}),
-            existingMemoryId: similarMemory.memoryId as V2MemoryId,
-            idempotencyKey,
-            candidate: {
-              kind: candidate.kind,
-              content: candidate.content,
-              importance: candidate.importance,
-              confidence: candidate.confidence,
-              sourceMessageIds: citedIds,
-            },
-          };
-
-          const newJob = createV2ChatMaintenanceJob({
-            jobId: randomUUID(),
-            conversationId: payload.conversationId,
-            jobType: "memory_consolidate",
-            payload: consolidatePayload,
-            status: "pending",
-            dedupeKey: idempotencyKey,
-            now: this.now().toISOString(),
-          } as any);
-
-          await repos.maintenanceJobs.enqueue(newJob);
-        } else {
-          const newMemory = createV2Memory({
-            memoryId: randomUUID(),
-            storyWorldId,
-            conversationId: payload.conversationId,
-            ...(payload.characterId ? { characterId: payload.characterId } : {}),
-            kind: candidate.kind,
-            content: candidate.content,
-            importance: candidate.importance,
-            confidence: candidate.confidence,
-            sourceMessageIds: citedIds,
-            status: "active",
-            createdAt: this.now().toISOString(),
-            updatedAt: this.now().toISOString(),
-          });
-          await repos.memories.create(newMemory);
-        }
-      });
+  private async handleMemoryEngineConsume(job: V2ChatMaintenanceJob): Promise<void> {
+    const payload = job.payload as unknown as V2MemoryEngineConsumePayload;
+    if (!payload || !payload.engineId || !payload.batchId) {
+      throw new SourceMessageNotFoundError("Memory engine consume job payload is incomplete");
     }
+    const engine = this.engines.find((item) => item.id === payload.engineId);
+    if (engine === undefined) {
+      throw new Error(`Unknown memory engine: ${payload.engineId}`);
+    }
+    const { batch, assertions } = await this.unitOfWork.withChatTransaction(async (repos) => {
+      const found = await repos.facts.getBatch(payload.batchId);
+      if (found === undefined) {
+        throw new SourceMessageNotFoundError(`Fact batch not found: ${payload.batchId}`);
+      }
+      return {
+        batch: found,
+        assertions: await repos.facts.listAssertionsByBatch(payload.batchId),
+      };
+    });
+
+    const ownsLease = await this.unitOfWork.withChatTransaction(async (repos) =>
+      repos.maintenanceJobs.isLeaseOwner({ jobId: job.jobId, workerId: this.workerId, now: this.now().toISOString() }));
+    if (!ownsLease) {
+      throw new LeaseLostError(`Lease lost for job ${job.jobId}; refusing to consume memory engine`);
+    }
+
+    await engine.consume({ batch, assertions });
+
+    await this.unitOfWork.withChatTransaction(async (repos) => {
+      await this.assertLeaseOwner(job.jobId, repos);
+      await repos.facts.setEngineOffset(engine.id, `conversation:${payload.conversationId}`, payload.batchId);
+    });
   }
 
   private scopeTypeForSubject(entityType: V2FactAssertionSubjectEntityType): "user" | "world" | "character" | "conversation" {

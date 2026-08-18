@@ -275,7 +275,8 @@ export type V2ChatMaintenanceJobType =
   | "memory_extract"
   | "conversation_summary"
   | "memory_consolidate"
-  | "story_analyze";
+  | "story_analyze"
+  | "memory_engine_consume";
 
 export type V2ChatMaintenanceJobStatus = "pending" | "claimed" | "running" | "completed" | "failed";
 
@@ -319,6 +320,7 @@ export function createV2ChatMaintenanceJob(input: {
     "conversation_summary",
     "memory_consolidate",
     "story_analyze",
+    "memory_engine_consume",
   ];
   if (!validJobTypes.includes(input.jobType)) {
     throw new V2DomainError("INVALID_INPUT", `Invalid jobType: ${String(input.jobType)}`);

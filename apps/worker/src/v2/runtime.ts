@@ -16,6 +16,7 @@ import type {
   V2AssetGenerationJobQueuePayload,
   V2GenerationJobQueuePayload,
 } from "@living-network/ports/v2";
+import type { V2MemoryEngine } from "@living-network/ports/v2";
 
 import { BullMqTaskQueue, BullMqTaskWorker, type TaskQueue } from "../queue.ts";
 import { createV2GenerationDispatchPump } from "./generation-dispatch-pump.ts";
@@ -167,6 +168,10 @@ export async function startV2Worker(
       unitOfWork: chatUnitOfWork,
       runs: new V2SqliteMemoryEngineRunRepository(db),
     });
+    const memoryEngines: V2MemoryEngine[] = [];
+    if (config.memory.primaryEngineId === "builtin_structured" || config.memory.shadowEngineIds.includes("builtin_structured")) {
+      memoryEngines.push(structuredEngine);
+    }
     const chatProvider = new V2DynamicModelProvider({
       repository: platformRepository,
       ...(secretCipher === undefined ? {} : { secretCipher }),
@@ -208,7 +213,7 @@ export async function startV2Worker(
       unitOfWork: chatUnitOfWork,
       memoryProvider,
       storyAnalysisProvider,
-      structuredEngine,
+      engines: memoryEngines,
       pollIntervalMs: 2000,
     });
     maintenancePump.start();

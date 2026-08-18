@@ -12,9 +12,13 @@ import type {
   V2MemoryId,
   V2MessageId,
 } from "@living-network/contracts/v2";
-import { openV2TempSqliteConnection, V2SqliteChatUnitOfWork } from "@living-network/database/v2";
+import {
+  openV2TempSqliteConnection,
+  V2SqliteChatUnitOfWork,
+  V2SqliteMemoryEngineRunRepository,
+} from "@living-network/database/v2";
 import { createV2ChatMaintenanceJob } from "@living-network/domain/v2";
-import { V2MaintenanceDispatchPump } from "@living-network/worker";
+import { V2BuiltinStructuredEngine, V2MaintenanceDispatchPump } from "@living-network/worker";
 import { createV2ApiRuntime } from "../platform/runtime.ts";
 import { createV2ChatUseCases } from "./use-cases.ts";
 
@@ -165,6 +169,10 @@ test("500 Turn System-level E2E Continuity and Stability Test", async () => {
   });
 
   const getUnitOfWork = () => new V2SqliteChatUnitOfWork(runtime.db);
+  const makeEngine = () => new V2BuiltinStructuredEngine({
+    unitOfWork: getUnitOfWork(),
+    runs: new V2SqliteMemoryEngineRunRepository(runtime.db),
+  });
   let simulatedTime = Date.now();
   const getNow = () => new Date(simulatedTime);
 
@@ -173,6 +181,7 @@ test("500 Turn System-level E2E Continuity and Stability Test", async () => {
     unitOfWork: getUnitOfWork(),
     provider,
     pollIntervalMs: 50,
+    engines: [makeEngine()],
     now: getNow,
   });
 
@@ -293,6 +302,7 @@ test("500 Turn System-level E2E Continuity and Stability Test", async () => {
           provider,
           pollIntervalMs: 50,
           now: getNow,
+          engines: [makeEngine()],
         });
         pump.start();
         await drainPump();
@@ -321,6 +331,7 @@ test("500 Turn System-level E2E Continuity and Stability Test", async () => {
           provider,
           pollIntervalMs: 50,
           now: getNow,
+          engines: [makeEngine()],
         });
         pump.start();
 

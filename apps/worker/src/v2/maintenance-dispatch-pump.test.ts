@@ -5,6 +5,7 @@ import {
   openV2TempSqliteConnection,
   v2ChatMigrations,
   V2SqliteChatUnitOfWork,
+  V2SqliteMemoryEngineRunRepository,
 } from "@living-network/database/v2";
 import {
   createV2CanonCharacter,
@@ -23,9 +24,19 @@ import type {
   V2StoryWorldId,
 } from "@living-network/contracts/v2";
 import { V2MaintenanceDispatchPump } from "./maintenance-dispatch-pump.ts";
+import { V2BuiltinStructuredEngine } from "./memory/index.ts";
+import type { V2MemoryEngine } from "@living-network/ports/v2";
+import type { V2MemoryConsumeResult, V2MemoryEngineCapabilities, V2MemoryQuery, V2RetrievedMemory } from "@living-network/contracts/v2";
 import type { ChatProvider } from "@living-network/ai/v2";
 
 const now = "2026-08-12T03:00:00.000Z" as V2IsoDateTime;
+
+function engineFor(uow: V2SqliteChatUnitOfWork, db: ReturnType<typeof openV2TempSqliteConnection>["db"]) {
+  return new V2BuiltinStructuredEngine({
+    unitOfWork: uow,
+    runs: new V2SqliteMemoryEngineRunRepository(db),
+  });
+}
 
 function createTestProvider(replyJson: string): ChatProvider {
   return {
@@ -150,9 +161,13 @@ test("V2MaintenanceDispatchPump claims and processes memory_extract job with pro
     workerId: "test_worker_1",
     unitOfWork: uow,
     provider: createTestProvider(providerReply),
+    engines: [engineFor(uow, db)],
   });
 
-  const processed = await pump.tick();
+  let processed = await pump.tick();
+  assert.equal(processed, true);
+  // The fact extract job fans out a memory_engine_consume job; process it too.
+  processed = await pump.tick();
   assert.equal(processed, true);
 
   await uow.withChatTransaction(async (repos) => {
@@ -1056,6 +1071,7 @@ test("V2MaintenanceDispatchPump consolidates a related preference and supersedes
     workerId: "test_worker_consolidate",
     unitOfWork: uow,
     provider: consolidateProvider,
+    engines: [engineFor(uow, db)],
   });
 
   let ran = 0;
@@ -1242,6 +1258,209 @@ test("V2MaintenanceDispatchPump keeps at most one active extraction job per conv
   await uow.withChatTransaction(async (repos) => {
     const active = await repos.maintenanceJobs.hasActiveJob(convId, "memory_extract");
     assert.equal(active, false);
+  });
+
+  cleanup();
+});
+
+class FakeShadowEngine implements V2MemoryEngine {
+  public readonly id = "fake_shadow";
+  public failNextConsume = false;
+  public consumedBatches: readonly string[] = [];
+
+  public capabilities(): V2MemoryEngineCapabilities {
+    return {
+      acceptsFactAssertions: true,
+      acceptsRawMessages: false,
+      supportsMutation: false,
+      supportsEmbedding: false,
+      supportsEntityIndex: false,
+      supportsTemporalFacts: false,
+    };
+  }
+
+  public async consume(input: { readonly batch: { readonly batchId: string }; readonly assertions: readonly unknown[] }): Promise<V2MemoryConsumeResult> {
+    if (this.failNextConsume) {
+      this.failNextConsume = false;
+      throw new Error("shadow transient failure");
+    }
+    this.consumedBatches = [...this.consumedBatches, input.batch.batchId];
+    return {
+      engineId: this.id,
+      batchId: input.batch.batchId,
+      inputAssertionCount: input.assertions.length,
+      outputMemoryCount: 0,
+      mutated: false,
+    };
+  }
+
+  public async retrieve(_input: V2MemoryQuery): Promise<readonly V2RetrievedMemory[]> {
+    return [];
+  }
+}
+
+test("V2MaintenanceDispatchPump fans out one consume job per engine with independent offsets", async () => {
+  const { db, uow, cleanup } = await setupTestDb();
+
+  const worldId = "world_fanout" as V2StoryWorldId;
+  const convId = "conv_fanout" as V2ConversationId;
+  const msg1Id = "msg_fanout_1" as V2MessageId;
+
+  await uow.withChatTransaction(async (repos) => {
+    await repos.canon.createWorld(createV2CanonWorld({ storyWorldId: worldId, name: "World Fanout", summary: "s" }));
+    await repos.conversations.create(createV2ChatConversation({
+      conversationId: convId,
+      storyWorldId: worldId,
+      primaryCharacterId: "char_fanout" as any,
+      title: "Fanout Conv",
+    }));
+    await repos.messages.create(createV2ChatMessage({
+      messageId: msg1Id,
+      conversationId: convId,
+      role: "user",
+      text: "我喜欢清晨慢跑。",
+      createdAt: now,
+      idempotencyKey: "key_fanout_1",
+    }));
+    await repos.maintenanceJobs.enqueue(createV2ChatMaintenanceJob({
+      jobId: "job_fanout_extract" as V2MaintenanceJobId,
+      conversationId: convId,
+      jobType: "memory_extract",
+      status: "pending",
+      payload: {
+        conversationId: convId,
+        storyWorldId: worldId,
+        characterId: "char_fanout" as any,
+        sourceMessageIds: [msg1Id],
+        range: { fromMessageId: msg1Id, toMessageId: msg1Id },
+      },
+      attempts: 0,
+      maxAttempts: 3,
+      availableAt: now,
+    }));
+  });
+
+  const structured = engineFor(uow, db);
+  const shadow = new FakeShadowEngine();
+  const pump = new V2MaintenanceDispatchPump({
+    workerId: "test_worker_fanout",
+    unitOfWork: uow,
+    provider: createTestProvider(JSON.stringify([
+      {
+        subject: { entityType: "user", entityId: "user:local" },
+        predicate: "preferred_activity",
+        object: { type: "text", value: "jogging" },
+        kind: "preference",
+        text: "用户喜欢清晨慢跑",
+        changeHint: "new",
+        confidence: 0.9,
+        importanceHint: 0.7,
+        sourceMessageIds: [msg1Id],
+      },
+    ])),
+    engines: [structured, shadow],
+  });
+
+  let ran = 0;
+  while (await pump.tick()) {
+    ran += 1;
+    if (ran > 10) break;
+  }
+
+  await uow.withChatTransaction(async (repos) => {
+    const structuredOffset = await repos.facts.getEngineOffset("builtin_structured", `conversation:${convId}`);
+    const shadowOffset = await repos.facts.getEngineOffset("fake_shadow", `conversation:${convId}`);
+    assert.ok(structuredOffset, "structured engine offset should advance");
+    assert.ok(shadowOffset, "shadow engine offset should advance");
+    assert.equal(structuredOffset, shadowOffset);
+    assert.deepEqual(shadow.consumedBatches, [structuredOffset]);
+  });
+
+  cleanup();
+});
+
+test("V2MaintenanceDispatchPump isolates shadow engine failure from the primary engine", async () => {
+  const { db, uow, cleanup } = await setupTestDb();
+
+  const worldId = "world_shadow_fail" as V2StoryWorldId;
+  const convId = "conv_shadow_fail" as V2ConversationId;
+  const msg1Id = "msg_shadow_fail_1" as V2MessageId;
+
+  await uow.withChatTransaction(async (repos) => {
+    await repos.canon.createWorld(createV2CanonWorld({ storyWorldId: worldId, name: "World Shadow Fail", summary: "s" }));
+    await repos.conversations.create(createV2ChatConversation({
+      conversationId: convId,
+      storyWorldId: worldId,
+      primaryCharacterId: "char_shadow_fail" as any,
+      title: "Shadow Fail Conv",
+    }));
+    await repos.messages.create(createV2ChatMessage({
+      messageId: msg1Id,
+      conversationId: convId,
+      role: "user",
+      text: "我喜欢深夜阅读。",
+      createdAt: now,
+      idempotencyKey: "key_shadow_fail_1",
+    }));
+    await repos.maintenanceJobs.enqueue(createV2ChatMaintenanceJob({
+      jobId: "job_shadow_fail_extract" as V2MaintenanceJobId,
+      conversationId: convId,
+      jobType: "memory_extract",
+      status: "pending",
+      payload: {
+        conversationId: convId,
+        storyWorldId: worldId,
+        characterId: "char_shadow_fail" as any,
+        sourceMessageIds: [msg1Id],
+        range: { fromMessageId: msg1Id, toMessageId: msg1Id },
+      },
+      attempts: 0,
+      maxAttempts: 3,
+      availableAt: now,
+    }));
+  });
+
+  const structured = engineFor(uow, db);
+  const shadow = new FakeShadowEngine();
+  shadow.failNextConsume = true;
+  const pump = new V2MaintenanceDispatchPump({
+    workerId: "test_worker_shadow_fail",
+    unitOfWork: uow,
+    provider: createTestProvider(JSON.stringify([
+      {
+        subject: { entityType: "user", entityId: "user:local" },
+        predicate: "preferred_activity",
+        object: { type: "text", value: "reading" },
+        kind: "preference",
+        text: "用户喜欢深夜阅读",
+        changeHint: "new",
+        confidence: 0.9,
+        importanceHint: 0.7,
+        sourceMessageIds: [msg1Id],
+      },
+    ])),
+    engines: [structured, shadow],
+  });
+
+  let ran = 0;
+  while (await pump.tick()) {
+    ran += 1;
+    if (ran > 10) break;
+  }
+
+  await uow.withChatTransaction(async (repos) => {
+    const jobs = db.prepare("SELECT job_id, job_type, status, last_error FROM v2_chat_maintenance_jobs ORDER BY created_at").all() as Array<{ job_id: string; job_type: string; status: string; last_error: string | null }>;
+    // Primary memory is written even though the shadow failed once and then retried.
+    const memories = await repos.memories.listByConversation(convId);
+    assert.equal(memories.length, 1);
+    assert.ok(memories[0]?.content.includes("深夜阅读"));
+    const structuredOffset = await repos.facts.getEngineOffset("builtin_structured", `conversation:${convId}`);
+    assert.ok(structuredOffset);
+    // The shadow failed once and is waiting for its retry backoff; it must not
+    // have consumed the batch yet, and the primary engine must be unaffected.
+    assert.equal(shadow.consumedBatches.length, 0);
+    const shadowJob = db.prepare("SELECT status FROM v2_chat_maintenance_jobs WHERE job_type = 'memory_engine_consume' AND payload LIKE ?").get("%fake_shadow%") as { status: string } | undefined;
+    assert.equal(shadowJob?.status, "pending");
   });
 
   cleanup();

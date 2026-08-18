@@ -26,6 +26,10 @@ export interface V2RuntimeConfig {
     readonly timeoutMs: number;
     readonly concurrency: number;
   };
+  readonly memory: {
+    readonly primaryEngineId: string;
+    readonly shadowEngineIds: readonly string[];
+  };
 }
 
 export class V2ConfigError extends Error {
@@ -108,6 +112,13 @@ export function loadV2RuntimeConfig(env: V2EnvironmentInput = process.env): V2Ru
   }
   const assetBaseUrl = urlValue(env, "COMFYUI_BASE_URL", ["http:", "https:"]);
   const integrationSecretKey = stringValue(env, "INTEGRATION_SECRET_KEY");
+  const memoryEngineRuntimeEnabled = booleanValue(env, "V2_MEMORY_ENGINE_RUNTIME_ENABLED", true);
+  const primaryEngineId = memoryEngineRuntimeEnabled
+    ? stringValue(env, "V2_MEMORY_PRIMARY_ENGINE", "builtin_structured")!
+    : "builtin_structured";
+  const shadowEngineIds = memoryEngineRuntimeEnabled
+    ? (stringValue(env, "V2_MEMORY_SHADOW_ENGINES", "") ?? "").split(",").map((id) => id.trim()).filter(Boolean)
+    : [];
   return Object.freeze({
     api: Object.freeze({
       host: requiredString(env, "V2_API_HOST", env.API_HOST ?? "127.0.0.1"),
@@ -133,6 +144,10 @@ export function loadV2RuntimeConfig(env: V2EnvironmentInput = process.env): V2Ru
       ...(assetBaseUrl === undefined ? {} : { baseUrl: assetBaseUrl }),
       timeoutMs: positiveInteger(env, "COMFYUI_TIMEOUT_MS", 30_000),
       concurrency: positiveInteger(env, "V2_ASSET_CONCURRENCY", 1),
+    }),
+    memory: Object.freeze({
+      primaryEngineId,
+      shadowEngineIds: Object.freeze(shadowEngineIds),
     }),
   });
 }
