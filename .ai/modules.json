@@ -64,6 +64,8 @@
       "allowedDependencies": [
         "chat",
         "core",
+        "facts",
+        "memory-engine",
         "integration"
       ],
       "ownedPaths": [
@@ -77,6 +79,36 @@
         "packages/ports/src/v2/chat/**",
         "packages/database/src/v2/chat/**",
         "apps/worker/src/v2/maintenance-dispatch-pump*.ts"
+      ]
+    },
+    "facts": {
+      "description": "Fact layer: unified fact extraction contracts, ledger persistence and memory engine offsets",
+      "allowedDependencies": [
+        "facts",
+        "chat",
+        "integration"
+      ],
+      "ownedPaths": [
+        "packages/contracts/src/v2/fact/**",
+        "packages/domain/src/v2/fact/**",
+        "packages/ports/src/v2/fact/**",
+        "packages/database/src/v2/fact/**"
+      ]
+    },
+    "memory-engine": {
+      "description": "Memory engines: contracts, engine abstraction, structured/hybrid engines and memory runtime",
+      "allowedDependencies": [
+        "memory-engine",
+        "facts",
+        "chat",
+        "integration"
+      ],
+      "ownedPaths": [
+        "packages/contracts/src/v2/memory-engine/**",
+        "packages/ports/src/v2/memory-engine/**",
+        "apps/api/src/v2/memory-runtime/**",
+        "apps/worker/src/v2/memory/**",
+        "apps/worker/src/v2/memory-runtime/**"
       ]
     },
     "generation-assets": {
@@ -135,6 +167,8 @@
         "chat",
         "generation-assets",
         "platform",
+        "facts",
+        "memory-engine",
         "web-shell",
         "integration"
       ],

@@ -26,9 +26,11 @@ import type {
   V2ChatTraceRepository,
   V2ChatUnitOfWork,
   V2ConversationSummaryRepository,
+  V2FactRepository,
   V2MemoryRepository,
 } from "@living-network/ports/v2";
 import { V2SqliteCandidateReviewRepository, V2SqliteCanonRepository } from "../core/index.ts";
+import { V2SqliteFactRepository } from "../fact/index.ts";
 import { withV2SqliteAsyncTransaction } from "../platform/index.ts";
 
 type ConversationRow = {
@@ -71,6 +73,9 @@ type MemoryRow = {
   story_world_id: string;
   conversation_id: string | null;
   character_id: string | null;
+  engine_id: string | null;
+  source_assertion_ids_json: string | null;
+  slot_key: string | null;
   kind: "profile" | "preference" | "relationship" | "episodic" | "world_fact";
   content: string;
   importance: number;
@@ -203,6 +208,9 @@ function mapMemory(row: MemoryRow): V2Memory {
     storyWorldId: row.story_world_id,
     ...(row.conversation_id === null ? {} : { conversationId: row.conversation_id }),
     ...(row.character_id === null ? {} : { characterId: row.character_id }),
+    ...(row.engine_id === null ? {} : { engineId: row.engine_id }),
+    ...(row.source_assertion_ids_json === null ? {} : { sourceAssertionIds: parseMessageIds(row.source_assertion_ids_json) }),
+    ...(row.slot_key === null ? {} : { slotKey: row.slot_key }),
     kind: row.kind,
     content: row.content,
     importance: row.importance,
@@ -244,6 +252,7 @@ export class V2SqliteChatUnitOfWork implements V2ChatUnitOfWork {
     readonly summaries: V2ConversationSummaryRepository;
     readonly traces: V2ChatTraceRepository;
     readonly maintenanceJobs: V2ChatMaintenanceJobRepository;
+    readonly facts: V2FactRepository;
   }) => Promise<T>): Promise<T> {
     return withV2SqliteAsyncTransaction(this.db, () => fn({
       canon: new V2SqliteCanonRepository(this.db),
@@ -255,6 +264,7 @@ export class V2SqliteChatUnitOfWork implements V2ChatUnitOfWork {
       summaries: new V2SqliteConversationSummaryRepository(this.db),
       traces: new V2SqliteChatTraceRepository(this.db),
       maintenanceJobs: new V2SqliteChatMaintenanceJobRepository(this.db),
+      facts: new V2SqliteFactRepository(this.db),
     }));
   }
 }
@@ -491,14 +501,18 @@ export class V2SqliteMemoryRepository implements V2MemoryRepository {
     const now = new Date().toISOString();
     this.db.prepare(`
       INSERT INTO v2_memories (
-        memory_id, story_world_id, conversation_id, character_id, kind, content, importance,
-        confidence, source_message_ids_json, status, supersedes_memory_id, created_at, updated_at, last_accessed_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        memory_id, story_world_id, conversation_id, character_id, engine_id, source_assertion_ids_json, slot_key,
+        kind, content, importance, confidence, source_message_ids_json, status, supersedes_memory_id,
+        created_at, updated_at, last_accessed_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       input.memoryId,
       input.storyWorldId,
       input.conversationId ?? null,
       input.characterId ?? null,
+      input.engineId ?? "builtin_structured",
+      input.sourceAssertionIds === undefined ? "[]" : JSON.stringify(input.sourceAssertionIds),
+      input.slotKey ?? null,
       input.kind,
       input.content,
       input.importance,

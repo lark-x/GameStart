@@ -25,6 +25,7 @@ import type { V2CapabilitiesResponse } from "@living-network/contracts/v2";
 import { createV2AssetsPlugin } from "../assets/index.ts";
 import { createV2ChatPlugin, type V2ResolvedChatModel } from "../chat/index.ts";
 import { createV2ChatUseCases } from "../chat/use-cases.ts";
+import { createV2ApiMemoryRuntime } from "../memory-runtime/index.ts";
 import { createV2GenerationPlugin } from "../generation/index.ts";
 import { createV2CoreUseCases } from "../core/use-cases.ts";
 import { createV2FastifyApp } from "./app.ts";
@@ -140,7 +141,9 @@ export function createV2ApiRuntime(options: {
     new V2SqliteCandidateReviewUnitOfWork(db),
     new V2SqliteReleaseRuntimeUnitOfWork(db),
   );
-  const chatUseCases = createV2ChatUseCases(new V2SqliteChatUnitOfWork(db));
+  const chatUseCases = createV2ChatUseCases(new V2SqliteChatUnitOfWork(db), {
+    memoryRuntime: createV2ApiMemoryRuntime(db),
+  });
   const resolver = options.chatProvider === undefined
     ? new V2ResolvingChatModelResolver({
         repository: platformRepository,
