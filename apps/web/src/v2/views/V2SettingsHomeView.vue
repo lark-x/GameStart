@@ -135,7 +135,7 @@ const groups: readonly SettingsGroup[] = [
 
 .v2-settings-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: var(--space-4);
 }
 
@@ -146,17 +146,20 @@ const groups: readonly SettingsGroup[] = [
 
 .v2-settings-group-title {
   margin: 0;
-  color: var(--faint);
+  color: var(--muted);
   font-size: var(--text-xs);
-  font-weight: 800;
-  letter-spacing: 0.08em;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .v2-settings-card {
-  display: grid;
-  gap: var(--space-4);
-  min-height: 190px;
-  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: 160px;
+  padding: var(--space-4) var(--space-5);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--surface);

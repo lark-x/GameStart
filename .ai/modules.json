@@ -200,6 +200,7 @@
         "apps/web/src/v2/components/workspace/**",
         "apps/web/src/v2/fixtures/**",
         "apps/web/src/v2/index.ts",
+        "apps/web/src/v2/navigation.test.ts",
         "apps/web/src/v2/stores/**",
         "apps/web/src/v2/views/V2ModelSettingsView.vue",
         "apps/web/src/v2/views/V2WorkspaceAreaView.vue",

@@ -76,6 +76,7 @@
   --info-soft: #e5eef2;
   --shadow-sm: 0 4px 14px rgb(126 91 67 / 6%);
   --shadow-md: 0 14px 36px rgb(126 91 67 / 9%);
+  --shadow-lg: 0 20px 48px rgb(126 91 67 / 14%);
   --focus-ring: rgb(182 98 75 / 35%);
   --scrollbar: rgb(126 91 67 / 22%);
   /* 主题装饰：漂浮光斑与聊天默认纹理 */
@@ -117,6 +118,7 @@
   --info-soft: #2a363a;
   --shadow-sm: 0 4px 14px rgb(0 0 0 / 24%);
   --shadow-md: 0 14px 36px rgb(0 0 0 / 32%);
+  --shadow-lg: 0 20px 48px rgb(0 0 0 / 44%);
   --focus-ring: rgb(217 138 111 / 45%);
   --scrollbar: rgb(255 255 255 / 18%);
   /* 主题装饰：上升余烬与聊天默认纹理 */
@@ -133,10 +135,10 @@
   --background-gradient: linear-gradient(125deg, #fbf4f5 0%, #f8ecef 48%, #f4e6ea 100%);
   --ambient-1: #f9d3de;
   --ambient-2: #f3d9e4;
-  --surface: #fffcfd;
-  --surface-soft: #f9f0f3;
-  --surface-muted: #f4e7ec;
-  --surface-glass: rgb(255 252 253 / 88%);
+  --surface: #fffdfd;
+  --surface-soft: #fcf4f6;
+  --surface-muted: #f6e8ec;
+  --surface-glass: rgb(255 253 253 / 88%);
   --text: #433539;
   --text-strong: #352a2d;
   --muted: #9a7d84;
@@ -158,6 +160,7 @@
   --info-soft: #e5eef2;
   --shadow-sm: 0 4px 14px rgb(150 92 110 / 8%);
   --shadow-md: 0 14px 36px rgb(150 92 110 / 12%);
+  --shadow-lg: 0 20px 48px rgb(150 92 110 / 18%);
   --focus-ring: rgb(192 92 122 / 35%);
   --scrollbar: rgb(150 92 110 / 22%);
   /* 主题装饰：飘落花瓣与聊天默认纹理 */
@@ -199,6 +202,7 @@
   --info-soft: #e5eef2;
   --shadow-sm: 0 4px 14px rgb(87 116 90 / 8%);
   --shadow-md: 0 14px 36px rgb(87 116 90 / 12%);
+  --shadow-lg: 0 20px 48px rgb(87 116 90 / 18%);
   --focus-ring: rgb(93 138 102 / 35%);
   --scrollbar: rgb(87 116 90 / 22%);
   /* 主题装饰：旋落叶片与聊天默认纹理 */
@@ -240,6 +244,7 @@
   --info-soft: #e6edf2;
   --shadow-sm: 0 4px 14px rgb(78 109 128 / 8%);
   --shadow-md: 0 14px 36px rgb(78 109 128 / 12%);
+  --shadow-lg: 0 20px 48px rgb(78 109 128 / 18%);
   --focus-ring: rgb(78 125 150 / 35%);
   --scrollbar: rgb(78 109 128 / 22%);
   /* 主题装饰：上升气泡与聊天默认纹理 */
@@ -281,6 +286,7 @@
   --info-soft: #2a3240;
   --shadow-sm: 0 4px 14px rgb(0 0 0 / 26%);
   --shadow-md: 0 14px 36px rgb(0 0 0 / 34%);
+  --shadow-lg: 0 20px 48px rgb(0 0 0 / 48%);
   --focus-ring: rgb(143 148 216 / 45%);
   --scrollbar: rgb(255 255 255 / 18%);
   /* 主题装饰：闪烁星星与聊天默认纹理 */

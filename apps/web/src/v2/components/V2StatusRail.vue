@@ -1,11 +1,12 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import { CheckCircle2, CircleAlert, Clock3, GitBranch } from "@lucide/vue";
 
 import Badge from "../../components/ui/Badge.vue";
 import Button from "../../components/ui/Button.vue";
 import type { V2WorkspaceSnapshot } from "../adapters";
 
-defineProps<{
+const props = defineProps<{
   snapshot: V2WorkspaceSnapshot | null;
   loading: boolean;
   error: string | null;
@@ -21,6 +22,22 @@ defineProps<{
 const emit = defineEmits<{
   refresh: [];
 }>();
+
+const connectionStatus = computed(() => {
+  if (props.loading && !props.snapshot) {
+    return { label: "检测中", tone: "neutral" as const };
+  }
+  if (props.error) {
+    return { label: "异常", tone: "danger" as const };
+  }
+  if (props.mode === "mock") {
+    return { label: "演示", tone: "info" as const };
+  }
+  if (props.snapshot) {
+    return { label: "已连接", tone: "success" as const };
+  }
+  return { label: "未连接", tone: "neutral" as const };
+});
 
 function statusLabel(status: string): string {
   return {
@@ -44,7 +61,7 @@ function statusLabel(status: string): string {
         <p class="v2-panel-kicker">运行连接</p>
         <h2>{{ mode === "mock" ? "本地演示数据" : "V2 服务端" }}</h2>
       </div>
-      <Badge :tone="mode === 'mock' ? 'info' : 'success'">{{ mode === "mock" ? "演示" : "已连接" }}</Badge>
+      <Badge :tone="connectionStatus.tone">{{ connectionStatus.label }}</Badge>
     </div>
 
     <div class="v2-status-actions" aria-label="运行状态操作">
@@ -129,6 +146,13 @@ function statusLabel(status: string): string {
   border-radius: var(--radius-lg);
   background: var(--surface);
   box-shadow: var(--shadow-sm);
+}
+
+@media (min-width: 961px) {
+  .v2-status-rail {
+    position: sticky;
+    top: var(--space-5);
+  }
 }
 
 .v2-status-rail-head {
