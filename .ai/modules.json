@@ -112,6 +112,7 @@
         "apps/web/src/v2/views/V2RuntimeStatusView.vue",
         "apps/web/src/v2/views/platform.ts",
         "packages/ports/src/v2/platform/**",
+        "packages/database/src/v2/platform/migration-upgrade*.ts",
         "packages/database/src/v2/platform/repository*.ts"
       ]
     },

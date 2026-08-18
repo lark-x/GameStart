@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { openV2TempSqliteConnection, applyV2Migrations } from "../packages/database/src/v2/index.ts";
+import { openV2TempSqliteConnection, applyV2Migrations, getV2Migrations } from "../packages/database/src/v2/index.ts";
 import { BullMqTaskQueue, BullMqTaskWorker } from "../apps/worker/src/queue.ts";
 
 const enabled = process.env.RUN_V2_REAL_INTEGRATION === "1";
@@ -24,7 +24,7 @@ test("V2 real-service lane applies SQLite migrations and round-trips a BullMQ jo
   try {
     applyV2Migrations(db);
     const applied = db.prepare("SELECT COUNT(*) AS count FROM v2_schema_migrations").get() as { count: number };
-    assert.equal(applied.count, 12);
+    assert.equal(applied.count, getV2Migrations().length);
     await queue.enqueue("real-service-task", { value: 42 }, { attempts: 1 });
     await Promise.race([
       completed,
