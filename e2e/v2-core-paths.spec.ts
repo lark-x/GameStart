@@ -5,8 +5,8 @@ test("V2 redirects legacy entry and exposes the feature-first module map", async
   await expect(page).toHaveURL(/\/v2\/workspace\/project$/);
 
   const navigation = page.getByRole("navigation", { name: "平台模块" });
-  for (const group of ["项目", "人工创作", "AI 场景生成", "ComfyUI 素材生成", "发布与运行", "外部服务"]) {
-    await expect(navigation.getByRole("heading", { name: group, exact: true })).toBeVisible();
+  for (const group of ["故事", "创作", "发布", "系统"]) {
+    await expect(navigation.getByRole("button", { name: group, exact: true })).toBeVisible();
   }
 
   for (const label of [
@@ -20,7 +20,7 @@ test("V2 redirects legacy entry and exposes the feature-first module map", async
     "素材候选审核",
     "发布检查",
     "运行预览",
-    "模型服务",
+    "模型",
     "ComfyUI 服务",
     "调用日志",
     "运行状态",
@@ -44,7 +44,7 @@ test("V2 keeps external service configuration outside manual authoring pages", a
   await expect(page.getByLabel("ComfyUI 地址")).toHaveCount(0);
 
   await page.goto("/v2/services/models");
-  await expect(page.getByRole("heading", { name: "模型服务" }).first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "模型与能力" }).first()).toBeVisible();
   await expect(page.getByText("当前运行能力", { exact: true })).toBeVisible();
   await page.getByLabel("档案名称").fill("本地测试模型");
   await page.getByLabel("API 地址").fill("https://example.invalid/v1");
