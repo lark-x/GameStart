@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import { Copy, Cpu, Download, Plus, RefreshCw, Save, ShieldCheck, Trash2, Wifi } from "@lucide/vue";
 import type {
+  V2ModelBindingDto,
   V2ModelProfileDto,
   V2ModelProtocol,
   V2PlatformCapabilities,
@@ -34,10 +35,15 @@ interface ModelForm {
 
 const client = v2PlatformClient();
 const profiles = ref<readonly V2ModelProfileDto[]>([]);
-const bindings = ref<readonly { readonly profileId?: string; readonly profileName?: string }[]>([]);
+const bindings = ref<readonly V2ModelBindingDto[]>([]);
 const capabilities = ref<V2PlatformCapabilities | null>(null);
 const form = ref<ModelForm>(emptyForm());
-const selectedBinding = ref("none");
+const bindingSelections = ref<Record<string, string>>({
+  chat: "none",
+  scene_generation: "none",
+  memory: "none",
+  story_analysis: "none",
+});
 const loading = ref(false);
 const saving = ref(false);
 const testing = ref(false);
@@ -67,7 +73,12 @@ function emptyForm(): ModelForm {
 
 const editing = computed(() => form.value.id !== undefined);
 const selectedProfile = computed(() => profiles.value.find((profile) => profile.id === form.value.id));
-const sceneBinding = computed(() => bindings.value[0]);
+const bindingCapabilities: readonly { readonly capability: string; readonly label: string; readonly hint: string }[] = [
+  { capability: "chat", label: "对话模型", hint: "Chat 回复与即时故事开场使用。" },
+  { capability: "scene_generation", label: "场景生成模型", hint: "Worker 场景生成任务使用。" },
+  { capability: "memory", label: "记忆模型", hint: "Memory Extraction / Consolidation 使用。" },
+  { capability: "story_analysis", label: "剧情分析模型", hint: "Story Analyzer 使用。" },
+];
 const filteredDiscoveredModels = computed(() => {
   if (!modelFilter.value.trim()) return discoveredModels.value;
   const q = modelFilter.value.toLowerCase().trim();
@@ -178,7 +189,12 @@ async function refresh(): Promise<void> {
     const current = form.value.id === undefined ? undefined : nextProfiles.find((profile) => profile.id === form.value.id);
     if (current) selectProfile(current);
     else if (form.value.id !== undefined) newProfile();
-    selectedBinding.value = nextBindings.find((binding) => binding.profileId !== undefined)?.profileId ?? "none";
+    const byCapability: Record<string, string> = {};
+    for (const capability of bindingCapabilities) {
+      const binding = nextBindings.find((item) => item.capability === capability.capability);
+      byCapability[capability.capability] = binding?.profileId ?? "none";
+    }
+    bindingSelections.value = byCapability;
   } catch (err) {
     error.value = platformErrorMessage(err, "无法读取模型配置");
   } finally {
@@ -260,11 +276,13 @@ async function remove(): Promise<void> {
   }
 }
 
-async function saveBinding(): Promise<void> {
+async function saveBinding(capability: string): Promise<void> {
   error.value = null;
   try {
-    await client.setModelBinding("scene_generation", { profileId: selectedBinding.value === "none" ? null : selectedBinding.value });
-    message.value = selectedBinding.value === "none" ? "场景生成能力已解除模型绑定。" : "场景生成能力的模型绑定已更新。";
+    const selected = bindingSelections.value[capability] ?? "none";
+    await client.setModelBinding(capability, { profileId: selected === "none" ? null : selected });
+    const label = bindingCapabilities.find((item) => item.capability === capability)?.label ?? capability;
+    message.value = selected === "none" ? `${label}已解除模型绑定。` : `${label}的模型绑定已更新。`;
     await refresh();
   } catch (err) {
     error.value = platformErrorMessage(err, "更新模型绑定失败");
@@ -470,20 +488,25 @@ onMounted(() => {
       <div class="v2-section-heading">
         <div>
           <p class="v2-section-kicker">能力绑定</p>
-          <h2 id="v2-binding-title">场景生成使用哪个模型？</h2>
+          <h2 id="v2-binding-title">各能力使用哪个模型？</h2>
         </div>
-        <Badge tone="neutral">{{ sceneBinding?.profileName ?? "未绑定" }}</Badge>
+        <Badge tone="neutral">{{ bindings.length }}</Badge>
       </div>
-      <div class="v2-binding-row">
-        <Field for-id="v2-scene-binding" label="场景生成模型" hint="Worker 每次执行任务时都会重新读取此绑定。">
-          <Select id="v2-scene-binding" v-model="selectedBinding" :disabled="profiles.length === 0">
+      <div v-for="item in bindingCapabilities" :key="item.capability" class="v2-binding-row">
+        <Field :for-id="`v2-binding-${item.capability}`" :label="item.label" :hint="item.hint">
+          <Select
+            :id="`v2-binding-${item.capability}`"
+            :model-value="bindingSelections[item.capability] ?? 'none'"
+            :disabled="profiles.length === 0"
+            @update:model-value="(value: string) => { bindingSelections[item.capability] = value; }"
+          >
             <option value="none">不绑定（使用环境变量兜底）</option>
             <option v-for="profileItem in profiles" :key="profileItem.id" :value="profileItem.id">
               {{ profileItem.name }} · {{ profileItem.model }}
             </option>
           </Select>
         </Field>
-        <Button variant="secondary" size="md" :disabled="profiles.length === 0" @click="saveBinding">保存绑定</Button>
+        <Button variant="secondary" size="md" :disabled="profiles.length === 0" @click="saveBinding(item.capability)">保存绑定</Button>
       </div>
     </section>
   </div>

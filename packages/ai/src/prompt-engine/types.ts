@@ -32,15 +32,23 @@ export interface MemoryContext {
   readonly confidence: number;
 }
 
+export interface ChatImageContext {
+  readonly mediaId: string;
+  readonly mediaRef: string;
+  readonly mimeType: string;
+}
+
 export interface ChatInput {
   readonly text?: string;
   readonly imageCount: number;
+  readonly images?: readonly ChatImageContext[];
 }
 
 export interface ChatMessageContext {
   readonly role: "user" | "assistant" | "system";
   readonly text?: string;
   readonly imageCount: number;
+  readonly images?: readonly ChatImageContext[];
 }
 
 export interface PromptContext {
@@ -94,6 +102,10 @@ export interface PreparedPrompt {
   readonly templateId: string;
   readonly templateVersion: string;
   readonly messages: readonly ChatMessage[];
+  readonly messageImages?: readonly {
+    readonly messageIndex: number;
+    readonly images: readonly ChatImageContext[];
+  }[];
   readonly estimatedTokens: number;
   readonly contextHash: string;
   readonly sources: readonly PromptSource[];

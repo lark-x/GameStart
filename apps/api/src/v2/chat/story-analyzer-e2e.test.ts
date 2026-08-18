@@ -133,6 +133,15 @@ test("V2 Story Analyzer End-to-End: Chat -> story_analyze -> Candidate -> Review
     const analyzePayload = analyzeRes.json();
     assert.ok(analyzePayload.jobId, "Must return enqueued maintenance jobId");
 
+    // 3b. Replay with the same idempotency key returns the same job (no duplicate).
+    const analyzeReplay = await runtime.app.inject({
+      method: "POST",
+      url: `/api/v2/chat/conversations/${conversationId}/analyze`,
+      payload: { idempotencyKey: "analyze:e2e:1" },
+    });
+    assert.equal(analyzeReplay.statusCode, 202);
+    assert.equal(analyzeReplay.json().jobId, analyzePayload.jobId);
+
     // 4. Worker executes maintenance jobs
     let ran = 0;
     while (await pump.tick()) {

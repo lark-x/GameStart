@@ -343,3 +343,116 @@ test("V2 platform API returns model call logs with filters and details", async (
     temp.cleanup();
   }
 });
+
+test("V2 platform API validates input modalities and context budget", async () => {
+  const temp = openV2TempSqliteConnection();
+  const path = temp.path;
+  temp.db.close();
+  const runtime = createV2ApiRuntime({ sqlitePath: path });
+  try {
+    const invalidModality = await runtime.app.inject({
+      method: "POST",
+      url: "/api/v2/platform/model-profiles",
+      payload: {
+        name: "Bad Modality",
+        protocol: "openai-compatible",
+        baseUrl: "https://llm.example/v1",
+        model: "bad-model",
+        inputModalities: ["text", "audio"],
+      },
+    });
+    assert.equal(invalidModality.statusCode, 422);
+    assert.match(invalidModality.json().error.message, /'text' or 'image'/);
+
+    const missingText = await runtime.app.inject({
+      method: "POST",
+      url: "/api/v2/platform/model-profiles",
+      payload: {
+        name: "No Text",
+        protocol: "openai-compatible",
+        baseUrl: "https://llm.example/v1",
+        model: "no-text-model",
+        inputModalities: ["image", "image"],
+      },
+    });
+    assert.equal(missingText.statusCode, 422);
+    assert.match(missingText.json().error.message, /must include 'text'/);
+
+    const badBudget = await runtime.app.inject({
+      method: "POST",
+      url: "/api/v2/platform/model-profiles",
+      payload: {
+        name: "Bad Budget",
+        protocol: "openai-compatible",
+        baseUrl: "https://llm.example/v1",
+        model: "budget-model",
+        maxTokens: 8192,
+        contextWindow: 8200,
+      },
+    });
+    assert.equal(badBudget.statusCode, 422);
+    assert.match(badBudget.json().error.message, /maxTokens \+ 512/);
+
+    const good = await runtime.app.inject({
+      method: "POST",
+      url: "/api/v2/platform/model-profiles",
+      payload: {
+        name: "Good Profile",
+        protocol: "openai-compatible",
+        baseUrl: "https://llm.example/v1",
+        model: "good-model",
+        maxTokens: 4096,
+        contextWindow: 8192,
+        inputModalities: ["image", "text", "text"],
+      },
+    });
+    assert.equal(good.statusCode, 201);
+    assert.deepEqual(good.json().profile.inputModalities, ["image", "text"]);
+  } finally {
+    await runtime.close();
+    temp.cleanup();
+  }
+});
+
+test("V2 platform API binds memory and story analysis capabilities", async () => {
+  const temp = openV2TempSqliteConnection();
+  const path = temp.path;
+  temp.db.close();
+  const runtime = createV2ApiRuntime({ sqlitePath: path });
+  try {
+    const created = await runtime.app.inject({
+      method: "POST",
+      url: "/api/v2/platform/model-profiles",
+      payload: {
+        name: "Memory Model",
+        protocol: "openai-compatible",
+        baseUrl: "https://llm.example/v1",
+        model: "memory-model",
+        maxTokens: 1024,
+      },
+    });
+    assert.equal(created.statusCode, 201);
+    const profileId = created.json().profile.id as string;
+
+    for (const capability of ["memory", "story_analysis", "chat"]) {
+      const bound = await runtime.app.inject({
+        method: "PUT",
+        url: `/api/v2/platform/model-bindings/${capability}`,
+        payload: { profileId },
+      });
+      assert.equal(bound.statusCode, 200);
+      assert.equal(bound.json().binding.capability, capability);
+      assert.equal(bound.json().binding.profileName, "Memory Model");
+    }
+
+    const invalidCapability = await runtime.app.inject({
+      method: "PUT",
+      url: "/api/v2/platform/model-bindings/not-a-capability",
+      payload: { profileId },
+    });
+    assert.equal(invalidCapability.statusCode, 422);
+  } finally {
+    await runtime.close();
+    temp.cleanup();
+  }
+});

@@ -10,7 +10,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "node --test src/v2-scene-generation.test.ts src/prompt-engine/prompt-engine.test.ts",
+    "test": "node --test src/v2-scene-generation.test.ts src/prompt-engine/prompt-engine.test.ts src/prompt-engine/story-analyzer.test.ts",
     "typecheck": "tsc -p tsconfig.json"
   }
 }

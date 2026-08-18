@@ -18,9 +18,13 @@ import type {
   V2StoryWorldId,
   V2CharacterId,
 } from "@living-network/contracts/v2";
-import type { V2ChatUnitOfWork } from "@living-network/ports/v2";
+import type { V2ChatMessageRepository, V2ChatUnitOfWork } from "@living-network/ports/v2";
 import type { ChatProvider } from "@living-network/ai/v2";
-import { buildStoryAnalyzerPrompt, parseStoryAnalyzerOutput } from "@living-network/ai/prompt-engine";
+import {
+  buildStoryAnalyzerPrompt,
+  parseStoryAnalyzerOutput,
+  StructuredOutputError,
+} from "@living-network/ai/prompt-engine";
 import {
   createV2ConversationSummary,
   createV2ChatMaintenanceJob,
@@ -55,6 +59,15 @@ export interface V2ConsolidationDecision {
   readonly action: "keep_both" | "ignore" | "merge" | "supersede";
   readonly rationale: string;
   readonly mergedContent?: string;
+}
+
+export class SourceMessageNotFoundError extends Error {
+  public readonly code = "SOURCE_MESSAGE_NOT_FOUND";
+
+  public constructor(message: string) {
+    super(message);
+    this.name = "SourceMessageNotFoundError";
+  }
 }
 
 export class V2MaintenanceDispatchPump {
@@ -180,54 +193,49 @@ export class V2MaintenanceDispatchPump {
         throw new Error(`Unknown maintenance job type: ${job.jobType}`);
       }
 
-      await this.unitOfWork.withChatTransaction(async (repos) => {
-        await repos.maintenanceJobs.markCompleted({
+      const completed = await this.unitOfWork.withChatTransaction(async (repos) => {
+        return repos.maintenanceJobs.markCompleted({
           jobId: job.jobId,
           workerId: this.workerId,
           now: this.now().toISOString(),
         });
       });
+      if (!completed) {
+        console.warn(`[MaintenancePump] LEASE_LOST: cannot mark job ${job.jobId} completed (lost lease)`);
+      }
     } catch (error: any) {
       console.error(`[MaintenancePump] Job ${job.jobId} failed:`, error);
       const isTerminal = job.attempts >= job.maxAttempts;
       const backoffMs = Math.min(1000 * Math.pow(2, job.attempts), 60000);
       const retryAvailableAt = new Date(this.now().getTime() + backoffMs).toISOString();
+      const errorCode = (error as { code?: string } | undefined)?.code;
+      const errorMessage = error?.message ?? String(error);
+      const lastError = errorCode === undefined ? errorMessage : `${errorCode}: ${errorMessage}`;
 
-      await this.unitOfWork.withChatTransaction(async (repos) => {
-        await repos.maintenanceJobs.markFailed({
+      const failed = await this.unitOfWork.withChatTransaction(async (repos) => {
+        return repos.maintenanceJobs.markFailed({
           jobId: job.jobId,
           workerId: this.workerId,
-          error: error?.message ?? String(error),
+          error: lastError,
           isTerminal,
           ...(isTerminal ? {} : { retryAvailableAt }),
           now: this.now().toISOString(),
         });
       });
+      if (!failed) {
+        console.warn(`[MaintenancePump] LEASE_LOST: cannot mark job ${job.jobId} failed (lost lease)`);
+      }
     }
   }
 
   private async handleMemoryExtract(job: V2ChatMaintenanceJob): Promise<void> {
     const payload = job.payload as unknown as V2MemoryExtractPayload;
     if (!payload || !payload.sourceMessageIds || payload.sourceMessageIds.length === 0) {
-      return;
+      throw new SourceMessageNotFoundError("Memory extract job payload has no sourceMessageIds");
     }
 
-    const messages = await this.unitOfWork.withChatTransaction(async (repos) => {
-      return repos.messages.listRecentByConversation(payload.conversationId, 100);
-    });
-    const messageMap = new Map(messages.map((m) => [m.messageId, m]));
-    const targetMessages = payload.sourceMessageIds
-      .map((id) => messageMap.get(id))
-      .filter((m): m is V2ChatMessage => m !== undefined);
-
-    if (targetMessages.length === 0) {
-      return;
-    }
-
-    const sortedMessages = [...targetMessages].sort((a, b) => {
-      const timeA = a.createdAt ? Date.parse(a.createdAt) : 0;
-      const timeB = b.createdAt ? Date.parse(b.createdAt) : 0;
-      return timeA - timeB;
+    const sortedMessages = await this.unitOfWork.withChatTransaction(async (repos) => {
+      return this.resolveSourceMessages(repos.messages, payload.conversationId, payload.sourceMessageIds);
     });
 
     const messagesText = sortedMessages
@@ -267,17 +275,27 @@ Respond ONLY with valid JSON array:`;
           return;
         }
 
-        const activeMemories = await repos.memories.listActiveByStoryWorld(storyWorldId);
-        const similarMemory = activeMemories.find(
+        const similarCandidates = await repos.memories.searchActive({
+          storyWorldId,
+          query: candidate.content,
+          limit: 5,
+        });
+        const similarMemory = similarCandidates.find(
           (m: V2Memory) => m.status === "active" && m.kind === candidate.kind,
         );
 
         if (similarMemory) {
+          const idempotencyKey = `memory_consolidate:${similarMemory.memoryId}:${candidate.content.trim()}`;
+          const alreadyQueued = await repos.maintenanceJobs.hasJobWithPayloadKey("memory_consolidate", idempotencyKey);
+          if (alreadyQueued) {
+            return;
+          }
           const consolidatePayload: V2MemoryConsolidatePayload = {
             conversationId: payload.conversationId,
             ...(payload.storyWorldId ? { storyWorldId: payload.storyWorldId } : {}),
             ...(payload.characterId ? { characterId: payload.characterId } : {}),
             existingMemoryId: similarMemory.memoryId as V2MemoryId,
+            idempotencyKey,
             candidate: {
               kind: candidate.kind,
               content: candidate.content,
@@ -314,6 +332,13 @@ Respond ONLY with valid JSON array:`;
           });
           await repos.memories.create(newMemory);
         }
+      });
+    }
+
+    const cursorMessageId = payload.range?.toMessageId ?? sortedMessages[sortedMessages.length - 1]?.messageId;
+    if (cursorMessageId !== undefined) {
+      await this.unitOfWork.withChatTransaction(async (repos) => {
+        await repos.maintenanceJobs.setMemoryExtractCursor(payload.conversationId, cursorMessageId as V2MessageId);
       });
     }
   }
@@ -435,30 +460,23 @@ Output JSON with format:
   private async handleConversationSummary(job: V2ChatMaintenanceJob): Promise<void> {
     const payload = job.payload as unknown as V2ConversationSummaryPayload;
     if (!payload || !payload.sourceMessageIds || payload.sourceMessageIds.length === 0) {
-      return;
+      throw new SourceMessageNotFoundError("Summary job payload has no sourceMessageIds");
     }
 
-    const messages = await this.unitOfWork.withChatTransaction(async (repos) => {
-      return repos.messages.listRecentByConversation(payload.conversationId, 100);
-    });
-    const messageMap = new Map(messages.map((m) => [m.messageId, m]));
-    const targetMessages = payload.sourceMessageIds
-      .map((id) => messageMap.get(id))
-      .filter((m): m is V2ChatMessage => m !== undefined);
-
-    if (targetMessages.length === 0) {
-      return;
-    }
-
-    const sortedMessages = [...targetMessages].sort((a, b) => {
-      const timeA = a.createdAt ? Date.parse(a.createdAt) : 0;
-      const timeB = b.createdAt ? Date.parse(b.createdAt) : 0;
-      return timeA - timeB;
+    const sortedMessages = await this.unitOfWork.withChatTransaction(async (repos) => {
+      return this.resolveSourceMessages(repos.messages, payload.conversationId, payload.sourceMessageIds);
     });
 
     const existingSummary = await this.unitOfWork.withChatTransaction(async (repos) => {
       return repos.summaries.get(payload.conversationId);
     });
+    if (
+      payload.previousSummaryVersion !== undefined &&
+      existingSummary !== undefined &&
+      existingSummary.version !== payload.previousSummaryVersion
+    ) {
+      return;
+    }
 
     const prompt = `You are a conversational summary agent. Generate an updated, cohesive summary of the story/conversation so far.
 The summary MUST:
@@ -541,11 +559,11 @@ Respond with the summary text only:`;
       const memories = await repos.memories.listByConversation(payload.conversationId);
       memoryTexts = memories.filter((m) => m.status === "active").map((m) => m.content);
 
-      let messages = await repos.messages.listByConversation(payload.conversationId, 100);
-      if (payload.sourceMessageIds && payload.sourceMessageIds.length > 0) {
-        const allowedIds = new Set(payload.sourceMessageIds);
-        messages = messages.filter((m) => allowedIds.has(m.messageId as V2MessageId));
-      }
+      const messages = await this.resolveSourceMessages(
+        repos.messages,
+        payload.conversationId,
+        payload.sourceMessageIds ?? [],
+      );
       messagesToAnalyze = messages.map((m) => ({ role: m.role, text: m.text }));
     });
 
@@ -612,10 +630,14 @@ Respond with the summary text only:`;
     try {
       const parsed = JSON.parse(raw);
       const list = Array.isArray(parsed) ? parsed : parsed.memories || parsed.candidates || [];
-      if (!Array.isArray(list)) return [];
-      return list
-        .filter((item) => item && typeof item.content === "string" && typeof item.kind === "string")
-        .map((item) => ({
+      if (!Array.isArray(list)) {
+        throw new StructuredOutputError("INVALID_SCHEMA", "Memory extraction output must be a JSON array");
+      }
+      return list.map((item) => {
+        if (!item || typeof item !== "object" || typeof item.content !== "string" || typeof item.kind !== "string") {
+          throw new StructuredOutputError("INVALID_SCHEMA", "Memory extraction item must have string kind and content");
+        }
+        return {
           kind: this.sanitizeKind(item.kind),
           content: String(item.content).trim(),
           importance: typeof item.importance === "number"
@@ -625,10 +647,34 @@ Respond with the summary text only:`;
           sourceMessageIds: Array.isArray(item.sourceMessageIds)
             ? (item.sourceMessageIds.map(String) as unknown as V2MessageId[])
             : [],
-        }));
-    } catch {
-      return [];
+        };
+      });
+    } catch (error) {
+      if (error instanceof StructuredOutputError) throw error;
+      throw new StructuredOutputError("INVALID_JSON", "Memory extraction output is not valid JSON");
     }
+  }
+
+  private async resolveSourceMessages(
+    messages: V2ChatMessageRepository,
+    conversationId: V2ConversationId,
+    sourceMessageIds: readonly V2MessageId[],
+  ): Promise<readonly V2ChatMessage[]> {
+    if (sourceMessageIds.length === 0) {
+      throw new SourceMessageNotFoundError("Maintenance job payload has no sourceMessageIds");
+    }
+    const resolved = await messages.listByIds(conversationId, sourceMessageIds);
+    if (resolved.length !== sourceMessageIds.length) {
+      const missing = sourceMessageIds.length - resolved.length;
+      throw new SourceMessageNotFoundError(
+        `SOURCE_MESSAGE_NOT_FOUND: ${missing} of ${sourceMessageIds.length} source messages are missing`,
+      );
+    }
+    return [...resolved].sort((a, b) => {
+      const timeA = a.createdAt ? Date.parse(a.createdAt) : 0;
+      const timeB = b.createdAt ? Date.parse(b.createdAt) : 0;
+      return timeA - timeB;
+    });
   }
 
   private sanitizeKind(kind: string): V2MemoryKind {
@@ -639,19 +685,21 @@ Respond with the summary text only:`;
   private parseConsolidationDecision(raw: string): V2ConsolidationDecision {
     try {
       const parsed = JSON.parse(raw);
-      const action = ["keep_both", "ignore", "merge", "supersede"].includes(parsed.action)
-        ? (parsed.action as "keep_both" | "ignore" | "merge" | "supersede")
-        : "keep_both";
+      if (!parsed || typeof parsed !== "object" || typeof parsed.action !== "string") {
+        throw new StructuredOutputError("INVALID_SCHEMA", "Consolidation decision must have an action string");
+      }
+      const action = parsed.action;
+      if (!["keep_both", "ignore", "merge", "supersede"].includes(action)) {
+        throw new StructuredOutputError("INVALID_SCHEMA", `Unknown consolidation action: ${action}`);
+      }
       return {
-        action,
+        action: action as "keep_both" | "ignore" | "merge" | "supersede",
         rationale: typeof parsed.rationale === "string" ? parsed.rationale : "",
         ...(typeof parsed.mergedContent === "string" ? { mergedContent: parsed.mergedContent } : {}),
       };
-    } catch {
-      return {
-        action: "keep_both",
-        rationale: "Failed to parse decision JSON",
-      };
+    } catch (error) {
+      if (error instanceof StructuredOutputError) throw error;
+      throw new StructuredOutputError("INVALID_JSON", "Consolidation decision is not valid JSON");
     }
   }
 }

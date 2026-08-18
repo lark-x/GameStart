@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildStoryAnalyzerPrompt, parseStoryAnalyzerOutput } from "./story-analyzer.ts";
+import {
+  buildStoryAnalyzerPrompt,
+  parseStoryAnalyzerOutput,
+  StructuredOutputError,
+} from "./story-analyzer.ts";
 
 test("buildStoryAnalyzerPrompt constructs rich context for story analysis", () => {
   const prompt = buildStoryAnalyzerPrompt({
@@ -56,7 +60,24 @@ test("parseStoryAnalyzerOutput extracts structured scenes and choices", () => {
   assert.equal(parsed.scenes[0]?.choices[0]?.consequenceSummary, "帕姆高兴地夸奖了大家");
 });
 
-test("parseStoryAnalyzerOutput handles malformed json gracefully", () => {
-  const parsed = parseStoryAnalyzerOutput("invalid text that is not json");
-  assert.deepEqual(parsed, { scenes: [] });
+test("parseStoryAnalyzerOutput fails fast on invalid json", () => {
+  assert.throws(
+    () => parseStoryAnalyzerOutput("invalid text that is not json"),
+    (error: unknown) => error instanceof StructuredOutputError && error.code === "INVALID_JSON",
+  );
+});
+
+test("parseStoryAnalyzerOutput fails fast on invalid schema and empty scenes", () => {
+  assert.throws(
+    () => parseStoryAnalyzerOutput(JSON.stringify({ notScenes: [] })),
+    (error: unknown) => error instanceof StructuredOutputError && error.code === "INVALID_SCHEMA",
+  );
+  assert.throws(
+    () => parseStoryAnalyzerOutput(JSON.stringify({ scenes: [] })),
+    (error: unknown) => error instanceof StructuredOutputError && error.code === "EMPTY_OUTPUT",
+  );
+  assert.throws(
+    () => parseStoryAnalyzerOutput(JSON.stringify({ scenes: [{ title: 42, body: "x" }] })),
+    (error: unknown) => error instanceof StructuredOutputError && error.code === "INVALID_SCHEMA",
+  );
 });

@@ -15,6 +15,16 @@ export interface StoryAnalyzerOutput {
 
 export type V2StoryAnalyzeResult = StoryAnalyzerOutput;
 
+export class StructuredOutputError extends Error {
+  public readonly code: "EMPTY_OUTPUT" | "INVALID_JSON" | "INVALID_SCHEMA";
+
+  public constructor(code: "EMPTY_OUTPUT" | "INVALID_JSON" | "INVALID_SCHEMA", message: string) {
+    super(message);
+    this.name = "StructuredOutputError";
+    this.code = code;
+  }
+}
+
 export interface StoryAnalyzerPromptInput {
   readonly worldName?: string | undefined;
   readonly worldSummary?: string | undefined;
@@ -99,27 +109,45 @@ export function parseStoryAnalyzerOutput(rawText: string): V2StoryAnalyzeResult 
   try {
     const parsed = JSON.parse(cleaned);
     if (!parsed || typeof parsed !== "object") {
-      return { scenes: [] };
+      throw new StructuredOutputError("INVALID_SCHEMA", "Story analyzer output must be a JSON object");
     }
 
-    const rawScenes = Array.isArray(parsed.scenes) ? parsed.scenes : [];
-    const scenes = rawScenes
-      .filter((s: any) => s && typeof s === "object" && typeof s.title === "string" && typeof s.body === "string")
-      .map((s: any) => ({
-        title: String(s.title).trim(),
-        body: String(s.body).trim(),
-        choices: Array.isArray(s.choices)
-          ? s.choices
-              .filter((c: any) => c && typeof c === "object" && typeof c.label === "string")
-              .map((c: any) => ({
-                label: String(c.label).trim(),
-                consequenceSummary: typeof c.consequenceSummary === "string" ? String(c.consequenceSummary).trim() : undefined,
-              }))
-          : [],
-      }));
+    if (!Array.isArray(parsed.scenes)) {
+      throw new StructuredOutputError("INVALID_SCHEMA", "Story analyzer output is missing a scenes array");
+    }
+    const scenes = parsed.scenes.map((s: unknown) => {
+      if (!s || typeof s !== "object" || !("title" in s) || !("body" in s)) {
+        throw new StructuredOutputError("INVALID_SCHEMA", "Story analyzer scene must have title and body strings");
+      }
+      const scene = s as { readonly title: unknown; readonly body: unknown; readonly choices?: unknown };
+      if (typeof scene.title !== "string" || typeof scene.body !== "string") {
+        throw new StructuredOutputError("INVALID_SCHEMA", "Story analyzer scene title and body must be strings");
+      }
+      const choices = Array.isArray(scene.choices)
+        ? scene.choices.map((c: unknown) => {
+            if (!c || typeof c !== "object" || !("label" in c) || typeof c.label !== "string") {
+              throw new StructuredOutputError("INVALID_SCHEMA", "Story analyzer choice must have a string label");
+            }
+            const choice = c as { readonly label: string; readonly consequenceSummary?: unknown };
+            return {
+              label: choice.label.trim(),
+              ...(typeof choice.consequenceSummary === "string" ? { consequenceSummary: choice.consequenceSummary.trim() } : {}),
+            };
+          })
+        : [];
+      return {
+        title: scene.title.trim(),
+        body: scene.body.trim(),
+        choices,
+      };
+    });
+    if (scenes.length === 0) {
+      throw new StructuredOutputError("EMPTY_OUTPUT", "Story analyzer returned no scenes");
+    }
 
     return { scenes };
-  } catch {
-    return { scenes: [] };
+  } catch (error) {
+    if (error instanceof StructuredOutputError) throw error;
+    throw new StructuredOutputError("INVALID_JSON", "Story analyzer output is not valid JSON");
   }
 }
