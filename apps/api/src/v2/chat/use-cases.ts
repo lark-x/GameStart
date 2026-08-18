@@ -54,6 +54,7 @@ import {
   type V2Memory,
 } from "@living-network/domain/v2";
 import type {
+  V2MemoryRuntime,
   V2ChatUnitOfWork,
   V2MemoryRepository,
 } from "@living-network/ports/v2";
@@ -176,7 +177,10 @@ function toTraceDto(trace: V2ChatTrace): V2ChatTraceDto {
   };
 }
 
-export function createV2ChatUseCases(unitOfWork: V2ChatUnitOfWork): V2ChatUseCases {
+export function createV2ChatUseCases(
+  unitOfWork: V2ChatUnitOfWork,
+  options: { readonly memoryRuntime?: V2MemoryRuntime } = {},
+): V2ChatUseCases {
   return {
     recordTrace: (input) => unitOfWork.withChatTransaction(async ({ traces }) => {
       await traces.create(createV2ChatTrace({
@@ -227,7 +231,8 @@ export function createV2ChatUseCases(unitOfWork: V2ChatUnitOfWork): V2ChatUseCas
       };
     }),
     sendMessage: (conversationId, input) => sendMessage(unitOfWork, conversationId, input),
-    prepareReply: (conversationId, input, runtimeBudget) => prepareReply(unitOfWork, conversationId, input, runtimeBudget),
+    prepareReply: (conversationId, input, runtimeBudget) =>
+      prepareReply(unitOfWork, conversationId, input, runtimeBudget, options.memoryRuntime),
     saveReply: (input) => saveReply(unitOfWork, input),
     getLatestDiagnostics: async (conversationId) => unitOfWork.withChatTransaction(async ({ conversations, traces }) => {
       await requireConversation(conversations, conversationId);
@@ -444,6 +449,7 @@ async function prepareReply(
   conversationId: V2ConversationId,
   input: V2GenerateChatReplyRequest,
   runtimeBudget?: V2PromptRuntimeBudget,
+  memoryRuntime?: V2MemoryRuntime,
 ): Promise<V2PreparedChatReply> {
   return unitOfWork.withChatTransaction(async ({ canon, conversations, messages, memories, summaries }) => {
     const conversation = await requireConversation(conversations, conversationId);
@@ -475,9 +481,22 @@ async function prepareReply(
       ? recentMessages
       : await messages.listBefore(conversationId, currentUser.messageId as V2MessageId, 40);
     const query = currentUser?.text ?? "";
-    const memoryRows = query.trim().length > 0
-      ? await searchMemories(memories, conversation.storyWorldId as V2StoryWorldId, query)
-      : await memories.listActiveByStoryWorld(conversation.storyWorldId as V2StoryWorldId);
+    const memoryContexts = memoryRuntime === undefined
+      ? query.trim().length > 0
+        ? (await searchMemories(memories, conversation.storyWorldId as V2StoryWorldId, query)).map(toV2MemoryContext)
+        : (await memories.listActiveByStoryWorld(conversation.storyWorldId as V2StoryWorldId)).map(toV2MemoryContext)
+      : (await memoryRuntime.retrieve({
+          storyWorldId: conversation.storyWorldId as V2StoryWorldId,
+          conversationId,
+          query,
+          limit: 10,
+        })).map((item) => ({
+          memoryId: item.memoryId,
+          kind: item.kind,
+          content: item.text,
+          importance: item.importance,
+          confidence: item.confidence,
+        }));
     const summary = await summaries.get(conversationId);
 
     const facts = await canon.listFacts(conversation.storyWorldId as V2StoryWorldId);
@@ -490,7 +509,7 @@ async function prepareReply(
       ...(runtimeBudget?.contextWindow !== undefined ? { contextWindow: runtimeBudget.contextWindow } : {}),
       ...(runtimeBudget?.maxTokens !== undefined ? { outputReserve: runtimeBudget.maxTokens } : {}),
       ...(runtimeBudget?.safetyReserve !== undefined ? { safetyReserve: runtimeBudget.safetyReserve } : {}),
-      memories: memoryRows.slice(0, 10).map(toV2MemoryContext),
+      memories: memoryContexts.slice(0, 10),
       recentMessages: historyMessages.slice(-24).map(toV2ChatMessageContext),
       ...(character === undefined ? {} : {
         persona: {

@@ -56,6 +56,9 @@ export interface V2Memory {
   readonly storyWorldId: string;
   readonly conversationId?: string;
   readonly characterId?: string;
+  readonly engineId?: string;
+  readonly sourceAssertionIds?: readonly string[];
+  readonly slotKey?: string;
   readonly kind: V2MemoryKind;
   readonly content: string;
   readonly importance: number;
@@ -174,6 +177,9 @@ export function createV2Memory(input: {
   readonly storyWorldId: string;
   readonly conversationId?: string;
   readonly characterId?: string;
+  readonly engineId?: string;
+  readonly sourceAssertionIds?: readonly string[];
+  readonly slotKey?: string;
   readonly kind: V2MemoryKind;
   readonly content: string;
   readonly importance: number;
@@ -208,6 +214,11 @@ export function createV2Memory(input: {
     storyWorldId: assertNonEmptyId(input.storyWorldId, "storyWorldId"),
     ...(input.conversationId === undefined ? {} : { conversationId: assertNonEmptyId(input.conversationId, "conversationId") }),
     ...(input.characterId === undefined ? {} : { characterId: assertNonEmptyId(input.characterId, "characterId") }),
+    ...(input.engineId === undefined ? {} : { engineId: input.engineId }),
+    ...(input.sourceAssertionIds === undefined
+      ? {}
+      : { sourceAssertionIds: input.sourceAssertionIds.map((id) => assertNonEmptyId(id, "sourceAssertionId")) }),
+    ...(input.slotKey === undefined ? {} : { slotKey: input.slotKey }),
     kind: input.kind,
     content,
     importance: input.importance,

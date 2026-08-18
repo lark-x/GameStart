@@ -4,3 +4,4 @@ export * from "./generation/index.ts";
 export * from "./platform/index.ts";
 export * from "./chat/index.ts";
 export * from "./fact/index.ts";
+export * from "./memory-engine/index.ts";

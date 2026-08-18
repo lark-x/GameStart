@@ -38,6 +38,7 @@ import {
   type V2ChatMaintenanceJob,
   type V2ChatMessage,
   type V2ConversationSummary,
+  type V2FactAssertion,
   type V2Memory,
 } from "@living-network/domain/v2";
 import { createHash, randomUUID } from "node:crypto";
@@ -48,6 +49,7 @@ export interface V2MaintenanceDispatchPumpOptions {
   readonly provider?: ChatProvider;
   readonly memoryProvider?: ChatProvider;
   readonly storyAnalysisProvider?: ChatProvider;
+  readonly structuredEngine?: import("./memory/index.ts").V2BuiltinStructuredEngine;
   readonly pollIntervalMs?: number;
   readonly leaseDurationMs?: number;
   readonly heartbeatIntervalMs?: number;
@@ -85,6 +87,7 @@ export class V2MaintenanceDispatchPump {
   private readonly unitOfWork: V2ChatUnitOfWork;
   private readonly memoryProvider: ChatProvider;
   private readonly storyAnalysisProvider: ChatProvider;
+  private readonly structuredEngine: import("./memory/index.ts").V2BuiltinStructuredEngine | undefined;
   private readonly pollIntervalMs: number;
   private readonly leaseDurationMs: number;
   private readonly heartbeatIntervalMs: number;
@@ -101,6 +104,7 @@ export class V2MaintenanceDispatchPump {
     this.unitOfWork = options.unitOfWork;
     this.memoryProvider = options.memoryProvider ?? options.provider!;
     this.storyAnalysisProvider = options.storyAnalysisProvider ?? options.provider!;
+    this.structuredEngine = options.structuredEngine;
     this.pollIntervalMs = options.pollIntervalMs ?? 2000;
     this.leaseDurationMs = options.leaseDurationMs ?? 30000;
     this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? 10000;
@@ -272,6 +276,15 @@ export class V2MaintenanceDispatchPump {
     let batchId: string;
     if (existingBatch !== undefined) {
       batchId = existingBatch.batchId;
+      // Replay the ledger through the structured engine (idempotent) so any
+      // engine work that was lost after the fact commit is recovered.
+      const existingAssertions = await this.unitOfWork.withChatTransaction(async (repos) =>
+        repos.facts.listAssertionsByBatch(existingBatch.batchId));
+      if (this.structuredEngine !== undefined) {
+        await this.structuredEngine.consume({ batch: existingBatch, assertions: existingAssertions });
+      } else {
+        await this.applyMemoryCandidates(job, payload, this.toMemoryCandidates(existingAssertions));
+      }
     } else {
       // 2. Run the unified fact extractor (single LLM call; engines never re-extract).
       const { system, user } = buildFactExtractionPrompt({
@@ -347,15 +360,12 @@ export class V2MaintenanceDispatchPump {
         await repos.facts.createAssertions(assertions);
       });
 
-      // 4. Legacy bridge: feed the same assertions into the existing memory pipeline.
-      const candidates = assertions.map((assertion) => ({
-        kind: assertion.kind as V2MemoryKind,
-        content: assertion.text,
-        importance: assertion.importanceHint,
-        confidence: assertion.confidence,
-        sourceMessageIds: assertion.sourceMessageIds as V2MessageId[],
-      }));
-      await this.applyMemoryCandidates(job, payload, candidates);
+      // 4. Feed the same assertions into the structured engine (primary memory).
+      if (this.structuredEngine !== undefined) {
+        await this.structuredEngine.consume({ batch, assertions });
+      } else {
+        await this.applyMemoryCandidates(job, payload, this.toMemoryCandidates(assertions));
+      }
     }
 
     const cursorMessageId = payload.range?.toMessageId ?? sortedMessages[sortedMessages.length - 1]?.messageId;
@@ -365,6 +375,24 @@ export class V2MaintenanceDispatchPump {
         await repos.maintenanceJobs.setMemoryExtractCursor(payload.conversationId, cursorMessageId as V2MessageId);
       });
     }
+  }
+
+  private toMemoryCandidates(
+    assertions: readonly V2FactAssertion[],
+  ): readonly {
+    readonly kind: V2MemoryKind;
+    readonly content: string;
+    readonly importance: number;
+    readonly confidence: number;
+    readonly sourceMessageIds: readonly V2MessageId[];
+  }[] {
+    return assertions.map((assertion) => ({
+      kind: assertion.kind as V2MemoryKind,
+      content: assertion.text,
+      importance: assertion.importanceHint,
+      confidence: assertion.confidence,
+      sourceMessageIds: assertion.sourceMessageIds as V2MessageId[],
+    }));
   }
 
   private async applyMemoryCandidates(

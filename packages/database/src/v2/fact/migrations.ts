@@ -82,3 +82,80 @@ export const v2FactLedgerMigration: V2SqliteMigration = {
     DROP TABLE IF EXISTS v2_fact_batches;
   `),
 };
+
+export const v2MemoryEngineRunsMigration: V2SqliteMigration = {
+  id: "0410_v2_memory_engine_runs",
+  up: (db: DatabaseSync) => db.exec(`
+    CREATE TABLE v2_memory_engine_runs (
+      run_id TEXT PRIMARY KEY,
+      engine_id TEXT NOT NULL,
+      batch_id TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('running', 'completed', 'failed')),
+      started_at TEXT NOT NULL,
+      completed_at TEXT,
+      input_assertion_count INTEGER NOT NULL DEFAULT 0,
+      output_memory_count INTEGER NOT NULL DEFAULT 0,
+      llm_call_count INTEGER NOT NULL DEFAULT 0,
+      embedding_call_count INTEGER NOT NULL DEFAULT 0,
+      duration_ms INTEGER,
+      error_code TEXT
+    );
+
+    CREATE INDEX idx_v2_memory_engine_runs_engine
+      ON v2_memory_engine_runs(engine_id, started_at DESC);
+  `),
+  down: (db: DatabaseSync) => db.exec(`
+    DROP TABLE IF EXISTS v2_memory_engine_runs;
+  `),
+};
+
+export const v2MemoryEngineColumnsMigration: V2SqliteMigration = {
+  id: "0420_v2_memory_engine_columns",
+  up: (db: DatabaseSync) => {
+    const columns = db.prepare("PRAGMA table_info(v2_memories)").all() as unknown as readonly {
+      readonly name: string;
+    }[];
+    const names = new Set(columns.map((column) => column.name));
+    if (!names.has("engine_id")) {
+      db.exec("ALTER TABLE v2_memories ADD COLUMN engine_id TEXT NOT NULL DEFAULT 'builtin_structured';");
+    }
+    if (!names.has("source_assertion_ids_json")) {
+      db.exec("ALTER TABLE v2_memories ADD COLUMN source_assertion_ids_json TEXT NOT NULL DEFAULT '[]';");
+    }
+    if (!names.has("slot_key")) {
+      db.exec("ALTER TABLE v2_memories ADD COLUMN slot_key TEXT;");
+    }
+  },
+  down: (db: DatabaseSync) => {
+    db.exec(`
+      CREATE TABLE v2_memories_0420_backup (
+        memory_id TEXT PRIMARY KEY,
+        story_world_id TEXT NOT NULL,
+        conversation_id TEXT,
+        character_id TEXT,
+        kind TEXT NOT NULL,
+        content TEXT NOT NULL,
+        importance REAL NOT NULL,
+        confidence REAL NOT NULL,
+        source_message_ids_json TEXT NOT NULL DEFAULT '[]',
+        status TEXT NOT NULL,
+        supersedes_memory_id TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        last_accessed_at TEXT
+      );
+      INSERT INTO v2_memories_0420_backup (
+        memory_id, story_world_id, conversation_id, character_id, kind, content,
+        importance, confidence, source_message_ids_json, status, supersedes_memory_id,
+        created_at, updated_at, last_accessed_at
+      )
+      SELECT
+        memory_id, story_world_id, conversation_id, character_id, kind, content,
+        importance, confidence, source_message_ids_json, status, supersedes_memory_id,
+        created_at, updated_at, last_accessed_at
+      FROM v2_memories;
+      DROP TABLE v2_memories;
+      ALTER TABLE v2_memories_0420_backup RENAME TO v2_memories;
+    `);
+  },
+};
