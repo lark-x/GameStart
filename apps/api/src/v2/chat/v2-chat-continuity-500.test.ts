@@ -31,8 +31,8 @@ class DeterministicChatProvider implements ChatProvider {
       throw new Error("HTTP 429: Too Many Requests / Rate limit exceeded");
     }
 
-    // Memory extraction prompt handling
-    if (lastMessage.includes("memory extraction agent")) {
+    // Fact extraction prompt handling
+    if (lastMessage.includes("Extractor version")) {
       const allIds = Array.from(lastMessage.matchAll(/\[ID: (message:[^\]]+)\]/g)).map((m) => m[1]!);
       const sourceIds = allIds.length > 0 ? allIds : ["message:user:fallback"];
 
@@ -42,10 +42,14 @@ class DeterministicChatProvider implements ChatProvider {
           model: "fake-chat",
           content: JSON.stringify([
             {
+              subject: { entityType: "user", entityId: "user:local" },
+              predicate: "birthday",
+              object: { type: "text", value: "3 月 12 日" },
               kind: "profile",
-              content: "用户的生日是 3 月 12 日",
-              importance: 5,
+              text: "用户的生日是 3 月 12 日",
+              changeHint: "new",
               confidence: 0.95,
+              importanceHint: 0.8,
               sourceMessageIds: sourceIds,
             },
           ]),
@@ -58,10 +62,14 @@ class DeterministicChatProvider implements ChatProvider {
           model: "fake-chat",
           content: JSON.stringify([
             {
+              subject: { entityType: "user", entityId: "user:local" },
+              predicate: "preferred_drink",
+              object: { type: "text", value: "coffee" },
               kind: "preference",
-              content: "用户喜欢喝咖啡",
-              importance: 4,
+              text: "用户喜欢喝咖啡",
+              changeHint: "new",
               confidence: 0.9,
+              importanceHint: 0.8,
               sourceMessageIds: sourceIds,
             },
           ]),
@@ -74,10 +82,14 @@ class DeterministicChatProvider implements ChatProvider {
           model: "fake-chat",
           content: JSON.stringify([
             {
+              subject: { entityType: "user", entityId: "user:local" },
+              predicate: "preferred_drink",
+              object: { type: "text", value: "tea" },
               kind: "preference",
-              content: "用户现在不喝咖啡了，更喜欢喝茶",
-              importance: 4,
+              text: "用户现在不喝咖啡了，更喜欢喝茶",
+              changeHint: "replaces_previous",
               confidence: 0.95,
+              importanceHint: 0.95,
               sourceMessageIds: sourceIds,
             },
           ]),

@@ -26,9 +26,11 @@ import type {
   V2ChatTraceRepository,
   V2ChatUnitOfWork,
   V2ConversationSummaryRepository,
+  V2FactRepository,
   V2MemoryRepository,
 } from "@living-network/ports/v2";
 import { V2SqliteCandidateReviewRepository, V2SqliteCanonRepository } from "../core/index.ts";
+import { V2SqliteFactRepository } from "../fact/index.ts";
 import { withV2SqliteAsyncTransaction } from "../platform/index.ts";
 
 type ConversationRow = {
@@ -244,6 +246,7 @@ export class V2SqliteChatUnitOfWork implements V2ChatUnitOfWork {
     readonly summaries: V2ConversationSummaryRepository;
     readonly traces: V2ChatTraceRepository;
     readonly maintenanceJobs: V2ChatMaintenanceJobRepository;
+    readonly facts: V2FactRepository;
   }) => Promise<T>): Promise<T> {
     return withV2SqliteAsyncTransaction(this.db, () => fn({
       canon: new V2SqliteCanonRepository(this.db),
@@ -255,6 +258,7 @@ export class V2SqliteChatUnitOfWork implements V2ChatUnitOfWork {
       summaries: new V2SqliteConversationSummaryRepository(this.db),
       traces: new V2SqliteChatTraceRepository(this.db),
       maintenanceJobs: new V2SqliteChatMaintenanceJobRepository(this.db),
+      facts: new V2SqliteFactRepository(this.db),
     }));
   }
 }

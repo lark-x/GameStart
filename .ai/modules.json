@@ -64,6 +64,7 @@
       "allowedDependencies": [
         "chat",
         "core",
+        "facts",
         "integration"
       ],
       "ownedPaths": [

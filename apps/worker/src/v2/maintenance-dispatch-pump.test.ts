@@ -121,24 +121,30 @@ test("V2MaintenanceDispatchPump claims and processes memory_extract job with pro
     );
   });
 
-  const providerReply = JSON.stringify({
-    memories: [
-      {
-        kind: "preference",
-        content: "User loves hiking in high mountains.",
-        importance: 4,
-        confidence: 0.9,
-        sourceMessageIds: [msg1Id],
-      },
-      {
-        kind: "preference",
-        content: "User loves hiking in high mountains.",
-        importance: 3,
-        confidence: 0.5,
-        sourceMessageIds: [msg2Id],
-      },
-    ],
-  });
+  const providerReply = JSON.stringify([
+    {
+      subject: { entityType: "user", entityId: "user:local" },
+      predicate: "preferred_activity",
+      object: { type: "text", value: "hiking" },
+      kind: "preference",
+      text: "User loves hiking in high mountains.",
+      changeHint: "new",
+      confidence: 0.9,
+      importanceHint: 0.8,
+      sourceMessageIds: [msg1Id],
+    },
+    {
+      subject: { entityType: "user", entityId: "user:local" },
+      predicate: "preferred_activity",
+      object: { type: "text", value: "hiking" },
+      kind: "preference",
+      text: "User loves hiking in high mountains.",
+      changeHint: "new",
+      confidence: 0.5,
+      importanceHint: 0.6,
+      sourceMessageIds: [msg2Id],
+    },
+  ]);
 
   const pump = new V2MaintenanceDispatchPump({
     workerId: "test_worker_1",
@@ -156,6 +162,109 @@ test("V2MaintenanceDispatchPump claims and processes memory_extract job with pro
     const memories = await repos.memories.listByConversation(convId);
     assert.equal(memories.length, 1);
     assert.equal(memories[0]?.content, "User loves hiking in high mountains.");
+  });
+
+  cleanup();
+});
+
+test("V2MaintenanceDispatchPump persists a fact batch and assertions before writing legacy memory", async () => {
+  const { db, uow, cleanup } = await setupTestDb();
+
+  const worldId = "world_fact_ledger" as V2StoryWorldId;
+  const convId = "conv_fact_ledger" as V2ConversationId;
+  const msg1Id = "msg_fact_ledger_1" as V2MessageId;
+
+  await uow.withChatTransaction(async (repos) => {
+    await repos.canon.createWorld(
+      createV2CanonWorld({
+        storyWorldId: worldId,
+        name: "World Fact Ledger",
+        summary: "World summary",
+      })
+    );
+    await repos.canon.createCharacter(
+      createV2CanonCharacter({
+        characterId: "char_fact_ledger" as any,
+        storyWorldId: worldId,
+        name: "Mira",
+        summary: "A companion",
+        personaText: "Friendly, casual",
+      })
+    );
+    await repos.conversations.create(
+      createV2ChatConversation({
+        conversationId: convId,
+        storyWorldId: worldId,
+        primaryCharacterId: "char_fact_ledger" as any,
+        title: "Fact Ledger Conv",
+      })
+    );
+    await repos.messages.create(
+      createV2ChatMessage({
+        messageId: msg1Id,
+        conversationId: convId,
+        role: "user",
+        text: "我的生日是 6 月 1 日。",
+        createdAt: now,
+        idempotencyKey: "key_fact_ledger_1",
+      })
+    );
+    await repos.maintenanceJobs.enqueue(
+      createV2ChatMaintenanceJob({
+        jobId: "job_fact_ledger_1" as V2MaintenanceJobId,
+        conversationId: convId,
+        jobType: "memory_extract",
+        status: "pending",
+        payload: {
+          conversationId: convId,
+          storyWorldId: worldId,
+          characterId: "char_fact_ledger" as any,
+          sourceMessageIds: [msg1Id],
+          range: { fromMessageId: msg1Id, toMessageId: msg1Id },
+        },
+        attempts: 0,
+        maxAttempts: 3,
+        availableAt: now,
+      })
+    );
+  });
+
+  const providerReply = JSON.stringify([
+    {
+      subject: { entityType: "user", entityId: "user:local" },
+      predicate: "birthday",
+      object: { type: "text", value: "6 月 1 日" },
+      kind: "profile",
+      text: "用户的生日是 6 月 1 日",
+      changeHint: "new",
+      confidence: 0.97,
+      importanceHint: 0.8,
+      sourceMessageIds: [msg1Id],
+    },
+  ]);
+
+  const pump = new V2MaintenanceDispatchPump({
+    workerId: "test_worker_fact_ledger",
+    unitOfWork: uow,
+    provider: createTestProvider(providerReply),
+  });
+
+  const processed = await pump.tick();
+  assert.equal(processed, true);
+
+  await uow.withChatTransaction(async (repos) => {
+    const batches = await repos.facts.listBatchesByConversation(convId);
+    assert.equal(batches.length, 1);
+    assert.equal(batches[0]?.status, "completed");
+    assert.equal(batches[0]?.extractorVersion, "fact.extract:v1");
+    assert.equal(batches[0]?.sourceMessageIds.length, 1);
+
+    const assertions = await repos.facts.listAssertionsByBatch(batches[0]!.batchId);
+    assert.equal(assertions.length, 1);
+    assert.equal(assertions[0]?.predicate, "birthday");
+    assert.equal(assertions[0]?.kind, "profile");
+    assert.equal(assertions[0]?.text, "用户的生日是 6 月 1 日");
+    assert.deepEqual(assertions[0]?.sourceMessageIds, [msg1Id]);
   });
 
   cleanup();
@@ -911,15 +1020,20 @@ test("V2MaintenanceDispatchPump consolidates a related preference and supersedes
     );
   });
 
-  const provider = createTestProvider(JSON.stringify([
+  const factAssertionReply = JSON.stringify([
     {
+      subject: { entityType: "user", entityId: "user:local" },
+      predicate: "preferred_drink",
+      object: { type: "text", value: "tea" },
       kind: "preference",
-      content: "用户现在不喝咖啡了，更喜欢喝茶",
-      importance: 4,
+      text: "用户现在不喝咖啡了，更喜欢喝茶",
+      changeHint: "replaces_previous",
       confidence: 0.95,
+      importanceHint: 0.8,
       sourceMessageIds: [teaMsgId],
     },
-  ]));
+  ]);
+  const provider = createTestProvider(factAssertionReply);
   const consolidateProvider: ChatProvider = {
     async complete(request) {
       const lastMessage = String(request.messages.at(-1)?.content ?? "");
@@ -930,13 +1044,7 @@ test("V2MaintenanceDispatchPump consolidates a related preference and supersedes
           content: JSON.stringify({ action: "supersede", rationale: "偏好已转变" }),
         };
       }
-      return { id: "extract", model: "test-model", content: JSON.stringify([{
-        kind: "preference",
-        content: "用户现在不喝咖啡了，更喜欢喝茶",
-        importance: 4,
-        confidence: 0.95,
-        sourceMessageIds: [teaMsgId],
-      }]) };
+      return { id: "extract", model: "test-model", content: factAssertionReply };
     },
     async *stream() {
       yield { content: "" };
