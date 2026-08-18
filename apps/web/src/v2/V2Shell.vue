@@ -12,6 +12,7 @@ import {
   LayoutDashboard,
   ListChecks,
   Menu,
+  ChevronDown,
   PlayCircle,
   Send,
   ScrollText,
@@ -31,51 +32,40 @@ interface NavItem {
 }
 
 interface NavGroup {
+  readonly id: string;
   readonly label: string;
   readonly items: readonly NavItem[];
 }
 
 const groups: readonly NavGroup[] = [
   {
-    label: "即时故事",
+    id: "story",
+    label: "故事",
     items: [
       { to: "/v2/start", label: "开始新故事", icon: Sparkles },
-    ],
-  },
-  {
-    label: "项目",
-    items: [
       { to: "/v2/workspace/project", label: "项目首页", icon: LayoutDashboard },
       { to: "/v2/workspace/stories", label: "故事切换", icon: BookOpenText },
-    ],
-  },
-  {
-    label: "人工创作",
-    items: [
       { to: "/v2/workspace/world", label: "世界设定", icon: Boxes },
       { to: "/v2/workspace/state", label: "状态与逻辑", icon: Activity },
       { to: "/v2/workspace/story", label: "故事结构", icon: GitFork },
-      { to: "/v2/workspace/formal-assets", label: "正式素材库", icon: ImageIcon },
     ],
   },
   {
-    label: "AI 场景生成",
+    id: "creation",
+    label: "创作",
     items: [
+      { to: "/v2/workspace/formal-assets", label: "正式素材库", icon: ImageIcon },
       { to: "/v2/workspace/ai-scene-request", label: "创建请求", icon: Send },
       { to: "/v2/workspace/ai-scene-jobs", label: "任务状态", icon: Activity },
       { to: "/v2/workspace/ai-scene-review", label: "场景候选审核", icon: ListChecks },
-    ],
-  },
-  {
-    label: "ComfyUI 素材生成",
-    items: [
       { to: "/v2/workspace/comfy-request", label: "创建请求", icon: Send },
       { to: "/v2/workspace/comfy-jobs", label: "任务状态", icon: Activity },
       { to: "/v2/workspace/comfy-review", label: "素材候选审核", icon: ListChecks },
     ],
   },
   {
-    label: "发布与运行",
+    id: "publish",
+    label: "发布",
     items: [
       { to: "/v2/workspace/release", label: "发布检查", icon: FileCheck2 },
       { to: "/v2/workspace/player", label: "运行预览", icon: PlayCircle },
@@ -83,12 +73,16 @@ const groups: readonly NavGroup[] = [
     ],
   },
   {
-    label: "外部服务",
+    id: "system",
+    label: "系统",
     items: [
-      { to: "/v2/services/models", label: "模型服务", icon: Settings2 },
+      { to: "/v2/services/models", label: "模型", icon: Settings2 },
       { to: "/v2/services/comfyui", label: "ComfyUI 服务", icon: ImageIcon },
       { to: "/v2/services/logs", label: "调用日志", icon: ScrollText },
       { to: "/v2/services/runtime", label: "运行状态", icon: Activity },
+      { to: "/v2/settings", label: "平台配置", icon: Settings2 },
+      { to: "/v2/settings/appearance", label: "外观", icon: Sparkles },
+      { to: "/v2/automation", label: "触发器", icon: Activity },
     ],
   },
 ];
@@ -96,10 +90,41 @@ const groups: readonly NavGroup[] = [
 const route = useRoute();
 const store = useV2WorkspaceStore();
 const mobileOpen = ref(false);
-const currentTitle = computed(() => {
-  const item = groups.flatMap((group) => group.items).find((candidate) => route.path === candidate.to);
-  return item?.label ?? (typeof route.meta.title === "string" ? route.meta.title : "创作平台");
+const isFeatureRoute = computed(() => route.meta.layout === "feature");
+const pageSize = computed(() => {
+  const size = route.meta.pageSize;
+  return size === "narrow" || size === "standard" || size === "wide" || size === "full" ? size : "standard";
 });
+const collapsedGroups = ref<readonly string[]>(readCollapsedGroups());
+
+function readCollapsedGroups(): readonly string[] {
+  try {
+    const raw = localStorage.getItem("v2:sidebar:collapsed");
+    return raw === null ? [] : (JSON.parse(raw) as unknown as string[]);
+  } catch {
+    return [];
+  }
+}
+
+function persistCollapsedGroups(): void {
+  try {
+    localStorage.setItem("v2:sidebar:collapsed", JSON.stringify(collapsedGroups.value));
+  } catch {
+    // localStorage unavailable; collapsing still works for this session.
+  }
+}
+
+function isGroupCollapsed(group: NavGroup): boolean {
+  const activeInGroup = group.items.some((item) => route.path === item.to || route.path.startsWith(`${item.to}/`));
+  return !activeInGroup && collapsedGroups.value.includes(group.id);
+}
+
+function toggleGroup(group: NavGroup): void {
+  collapsedGroups.value = collapsedGroups.value.includes(group.id)
+    ? collapsedGroups.value.filter((id) => id !== group.id)
+    : [...collapsedGroups.value, group.id];
+  persistCollapsedGroups();
+}
 
 watch(() => route.path, () => {
   mobileOpen.value = false;
@@ -138,12 +163,21 @@ onMounted(() => {
       </div>
 
       <nav class="v2-nav" aria-label="平台模块">
-        <section v-for="group in groups" :key="group.label" class="v2-nav-group">
-          <h2>{{ group.label }}</h2>
+        <section v-for="group in groups" :key="group.id" class="v2-nav-group">
+          <button
+            type="button"
+            class="v2-nav-group-toggle"
+            :aria-expanded="!isGroupCollapsed(group)"
+            @click="toggleGroup(group)"
+          >
+            <span>{{ group.label }}</span>
+            <ChevronDown :size="14" aria-hidden="true" :class="{ 'v2-nav-group-chevron-collapsed': isGroupCollapsed(group) }" />
+          </button>
           <RouterLink
             v-for="item in group.items"
             :key="item.to"
             :to="item.to"
+            v-show="!isGroupCollapsed(group)"
             class="v2-nav-link"
             active-class="v2-nav-link-active"
           >
@@ -153,36 +187,38 @@ onMounted(() => {
         </section>
       </nav>
 
+      <div v-if="store.storyWorlds.length" class="v2-sidebar-story">
+        <label for="v2-story-world">故事空间</label>
+        <div class="v2-sidebar-story-row">
+          <Select
+            id="v2-story-world"
+            :model-value="store.activeStoryWorldId || ''"
+            :disabled="store.loading"
+            @update:model-value="store.selectStoryWorld"
+          >
+            <option v-for="world in store.storyWorlds" :key="world.storyWorldId" :value="world.storyWorldId">
+              {{ world.name }}
+            </option>
+          </Select>
+          <Button variant="ghost" size="icon" :loading="store.loading" aria-label="刷新状态" @click="store.loadSnapshot">
+            <RefreshCw :size="15" aria-hidden="true" />
+          </Button>
+        </div>
+      </div>
+
       <div class="v2-sidebar-footer">
-        <span class="v2-runtime-dot" aria-hidden="true" />
+        <span class="v2-runtime-dot v2-runtime-dot-neutral" aria-hidden="true" />
         <span>V2 本地运行时</span>
       </div>
     </aside>
 
     <div v-if="mobileOpen" class="v2-sidebar-backdrop" aria-hidden="true" @click="mobileOpen = false" />
 
-    <div class="v2-app-content">
-      <header class="v2-topbar">
-        <div>
-          <p class="v2-topbar-kicker">Living Network / V2</p>
-          <h1>{{ currentTitle }}</h1>
-        </div>
-        <div class="v2-topbar-actions">
-          <div v-if="store.storyWorlds.length" class="v2-story-switcher">
-            <label for="v2-story-world">故事空间</label>
-            <Select id="v2-story-world" :model-value="store.activeStoryWorldId || ''" :disabled="store.loading" @update:model-value="store.selectStoryWorld">
-              <option v-for="world in store.storyWorlds" :key="world.storyWorldId" :value="world.storyWorldId">
-                {{ world.name }}
-              </option>
-            </Select>
-          </div>
-          <Button variant="secondary" size="md" :loading="store.loading" @click="store.loadSnapshot">
-            <Activity :size="16" aria-hidden="true" />
-            刷新状态
-          </Button>
-        </div>
-      </header>
-      <div class="v2-route-content">
+    <div class="v2-app-content" :class="{ 'v2-app-content-feature': isFeatureRoute }">
+      <div
+        class="v2-route-content"
+        :class="[`v2-route-content-${pageSize}`, { 'v2-route-content-feature': isFeatureRoute }]"
+      >
         <RouterView />
       </div>
     </div>
@@ -285,13 +321,61 @@ onMounted(() => {
   gap: 3px;
 }
 
-.v2-nav-group h2 {
-  margin: 0 0 2px;
+.v2-nav-group-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  border: 0;
+  background: transparent;
+  color: var(--faint);
+  font-size: var(--text-xs);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  text-align: left;
+}
+
+.v2-nav-group-toggle:hover {
+  color: var(--muted);
+}
+
+.v2-nav-group-toggle svg {
+  transition: transform var(--motion-fast);
+}
+
+.v2-nav-group-chevron-collapsed {
+  transform: rotate(-90deg);
+}
+
+.v2-sidebar-story {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+.v2-sidebar-story label {
   padding: 0 var(--space-3);
   color: var(--faint);
   font-size: var(--text-xs);
   font-weight: 800;
   letter-spacing: 0.08em;
+}
+
+.v2-sidebar-story-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+}
+
+.v2-sidebar-story-row .ui-select {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .v2-nav-link {
@@ -328,8 +412,7 @@ onMounted(() => {
   width: 7px;
   height: 7px;
   border-radius: var(--radius-full);
-  background: var(--success);
-  box-shadow: 0 0 0 4px var(--success-soft);
+  background: var(--faint);
 }
 
 .v2-app-content {
@@ -339,77 +422,44 @@ onMounted(() => {
   min-width: 0;
 }
 
-.v2-topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  padding: var(--space-6) var(--space-6) var(--space-5);
-  border-bottom: 1px solid var(--border);
-}
-
-.v2-topbar-kicker {
-  margin: 0 0 var(--space-1);
-  color: var(--primary);
-  font-size: var(--text-xs);
-  font-weight: 800;
-  letter-spacing: 0.08em;
-}
-
-.v2-topbar-actions {
-  display: flex;
-  align-items: flex-end;
-  gap: var(--space-3);
-  min-width: 0;
-}
-
-.v2-story-switcher {
-  display: grid;
-  gap: var(--space-1);
-  min-width: min(240px, 36vw);
-}
-
-.v2-story-switcher label {
-  color: var(--muted);
-  font-size: var(--text-xs);
-  font-weight: 700;
-}
-
-.v2-topbar h1 {
-  margin: 0;
-  color: var(--text-strong);
-  font-size: var(--text-xl);
+.v2-app-content-feature {
+  height: 100dvh;
 }
 
 .v2-route-content {
+  width: 100%;
   min-width: 0;
   padding: var(--space-6);
+  margin-inline: auto;
+}
+
+.v2-route-content-narrow {
+  max-width: 960px;
+}
+
+.v2-route-content-standard {
+  max-width: 1200px;
+}
+
+.v2-route-content-wide {
+  max-width: 1560px;
+}
+
+.v2-route-content-full {
+  max-width: none;
+}
+
+.v2-route-content-feature {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0;
 }
 
 .v2-mobile-menu,
 .v2-mobile-close {
   display: none;
-}
-
-/* 短视口（常见笔记本/小窗口高度）：收紧导航间距与行高，
-   保证 768px 高度下导航完整可见、不出现内部滚动与裁切。
-   40px 触控目标下限仅在窄高视口（非触控主力场景）放宽到 36px。 */
-@media (max-height: 820px) {
-  .v2-nav {
-    gap: 8px;
-  }
-
-  .v2-nav-group {
-    gap: 2px;
-  }
-
-  .v2-nav-group h2 {
-    margin-bottom: 0;
-  }
-
-  .v2-nav-link {
-    min-height: 36px;
-  }
 }
 
 @media (max-width: 960px) {
@@ -452,31 +502,12 @@ onMounted(() => {
     left: var(--space-4);
   }
 
-  .v2-topbar {
-    padding-top: calc(var(--space-6) + 44px);
-  }
 }
 
 @media (max-width: 540px) {
-  .v2-route-content,
-  .v2-topbar {
+  .v2-route-content {
     padding-right: var(--space-4);
     padding-left: var(--space-4);
-  }
-
-  .v2-topbar {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .v2-topbar-actions {
-    width: 100%;
-    flex-wrap: wrap;
-  }
-
-  .v2-story-switcher {
-    flex: 1 1 100%;
-    min-width: 0;
   }
 }
 </style>

@@ -228,7 +228,7 @@ function goToBlocker(blocker: V2ReleaseBlockerDto): void {
 }
 
 .m-sub {
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--muted);
 }
 

@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { Activity, ArrowLeft, BookOpen, ImagePlus, RefreshCw, Send, Sparkles, Square, X } from "@lucide/vue";
+import { Activity, ArrowLeft, BookOpen, Copy, ImagePlus, MoreHorizontal, RefreshCw, Send, Sparkles, Square, X } from "@lucide/vue";
 
 import Button from "../../components/ui/Button.vue";
 import Textarea from "../../components/ui/Textarea.vue";
+import V2ToastNotification from "../components/V2ToastNotification.vue";
+import { useNotificationStore } from "../stores/notification.ts";
 import type {
   V2ChatDiagnosticsResponse,
   V2ChatMessageDto,
@@ -20,6 +22,7 @@ const router = useRouter();
 const environment = import.meta.env as Record<string, string | undefined>;
 const baseUrl = environment.VITE_API_BASE || (typeof window === "undefined" ? "http://127.0.0.1:3002" : window.location.origin);
 const client = createV2ChatClient({ baseUrl });
+const toast = useNotificationStore();
 
 const conversationId = computed(() => route.params.conversationId as string);
 const conversationTitle = ref("");
@@ -37,6 +40,9 @@ const messagesContainer = ref<HTMLElement | null>(null);
 const hasMore = ref(false);
 const nextBeforeMessageId = ref<string | undefined>(undefined);
 const loadingOlder = ref(false);
+const loadingOlderError = ref("");
+const isNearBottom = ref(true);
+const showScrollHint = ref(false);
 
 // Diagnostics state
 const showDiagnostics = ref(false);
@@ -45,16 +51,73 @@ const loadingDiagnostics = ref(false);
 
 // Story Analyzer state
 const analyzing = ref(false);
-const analyzeSuccessMessage = ref("");
+const moreMenuOpen = ref(false);
+const moreMenuRef = ref<HTMLElement | null>(null);
+
+function handleScroll(): void {
+  const container = messagesContainer.value;
+  if (!container) return;
+  const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+  isNearBottom.value = distanceFromBottom < 80;
+  if (isNearBottom.value) showScrollHint.value = false;
+  if (container.scrollTop < 120 && hasMore.value && !loadingOlder.value && !loading.value) {
+    void loadOlderMessages();
+  }
+}
+
+function scrollToBottom(behavior: ScrollBehavior = "smooth"): void {
+  if (messagesContainer.value) {
+    messagesContainer.value.scrollTo({
+      top: messagesContainer.value.scrollHeight,
+      behavior,
+    });
+    isNearBottom.value = true;
+    showScrollHint.value = false;
+  }
+}
+
+function jumpToLatest(): void {
+  scrollToBottom("smooth");
+}
+
+function onDocumentClick(event: MouseEvent): void {
+  if (moreMenuRef.value !== null && !moreMenuRef.value.contains(event.target as Node)) {
+    moreMenuOpen.value = false;
+  }
+}
+
+onMounted(() => document.addEventListener("click", onDocumentClick));
+onUnmounted(() => document.removeEventListener("click", onDocumentClick));
+
+async function copyConversationId(): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(conversationId.value);
+    toast.success("会话 ID 已复制到剪贴板。", "已复制");
+  } catch {
+    errorMessage.value = "复制会话 ID 失败，请手动复制地址栏中的 ID。";
+  } finally {
+    moreMenuOpen.value = false;
+  }
+}
+
+function messageStatusLabel(message: V2ChatMessageDto): string | undefined {
+  if (message.status === "pending") return "生成中";
+  if (message.status === "failed") return "发送失败";
+  if (message.status === "interrupted") return "已中断";
+  return undefined;
+}
+
+function openImagePreview(url: string): void {
+  window.open(url, "_blank", "noopener");
+}
 
 async function triggerStoryAnalyze(): Promise<void> {
   if (analyzing.value || messages.value.length === 0) return;
   analyzing.value = true;
-  analyzeSuccessMessage.value = "";
   errorMessage.value = "";
   try {
     await client.triggerStoryAnalyze(conversationId.value as V2ConversationId);
-    analyzeSuccessMessage.value = "已发起剧情提炼任务！完成后将在创作工作区生成场景候选。";
+    toast.success("已发起剧情提炼任务，完成后将在创作工作区生成场景候选。", "剧情提炼");
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : "发起剧情提炼失败";
   } finally {
@@ -96,17 +159,10 @@ async function loadChat(): Promise<void> {
   }
 }
 
-async function handleScroll(): Promise<void> {
-  const container = messagesContainer.value;
-  if (!container) return;
-  if (container.scrollTop < 120 && hasMore.value && !loadingOlder.value && !loading.value) {
-    await loadOlderMessages();
-  }
-}
-
 async function loadOlderMessages(): Promise<void> {
   if (!hasMore.value || loadingOlder.value || !nextBeforeMessageId.value) return;
   loadingOlder.value = true;
+  loadingOlderError.value = "";
   const container = messagesContainer.value;
   const oldScrollHeight = container?.scrollHeight ?? 0;
   const oldScrollTop = container?.scrollTop ?? 0;
@@ -126,18 +182,9 @@ async function loadOlderMessages(): Promise<void> {
       container.scrollTop = oldScrollTop + (newScrollHeight - oldScrollHeight);
     }
   } catch (error) {
-    console.error("加载更早消息失败:", error);
+    loadingOlderError.value = error instanceof Error ? error.message : "加载更早消息失败";
   } finally {
     loadingOlder.value = false;
-  }
-}
-
-function scrollToBottom(behavior: ScrollBehavior = "smooth"): void {
-  if (messagesContainer.value) {
-    messagesContainer.value.scrollTo({
-      top: messagesContainer.value.scrollHeight,
-      behavior,
-    });
   }
 }
 
@@ -235,13 +282,17 @@ async function startAssistantReply(openingIdempotencyKey?: string): Promise<void
     if (event.type === "delta" && event.content !== undefined) {
       content += event.content;
       updatePlaceholder(placeholder.messageId, { text: content, status: "pending" });
-      scrollToBottom("smooth");
+      if (isNearBottom.value) {
+        scrollToBottom("auto");
+      } else {
+        showScrollHint.value = true;
+      }
     } else if (event.type === "message" && event.message !== undefined) {
       replaced = true;
       messages.value = messages.value.map((message) =>
         message.messageId === placeholder.messageId ? event.message! : message,
       );
-      scrollToBottom("smooth");
+      if (isNearBottom.value) scrollToBottom("auto");
     } else if (event.type === "error") {
       errorMessage.value = event.errorMessage ?? "生成失败";
       updatePlaceholder(placeholder.messageId, { status: "failed" });
@@ -294,38 +345,8 @@ function isUser(message: V2ChatMessageDto): boolean {
       </Button>
       <div class="v2-chat-title">
         <h2>{{ conversationTitle }}</h2>
-        <p>{{ conversationId }}</p>
       </div>
       <div class="v2-chat-header-actions">
-        <Button
-          variant="secondary"
-          size="sm"
-          :loading="analyzing"
-          :disabled="messages.length === 0 || streaming || analyzing"
-          title="将本段故事对话提炼为剧本场景候选"
-          @click="triggerStoryAnalyze"
-        >
-          <Sparkles :size="14" aria-hidden="true" />
-          提炼剧情
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          title="前往高级剧本与审核工作区"
-          @click="router.push('/v2/workspace/ai')"
-        >
-          <BookOpen :size="14" aria-hidden="true" />
-          创作工作区
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="查看上下文诊断"
-          title="查看上下文诊断"
-          @click="toggleDiagnostics"
-        >
-          <Activity :size="18" aria-hidden="true" />
-        </Button>
         <Button
           v-if="streaming"
           variant="secondary"
@@ -335,14 +356,144 @@ function isUser(message: V2ChatMessageDto): boolean {
           <Square :size="14" aria-hidden="true" />
           停止
         </Button>
+        <div class="v2-chat-more" ref="moreMenuRef">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="更多操作"
+            aria-haspopup="menu"
+            :aria-expanded="moreMenuOpen"
+            @click="moreMenuOpen = !moreMenuOpen"
+          >
+            <MoreHorizontal :size="18" aria-hidden="true" />
+          </Button>
+          <div v-if="moreMenuOpen" class="v2-chat-more-menu" role="menu">
+            <button
+              type="button"
+              role="menuitem"
+              class="v2-chat-more-item"
+              :disabled="messages.length === 0 || streaming || analyzing"
+              @click="triggerStoryAnalyze"
+            >
+              <Sparkles :size="15" aria-hidden="true" />
+              提炼剧情
+            </button>
+            <button type="button" role="menuitem" class="v2-chat-more-item" @click="toggleDiagnostics">
+              <Activity :size="15" aria-hidden="true" />
+              上下文诊断
+            </button>
+            <button type="button" role="menuitem" class="v2-chat-more-item" @click="router.push('/v2/workspace/ai')">
+              <BookOpen :size="15" aria-hidden="true" />
+              创作工作区
+            </button>
+            <button type="button" role="menuitem" class="v2-chat-more-item" @click="copyConversationId">
+              <Copy :size="15" aria-hidden="true" />
+              复制会话 ID
+            </button>
+          </div>
+        </div>
       </div>
     </header>
 
-    <p v-if="analyzeSuccessMessage" class="v2-chat-success-banner">{{ analyzeSuccessMessage }}</p>
+    <p v-if="errorMessage" class="v2-chat-error">{{ errorMessage }}</p>
+    <p v-if="loading" class="v2-chat-status">正在加载对话…</p>
 
-    <div v-if="showDiagnostics" class="v2-chat-diagnostics-card" role="region" aria-label="上下文诊断面板">
+    <div
+      ref="messagesContainer"
+      class="v2-chat-messages"
+      aria-live="polite"
+      @scroll="handleScroll"
+    >
+      <div v-if="loadingOlder" class="v2-chat-pagination-status">正在加载更早的历史记录…</div>
+      <div v-else-if="loadingOlderError" class="v2-chat-pagination-status v2-chat-pagination-error">
+        加载更早消息失败
+        <Button variant="ghost" size="sm" @click="loadOlderMessages">重试</Button>
+      </div>
+      <div v-else-if="!hasMore && messages.length >= 50" class="v2-chat-pagination-status">已加载全部历史记录</div>
+
+      <article
+        v-for="message in messages"
+        :key="message.messageId"
+        class="v2-chat-message"
+        :class="{ 'v2-chat-message-user': isUser(message), 'v2-chat-message-assistant': !isUser(message) }"
+      >
+        <div class="v2-chat-bubble">
+          <template v-if="message.text">{{ message.text }}</template>
+          <template v-else-if="message.status === 'pending'">…</template>
+          <template v-else>（空消息）</template>
+          <div v-if="message.attachments.length" class="v2-chat-images">
+            <img
+              v-for="attachment in message.attachments"
+              :key="attachment.attachmentId"
+              :src="client.mediaUrl(attachment.mediaRef)"
+              :alt="'聊天图片'"
+              class="v2-chat-image"
+              loading="lazy"
+              @error="(event) => (event.target as HTMLImageElement).style.display = 'none'"
+              @click="openImagePreview(client.mediaUrl(attachment.mediaRef))"
+            />
+          </div>
+        </div>
+        <small
+          v-if="messageStatusLabel(message)"
+          class="v2-chat-meta"
+          :class="{ 'v2-chat-meta-error': message.status === 'failed' }"
+        >
+          {{ messageStatusLabel(message) }}
+        </small>
+      </article>
+
+      <button v-if="showScrollHint" type="button" class="v2-chat-scroll-hint" @click="jumpToLatest">
+        ↓ 查看新消息
+      </button>
+    </div>
+
+    <form class="v2-chat-composer" @submit.prevent="sendMessage()">
+      <input
+        ref="fileInput"
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        class="v2-chat-file-input"
+        aria-hidden="true"
+        tabindex="-1"
+        @change="onImageSelected"
+      />
+      <Button
+        variant="ghost"
+        size="icon"
+        type="button"
+        :loading="imageUploading"
+        :disabled="sending || streaming || loading || imageUploading"
+        aria-label="发送图片"
+        @click="pickImage"
+      >
+        <ImagePlus :size="18" aria-hidden="true" />
+      </Button>
+      <Textarea
+        v-model="input"
+        variant="composer"
+        auto-grow
+        :rows="1"
+        placeholder="输入消息……"
+        :disabled="sending || streaming || loading"
+        aria-label="输入消息"
+      />
+      <Button
+        variant="primary"
+        size="md"
+        type="submit"
+        :loading="sending"
+        :disabled="(!input.trim() && !imageUploading) || streaming || loading"
+      >
+        <Send :size="16" aria-hidden="true" />
+        发送
+      </Button>
+    </form>
+
+    <div v-if="showDiagnostics" class="v2-chat-drawer-backdrop" @click="showDiagnostics = false" />
+    <aside v-if="showDiagnostics" class="v2-chat-drawer" role="dialog" aria-label="上下文诊断面板">
       <div class="v2-chat-diagnostics-header">
-        <h3>上下文诊断 (Diagnostics)</h3>
+        <h3>上下文诊断</h3>
         <div class="v2-chat-diagnostics-actions">
           <Button
             variant="ghost"
@@ -353,12 +504,7 @@ function isUser(message: V2ChatMessageDto): boolean {
           >
             <RefreshCw :size="14" aria-hidden="true" />
           </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="关闭诊断面板"
-            @click="showDiagnostics = false"
-          >
+          <Button variant="ghost" size="icon" aria-label="关闭诊断面板" @click="showDiagnostics = false">
             <X :size="14" aria-hidden="true" />
           </Button>
         </div>
@@ -392,83 +538,9 @@ function isUser(message: V2ChatMessageDto): boolean {
           <span class="v2-diag-value">{{ diagnostics.imageCount !== undefined ? `${diagnostics.imageCount} 张` : "0 张" }}</span>
         </div>
       </div>
-    </div>
+    </aside>
 
-    <p v-if="errorMessage" class="v2-chat-error">{{ errorMessage }}</p>
-    <p v-if="loading" class="v2-chat-status">正在加载对话…</p>
-
-    <div
-      ref="messagesContainer"
-      class="v2-chat-messages"
-      aria-live="polite"
-      @scroll="handleScroll"
-    >
-      <div v-if="loadingOlder" class="v2-chat-pagination-status">正在加载更早的历史记录…</div>
-      <div v-else-if="!hasMore && messages.length >= 50" class="v2-chat-pagination-status">已加载全部历史记录</div>
-
-      <article
-        v-for="message in messages"
-        :key="message.messageId"
-        class="v2-chat-message"
-        :class="{ 'v2-chat-message-user': isUser(message), 'v2-chat-message-assistant': !isUser(message) }"
-      >
-        <div class="v2-chat-bubble">
-          <template v-if="message.text">{{ message.text }}</template>
-          <template v-else-if="message.status === 'pending'">…</template>
-          <template v-else>（空消息）</template>
-          <div v-if="message.attachments.length" class="v2-chat-images">
-            <img
-              v-for="attachment in message.attachments"
-              :key="attachment.attachmentId"
-              :src="client.mediaUrl(attachment.mediaRef)"
-              :alt="'聊天图片'"
-              class="v2-chat-image"
-            />
-          </div>
-        </div>
-        <small class="v2-chat-meta">{{ isUser(message) ? "你" : "角色" }} · {{ message.status }}</small>
-      </article>
-    </div>
-
-    <form class="v2-chat-composer" @submit.prevent="sendMessage()">
-      <input
-        ref="fileInput"
-        type="file"
-        accept="image/png,image/jpeg,image/webp,image/gif"
-        class="v2-chat-file-input"
-        aria-hidden="true"
-        tabindex="-1"
-        @change="onImageSelected"
-      />
-      <Button
-        variant="ghost"
-        size="icon"
-        type="button"
-        :loading="imageUploading"
-        :disabled="sending || streaming || loading || imageUploading"
-        aria-label="发送图片"
-        @click="pickImage"
-      >
-        <ImagePlus :size="18" aria-hidden="true" />
-      </Button>
-      <Textarea
-        v-model="input"
-        :rows="2"
-        placeholder="输入消息……"
-        :disabled="sending || streaming || loading"
-        aria-label="输入消息"
-      />
-      <Button
-        variant="primary"
-        size="md"
-        type="submit"
-        :loading="sending"
-        :disabled="(!input.trim() && !imageUploading) || streaming || loading"
-      >
-        <Send :size="16" aria-hidden="true" />
-        发送
-      </Button>
-    </form>
+    <V2ToastNotification />
   </div>
 </template>
 
@@ -476,15 +548,15 @@ function isUser(message: V2ChatMessageDto): boolean {
 .v2-chat-page {
   display: flex;
   flex-direction: column;
-  height: calc(100dvh - 88px);
+  height: 100%;
   min-height: 0;
-  gap: var(--space-3);
   position: relative;
 }
 
 .v2-chat-header {
   display: flex;
   align-items: center;
+  flex: 0 0 auto;
   gap: var(--space-3);
   padding-bottom: var(--space-3);
   border-bottom: 1px solid var(--border);
@@ -514,6 +586,49 @@ function isUser(message: V2ChatMessageDto): boolean {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+}
+
+.v2-chat-more {
+  position: relative;
+}
+
+.v2-chat-more-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + var(--space-1));
+  right: 0;
+  display: grid;
+  min-width: 180px;
+  padding: var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+}
+
+.v2-chat-more-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 40px;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+
+.v2-chat-more-item:hover {
+  background: var(--surface-soft);
+}
+
+.v2-chat-more-item:disabled {
+  color: var(--faint);
+  cursor: default;
 }
 
 .v2-chat-diagnostics-card {
@@ -567,7 +682,7 @@ function isUser(message: V2ChatMessageDto): boolean {
 }
 
 .v2-diag-label {
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--muted);
 }
 
@@ -581,16 +696,6 @@ function isUser(message: V2ChatMessageDto): boolean {
   margin: 0;
   color: var(--danger);
   font-size: var(--text-sm);
-}
-
-.v2-chat-success-banner {
-  margin: 0;
-  padding: var(--space-2) var(--space-3);
-  background: var(--surface-soft);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  color: var(--primary);
-  font-size: var(--text-xs);
 }
 
 .v2-chat-status {
@@ -609,11 +714,42 @@ function isUser(message: V2ChatMessageDto): boolean {
   padding: var(--space-2);
 }
 
+.v2-chat-error,
+.v2-chat-status,
+.v2-chat-success-banner {
+  flex: 0 0 auto;
+}
+
 .v2-chat-pagination-status {
   text-align: center;
   font-size: var(--text-xs);
   color: var(--muted);
   padding: var(--space-1) 0;
+}
+
+.v2-chat-pagination-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  color: var(--danger);
+}
+
+.v2-chat-scroll-hint {
+  position: sticky;
+  bottom: var(--space-3);
+  align-self: center;
+  z-index: 5;
+  min-height: 36px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  color: var(--primary);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
 }
 
 .v2-chat-message {
@@ -631,7 +767,7 @@ function isUser(message: V2ChatMessageDto): boolean {
 }
 
 .v2-chat-bubble {
-  max-width: 78%;
+  max-width: min(760px, 88%);
   padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-lg);
   background: var(--surface);
@@ -642,8 +778,9 @@ function isUser(message: V2ChatMessageDto): boolean {
 }
 
 .v2-chat-message-user .v2-chat-bubble {
+  max-width: min(680px, 80%);
   background: var(--primary);
-  color: var(--primary-foreground);
+  color: var(--on-primary);
   border-color: transparent;
 }
 
@@ -652,6 +789,10 @@ function isUser(message: V2ChatMessageDto): boolean {
   flex-wrap: wrap;
   gap: var(--space-2);
   margin-top: var(--space-2);
+}
+
+.v2-chat-image {
+  cursor: zoom-in;
 }
 
 .v2-chat-image {
@@ -666,12 +807,22 @@ function isUser(message: V2ChatMessageDto): boolean {
   color: var(--muted);
 }
 
+.v2-chat-meta-error {
+  color: var(--danger);
+}
+
 .v2-chat-composer {
   display: flex;
+  flex: 0 0 auto;
   gap: var(--space-2);
   align-items: flex-end;
   padding-top: var(--space-3);
   border-top: 1px solid var(--border);
+}
+
+.v2-chat-composer .ui-textarea-composer {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .v2-chat-file-input {
@@ -684,5 +835,54 @@ function isUser(message: V2ChatMessageDto): boolean {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+.v2-chat-drawer-backdrop {
+  position: fixed;
+  z-index: 40;
+  inset: 0;
+  background: rgb(0 0 0 / 28%);
+}
+
+.v2-chat-drawer {
+  position: fixed;
+  z-index: 41;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(420px, 92vw);
+  padding: var(--space-5);
+  overflow-y: auto;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  display: grid;
+  gap: var(--space-4);
+  align-content: start;
+}
+
+@media (max-width: 640px) {
+  .v2-chat-drawer {
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    max-height: 70dvh;
+    border-left: 0;
+    border-top: 1px solid var(--border);
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .v2-chat-bubble,
+  .v2-chat-message-user .v2-chat-bubble {
+    max-width: 94%;
+  }
+
+  .v2-chat-composer {
+    gap: var(--space-1);
+  }
 }
 </style>

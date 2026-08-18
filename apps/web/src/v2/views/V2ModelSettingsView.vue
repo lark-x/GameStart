@@ -225,6 +225,11 @@ function requestFromForm(): V2SaveModelProfileRequest {
   return input;
 }
 
+function bindingName(capability: string): string {
+  const binding = bindings.value.find((item) => item.capability === capability);
+  return binding?.profileName ?? "未绑定";
+}
+
 async function save(): Promise<void> {
   saving.value = true;
   error.value = null;
@@ -345,6 +350,37 @@ onMounted(() => {
       </div>
     </section>
 
+    <section class="v2-binding-card" aria-labelledby="v2-binding-title">
+      <div class="v2-section-heading">
+        <div>
+          <p class="v2-section-kicker">能力绑定</p>
+          <h2 id="v2-binding-title">各能力使用哪个模型？</h2>
+        </div>
+      </div>
+      <div class="v2-binding-summary">
+        <div v-for="item in bindingCapabilities" :key="item.capability" class="v2-binding-summary-item">
+          <span>{{ item.label }}</span>
+          <strong>{{ bindingName(item.capability) }}</strong>
+        </div>
+      </div>
+      <div v-for="item in bindingCapabilities" :key="`${item.capability}-select`" class="v2-binding-row">
+        <Field :for-id="`v2-binding-${item.capability}`" :label="item.label" :hint="item.hint">
+          <Select
+            :id="`v2-binding-${item.capability}`"
+            :model-value="bindingSelections[item.capability] ?? 'none'"
+            :disabled="profiles.length === 0"
+            @update:model-value="(value: string) => { bindingSelections[item.capability] = value; }"
+          >
+            <option value="none">不绑定（使用环境变量兜底）</option>
+            <option v-for="profileItem in profiles" :key="profileItem.id" :value="profileItem.id">
+              {{ profileItem.name }} · {{ profileItem.model }}
+            </option>
+          </Select>
+        </Field>
+        <Button variant="secondary" size="md" :disabled="profiles.length === 0" @click="saveBinding(item.capability)">保存绑定</Button>
+      </div>
+    </section>
+
     <div class="v2-model-layout">
       <section class="v2-profile-list" aria-labelledby="v2-profile-list-title">
         <div class="v2-section-heading">
@@ -385,38 +421,75 @@ onMounted(() => {
           </div>
           <Badge v-if="selectedProfile?.hasApiKey" tone="success">密钥已保存</Badge>
         </div>
-                        <form class="v2-form-grid" @submit.prevent="save">
-          <Field for-id="v2-model-name" label="档案名称" required hint="例如：主创作模型">
-            <Input id="v2-model-name" v-model="form.name" placeholder="例如：主创作模型" required />
-          </Field>
-          <Field for-id="v2-model-protocol" label="协议" hint="Anthropic 会使用对应消息协议。">
-            <Select id="v2-model-protocol" v-model="form.protocol">
-              <option value="openai-compatible">OpenAI 兼容</option>
-              <option value="anthropic">Anthropic</option>
-            </Select>
-          </Field>
-          <Field for-id="v2-model-base-url" label="API 地址" required hint="例如 https://api.example.com/v1">
-            <Input id="v2-model-base-url" v-model="form.baseUrl" placeholder="https://..." required />
-          </Field>
-          <Field for-id="v2-model-name-value" label="模型名称" required hint="可点击右侧获取模型列表或手动输入">
-            <div class="model-input-row">
-              <Input id="v2-model-name-value" v-model="form.model" placeholder="模型 ID" required />
-              <Button
-                variant="secondary"
-                size="md"
-                type="button"
-                class="btn-fetch-models"
-                :loading="fetchingModels"
-                :disabled="!form.baseUrl.trim()"
-                @click="fetchModels"
-              >
-                <Download :size="13" aria-hidden="true" />
-                获取模型
-              </Button>
+        <form @submit.prevent="save">
+          <fieldset class="v2-form-section">
+            <legend>基础信息</legend>
+            <div class="v2-form-grid">
+              <Field for-id="v2-model-name" label="档案名称" required hint="例如：主创作模型">
+                <Input id="v2-model-name" v-model="form.name" placeholder="例如：主创作模型" required />
+              </Field>
+              <Field for-id="v2-model-name-value" label="模型名称" required>
+                <div class="model-input-row">
+                  <Input id="v2-model-name-value" v-model="form.model" placeholder="模型 ID" required />
+                </div>
+              </Field>
+              <Field for-id="v2-model-protocol" label="协议" hint="Anthropic 会使用对应消息协议。">
+                <Select id="v2-model-protocol" v-model="form.protocol">
+                  <option value="openai-compatible">OpenAI 兼容</option>
+                  <option value="anthropic">Anthropic</option>
+                </Select>
+              </Field>
             </div>
-          </Field>
+          </fieldset>
 
-          <!-- Discovered Models Picker (if any) -->
+          <fieldset class="v2-form-section">
+            <legend>连接</legend>
+            <div class="v2-form-grid">
+              <Field for-id="v2-model-base-url" label="API 地址" required hint="例如 https://api.example.com/v1">
+                <Input id="v2-model-base-url" v-model="form.baseUrl" placeholder="https://..." required />
+              </Field>
+              <Field for-id="v2-model-api-key" label="API 密钥" hint="留空表示保持已有密钥；新建档案时留空表示无密钥。">
+                <Input id="v2-model-api-key" v-model="form.apiKey" type="password" placeholder="sk-..." autocomplete="new-password" />
+              </Field>
+              <Field for-id="v2-model-timeout" label="超时（毫秒）">
+                <Input id="v2-model-timeout" v-model="form.timeoutMs" type="number" min="1" />
+              </Field>
+            </div>
+          </fieldset>
+
+          <fieldset class="v2-form-section">
+            <legend>模型能力</legend>
+            <div class="v2-form-grid">
+              <Field for-id="v2-model-context-window" label="上下文窗口（Token）" hint="模型的总上下文限制，默认 8192">
+                <Input id="v2-model-context-window" v-model="form.contextWindow" type="number" min="1" />
+              </Field>
+              <Field for-id="v2-model-max-tokens" label="最大输出 Token">
+                <Input id="v2-model-max-tokens" v-model="form.maxTokens" type="number" min="1" />
+              </Field>
+              <Field for-id="v2-model-temperature" label="温度（0 - 2）">
+                <Input id="v2-model-temperature" v-model="form.temperature" type="number" min="0" max="2" step="0.1" />
+              </Field>
+              <Field for-id="v2-model-input-modalities" label="支持模态" hint="英文逗号隔开，例如 text, image">
+                <Input id="v2-model-input-modalities" v-model="form.inputModalitiesText" placeholder="text, image" />
+              </Field>
+            </div>
+          </fieldset>
+
+          <div class="v2-model-discovery-actions">
+            <Button
+              variant="secondary"
+              size="sm"
+              type="button"
+              class="btn-fetch-models"
+              :loading="fetchingModels"
+              :disabled="!form.baseUrl.trim()"
+              @click="fetchModels"
+            >
+              <Download :size="13" aria-hidden="true" />
+              获取模型列表
+            </Button>
+          </div>
+
           <div v-if="fetchModelError || discoveredModels.length > 0" class="v2-discovery-area">
             <div v-if="fetchModelError" class="v2-model-fetch-error" role="alert">
               {{ fetchModelError }}
@@ -443,25 +516,7 @@ onMounted(() => {
             </div>
           </div>
 
-          <Field for-id="v2-model-api-key" label="API 密钥" hint="留空表示保持已有密钥；新建档案时留空表示无密钥。">
-            <Input id="v2-model-api-key" v-model="form.apiKey" type="password" placeholder="sk-..." autocomplete="new-password" />
-          </Field>
-          <Field for-id="v2-model-timeout" label="超时（毫秒）">
-            <Input id="v2-model-timeout" v-model="form.timeoutMs" type="number" min="1" />
-          </Field>
-          <Field for-id="v2-model-context-window" label="上下文窗口（Context Window Token）" hint="模型的总上下文限制，默认 8192">
-            <Input id="v2-model-context-window" v-model="form.contextWindow" type="number" min="1" />
-          </Field>
-          <Field for-id="v2-model-max-tokens" label="最大输出 Token">
-            <Input id="v2-model-max-tokens" v-model="form.maxTokens" type="number" min="1" />
-          </Field>
-          <Field for-id="v2-model-input-modalities" label="支持模态（英文逗号隔开）" hint="例如: text 或 text, image">
-            <Input id="v2-model-input-modalities" v-model="form.inputModalitiesText" placeholder="text, image" />
-          </Field>
-          <Field for-id="v2-model-temperature" label="温度（0 - 2）">
-            <Input id="v2-model-temperature" v-model="form.temperature" type="number" min="0" max="2" step="0.1" />
-          </Field>
-          <div class="v2-form-actions v2-form-actions-wide">
+          <div class="v2-form-actions">
             <Button variant="primary" size="md" type="submit" :loading="saving">
               <Save :size="16" aria-hidden="true" />
               保存档案
@@ -484,31 +539,6 @@ onMounted(() => {
       </section>
     </div>
 
-    <section class="v2-binding-card" aria-labelledby="v2-binding-title">
-      <div class="v2-section-heading">
-        <div>
-          <p class="v2-section-kicker">能力绑定</p>
-          <h2 id="v2-binding-title">各能力使用哪个模型？</h2>
-        </div>
-        <Badge tone="neutral">{{ bindings.length }}</Badge>
-      </div>
-      <div v-for="item in bindingCapabilities" :key="item.capability" class="v2-binding-row">
-        <Field :for-id="`v2-binding-${item.capability}`" :label="item.label" :hint="item.hint">
-          <Select
-            :id="`v2-binding-${item.capability}`"
-            :model-value="bindingSelections[item.capability] ?? 'none'"
-            :disabled="profiles.length === 0"
-            @update:model-value="(value: string) => { bindingSelections[item.capability] = value; }"
-          >
-            <option value="none">不绑定（使用环境变量兜底）</option>
-            <option v-for="profileItem in profiles" :key="profileItem.id" :value="profileItem.id">
-              {{ profileItem.name }} · {{ profileItem.model }}
-            </option>
-          </Select>
-        </Field>
-        <Button variant="secondary" size="md" :disabled="profiles.length === 0" @click="saveBinding(item.capability)">保存绑定</Button>
-      </div>
-    </section>
   </div>
 </template>
 
@@ -645,7 +675,7 @@ onMounted(() => {
 .box-title { font-size: var(--text-xs); font-weight: 700; color: var(--primary); }
 .box-search { max-width: 200px; }
 .models-pill-grid { display: flex; flex-wrap: wrap; gap: 6px; max-height: 140px; overflow-y: auto; }
-.model-chip { padding: 3px 8px; font-size: 11px; border-radius: var(--radius-xs); border: 1px solid var(--border); background: var(--surface-soft); color: var(--text); cursor: pointer; transition: all 0.15s ease; }
+.model-chip { padding: 3px 8px; font-size: var(--text-xs); border-radius: var(--radius-xs); border: 1px solid var(--border); background: var(--surface-soft); color: var(--text); cursor: pointer; transition: all 0.15s ease; }
 .model-chip:hover { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
 .model-chip.active { border-color: var(--primary); background: var(--primary); color: var(--on-primary); font-weight: 700; }
 .v2-model-fetch-error { padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); background: var(--danger-soft); color: var(--danger); font-size: var(--text-xs); }
@@ -659,16 +689,61 @@ onMounted(() => {
   gap: var(--space-4);
 }
 
-.v2-form-actions-wide,
-.v2-inline-message {
-  grid-column: 1 / -1;
-}
-
-.v2-form-actions-wide {
+.v2-form-actions {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
   align-items: center;
+  margin-top: var(--space-4);
+}
+
+.v2-form-section {
+  display: grid;
+  gap: var(--space-4);
+  margin: 0 0 var(--space-5);
+  padding: 0;
+  border: 0;
+}
+
+.v2-form-section legend {
+  padding: 0;
+  font-size: var(--text-sm);
+  font-weight: 800;
+  color: var(--text-strong);
+}
+
+.v2-model-discovery-actions {
+  margin: var(--space-2) 0;
+}
+
+.v2-binding-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.v2-binding-summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--background);
+}
+
+.v2-binding-summary-item span {
+  font-size: var(--text-xs);
+  color: var(--muted);
+}
+
+.v2-binding-summary-item strong {
+  font-size: var(--text-sm);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .v2-inline-message,

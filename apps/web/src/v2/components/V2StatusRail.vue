@@ -77,13 +77,6 @@ function statusLabel(status: string): string {
         <dd>{{ snapshot.world.name }}</dd>
       </div>
       <div>
-        <dt>版本修订</dt>
-        <dd>
-          <GitBranch :size="16" aria-hidden="true" />
-          {{ snapshot.world.revision }}
-        </dd>
-      </div>
-      <div>
         <dt>候选状态</dt>
         <dd>{{ statusLabel(candidateStatus) }}</dd>
       </div>
@@ -92,26 +85,39 @@ function statusLabel(status: string): string {
         <dd>{{ statusLabel(assetCandidateStatus) }}</dd>
       </div>
       <div>
-        <dt>素材库</dt>
-        <dd>{{ assetLibraryCount }}</dd>
-      </div>
-      <div>
         <dt>发布检查</dt>
         <dd>{{ snapshot.release.valid ? "通过" : "阻塞" }}</dd>
-      </div>
-      <div>
-        <dt>结构诊断</dt>
-        <dd>{{ graphIssueCount }}</dd>
-      </div>
-      <div>
-        <dt>状态预览</dt>
-        <dd>{{ typedStatePreviewCount }}</dd>
       </div>
       <div>
         <dt>当前场景</dt>
         <dd>{{ currentSceneTitle }}</dd>
       </div>
     </dl>
+
+    <details v-if="snapshot" class="v2-status-rail-details">
+      <summary>运行详情</summary>
+      <dl class="v2-status-list">
+        <div>
+          <dt>版本修订</dt>
+          <dd>
+            <GitBranch :size="16" aria-hidden="true" />
+            {{ snapshot.world.revision }}
+          </dd>
+        </div>
+        <div>
+          <dt>素材库</dt>
+          <dd>{{ assetLibraryCount }}</dd>
+        </div>
+        <div>
+          <dt>结构诊断</dt>
+          <dd>{{ graphIssueCount }}</dd>
+        </div>
+        <div>
+          <dt>状态预览</dt>
+          <dd>{{ typedStatePreviewCount }}</dd>
+        </div>
+      </dl>
+    </details>
   </aside>
 </template>
 
@@ -131,6 +137,24 @@ function statusLabel(status: string): string {
   justify-content: space-between;
   gap: var(--space-4);
   margin-bottom: var(--space-4);
+}
+
+.v2-status-rail-details {
+  margin-top: var(--space-2);
+}
+
+.v2-status-rail-details summary {
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  color: var(--muted);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  cursor: pointer;
+  user-select: none;
+}
+
+.v2-status-rail-details summary:hover {
+  background: var(--surface-soft);
 }
 
 .v2-status-rail-head h2 {

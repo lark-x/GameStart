@@ -88,11 +88,16 @@ const currentArea = computed(() => {
   grid-template-columns: minmax(0, 1fr) minmax(250px, 300px);
   gap: var(--space-5);
   align-items: start;
+  container-type: inline-size;
 }
 
 .v2-workspace-content { min-width: 0; }
 
 @media (max-width: 960px) {
+  .v2-workspace-area { grid-template-columns: 1fr; }
+}
+
+@container (max-width: 1000px) {
   .v2-workspace-area { grid-template-columns: 1fr; }
 }
 </style>

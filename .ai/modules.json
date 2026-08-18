@@ -156,6 +156,7 @@
       ],
       "ownedPaths": [
         "apps/web/src/v2/components/V2StatusRail.vue",
+        "apps/web/src/v2/components/layout/**",
         "apps/web/src/v2/sentinel.test.ts",
         "apps/web/src/v2/views/V2SettingsHomeView.vue"
       ]
