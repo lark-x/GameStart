@@ -252,6 +252,31 @@ export function createV2ChatPlugin(dependencies: V2ChatPluginDependencies): Fast
       request.raw.on("aborted", onClose);
       reply.raw.on("close", onClose);
       let content = "";
+      const startedAt = Date.now();
+      let firstTokenAt: number | undefined;
+      const traceId = `trace:chat:${randomUUID()}`;
+      const traceSources = prepared.prompt.sources;
+      const memoryIds = traceSources.filter((source) => source.kind === "memory").map((source) => source.id);
+      const canonIds = traceSources.filter((source) => source.kind === "canon").map((source) => source.id);
+      const recentMessageCount = traceSources.filter((source) => source.kind === "message").length;
+      const imageCount = (prepared.prompt.messageImages ?? []).reduce((total, entry) => total + entry.images.length, 0);
+      await dependencies.useCases.recordTrace({
+        traceId,
+        conversationId,
+        messageId: prepared.assistantMessageId,
+        task: prepared.task,
+        templateId: prepared.prompt.templateId,
+        templateVersion: prepared.prompt.templateVersion,
+        contextHash: prepared.prompt.contextHash,
+        model: model.model,
+        ...(model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow }),
+        inputBudget: prepared.prompt.budget.inputBudget,
+        estimatedTokens: prepared.prompt.estimatedTokens,
+        recentMessageCount,
+        memoryIds,
+        canonIds,
+        imageCount,
+      }).catch(() => undefined);
       try {
         const resolvedMessages = await mediaResolver.resolveMessageImages({
           prompt: prepared.prompt,
@@ -267,6 +292,16 @@ export function createV2ChatPlugin(dependencies: V2ChatPluginDependencies): Fast
         for await (const delta of deltas) {
           if (delta.content !== undefined) {
             content += delta.content;
+            if (firstTokenAt === undefined) {
+              firstTokenAt = Date.now();
+              await dependencies.useCases.updateTrace({
+                traceId,
+                patch: {
+                  status: "streaming",
+                  firstTokenLatencyMs: firstTokenAt - startedAt,
+                },
+              }).catch(() => undefined);
+            }
             sseWrite(reply, { type: "delta", content: delta.content });
           }
           if (delta.finishReason !== undefined) {
@@ -282,6 +317,13 @@ export function createV2ChatPlugin(dependencies: V2ChatPluginDependencies): Fast
         });
         sseWrite(reply, { type: "message", message });
         sseWrite(reply, { type: "done", messageId: prepared.assistantMessageId });
+        await dependencies.useCases.updateTrace({
+          traceId,
+          patch: {
+            status: "completed",
+            totalLatencyMs: Date.now() - startedAt,
+          },
+        }).catch(() => undefined);
         return reply.raw.end();
       } catch (error) {
         if (content.trim().length > 0) {
@@ -293,6 +335,14 @@ export function createV2ChatPlugin(dependencies: V2ChatPluginDependencies): Fast
             status: "interrupted",
           }).catch(() => undefined);
         }
+        await dependencies.useCases.updateTrace({
+          traceId,
+          patch: {
+            status: "failed",
+            totalLatencyMs: Date.now() - startedAt,
+            errorCode: toErrorCode(error),
+          },
+        }).catch(() => undefined);
         sseWrite(reply, { type: "error", code: toErrorCode(error), errorMessage: toErrorMessage(error) });
         sseWrite(reply, { type: "done", messageId: prepared.assistantMessageId, error: true });
         return reply.raw.end();

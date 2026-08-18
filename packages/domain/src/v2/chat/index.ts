@@ -339,6 +339,88 @@ export function createV2ChatMaintenanceJob(input: {
   };
 }
 
+export type V2ChatTraceStatus = "pending" | "streaming" | "completed" | "failed";
+
+export interface V2ChatTrace {
+  readonly traceId: string;
+  readonly conversationId: string;
+  readonly messageId?: string;
+  readonly task?: string;
+  readonly templateId?: string;
+  readonly templateVersion?: string;
+  readonly contextHash?: string;
+  readonly profileId?: string;
+  readonly model?: string;
+  readonly contextWindow?: number;
+  readonly inputBudget?: number;
+  readonly estimatedTokens?: number;
+  readonly recentMessageCount?: number;
+  readonly memoryIds?: readonly string[];
+  readonly canonIds?: readonly string[];
+  readonly summaryVersion?: number;
+  readonly imageCount?: number;
+  readonly startedAt: string;
+  readonly firstTokenLatencyMs?: number;
+  readonly totalLatencyMs?: number;
+  readonly status: V2ChatTraceStatus;
+  readonly errorCode?: string;
+}
+
+export function createV2ChatTrace(input: {
+  readonly traceId: string;
+  readonly conversationId: string;
+  readonly status?: V2ChatTraceStatus;
+  readonly startedAt?: string;
+  readonly messageId?: string;
+  readonly task?: string;
+  readonly templateId?: string;
+  readonly templateVersion?: string;
+  readonly contextHash?: string;
+  readonly profileId?: string;
+  readonly model?: string;
+  readonly contextWindow?: number;
+  readonly inputBudget?: number;
+  readonly estimatedTokens?: number;
+  readonly recentMessageCount?: number;
+  readonly memoryIds?: readonly string[];
+  readonly canonIds?: readonly string[];
+  readonly summaryVersion?: number;
+  readonly imageCount?: number;
+  readonly firstTokenLatencyMs?: number;
+  readonly totalLatencyMs?: number;
+  readonly errorCode?: string;
+}): V2ChatTrace {
+  const status = input.status ?? "pending";
+  const validStatuses: readonly V2ChatTraceStatus[] = ["pending", "streaming", "completed", "failed"];
+  if (!validStatuses.includes(status)) {
+    throw new V2DomainError("INVALID_INPUT", `Invalid trace status: ${String(status)}`);
+  }
+  return {
+    traceId: input.traceId,
+    conversationId: input.conversationId,
+    status,
+    startedAt: input.startedAt ?? new Date().toISOString(),
+    ...(input.messageId === undefined ? {} : { messageId: input.messageId }),
+    ...(input.task === undefined ? {} : { task: input.task }),
+    ...(input.templateId === undefined ? {} : { templateId: input.templateId }),
+    ...(input.templateVersion === undefined ? {} : { templateVersion: input.templateVersion }),
+    ...(input.contextHash === undefined ? {} : { contextHash: input.contextHash }),
+    ...(input.profileId === undefined ? {} : { profileId: input.profileId }),
+    ...(input.model === undefined ? {} : { model: input.model }),
+    ...(input.contextWindow === undefined ? {} : { contextWindow: input.contextWindow }),
+    ...(input.inputBudget === undefined ? {} : { inputBudget: input.inputBudget }),
+    ...(input.estimatedTokens === undefined ? {} : { estimatedTokens: input.estimatedTokens }),
+    ...(input.recentMessageCount === undefined ? {} : { recentMessageCount: input.recentMessageCount }),
+    ...(input.memoryIds === undefined ? {} : { memoryIds: input.memoryIds }),
+    ...(input.canonIds === undefined ? {} : { canonIds: input.canonIds }),
+    ...(input.summaryVersion === undefined ? {} : { summaryVersion: input.summaryVersion }),
+    ...(input.imageCount === undefined ? {} : { imageCount: input.imageCount }),
+    ...(input.firstTokenLatencyMs === undefined ? {} : { firstTokenLatencyMs: input.firstTokenLatencyMs }),
+    ...(input.totalLatencyMs === undefined ? {} : { totalLatencyMs: input.totalLatencyMs }),
+    ...(input.errorCode === undefined ? {} : { errorCode: input.errorCode }),
+  };
+}
+
 function assertNonEmptyId<T extends string>(value: T, field: string): T {
   if (typeof value !== "string" || value.trim().length === 0 || value.length > 160) {
     throw new V2DomainError("INVALID_INPUT", `${field} must be a non-empty id up to 160 characters`);

@@ -10,6 +10,7 @@ import {
 } from "@living-network/ai/prompt-engine";
 import type {
   V2ChatConversationDto,
+  V2ChatTraceDto,
   V2ChatDiagnosticsResponse,
   V2ChatMediaDto,
   V2ChatMessageDto,
@@ -43,10 +44,12 @@ import {
   createV2ChatMaintenanceJob,
   createV2ChatMedia,
   createV2ChatMessage,
+  createV2ChatTrace,
   type V2CanonCharacter,
   type V2CanonWorld,
   type V2ChatConversation,
   type V2ChatMessage,
+  type V2ChatTrace,
   type V2ConversationSummary,
   type V2Memory,
 } from "@living-network/domain/v2";
@@ -100,6 +103,33 @@ export interface V2ChatUseCases {
     readonly status: "completed" | "failed" | "interrupted";
     readonly replyToMessageId?: V2MessageId;
   }): Promise<V2ChatMessageDto>;
+  recordTrace(input: {
+    readonly traceId: string;
+    readonly conversationId: V2ConversationId;
+    readonly messageId?: V2MessageId;
+    readonly task?: string;
+    readonly templateId?: string;
+    readonly templateVersion?: string;
+    readonly contextHash?: string;
+    readonly model?: string;
+    readonly contextWindow?: number;
+    readonly inputBudget?: number;
+    readonly estimatedTokens?: number;
+    readonly recentMessageCount?: number;
+    readonly memoryIds?: readonly string[];
+    readonly canonIds?: readonly string[];
+    readonly imageCount?: number;
+  }): Promise<void>;
+  updateTrace(input: {
+    readonly traceId: string;
+    readonly patch: {
+      readonly status?: "pending" | "streaming" | "completed" | "failed";
+      readonly messageId?: V2MessageId;
+      readonly firstTokenLatencyMs?: number;
+      readonly totalLatencyMs?: number;
+      readonly errorCode?: string;
+    };
+  }): Promise<void>;
   createMedia(input: {
     readonly mediaId: V2MediaId;
     readonly contentHash: string;
@@ -114,8 +144,58 @@ export interface V2ChatUseCases {
 
 const DEFAULT_TOKEN_BUDGET = 4096;
 
+function toTraceDto(trace: V2ChatTrace): V2ChatTraceDto {
+  return {
+    traceId: trace.traceId,
+    conversationId: trace.conversationId as V2ConversationId,
+    task: trace.task ?? "chat.reply",
+    templateId: trace.templateId ?? "unknown",
+    templateVersion: trace.templateVersion ?? "unknown",
+    contextHash: trace.contextHash ?? "",
+    contextWindow: trace.contextWindow ?? 0,
+    inputBudget: trace.inputBudget ?? 0,
+    estimatedTokens: trace.estimatedTokens ?? 0,
+    recentMessageCount: trace.recentMessageCount ?? 0,
+    memoryIds: (trace.memoryIds ?? []) as V2MemoryId[],
+    canonIds: trace.canonIds ?? [],
+    imageCount: trace.imageCount ?? 0,
+    startedAt: trace.startedAt as V2IsoDateTime,
+    status: trace.status,
+    ...(trace.messageId === undefined ? {} : { messageId: trace.messageId as V2MessageId }),
+    ...(trace.model === undefined ? {} : { model: trace.model }),
+    ...(trace.profileId === undefined ? {} : { profileId: trace.profileId }),
+    ...(trace.summaryVersion === undefined ? {} : { summaryVersion: trace.summaryVersion }),
+    ...(trace.firstTokenLatencyMs === undefined ? {} : { firstTokenLatencyMs: trace.firstTokenLatencyMs }),
+    ...(trace.totalLatencyMs === undefined ? {} : { totalLatencyMs: trace.totalLatencyMs }),
+    ...(trace.errorCode === undefined ? {} : { errorCode: trace.errorCode }),
+  };
+}
+
 export function createV2ChatUseCases(unitOfWork: V2ChatUnitOfWork): V2ChatUseCases {
   return {
+    recordTrace: (input) => unitOfWork.withChatTransaction(async ({ traces }) => {
+      await traces.create(createV2ChatTrace({
+        traceId: input.traceId,
+        conversationId: input.conversationId,
+        status: "pending",
+        ...(input.messageId === undefined ? {} : { messageId: input.messageId }),
+        ...(input.task === undefined ? {} : { task: input.task }),
+        ...(input.templateId === undefined ? {} : { templateId: input.templateId }),
+        ...(input.templateVersion === undefined ? {} : { templateVersion: input.templateVersion }),
+        ...(input.contextHash === undefined ? {} : { contextHash: input.contextHash }),
+        ...(input.model === undefined ? {} : { model: input.model }),
+        ...(input.contextWindow === undefined ? {} : { contextWindow: input.contextWindow }),
+        ...(input.inputBudget === undefined ? {} : { inputBudget: input.inputBudget }),
+        ...(input.estimatedTokens === undefined ? {} : { estimatedTokens: input.estimatedTokens }),
+        ...(input.recentMessageCount === undefined ? {} : { recentMessageCount: input.recentMessageCount }),
+        ...(input.memoryIds === undefined ? {} : { memoryIds: input.memoryIds }),
+        ...(input.canonIds === undefined ? {} : { canonIds: input.canonIds }),
+        ...(input.imageCount === undefined ? {} : { imageCount: input.imageCount }),
+      }));
+    }),
+    updateTrace: (input) => unitOfWork.withChatTransaction(async ({ traces }) => {
+      await traces.update(input);
+    }),
     createInstantStory: (input) => createInstantStory(unitOfWork, input),
     listConversations: async () => unitOfWork.withChatTransaction(async ({ conversations }) => ({
       conversations: (await conversations.list()).map(toConversationDto),
@@ -142,34 +222,46 @@ export function createV2ChatUseCases(unitOfWork: V2ChatUnitOfWork): V2ChatUseCas
     sendMessage: (conversationId, input) => sendMessage(unitOfWork, conversationId, input),
     prepareReply: (conversationId, input, runtimeBudget) => prepareReply(unitOfWork, conversationId, input, runtimeBudget),
     saveReply: (input) => saveReply(unitOfWork, input),
-    getLatestDiagnostics: async (conversationId) => unitOfWork.withChatTransaction(async ({ conversations, memories, summaries, messages }) => {
+    getLatestDiagnostics: async (conversationId) => unitOfWork.withChatTransaction(async ({ conversations, traces }) => {
       await requireConversation(conversations, conversationId);
-      const summary = await summaries.get(conversationId);
-      const allMemories = await memories.listByConversation(conversationId);
-      const activeMemories = allMemories.filter((m) => m.status === "active");
-      const recent = await messages.listRecentByConversation(conversationId, 20);
-      const recentImages = recent.reduce((sum, m) => sum + m.attachments.length, 0);
+      const trace = await traces.getLatest(conversationId);
+      if (trace === undefined) return {};
+      const traceDto = toTraceDto(trace);
       return {
-        templateId: "chat:roleplay:v1",
-        inputBudget: DEFAULT_TOKEN_BUDGET,
-        selectedMemoryIds: activeMemories.map((m) => m.memoryId as V2MemoryId),
-        ...(summary?.version === undefined ? {} : { summaryVersion: summary.version }),
-        recentCount: recent.length,
-        imageCount: recentImages,
+        trace: traceDto,
+        templateId: traceDto.templateId,
+        inputBudget: traceDto.inputBudget,
+        ...(traceDto.estimatedTokens === undefined ? {} : { estimatedTokens: traceDto.estimatedTokens }),
+        selectedMemoryIds: traceDto.memoryIds,
+        ...(traceDto.summaryVersion === undefined ? {} : { summaryVersion: traceDto.summaryVersion }),
+        recentCount: traceDto.recentMessageCount,
+        imageCount: traceDto.imageCount,
       };
     }),
-    triggerStoryAnalyze: async (conversationId) => unitOfWork.withChatTransaction(async ({ conversations, maintenanceJobs, messages }) => {
+    triggerStoryAnalyze: async (conversationId, input) => unitOfWork.withChatTransaction(async ({ conversations, maintenanceJobs, messages }) => {
       const conversation = await requireConversation(conversations, conversationId);
-      const allMessages = await messages.listByConversation(conversationId, 100);
+      const allMessages = await messages.listAfter(conversationId, undefined, 100);
       const sourceMessageIds = allMessages.map((m) => m.messageId as V2MessageId);
-      const jobId = `job:maint:${randomUUID()}` as V2MaintenanceJobId;
       const fromMessageId = sourceMessageIds[0];
       const toMessageId = sourceMessageIds[sourceMessageIds.length - 1];
+      const idempotencyKey = `story_analyze:${conversationId}:${input.idempotencyKey}`;
+      const existing = await maintenanceJobs.findJobByPayloadKey("story_analyze", idempotencyKey);
+      if (existing !== undefined) {
+        const existingPayload = existing.payload as unknown as V2StoryAnalyzePayload;
+        const sameIds = existingPayload.sourceMessageIds.length === sourceMessageIds.length &&
+          existingPayload.sourceMessageIds.every((id, index) => id === sourceMessageIds[index]);
+        if (!sameIds) {
+          throw new V2HttpError(409, "IDEMPOTENCY_CONFLICT", "Story analyze idempotency key was already used with a different message range");
+        }
+        return { jobId: existing.jobId as V2MaintenanceJobId, conversationId };
+      }
+      const jobId = `job:maint:${randomUUID()}` as V2MaintenanceJobId;
       const payload: V2StoryAnalyzePayload = {
         conversationId,
         storyWorldId: conversation.storyWorldId as any,
         characterId: conversation.primaryCharacterId as any,
         sourceMessageIds,
+        idempotencyKey,
         ...(fromMessageId === undefined ? {} : { fromMessageId }),
         ...(toMessageId === undefined ? {} : { toMessageId }),
       };
@@ -465,14 +557,21 @@ async function saveReply(
     await conversations.touchLastMessage({ conversationId: input.conversationId, lastMessageAt: createdAt });
 
     if (input.status === "completed") {
-      const recentMessages = await messages.listRecentByConversation(input.conversationId, 10);
-      const sourceMessageIds = recentMessages.map((m) => m.messageId as V2MessageId);
+      const extractCursor = await maintenanceJobs.getMemoryExtractCursor(input.conversationId);
+      const newMessageCount = await messages.countAfter(input.conversationId, extractCursor);
+      const sourceMessageIds = newMessageCount >= 8
+        ? (await messages.listAfter(input.conversationId, extractCursor, 50)).map((m) => m.messageId as V2MessageId)
+        : [];
       if (sourceMessageIds.length > 0) {
+        const fromMessageId = sourceMessageIds[0]!;
+        const toMessageId = sourceMessageIds[sourceMessageIds.length - 1]!;
         const payload: V2MemoryExtractPayload = {
           conversationId: input.conversationId,
           storyWorldId: conversation.storyWorldId as any,
           characterId: conversation.primaryCharacterId as any,
           sourceMessageIds,
+          triggerReason: "cursor_batch",
+          range: { fromMessageId, toMessageId },
         };
         const job = createV2ChatMaintenanceJob({
           jobId: `job:maint:${randomUUID()}` as V2MaintenanceJobId,
@@ -489,16 +588,10 @@ async function saveReply(
       const hasActiveSummary = await maintenanceJobs.hasActiveJob(input.conversationId, "conversation_summary");
       if (!hasActiveSummary) {
         const summary = await summaries.get(input.conversationId);
-        const allMessages = await messages.listByConversation(input.conversationId);
-        let unsummarized = allMessages;
-        if (summary?.coveredUntilMessageId) {
-          const coveredIndex = allMessages.findIndex((m) => m.messageId === summary.coveredUntilMessageId);
-          if (coveredIndex >= 0) {
-            unsummarized = allMessages.slice(coveredIndex + 1);
-          }
-        }
-        if (unsummarized.length >= 20) {
-          const batch = unsummarized.slice(0, 30);
+        const coveredUntilMessageId = summary?.coveredUntilMessageId as V2MessageId | undefined;
+        const unsummarizedCount = await messages.countAfter(input.conversationId, coveredUntilMessageId);
+        if (unsummarizedCount >= 20) {
+          const batch = await messages.listAfter(input.conversationId, coveredUntilMessageId, 30);
           const summarySourceIds = batch.map((m) => m.messageId as V2MessageId);
           const fromMessageId = summarySourceIds[0]!;
           const toMessageId = summarySourceIds[summarySourceIds.length - 1]!;
@@ -510,7 +603,7 @@ async function saveReply(
             fromMessageId,
             toMessageId,
             ...(summary?.version === undefined ? {} : { previousSummaryVersion: summary.version }),
-            ...(summary?.coveredUntilMessageId === undefined ? {} : { coveredUntilMessageId: summary.coveredUntilMessageId as V2MessageId }),
+            ...(coveredUntilMessageId === undefined ? {} : { coveredUntilMessageId }),
           };
           const summaryJob = createV2ChatMaintenanceJob({
             jobId: `job:maint:${randomUUID()}` as V2MaintenanceJobId,

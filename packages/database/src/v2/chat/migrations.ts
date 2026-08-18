@@ -173,8 +173,60 @@ export const v2ChatMaintenanceJobsMigration: V2SqliteMigration = {
   },
 };
 
+export const v2ChatMaintenanceCursorsMigration: V2SqliteMigration = {
+  id: "0340_v2_chat_maintenance_cursors",
+  up: (db) => db.exec(`
+    CREATE TABLE v2_chat_maintenance_cursors (
+      conversation_id TEXT PRIMARY KEY REFERENCES v2_conversations(conversation_id) ON DELETE CASCADE,
+      memory_extracted_until_message_id TEXT,
+      updated_at TEXT NOT NULL
+    );
+  `),
+  down: (db) => db.exec(`
+    DROP TABLE IF EXISTS v2_chat_maintenance_cursors;
+  `),
+};
+
+export const v2ChatTracesMigration: V2SqliteMigration = {
+  id: "0350_v2_chat_traces",
+  up: (db) => db.exec(`
+    CREATE TABLE v2_chat_traces (
+      trace_id TEXT PRIMARY KEY,
+      conversation_id TEXT NOT NULL REFERENCES v2_conversations(conversation_id) ON DELETE CASCADE,
+      message_id TEXT,
+      task TEXT,
+      template_id TEXT,
+      template_version TEXT,
+      context_hash TEXT,
+      profile_id TEXT,
+      model TEXT,
+      context_window INTEGER,
+      input_budget INTEGER,
+      estimated_tokens INTEGER,
+      recent_message_count INTEGER,
+      memory_ids_json TEXT,
+      canon_ids_json TEXT,
+      summary_version INTEGER,
+      image_count INTEGER,
+      started_at TEXT NOT NULL,
+      first_token_latency_ms INTEGER,
+      total_latency_ms INTEGER,
+      status TEXT NOT NULL CHECK (status IN ('pending', 'streaming', 'completed', 'failed')),
+      error_code TEXT
+    );
+
+    CREATE INDEX idx_v2_chat_traces_conv_started
+      ON v2_chat_traces(conversation_id, started_at DESC);
+  `),
+  down: (db) => db.exec(`
+    DROP TABLE IF EXISTS v2_chat_traces;
+  `),
+};
+
 export const v2ChatMigrations: readonly V2SqliteMigration[] = [
   v2ChatMemoryMigration,
   v2ChatCoreFinalizationMigration,
   v2ChatMaintenanceJobsMigration,
+  v2ChatMaintenanceCursorsMigration,
+  v2ChatTracesMigration,
 ];

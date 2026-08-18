@@ -159,7 +159,24 @@ function validUrl(value: string, field: string, allowEmpty = false): string {
 function parseModalities(value: unknown): readonly string[] | undefined {
   if (value === undefined || value === null) return undefined;
   if (!Array.isArray(value)) throw new TypeError("inputModalities must be an array");
-  return value.map((item) => requiredString(item, "inputModalities element"));
+  const modalities = value.map((item) => {
+    const raw = requiredString(item, "inputModalities element");
+    if (raw !== "text" && raw !== "image") {
+      throw new TypeError(`inputModalities element must be 'text' or 'image', got '${raw}'`);
+    }
+    return raw;
+  });
+  const unique = Array.from(new Set(modalities));
+  if (!unique.includes("text")) {
+    throw new TypeError("inputModalities must include 'text'");
+  }
+  return unique;
+}
+
+function assertProfileBudget(input: { readonly contextWindow?: number; readonly maxTokens?: number }): void {
+  if (input.contextWindow !== undefined && input.maxTokens !== undefined && input.contextWindow < input.maxTokens + 512) {
+    throw new TypeError("contextWindow must be at least maxTokens + 512");
+  }
 }
 
 function parseProfileRequest(value: unknown): V2SaveModelProfileRequest {
@@ -197,7 +214,7 @@ function parseBindingRequest(value: unknown): V2SetModelBindingRequest {
 }
 
 function capability(value: unknown): V2ModelCapability {
-  if (value === "chat" || value === "scene_generation") return value;
+  if (value === "chat" || value === "scene_generation" || value === "memory" || value === "story_analysis") return value;
   throw new TypeError("unsupported model capability");
 }
 
@@ -393,6 +410,10 @@ export function createV2PlatformPlugin(dependencies: V2PlatformPluginDependencie
     app.post("/model-profiles", async (request, reply) => withError(reply, async () => {
       const input = parseProfileRequest(request.body);
       const existing = input.id === undefined ? undefined : await dependencies.repository.getModelProfile(input.id);
+      assertProfileBudget({
+        ...(input.contextWindow !== undefined ? { contextWindow: input.contextWindow } : {}),
+        ...(input.maxTokens !== undefined ? { maxTokens: input.maxTokens } : {}),
+      });
       const id = input.id ?? `profile:${randomUUID()}`;
       const encrypted: { encryptedApiKey?: string; encryptionIv?: string } = {};
       if (input.apiKey !== undefined && input.apiKey.length > 0) {
@@ -431,6 +452,10 @@ export function createV2PlatformPlugin(dependencies: V2PlatformPluginDependencie
       const input = { ...parseProfileRequest(request.body), id };
       const existing = await dependencies.repository.getModelProfile(id);
       if (existing === undefined) return reply.code(404).send({ error: { code: "NOT_FOUND", message: "Model profile not found" } });
+      assertProfileBudget({
+        ...(input.contextWindow !== undefined ? { contextWindow: input.contextWindow } : existing.contextWindow !== undefined ? { contextWindow: existing.contextWindow } : {}),
+        ...(input.maxTokens !== undefined ? { maxTokens: input.maxTokens } : {}),
+      });
       const encrypted = input.apiKey === undefined || input.apiKey.length === 0
         ? { ...(existing.encryptedApiKey === undefined ? {} : { encryptedApiKey: existing.encryptedApiKey }), ...(existing.encryptionIv === undefined ? {} : { encryptionIv: existing.encryptionIv }) }
         : (() => {

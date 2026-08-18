@@ -486,3 +486,53 @@ test("V2 chat vision sends real image content to the provider", async () => {
     temp.cleanup();
   }
 });
+
+test("V2 chat diagnostics exposes the last real prompt trace", async () => {
+  const temp = openV2TempSqliteConnection();
+  const mediaRoot = mkdtempSync(path.join(tmpdir(), "v2-chat-media-trace-"));
+  temp.db.close();
+  try {
+    const runtime = createV2ApiRuntime({ sqlitePath: temp.path, mediaRoot, chatProvider: new FakeChatProvider() });
+    try {
+      const created = await runtime.app.inject({
+        method: "POST",
+        url: "/api/v2/instant-stories",
+        payload: { persona: "花火是爱笑角色", displayName: "花火", idempotencyKey: "trace-test" },
+      });
+      assert.equal(created.statusCode, 201);
+      const instant = created.json() as V2CreateInstantStoryResponse;
+      const conversationId = instant.conversation.conversationId;
+
+      await runtime.app.inject({
+        method: "POST",
+        url: `/api/v2/chat/conversations/${conversationId}/messages`,
+        payload: { text: "你好", idempotencyKey: "trace-msg" },
+      });
+      const reply = await runtime.app.inject({
+        method: "POST",
+        url: `/api/v2/chat/conversations/${conversationId}/replies`,
+        payload: { idempotencyKey: "trace-reply" },
+      });
+      assert.equal(reply.statusCode, 200);
+
+      const diagnostics = await runtime.app.inject({
+        method: "GET",
+        url: `/api/v2/chat/conversations/${conversationId}/diagnostics/latest`,
+      });
+      assert.equal(diagnostics.statusCode, 200);
+      const trace = (diagnostics.json() as { readonly trace?: { readonly status: string; readonly templateId: string; readonly estimatedTokens: number; readonly totalLatencyMs?: number; readonly firstTokenLatencyMs?: number; readonly model?: string } }).trace;
+      assert.ok(trace, "Diagnostics must include a real trace");
+      assert.equal(trace.status, "completed");
+      assert.equal(trace.templateId, "chat-reply-v1");
+      assert.ok(trace.estimatedTokens > 0);
+      assert.ok(trace.totalLatencyMs !== undefined);
+      assert.ok(trace.firstTokenLatencyMs !== undefined);
+      assert.equal(trace.model, "test-model");
+    } finally {
+      await runtime.close();
+    }
+  } finally {
+    rmSync(mediaRoot, { recursive: true, force: true });
+    temp.cleanup();
+  }
+});
