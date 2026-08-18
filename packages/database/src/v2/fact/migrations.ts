@@ -159,3 +159,61 @@ export const v2MemoryEngineColumnsMigration: V2SqliteMigration = {
     `);
   },
 };
+
+export const v2HybridMemoryMigration: V2SqliteMigration = {
+  id: "0430_v2_hybrid_memories",
+  up: (db: DatabaseSync) => db.exec(`
+    CREATE TABLE v2_hybrid_memories (
+      memory_id TEXT PRIMARY KEY,
+      assertion_id TEXT NOT NULL UNIQUE,
+      batch_id TEXT NOT NULL,
+      story_world_id TEXT NOT NULL,
+      conversation_id TEXT NOT NULL,
+      scope_type TEXT NOT NULL CHECK (scope_type IN ('user', 'world', 'character', 'conversation')),
+      scope_id TEXT NOT NULL,
+      subject_entity_type TEXT NOT NULL,
+      subject_entity_id TEXT NOT NULL,
+      predicate TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      text TEXT NOT NULL,
+      importance REAL NOT NULL,
+      confidence REAL NOT NULL,
+      observed_at TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE VIRTUAL TABLE v2_hybrid_memories_fts USING fts5(
+      story_world_id UNINDEXED,
+      conversation_id UNINDEXED,
+      memory_id UNINDEXED,
+      subject_entity_id UNINDEXED,
+      predicate UNINDEXED,
+      text,
+      content='v2_hybrid_memories',
+      content_rowid='rowid'
+    );
+
+    CREATE TRIGGER v2_hybrid_memories_ai AFTER INSERT ON v2_hybrid_memories BEGIN
+      INSERT INTO v2_hybrid_memories_fts(rowid, story_world_id, conversation_id, memory_id, subject_entity_id, predicate, text)
+      VALUES (new.rowid, new.story_world_id, new.conversation_id, new.memory_id, new.subject_entity_id, new.predicate, new.text);
+    END;
+
+    CREATE TRIGGER v2_hybrid_memories_ad AFTER DELETE ON v2_hybrid_memories BEGIN
+      INSERT INTO v2_hybrid_memories_fts(v2_hybrid_memories_fts, rowid, story_world_id, conversation_id, memory_id, subject_entity_id, predicate, text)
+      VALUES ('delete', old.rowid, old.story_world_id, old.conversation_id, old.memory_id, old.subject_entity_id, old.predicate, old.text);
+    END;
+
+    CREATE INDEX idx_v2_hybrid_memories_world
+      ON v2_hybrid_memories(story_world_id, observed_at DESC);
+    CREATE INDEX idx_v2_hybrid_memories_conversation
+      ON v2_hybrid_memories(conversation_id, observed_at DESC);
+    CREATE INDEX idx_v2_hybrid_memories_subject
+      ON v2_hybrid_memories(subject_entity_id);
+    CREATE INDEX idx_v2_hybrid_memories_predicate
+      ON v2_hybrid_memories(predicate);
+  `),
+  down: (db: DatabaseSync) => db.exec(`
+    DROP TABLE IF EXISTS v2_hybrid_memories_fts;
+    DROP TABLE IF EXISTS v2_hybrid_memories;
+  `),
+};

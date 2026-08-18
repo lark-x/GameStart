@@ -8,6 +8,7 @@ import {
   V2SqliteCandidateSubmissionPort,
   V2SqliteChatUnitOfWork,
   V2SqliteMemoryEngineRunRepository,
+  V2SqliteHybridMemoryRepository,
   V2SqliteGenerationJobRepository,
   V2SqlitePlatformRepository,
 } from "@living-network/database/v2";
@@ -21,7 +22,7 @@ import type { V2MemoryEngine } from "@living-network/ports/v2";
 import { BullMqTaskQueue, BullMqTaskWorker, type TaskQueue } from "../queue.ts";
 import { createV2GenerationDispatchPump } from "./generation-dispatch-pump.ts";
 import { V2MaintenanceDispatchPump } from "./maintenance-dispatch-pump.ts";
-import { V2BuiltinStructuredEngine } from "./memory/index.ts";
+import { V2BuiltinHybridEngine, V2BuiltinStructuredEngine } from "./memory/index.ts";
 import { V2LocalAssetMediaStore } from "./local-asset-media-store.ts";
 import { processV2AssetGenerationJob } from "./asset-generation-worker.ts";
 import { processV2SceneGenerationJob } from "./scene-generation-worker.ts";
@@ -171,6 +172,12 @@ export async function startV2Worker(
     const memoryEngines: V2MemoryEngine[] = [];
     if (config.memory.primaryEngineId === "builtin_structured" || config.memory.shadowEngineIds.includes("builtin_structured")) {
       memoryEngines.push(structuredEngine);
+    }
+    if (config.memory.shadowEngineIds.includes("builtin_hybrid")) {
+      memoryEngines.push(new V2BuiltinHybridEngine({
+        store: new V2SqliteHybridMemoryRepository(db),
+        runs: new V2SqliteMemoryEngineRunRepository(db),
+      }));
     }
     const chatProvider = new V2DynamicModelProvider({
       repository: platformRepository,
