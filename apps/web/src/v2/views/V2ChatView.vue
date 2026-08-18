@@ -48,6 +48,7 @@ const showScrollHint = ref(false);
 const showDiagnostics = ref(false);
 const diagnostics = ref<V2ChatDiagnosticsResponse | null>(null);
 const loadingDiagnostics = ref(false);
+const diagnosticsError = ref<string | null>(null);
 
 // Story Analyzer state
 const analyzing = ref(false);
@@ -86,8 +87,26 @@ function onDocumentClick(event: MouseEvent): void {
   }
 }
 
-onMounted(() => document.addEventListener("click", onDocumentClick));
-onUnmounted(() => document.removeEventListener("click", onDocumentClick));
+function onDocumentKeyDown(event: KeyboardEvent): void {
+  if (event.key === "Escape") {
+    if (showDiagnostics.value) {
+      showDiagnostics.value = false;
+    }
+    if (moreMenuOpen.value) {
+      moreMenuOpen.value = false;
+    }
+  }
+}
+
+onMounted(() => {
+  document.addEventListener("click", onDocumentClick);
+  document.addEventListener("keydown", onDocumentKeyDown);
+});
+
+onUnmounted(() => {
+  document.removeEventListener("click", onDocumentClick);
+  document.removeEventListener("keydown", onDocumentKeyDown);
+});
 
 async function copyConversationId(): Promise<void> {
   try {
@@ -197,10 +216,11 @@ async function toggleDiagnostics(): Promise<void> {
 
 async function refreshDiagnostics(): Promise<void> {
   loadingDiagnostics.value = true;
+  diagnosticsError.value = null;
   try {
     diagnostics.value = await client.getLatestDiagnostics(conversationId.value as V2ConversationId);
   } catch (error) {
-    console.error("获取诊断信息失败:", error);
+    diagnosticsError.value = error instanceof Error ? error.message : "获取诊断信息失败";
   } finally {
     loadingDiagnostics.value = false;
   }
@@ -382,7 +402,7 @@ function isUser(message: V2ChatMessageDto): boolean {
               <Activity :size="15" aria-hidden="true" />
               上下文诊断
             </button>
-            <button type="button" role="menuitem" class="v2-chat-more-item" @click="router.push('/v2/workspace/ai')">
+            <button type="button" role="menuitem" class="v2-chat-more-item" @click="router.push('/v2/workspace/ai-scene-request')">
               <BookOpen :size="15" aria-hidden="true" />
               创作工作区
             </button>
@@ -491,7 +511,7 @@ function isUser(message: V2ChatMessageDto): boolean {
     </form>
 
     <div v-if="showDiagnostics" class="v2-chat-drawer-backdrop" @click="showDiagnostics = false" />
-    <aside v-if="showDiagnostics" class="v2-chat-drawer" role="dialog" aria-label="上下文诊断面板">
+    <aside v-if="showDiagnostics" class="v2-chat-drawer" role="dialog" aria-modal="true" aria-label="上下文诊断面板">
       <div class="v2-chat-diagnostics-header">
         <h3>上下文诊断</h3>
         <div class="v2-chat-diagnostics-actions">
@@ -511,6 +531,10 @@ function isUser(message: V2ChatMessageDto): boolean {
       </div>
       <div v-if="loadingDiagnostics && !diagnostics" class="v2-chat-diagnostics-loading">
         正在读取上下文状态…
+      </div>
+      <div v-else-if="diagnosticsError" class="v2-chat-diagnostics-error">
+        <p>{{ diagnosticsError }}</p>
+        <Button variant="secondary" size="sm" @click="refreshDiagnostics">重试</Button>
       </div>
       <div v-else-if="diagnostics" class="v2-chat-diagnostics-grid">
         <div class="v2-diag-item">
@@ -537,6 +561,9 @@ function isUser(message: V2ChatMessageDto): boolean {
           <span class="v2-diag-label">多模态图片</span>
           <span class="v2-diag-value">{{ diagnostics.imageCount !== undefined ? `${diagnostics.imageCount} 张` : "0 张" }}</span>
         </div>
+      </div>
+      <div v-else class="v2-chat-diagnostics-loading">
+        暂无诊断数据
       </div>
     </aside>
 
@@ -663,6 +690,23 @@ function isUser(message: V2ChatMessageDto): boolean {
   font-size: var(--text-xs);
   color: var(--muted);
   padding: var(--space-2) 0;
+}
+
+.v2-chat-diagnostics-error {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+  padding: var(--space-3);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: var(--text-xs);
+}
+
+.v2-chat-diagnostics-error p {
+  margin: 0;
 }
 
 .v2-chat-diagnostics-grid {

@@ -76,7 +76,11 @@ async function testConnection(): Promise<void> {
   try {
     const check = await client.testImageServiceConnection();
     capabilities.value = await client.getCapabilities();
-    message.value = check.connection === "ok" ? "ComfyUI 连接测试成功。" : `ComfyUI 连接测试失败：${check.errorMessage ?? "未知错误"}`;
+    if (check.connection === "ok") {
+      message.value = "ComfyUI 连接测试成功。";
+    } else {
+      error.value = `ComfyUI 连接测试失败：${check.errorMessage ?? "未知错误"}`;
+    }
   } catch (err) {
     error.value = platformErrorMessage(err, "测试 ComfyUI 连接失败");
   } finally {

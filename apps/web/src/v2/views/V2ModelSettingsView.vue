@@ -97,7 +97,7 @@ function statusLabel(value: string | undefined): string {
   return "未测试";
 }
 
-function selectProfile(profile: V2ModelProfileDto): void {
+function selectProfile(profile: V2ModelProfileDto, resetTestMessage = true): void {
   form.value = {
     id: profile.id,
     name: profile.name,
@@ -111,7 +111,9 @@ function selectProfile(profile: V2ModelProfileDto): void {
     temperature: String(profile.temperature),
     apiKey: "",
   };
-  testMessage.value = null;
+  if (resetTestMessage) {
+    testMessage.value = null;
+  }
   fetchModelError.value = null;
   discoveredModels.value = [];
   modelFilter.value = "";
@@ -187,7 +189,7 @@ async function refresh(): Promise<void> {
     bindings.value = nextBindings;
     capabilities.value = nextCapabilities;
     const current = form.value.id === undefined ? undefined : nextProfiles.find((profile) => profile.id === form.value.id);
-    if (current) selectProfile(current);
+    if (current) selectProfile(current, false);
     else if (form.value.id !== undefined) newProfile();
     const byCapability: Record<string, string> = {};
     for (const capability of bindingCapabilities) {

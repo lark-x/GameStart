@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { nextTick, ref, watch } from "vue";
 
 const props = withDefaults(
   defineProps<{
@@ -23,18 +23,23 @@ const el = ref<HTMLTextAreaElement | null>(null);
 function onInput(event: Event) {
   emit("update:modelValue", (event.target as HTMLTextAreaElement).value);
   emit("input", event);
-  if (props.autoGrow) resize();
+  if (props.autoGrow) void resize();
 }
 
-function resize() {
+async function resize() {
+  await nextTick();
   if (!el.value) return;
   el.value.style.height = "auto";
   el.value.style.height = `${Math.min(el.value.scrollHeight, 160)}px`;
 }
 
-watch(() => props.modelValue, () => {
-  if (props.autoGrow) resize();
-});
+watch(
+  () => props.modelValue,
+  () => {
+    if (props.autoGrow) void resize();
+  },
+  { flush: "post" },
+);
 </script>
 
 <template>

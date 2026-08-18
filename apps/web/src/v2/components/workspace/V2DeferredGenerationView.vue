@@ -258,6 +258,7 @@ onMounted(() => {
 
       <Field :label="isComfy ? '最终 ComfyUI payload（只读）' : '最终模型 messages（只读）'">
         <Textarea
+          class="payload-preview"
           :model-value="previewText || '先生成预览。提交按钮只在预览与当前输入一致时开放。'"
           :rows="12"
           disabled
@@ -375,7 +376,8 @@ onMounted(() => {
 .candidate-card p { margin: 0; line-height: 1.7; }
 .candidate-card ul { margin: 0; padding-left: var(--space-5); }
 .candidate-card img { width: min(100%, 520px); aspect-ratio: 16 / 10; object-fit: cover; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); }
-.module-body :deep(textarea) { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.module-body :deep(textarea) { width: 100%; }
+.payload-preview :deep(textarea) { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 
 @media (max-width: 720px) {
   .compact-grid { grid-template-columns: 1fr; }
