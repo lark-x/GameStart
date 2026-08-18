@@ -241,8 +241,10 @@ test("500 Turn System-level E2E Continuity and Stability Test", async () => {
 
       // Milestone Checks
 
-      // Turn 10: Memory Extraction of Birthday
-      if (turn === 10) {
+      // Turn 14: Memory Extraction of Birthday
+      // With the active-job gate + 16-message batches, the batch containing the
+      // birthday message lands a few turns after the message itself.
+      if (turn === 14) {
         await drainPump();
         const memories = await getUnitOfWork().withChatTransaction(async ({ memories }) => {
           return memories.listByConversation(conversationId);

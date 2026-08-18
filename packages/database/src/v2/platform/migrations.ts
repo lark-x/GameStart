@@ -6,7 +6,9 @@ import {
   v2ChatCoreFinalizationMigration,
   v2ChatMaintenanceCursorsMigration,
   v2ChatMaintenanceJobsMigration,
+  v2ChatMaintenanceDedupeKeyMigration,
   v2ChatMemoryMigration,
+  v2ChatStoryAnalyzeCursorMigration,
   v2ChatTracesMigration,
 } from "../chat/migrations.ts";
 
@@ -137,12 +139,18 @@ export const v2PlatformMigrations: V2MigrationRegistry = {
     },
     {
       id: "0203_v2_model_profile_context_modalities",
-      up: (db) => db.exec(`
-        ALTER TABLE v2_model_profiles
-          ADD COLUMN context_window INTEGER;
-        ALTER TABLE v2_model_profiles
-          ADD COLUMN input_modalities_json TEXT;
-      `),
+      up: (db) => {
+        const columns = db.prepare("PRAGMA table_info(v2_model_profiles)").all() as unknown as readonly {
+          readonly name: string;
+        }[];
+        const names = new Set(columns.map((column) => column.name));
+        if (!names.has("context_window")) {
+          db.exec("ALTER TABLE v2_model_profiles ADD COLUMN context_window INTEGER;");
+        }
+        if (!names.has("input_modalities_json")) {
+          db.exec("ALTER TABLE v2_model_profiles ADD COLUMN input_modalities_json TEXT;");
+        }
+      },
       down: (db) => {
         // SQLite cannot drop columns before 3.35; recreate the table without the new columns.
         db.exec(`
@@ -188,6 +196,8 @@ export function getV2Migrations(): readonly V2SqliteMigration[] {
     v2ChatMaintenanceJobsMigration,
     v2ChatMaintenanceCursorsMigration,
     v2ChatTracesMigration,
+    v2ChatStoryAnalyzeCursorMigration,
+    v2ChatMaintenanceDedupeKeyMigration,
   ].sort((a, b) => a.id.localeCompare(b.id));
 }
 

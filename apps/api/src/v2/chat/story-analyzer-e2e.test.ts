@@ -199,3 +199,116 @@ test("V2 Story Analyzer End-to-End: Chat -> story_analyze -> Candidate -> Review
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test("V2 Story Analyzer analyzes recent messages first and only new messages incrementally", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "story-analyzer-incremental-"));
+  const dbPath = join(tempDir, "v2-story-analyzer-incremental.sqlite");
+  const provider = new StoryAnalyzeChatProvider();
+  const runtime = await createV2ApiRuntime({
+    sqlitePath: dbPath,
+    chatProvider: provider,
+  });
+
+  const { openV2SqliteConnection } = await import("@living-network/database/v2");
+  const workerDb = openV2SqliteConnection({ path: dbPath });
+  const uow = new V2SqliteChatUnitOfWork(workerDb);
+  const pump = new V2MaintenanceDispatchPump({
+    workerId: "test_worker_analyzer_incremental",
+    unitOfWork: uow,
+    provider,
+  });
+
+  try {
+    const createRes = await runtime.app.inject({
+      method: "POST",
+      url: "/api/v2/instant-stories",
+      payload: { persona: "花火是爱笑角色", displayName: "花火", idempotencyKey: "incremental:instant" },
+    });
+    assert.equal(createRes.statusCode, 201);
+    const conversationId = (createRes.json() as { readonly conversation: { readonly conversationId: string } }).conversation.conversationId;
+
+    // Seed 1000 messages directly through the repository.
+    await uow.withChatTransaction(async (repos) => {
+      for (let index = 1; index <= 1000; index += 1) {
+        await repos.messages.create({
+          messageId: `message:inc:${index}`,
+          conversationId: conversationId as V2ConversationId,
+          role: index % 2 === 0 ? "assistant" : "user",
+          text: `这是第 ${index} 条消息`,
+          idempotencyKey: `inc:${index}`,
+          status: "completed",
+          attachments: [],
+          createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString(),
+        });
+      }
+    });
+
+    // First analyze: should use the most recent 80 messages (921..1000).
+    const firstAnalyze = await runtime.app.inject({
+      method: "POST",
+      url: `/api/v2/chat/conversations/${conversationId}/analyze`,
+      payload: { idempotencyKey: "incremental:analyze:1" },
+    });
+    assert.equal(firstAnalyze.statusCode, 202);
+    const firstJobId = (firstAnalyze.json() as { readonly jobId: string }).jobId;
+    let ran = 0;
+    while (await pump.tick()) {
+      ran += 1;
+      if (ran > 5) break;
+    }
+    assert.ok(ran >= 1, "First analyze job should have been processed");
+
+    const firstPayload = await uow.withChatTransaction(async (repos) => {
+      const job = await repos.maintenanceJobs.get(firstJobId);
+      return job?.payload as { readonly sourceMessageIds: readonly string[] };
+    });
+    const firstIds = firstPayload.sourceMessageIds;
+    assert.equal(firstIds.length, 80);
+    assert.equal(firstIds[0], "message:inc:921");
+    assert.equal(firstIds.at(-1), "message:inc:1000");
+
+    // Add 40 more messages and analyze again: only the new range is analyzed.
+    await uow.withChatTransaction(async (repos) => {
+      for (let index = 1001; index <= 1040; index += 1) {
+        await repos.messages.create({
+          messageId: `message:inc:${index}`,
+          conversationId: conversationId as V2ConversationId,
+          role: index % 2 === 0 ? "assistant" : "user",
+          text: `这是第 ${index} 条消息`,
+          idempotencyKey: `inc:${index}`,
+          status: "completed",
+          attachments: [],
+          createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString(),
+        });
+      }
+    });
+
+    const secondAnalyze = await runtime.app.inject({
+      method: "POST",
+      url: `/api/v2/chat/conversations/${conversationId}/analyze`,
+      payload: { idempotencyKey: "incremental:analyze:2" },
+    });
+    assert.equal(secondAnalyze.statusCode, 202);
+    const secondJobId = (secondAnalyze.json() as { readonly jobId: string }).jobId;
+    assert.notEqual(secondJobId, firstJobId);
+    ran = 0;
+    while (await pump.tick()) {
+      ran += 1;
+      if (ran > 5) break;
+    }
+    assert.ok(ran >= 1, "Second analyze job should have been processed");
+
+    const secondPayload = await uow.withChatTransaction(async (repos) => {
+      const job = await repos.maintenanceJobs.get(secondJobId);
+      return job?.payload as { readonly sourceMessageIds: readonly string[] };
+    });
+    const secondIds = secondPayload.sourceMessageIds;
+    assert.equal(secondIds.length, 40);
+    assert.equal(secondIds[0], "message:inc:1001");
+    assert.equal(secondIds.at(-1), "message:inc:1040");
+  } finally {
+    await runtime.close();
+    workerDb.close();
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});

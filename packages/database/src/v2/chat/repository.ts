@@ -98,6 +98,7 @@ type MaintenanceJobRow = {
   job_type: "memory_extract" | "conversation_summary" | "memory_consolidate" | "story_analyze";
   status: "pending" | "claimed" | "running" | "completed" | "failed";
   payload: string;
+  dedupe_key: string | null;
   attempts: number;
   max_attempts: number;
   available_at: string;
@@ -122,6 +123,7 @@ function mapMaintenanceJob(row: MaintenanceJobRow): V2ChatMaintenanceJob {
     jobType: row.job_type,
     status: row.status,
     payload: parsedPayload,
+    ...(row.dedupe_key === null ? {} : { dedupeKey: row.dedupe_key }),
     attempts: row.attempts,
     maxAttempts: row.max_attempts,
     availableAt: row.available_at,
@@ -796,8 +798,8 @@ export class V2SqliteChatMaintenanceJobRepository implements V2ChatMaintenanceJo
     this.db.prepare(`
       INSERT INTO v2_chat_maintenance_jobs (
         job_id, conversation_id, job_type, status, payload, attempts, max_attempts,
-        available_at, lease_expires_at, claimed_by, last_started_at, created_at, updated_at, last_error
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        available_at, lease_expires_at, claimed_by, last_started_at, created_at, updated_at, last_error, dedupe_key
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       input.jobId,
       input.conversationId,
@@ -813,6 +815,7 @@ export class V2SqliteChatMaintenanceJobRepository implements V2ChatMaintenanceJo
       input.createdAt ?? now,
       input.updatedAt ?? now,
       input.lastError ?? null,
+      input.dedupeKey ?? null,
     );
     const created = await this.get(input.jobId);
     if (created === undefined) throw new Error("V2 maintenance job enqueue did not return a row");
@@ -852,6 +855,28 @@ export class V2SqliteChatMaintenanceJobRepository implements V2ChatMaintenanceJo
         memory_extracted_until_message_id = excluded.memory_extracted_until_message_id,
         updated_at = excluded.updated_at
     `).run(conversationId, messageId, new Date().toISOString());
+  }
+
+  public async getStoryAnalyzeCursor(conversationId: V2ConversationId): Promise<V2MessageId | undefined> {
+    const row = this.db.prepare(`
+      SELECT story_analyzed_until_message_id AS cursor_message_id
+      FROM v2_chat_maintenance_cursors
+      WHERE conversation_id = ?
+    `).get(conversationId) as { readonly cursor_message_id: string | null } | undefined;
+    return row?.cursor_message_id === undefined || row.cursor_message_id === null
+      ? undefined
+      : (row.cursor_message_id as V2MessageId);
+  }
+
+  public async setStoryAnalyzeCursor(conversationId: V2ConversationId, messageId: V2MessageId): Promise<void> {
+    this.db.prepare(`
+      INSERT INTO v2_chat_maintenance_cursors (conversation_id, memory_extracted_until_message_id, story_analyzed_until_message_id, updated_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(conversation_id) DO UPDATE SET
+        memory_extracted_until_message_id = COALESCE(excluded.memory_extracted_until_message_id, v2_chat_maintenance_cursors.memory_extracted_until_message_id),
+        story_analyzed_until_message_id = excluded.story_analyzed_until_message_id,
+        updated_at = excluded.updated_at
+    `).run(conversationId, null, messageId, new Date().toISOString());
   }
 
   public async claimNext(input: {
@@ -957,21 +982,27 @@ export class V2SqliteChatMaintenanceJobRepository implements V2ChatMaintenanceJo
     return Number(result.changes) > 0;
   }
 
-  public async hasJobWithPayloadKey(jobType: string, payloadKey: string): Promise<boolean> {
-    const row = this.db.prepare(`
-      SELECT 1 FROM v2_chat_maintenance_jobs
-      WHERE job_type = ? AND payload LIKE ?
-      LIMIT 1
-    `).get(jobType, `%${payloadKey}%`);
-    return row !== undefined;
-  }
-
-  public async findJobByPayloadKey(jobType: string, payloadKey: string): Promise<V2ChatMaintenanceJob | undefined> {
+  public async findJobByDedupeKey(jobType: string, dedupeKey: string): Promise<V2ChatMaintenanceJob | undefined> {
     const row = this.db.prepare(`
       SELECT * FROM v2_chat_maintenance_jobs
-      WHERE job_type = ? AND payload LIKE ?
+      WHERE job_type = ? AND dedupe_key = ?
       LIMIT 1
-    `).get(jobType, `%${payloadKey}%`) as MaintenanceJobRow | undefined;
+    `).get(jobType, dedupeKey) as MaintenanceJobRow | undefined;
     return row === undefined ? undefined : mapMaintenanceJob(row);
+  }
+
+  public async isLeaseOwner(input: {
+    readonly jobId: string;
+    readonly workerId: string;
+    readonly now: string;
+  }): Promise<boolean> {
+    const row = this.db.prepare(`
+      SELECT 1 FROM v2_chat_maintenance_jobs
+      WHERE job_id = ? AND claimed_by = ?
+        AND status IN ('claimed', 'running')
+        AND lease_expires_at IS NOT NULL AND lease_expires_at > ?
+      LIMIT 1
+    `).get(input.jobId, input.workerId, input.now);
+    return row !== undefined;
   }
 }

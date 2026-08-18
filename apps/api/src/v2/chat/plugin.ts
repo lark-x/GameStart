@@ -39,6 +39,7 @@ interface MultipartFile {
 export interface V2ResolvedChatModel {
   readonly provider: ChatProvider;
   readonly model: string;
+  readonly profileId?: string;
   readonly temperature: number;
   readonly maxTokens: number;
   readonly contextWindow?: number;
@@ -269,6 +270,7 @@ export function createV2ChatPlugin(dependencies: V2ChatPluginDependencies): Fast
         templateVersion: prepared.prompt.templateVersion,
         contextHash: prepared.prompt.contextHash,
         model: model.model,
+        ...(model.profileId === undefined ? {} : { profileId: model.profileId }),
         ...(model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow }),
         inputBudget: prepared.prompt.budget.inputBudget,
         estimatedTokens: prepared.prompt.estimatedTokens,
@@ -276,6 +278,7 @@ export function createV2ChatPlugin(dependencies: V2ChatPluginDependencies): Fast
         memoryIds,
         canonIds,
         imageCount,
+        ...(prepared.summaryVersion === undefined ? {} : { summaryVersion: prepared.summaryVersion }),
       }).catch(() => undefined);
       try {
         const resolvedMessages = await mediaResolver.resolveMessageImages({

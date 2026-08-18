@@ -23,7 +23,7 @@ import {
 } from "@living-network/contracts/v2";
 import type { V2PlatformRepository } from "@living-network/ports/v2";
 
-export interface V2SceneModelFallback {
+export interface V2DynamicModelFallback {
   readonly protocol: "openai-compatible" | "anthropic";
   readonly baseUrl?: string;
   readonly apiKey?: string;
@@ -34,7 +34,8 @@ export interface V2SceneModelFallback {
 export interface V2DynamicModelProviderOptions {
   readonly repository: V2PlatformRepository;
   readonly secretCipher?: SecretCipher;
-  readonly fallback: V2SceneModelFallback;
+  readonly capability: V2ModelCapability;
+  readonly fallback: V2DynamicModelFallback;
   readonly now?: () => Date;
 }
 
@@ -75,13 +76,11 @@ function providerError(error: unknown): {
   };
 }
 
-function traceFor(request: ChatCompletionRequest): NonNullable<ChatCompletionRequest["trace"]> {
+function traceFor(request: ChatCompletionRequest, fallbackCapability: V2ModelCapability): NonNullable<ChatCompletionRequest["trace"]> {
+  const capability = request.trace?.capability ?? fallbackCapability;
   return request.trace === undefined
-    ? { correlationId: `v2:model-call:${randomUUID()}`, capability: V2ModelCapability.SCENE_GENERATION }
-    : {
-      ...request.trace,
-      capability: request.trace.capability ?? V2ModelCapability.SCENE_GENERATION,
-    };
+    ? { correlationId: `v2:model-call:${randomUUID()}`, capability }
+    : { ...request.trace, capability };
 }
 
 function requestWithDefaults(request: ChatCompletionRequest, model: ResolvedModel, trace: NonNullable<ChatCompletionRequest["trace"]>): ChatCompletionRequest {
@@ -97,19 +96,21 @@ function requestWithDefaults(request: ChatCompletionRequest, model: ResolvedMode
 export class V2DynamicModelProvider implements ChatProvider {
   private readonly repository: V2PlatformRepository;
   private readonly secretCipher: SecretCipher | undefined;
-  private readonly fallback: V2SceneModelFallback;
+  private readonly capability: V2ModelCapability;
+  private readonly fallback: V2DynamicModelFallback;
   private readonly now: () => Date;
 
   public constructor(options: V2DynamicModelProviderOptions) {
     this.repository = options.repository;
     this.secretCipher = options.secretCipher;
+    this.capability = options.capability;
     this.fallback = options.fallback;
     this.now = options.now ?? (() => new Date());
   }
 
   public async complete(request: ChatCompletionRequest): Promise<ChatCompletionResult> {
     const startedAt = this.now();
-    const trace = traceFor(request);
+    const trace = traceFor(request, this.capability);
     const requestLog = logMessages(request);
     const model = await this.resolveModel();
     const provider = createV2ChatProvider({
@@ -120,7 +121,7 @@ export class V2DynamicModelProvider implements ChatProvider {
       timeoutMs: model.timeoutMs,
     });
     const log = createV2ModelCallLog({
-      capability: V2ModelCapability.SCENE_GENERATION,
+      capability: this.capability,
       startedAt: startedAt.toISOString(),
       ...(model.profile === undefined ? {} : { profileId: model.profile.id, profileName: model.profile.name }),
       protocol: model.protocol,
@@ -160,7 +161,7 @@ export class V2DynamicModelProvider implements ChatProvider {
 
   public async *stream(request: ChatCompletionRequest): AsyncGenerator<ChatDelta> {
     const startedAt = this.now();
-    const trace = traceFor(request);
+    const trace = traceFor(request, this.capability);
     const requestLog = logMessages(request);
     const model = await this.resolveModel();
     const provider = createV2ChatProvider({
@@ -171,7 +172,7 @@ export class V2DynamicModelProvider implements ChatProvider {
       timeoutMs: model.timeoutMs,
     });
     const log = createV2ModelCallLog({
-      capability: V2ModelCapability.SCENE_GENERATION,
+      capability: this.capability,
       startedAt: startedAt.toISOString(),
       ...(model.profile === undefined ? {} : { profileId: model.profile.id, profileName: model.profile.name }),
       protocol: model.protocol,
@@ -229,7 +230,7 @@ export class V2DynamicModelProvider implements ChatProvider {
   }
 
   private async resolveModel(): Promise<ResolvedModel> {
-    const binding = await this.repository.getModelBinding(V2ModelCapability.SCENE_GENERATION);
+    const binding = await this.repository.getModelBinding(this.capability);
     if (binding?.profileId !== undefined) {
       const profile = await this.repository.getModelProfile(binding.profileId);
       if (profile === undefined) {

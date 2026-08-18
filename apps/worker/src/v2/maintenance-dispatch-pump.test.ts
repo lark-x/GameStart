@@ -126,16 +126,16 @@ test("V2MaintenanceDispatchPump claims and processes memory_extract job with pro
       {
         kind: "preference",
         content: "User loves hiking in high mountains.",
-        importance: 0.8,
+        importance: 4,
         confidence: 0.9,
         sourceMessageIds: [msg1Id],
       },
       {
         kind: "preference",
-        content: "Hallucinated citation.",
-        importance: 0.5,
+        content: "User loves hiking in high mountains.",
+        importance: 3,
         confidence: 0.5,
-        sourceMessageIds: ["msg_fake_999"], // Not in sourceMessageIds, should be dropped!
+        sourceMessageIds: [msg2Id],
       },
     ],
   });
@@ -963,6 +963,177 @@ test("V2MaintenanceDispatchPump consolidates a related preference and supersedes
     const coffeeMem = memories.find((m) => m.content.includes("咖啡"));
     assert.ok(teaMem, "Tea preference memory should be active after consolidation");
     assert.equal(coffeeMem?.status, "superseded");
+  });
+
+  cleanup();
+});
+
+test("V2MaintenanceDispatchPump loses lease ownership after expiry and reclaim", async () => {
+  const { db, uow, cleanup } = await setupTestDb();
+
+  const worldId = "world_stale_write" as V2StoryWorldId;
+  const convId = "conv_stale_write" as V2ConversationId;
+  const msg1Id = "msg_stale_write_1" as V2MessageId;
+
+  await uow.withChatTransaction(async (repos) => {
+    await repos.canon.createWorld(
+      createV2CanonWorld({
+        storyWorldId: worldId,
+        name: "World Stale Write",
+        summary: "World summary",
+      })
+    );
+    await repos.conversations.create(
+      createV2ChatConversation({
+        conversationId: convId,
+        storyWorldId: worldId,
+        primaryCharacterId: "char_stale_write" as any,
+        title: "Stale Write Conv",
+      })
+    );
+    await repos.messages.create(
+      createV2ChatMessage({
+        messageId: msg1Id,
+        conversationId: convId,
+        role: "user",
+        text: "用户喜欢在清晨慢跑。",
+        createdAt: now,
+        idempotencyKey: "key_stale_write_1",
+      })
+    );
+    await repos.maintenanceJobs.enqueue(
+      createV2ChatMaintenanceJob({
+        jobId: "job_stale_write_1" as V2MaintenanceJobId,
+        conversationId: convId,
+        jobType: "memory_extract",
+        status: "pending",
+        payload: {
+          conversationId: convId,
+          storyWorldId: worldId,
+          characterId: "char_stale_write" as any,
+          sourceMessageIds: [msg1Id],
+        },
+        attempts: 0,
+        maxAttempts: 3,
+        availableAt: "2026-08-12T03:00:00.000Z",
+      })
+    );
+  });
+
+  // Worker A claims the job with a 30s lease.
+  const claimedByA = await uow.withChatTransaction(async (repos) =>
+    repos.maintenanceJobs.claimNext({ workerId: "worker-a", leaseDurationMs: 30000, now: "2026-08-12T03:00:00.000Z" }));
+  assert.equal(claimedByA?.jobId, "job_stale_write_1");
+
+  // A owns the lease before expiry.
+  const ownsBeforeExpiry = await uow.withChatTransaction(async (repos) =>
+    repos.maintenanceJobs.isLeaseOwner({ jobId: "job_stale_write_1", workerId: "worker-a", now: "2026-08-12T03:00:10.000Z" }));
+  assert.equal(ownsBeforeExpiry, true);
+
+  // A no longer owns the lease after expiry (even before reclaim).
+  const ownsAfterExpiry = await uow.withChatTransaction(async (repos) =>
+    repos.maintenanceJobs.isLeaseOwner({ jobId: "job_stale_write_1", workerId: "worker-a", now: "2026-08-12T03:00:31.000Z" }));
+  assert.equal(ownsAfterExpiry, false);
+
+  // B reclaims the expired job; A cannot complete it or write results.
+  const reclaimedByB = await uow.withChatTransaction(async (repos) =>
+    repos.maintenanceJobs.claimNext({ workerId: "worker-b", leaseDurationMs: 30000, now: "2026-08-12T03:00:31.000Z" }));
+  assert.equal(reclaimedByB?.jobId, "job_stale_write_1");
+  assert.equal(reclaimedByB?.claimedBy, "worker-b");
+
+  const staleComplete = await uow.withChatTransaction(async (repos) =>
+    repos.maintenanceJobs.markCompleted({ jobId: "job_stale_write_1", workerId: "worker-a", now: "2026-08-12T03:00:32.000Z" }));
+  assert.equal(staleComplete, false);
+
+  // No memory was written by the stale worker path (nothing was enqueued through it).
+  await uow.withChatTransaction(async (repos) => {
+    const memories = await repos.memories.listByConversation(convId);
+    assert.equal(memories.length, 0);
+  });
+
+  cleanup();
+});
+
+test("V2MaintenanceDispatchPump keeps at most one active extraction job per conversation", async () => {
+  const { db, uow, cleanup } = await setupTestDb();
+
+  const worldId = "world_dedupe" as V2StoryWorldId;
+  const convId = "conv_dedupe" as V2ConversationId;
+
+  await uow.withChatTransaction(async (repos) => {
+    await repos.canon.createWorld(
+      createV2CanonWorld({
+        storyWorldId: worldId,
+        name: "World Dedupe",
+        summary: "World summary",
+      })
+    );
+    await repos.conversations.create(
+      createV2ChatConversation({
+        conversationId: convId,
+        storyWorldId: worldId,
+        primaryCharacterId: "char_dedupe" as any,
+        title: "Dedupe Conv",
+      })
+    );
+    for (let index = 1; index <= 4; index += 1) {
+      await repos.messages.create(
+        createV2ChatMessage({
+          messageId: `msg_d_${index}` as V2MessageId,
+          conversationId: convId,
+          role: "user",
+          text: `消息 ${index}`,
+          idempotencyKey: `dedupe_key_${index}`,
+          createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString(),
+        })
+      );
+    }
+    // Simulate many new messages without any worker running: three pending
+    // extraction jobs with overlapping ranges (as created before the gate).
+    const payloads = [
+      { conversationId: convId, storyWorldId: worldId, sourceMessageIds: ["msg_d_1" as V2MessageId, "msg_d_2" as V2MessageId] },
+      { conversationId: convId, storyWorldId: worldId, sourceMessageIds: ["msg_d_1" as V2MessageId, "msg_d_2" as V2MessageId, "msg_d_3" as V2MessageId] },
+      { conversationId: convId, storyWorldId: worldId, sourceMessageIds: ["msg_d_1" as V2MessageId, "msg_d_2" as V2MessageId, "msg_d_3" as V2MessageId, "msg_d_4" as V2MessageId] },
+    ];
+    for (const [index, payload] of payloads.entries()) {
+      await repos.maintenanceJobs.enqueue(
+        createV2ChatMaintenanceJob({
+          jobId: `job_dedupe_${index + 1}` as V2MaintenanceJobId,
+          conversationId: convId,
+          jobType: "memory_extract",
+          status: "pending",
+          payload,
+          attempts: 0,
+          maxAttempts: 3,
+          availableAt: now,
+        })
+      );
+    }
+  });
+
+  // The dedupe gate lives in the API enqueue path; verify that a conversation
+  // with an active extraction job reports hasActiveJob correctly.
+  await uow.withChatTransaction(async (repos) => {
+    const active = await repos.maintenanceJobs.hasActiveJob(convId, "memory_extract");
+    assert.equal(active, true);
+  });
+
+  // The worker processes all pending jobs; after completion no active job remains.
+  const pump = new V2MaintenanceDispatchPump({
+    workerId: "test_worker_dedupe",
+    unitOfWork: uow,
+    provider: createTestProvider("[]"),
+  });
+  let ran = 0;
+  while (await pump.tick()) {
+    ran += 1;
+    if (ran > 5) break;
+  }
+  assert.equal(ran, 3);
+
+  await uow.withChatTransaction(async (repos) => {
+    const active = await repos.maintenanceJobs.hasActiveJob(convId, "memory_extract");
+    assert.equal(active, false);
   });
 
   cleanup();

@@ -88,8 +88,14 @@ export interface V2ChatMaintenanceJobRepository {
   hasActiveJob(conversationId: V2ConversationId, jobType: string): Promise<boolean>;
   getMemoryExtractCursor(conversationId: V2ConversationId): Promise<V2MessageId | undefined>;
   setMemoryExtractCursor(conversationId: V2ConversationId, messageId: V2MessageId): Promise<void>;
-  hasJobWithPayloadKey(jobType: string, payloadKey: string): Promise<boolean>;
-  findJobByPayloadKey(jobType: string, payloadKey: string): Promise<V2ChatMaintenanceJob | undefined>;
+  getStoryAnalyzeCursor(conversationId: V2ConversationId): Promise<V2MessageId | undefined>;
+  setStoryAnalyzeCursor(conversationId: V2ConversationId, messageId: V2MessageId): Promise<void>;
+  findJobByDedupeKey(jobType: string, dedupeKey: string): Promise<V2ChatMaintenanceJob | undefined>;
+  isLeaseOwner(input: {
+    readonly jobId: string;
+    readonly workerId: string;
+    readonly now: string;
+  }): Promise<boolean>;
   claimNext(input: {
     readonly workerId: string;
     readonly leaseDurationMs: number;
@@ -114,7 +120,6 @@ export interface V2ChatMaintenanceJobRepository {
     readonly isTerminal: boolean;
     readonly now: string;
   }): Promise<boolean>;
-  hasJobWithPayloadKey(jobType: string, payloadKey: string): Promise<boolean>;
 }
 
 export interface V2ChatUnitOfWork {
