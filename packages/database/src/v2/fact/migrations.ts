@@ -217,3 +217,28 @@ export const v2HybridMemoryMigration: V2SqliteMigration = {
     DROP TABLE IF EXISTS v2_hybrid_memories;
   `),
 };
+
+export const v2MemoryRetrievalTracesMigration: V2SqliteMigration = {
+  id: "0440_v2_memory_retrieval_traces",
+  up: (db: DatabaseSync) => db.exec(`
+    CREATE TABLE v2_memory_retrieval_traces (
+      trace_id TEXT PRIMARY KEY,
+      engine_id TEXT NOT NULL,
+      conversation_id TEXT NOT NULL,
+      query_hash TEXT NOT NULL,
+      query_text TEXT,
+      result_memory_ids_json TEXT NOT NULL,
+      result_assertion_ids_json TEXT NOT NULL,
+      retrieval_ms INTEGER NOT NULL,
+      candidate_count INTEGER NOT NULL,
+      returned_count INTEGER NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX idx_v2_memory_retrieval_traces_engine
+      ON v2_memory_retrieval_traces(engine_id, created_at DESC);
+  `),
+  down: (db: DatabaseSync) => db.exec(`
+    DROP TABLE IF EXISTS v2_memory_retrieval_traces;
+  `),
+};

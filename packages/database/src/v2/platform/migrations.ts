@@ -7,6 +7,7 @@ import {
   v2HybridMemoryMigration,
   v2MemoryEngineColumnsMigration,
   v2MemoryEngineRunsMigration,
+  v2MemoryRetrievalTracesMigration,
 } from "../fact/migrations.ts";
 import {
   v2ChatCoreFinalizationMigration,
@@ -208,6 +209,7 @@ export function getV2Migrations(): readonly V2SqliteMigration[] {
     v2HybridMemoryMigration,
     v2MemoryEngineRunsMigration,
     v2MemoryEngineColumnsMigration,
+    v2MemoryRetrievalTracesMigration,
   ].sort((a, b) => a.id.localeCompare(b.id));
 }
 
