@@ -109,14 +109,14 @@ const store = useNotificationStore();
 
 .toast-title {
   margin: 0 0 2px 0;
-  font-size: 13px;
+  font-size: var(--text-sm);
   font-weight: 600;
   color: var(--text-strong, #0f172a);
 }
 
 .toast-msg {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--text-xs);
   line-height: 1.4;
   color: var(--text, #334155);
   word-break: break-word;

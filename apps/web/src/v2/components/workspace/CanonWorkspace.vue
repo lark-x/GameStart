@@ -672,7 +672,7 @@ function ruleSeverityLabel(severity: string): string {
 }
 
 .tag {
-  font-size: 11px;
+  font-size: var(--text-xs);
   padding: 1px 6px;
   background: var(--surface);
   border: 1px solid var(--border);

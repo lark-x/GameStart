@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
-import { useRouter } from "vue-router";
+import { computed, onMounted, ref } from "vue";
+import { RouterLink, useRouter } from "vue-router";
 import { MessageSquare, Sparkles } from "@lucide/vue";
 import type { V2ChatConversationDto, V2IdempotencyKey } from "@living-network/contracts/v2";
 
@@ -8,6 +8,7 @@ import Button from "../../components/ui/Button.vue";
 import Input from "../../components/ui/Input.vue";
 import Textarea from "../../components/ui/Textarea.vue";
 import PageHeader from "../../components/layout/PageHeader.vue";
+import EmptyState from "../../components/ui/EmptyState.vue";
 import { createV2ChatClient } from "../chat/client.ts";
 
 const router = useRouter();
@@ -21,6 +22,20 @@ const loading = ref(false);
 const errorMessage = ref("");
 const recentConversations = ref<readonly V2ChatConversationDto[]>([]);
 const loadingRecent = ref(false);
+const recentError = ref("");
+
+const recentList = computed(() => [...recentConversations.value]
+  .sort((a, b) => (b.lastMessageAt ?? b.updatedAt).localeCompare(a.lastMessageAt ?? a.updatedAt)));
+
+function relativeTime(value: string | undefined): string {
+  if (value === undefined) return "";
+  const delta = Date.now() - Date.parse(value);
+  if (Number.isNaN(delta) || delta < 0) return "";
+  if (delta < 60_000) return "刚刚";
+  if (delta < 3_600_000) return `${Math.floor(delta / 60_000)} 分钟前`;
+  if (delta < 86_400_000) return `${Math.floor(delta / 3_600_000)} 小时前`;
+  return `${Math.floor(delta / 86_400_000)} 天前`;
+}
 
 onMounted(async () => {
   await loadRecentStories();
@@ -32,7 +47,7 @@ async function loadRecentStories(): Promise<void> {
     const list = await client.listConversations();
     recentConversations.value = list;
   } catch (error) {
-    console.error("加载最近故事失败:", error);
+    recentError.value = error instanceof Error ? error.message : "加载最近故事失败";
   } finally {
     loadingRecent.value = false;
   }
@@ -92,26 +107,52 @@ async function startStory(): Promise<void> {
         </form>
       </section>
 
-      <section v-if="recentConversations.length > 0" class="v2-recent-card">
+      <section v-if="!loadingRecent && recentError" class="v2-recent-card">
+        <div class="v2-recent-header">
+          <MessageSquare :size="20" aria-hidden="true" />
+          <h3>进行中的故事</h3>
+        </div>
+        <p class="v2-recent-error">{{ recentError }}</p>
+      </section>
+
+      <section v-else-if="loadingRecent" class="v2-recent-card">
+        <div class="v2-recent-header">
+          <MessageSquare :size="20" aria-hidden="true" />
+          <h3>进行中的故事</h3>
+        </div>
+        <div class="v2-recent-skeleton" aria-label="正在加载最近故事">
+          <span />
+          <span />
+          <span />
+        </div>
+      </section>
+
+      <section v-else-if="recentList.length === 0" class="v2-recent-card">
+        <div class="v2-recent-header">
+          <MessageSquare :size="20" aria-hidden="true" />
+          <h3>进行中的故事</h3>
+        </div>
+        <EmptyState title="还没有进行中的故事" description="创建第一个故事后，它会出现在这里。" />
+      </section>
+
+      <section v-else class="v2-recent-card">
         <div class="v2-recent-header">
           <MessageSquare :size="20" aria-hidden="true" />
           <h3>进行中的故事</h3>
         </div>
         <div class="v2-recent-list">
-          <article
-            v-for="conv in recentConversations"
+          <RouterLink
+            v-for="conv in recentList"
             :key="conv.conversationId"
+            :to="`/v2/chat/${encodeURIComponent(conv.conversationId)}`"
             class="v2-recent-item"
-            role="button"
-            tabindex="0"
-            @click="router.push(`/v2/chat/${encodeURIComponent(conv.conversationId)}`)"
           >
             <div class="v2-recent-info">
               <h4>{{ conv.title || "故事对话" }}</h4>
-              <p>{{ conv.conversationId }}</p>
+              <p v-if="relativeTime(conv.lastMessageAt ?? conv.updatedAt)">最后活跃于 {{ relativeTime(conv.lastMessageAt ?? conv.updatedAt) }}</p>
             </div>
-            <Button variant="secondary" size="sm">继续对话</Button>
-          </article>
+            <span class="v2-recent-continue">继续</span>
+          </RouterLink>
         </div>
       </section>
     </div>
@@ -222,16 +263,23 @@ async function startStory(): Promise<void> {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--space-3);
   padding: var(--space-3);
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
   background: var(--background);
-  cursor: pointer;
+  color: inherit;
+  text-decoration: none;
   transition: border-color 0.15s ease;
 }
 
 .v2-recent-item:hover {
   border-color: var(--primary);
+}
+
+.v2-recent-item:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 .v2-recent-info h4 {
@@ -243,10 +291,41 @@ async function startStory(): Promise<void> {
 
 .v2-recent-info p {
   margin: 0;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 180px;
+}
+
+.v2-recent-continue {
+  flex: 0 0 auto;
+  color: var(--primary);
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+
+.v2-recent-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
+.v2-recent-skeleton {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.v2-recent-skeleton span {
+  height: 48px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(90deg, var(--surface-soft) 25%, var(--border) 50%, var(--surface-soft) 75%);
+  background-size: 200% 100%;
+  animation: v2-recent-shimmer 1.4s ease infinite;
+}
+
+@keyframes v2-recent-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 </style>

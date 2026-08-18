@@ -561,7 +561,7 @@ async function submitCreate(): Promise<void> {
   border: 2px solid var(--border);
   display: grid;
   place-items: center;
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 700;
   color: var(--text);
   z-index: 2;
@@ -631,7 +631,7 @@ async function submitCreate(): Promise<void> {
 }
 
 .state-pill {
-  font-size: 11px;
+  font-size: var(--text-xs);
   padding: 1px 6px;
   background: #f0fdf4;
   color: #15803d;

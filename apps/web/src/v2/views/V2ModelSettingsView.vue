@@ -645,7 +645,7 @@ onMounted(() => {
 .box-title { font-size: var(--text-xs); font-weight: 700; color: var(--primary); }
 .box-search { max-width: 200px; }
 .models-pill-grid { display: flex; flex-wrap: wrap; gap: 6px; max-height: 140px; overflow-y: auto; }
-.model-chip { padding: 3px 8px; font-size: 11px; border-radius: var(--radius-xs); border: 1px solid var(--border); background: var(--surface-soft); color: var(--text); cursor: pointer; transition: all 0.15s ease; }
+.model-chip { padding: 3px 8px; font-size: var(--text-xs); border-radius: var(--radius-xs); border: 1px solid var(--border); background: var(--surface-soft); color: var(--text); cursor: pointer; transition: all 0.15s ease; }
 .model-chip:hover { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
 .model-chip.active { border-color: var(--primary); background: var(--primary); color: var(--on-primary); font-weight: 700; }
 .v2-model-fetch-error { padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); background: var(--danger-soft); color: var(--danger); font-size: var(--text-xs); }

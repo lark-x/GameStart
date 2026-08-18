@@ -236,7 +236,7 @@ watch(
   color: #e2e8f0;
   padding: 4px 10px;
   border-radius: var(--radius-sm);
-  font-size: 11px;
+  font-size: var(--text-xs);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -272,7 +272,7 @@ watch(
   left: 16px;
   background: var(--primary);
   color: #fff;
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 700;
   padding: 2px 10px;
   border-radius: var(--radius-xs);
@@ -365,7 +365,7 @@ watch(
   border: none;
   color: #94a3b8;
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 .backlog-content {

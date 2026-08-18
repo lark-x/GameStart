@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { Activity, ArrowLeft, BookOpen, ImagePlus, RefreshCw, Send, Sparkles, Square, X } from "@lucide/vue";
+import { Activity, ArrowLeft, BookOpen, Copy, ImagePlus, MoreHorizontal, RefreshCw, Send, Sparkles, Square, X } from "@lucide/vue";
 
 import Button from "../../components/ui/Button.vue";
 import Textarea from "../../components/ui/Textarea.vue";
@@ -46,6 +46,35 @@ const loadingDiagnostics = ref(false);
 // Story Analyzer state
 const analyzing = ref(false);
 const analyzeSuccessMessage = ref("");
+const moreMenuOpen = ref(false);
+const moreMenuRef = ref<HTMLElement | null>(null);
+
+function onDocumentClick(event: MouseEvent): void {
+  if (moreMenuRef.value !== null && !moreMenuRef.value.contains(event.target as Node)) {
+    moreMenuOpen.value = false;
+  }
+}
+
+onMounted(() => document.addEventListener("click", onDocumentClick));
+onUnmounted(() => document.removeEventListener("click", onDocumentClick));
+
+async function copyConversationId(): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(conversationId.value);
+    analyzeSuccessMessage.value = "会话 ID 已复制到剪贴板。";
+  } catch {
+    errorMessage.value = "复制会话 ID 失败，请手动复制地址栏中的 ID。";
+  } finally {
+    moreMenuOpen.value = false;
+  }
+}
+
+function messageStatusLabel(message: V2ChatMessageDto): string | undefined {
+  if (message.status === "pending") return "生成中";
+  if (message.status === "failed") return "发送失败";
+  if (message.status === "interrupted") return "已中断";
+  return undefined;
+}
 
 async function triggerStoryAnalyze(): Promise<void> {
   if (analyzing.value || messages.value.length === 0) return;
@@ -294,38 +323,8 @@ function isUser(message: V2ChatMessageDto): boolean {
       </Button>
       <div class="v2-chat-title">
         <h2>{{ conversationTitle }}</h2>
-        <p>{{ conversationId }}</p>
       </div>
       <div class="v2-chat-header-actions">
-        <Button
-          variant="secondary"
-          size="sm"
-          :loading="analyzing"
-          :disabled="messages.length === 0 || streaming || analyzing"
-          title="将本段故事对话提炼为剧本场景候选"
-          @click="triggerStoryAnalyze"
-        >
-          <Sparkles :size="14" aria-hidden="true" />
-          提炼剧情
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          title="前往高级剧本与审核工作区"
-          @click="router.push('/v2/workspace/ai')"
-        >
-          <BookOpen :size="14" aria-hidden="true" />
-          创作工作区
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="查看上下文诊断"
-          title="查看上下文诊断"
-          @click="toggleDiagnostics"
-        >
-          <Activity :size="18" aria-hidden="true" />
-        </Button>
         <Button
           v-if="streaming"
           variant="secondary"
@@ -335,6 +334,42 @@ function isUser(message: V2ChatMessageDto): boolean {
           <Square :size="14" aria-hidden="true" />
           停止
         </Button>
+        <div class="v2-chat-more" ref="moreMenuRef">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="更多操作"
+            aria-haspopup="menu"
+            :aria-expanded="moreMenuOpen"
+            @click="moreMenuOpen = !moreMenuOpen"
+          >
+            <MoreHorizontal :size="18" aria-hidden="true" />
+          </Button>
+          <div v-if="moreMenuOpen" class="v2-chat-more-menu" role="menu">
+            <button
+              type="button"
+              role="menuitem"
+              class="v2-chat-more-item"
+              :disabled="messages.length === 0 || streaming || analyzing"
+              @click="triggerStoryAnalyze"
+            >
+              <Sparkles :size="15" aria-hidden="true" />
+              提炼剧情
+            </button>
+            <button type="button" role="menuitem" class="v2-chat-more-item" @click="toggleDiagnostics">
+              <Activity :size="15" aria-hidden="true" />
+              上下文诊断
+            </button>
+            <button type="button" role="menuitem" class="v2-chat-more-item" @click="router.push('/v2/workspace/ai')">
+              <BookOpen :size="15" aria-hidden="true" />
+              创作工作区
+            </button>
+            <button type="button" role="menuitem" class="v2-chat-more-item" @click="copyConversationId">
+              <Copy :size="15" aria-hidden="true" />
+              复制会话 ID
+            </button>
+          </div>
+        </div>
       </div>
     </header>
 
@@ -426,7 +461,13 @@ function isUser(message: V2ChatMessageDto): boolean {
             />
           </div>
         </div>
-        <small class="v2-chat-meta">{{ isUser(message) ? "你" : "角色" }} · {{ message.status }}</small>
+        <small
+          v-if="messageStatusLabel(message)"
+          class="v2-chat-meta"
+          :class="{ 'v2-chat-meta-error': message.status === 'failed' }"
+        >
+          {{ messageStatusLabel(message) }}
+        </small>
       </article>
     </div>
 
@@ -453,7 +494,9 @@ function isUser(message: V2ChatMessageDto): boolean {
       </Button>
       <Textarea
         v-model="input"
-        :rows="2"
+        variant="composer"
+        auto-grow
+        :rows="1"
         placeholder="输入消息……"
         :disabled="sending || streaming || loading"
         aria-label="输入消息"
@@ -476,15 +519,15 @@ function isUser(message: V2ChatMessageDto): boolean {
 .v2-chat-page {
   display: flex;
   flex-direction: column;
-  height: calc(100dvh - 88px);
+  height: 100%;
   min-height: 0;
-  gap: var(--space-3);
   position: relative;
 }
 
 .v2-chat-header {
   display: flex;
   align-items: center;
+  flex: 0 0 auto;
   gap: var(--space-3);
   padding-bottom: var(--space-3);
   border-bottom: 1px solid var(--border);
@@ -514,6 +557,49 @@ function isUser(message: V2ChatMessageDto): boolean {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+}
+
+.v2-chat-more {
+  position: relative;
+}
+
+.v2-chat-more-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + var(--space-1));
+  right: 0;
+  display: grid;
+  min-width: 180px;
+  padding: var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+}
+
+.v2-chat-more-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 40px;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+
+.v2-chat-more-item:hover {
+  background: var(--surface-soft);
+}
+
+.v2-chat-more-item:disabled {
+  color: var(--faint);
+  cursor: default;
 }
 
 .v2-chat-diagnostics-card {
@@ -567,7 +653,7 @@ function isUser(message: V2ChatMessageDto): boolean {
 }
 
 .v2-diag-label {
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--muted);
 }
 
@@ -609,6 +695,12 @@ function isUser(message: V2ChatMessageDto): boolean {
   padding: var(--space-2);
 }
 
+.v2-chat-error,
+.v2-chat-status,
+.v2-chat-success-banner {
+  flex: 0 0 auto;
+}
+
 .v2-chat-pagination-status {
   text-align: center;
   font-size: var(--text-xs);
@@ -631,7 +723,7 @@ function isUser(message: V2ChatMessageDto): boolean {
 }
 
 .v2-chat-bubble {
-  max-width: 78%;
+  max-width: min(760px, 88%);
   padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-lg);
   background: var(--surface);
@@ -642,8 +734,9 @@ function isUser(message: V2ChatMessageDto): boolean {
 }
 
 .v2-chat-message-user .v2-chat-bubble {
+  max-width: min(680px, 80%);
   background: var(--primary);
-  color: var(--primary-foreground);
+  color: var(--on-primary);
   border-color: transparent;
 }
 
@@ -666,12 +759,22 @@ function isUser(message: V2ChatMessageDto): boolean {
   color: var(--muted);
 }
 
+.v2-chat-meta-error {
+  color: var(--danger);
+}
+
 .v2-chat-composer {
   display: flex;
+  flex: 0 0 auto;
   gap: var(--space-2);
   align-items: flex-end;
   padding-top: var(--space-3);
   border-top: 1px solid var(--border);
+}
+
+.v2-chat-composer .ui-textarea-composer {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .v2-chat-file-input {
@@ -684,5 +787,16 @@ function isUser(message: V2ChatMessageDto): boolean {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+@media (max-width: 640px) {
+  .v2-chat-bubble,
+  .v2-chat-message-user .v2-chat-bubble {
+    max-width: 94%;
+  }
+
+  .v2-chat-composer {
+    gap: var(--space-1);
+  }
 }
 </style>

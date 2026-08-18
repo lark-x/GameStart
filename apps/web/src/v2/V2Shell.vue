@@ -96,9 +96,10 @@ const groups: readonly NavGroup[] = [
 const route = useRoute();
 const store = useV2WorkspaceStore();
 const mobileOpen = ref(false);
-const currentTitle = computed(() => {
-  const item = groups.flatMap((group) => group.items).find((candidate) => route.path === candidate.to);
-  return item?.label ?? (typeof route.meta.title === "string" ? route.meta.title : "创作平台");
+const isFeatureRoute = computed(() => route.meta.layout === "feature");
+const pageSize = computed(() => {
+  const size = route.meta.pageSize;
+  return size === "narrow" || size === "standard" || size === "wide" || size === "full" ? size : "standard";
 });
 
 watch(() => route.path, () => {
@@ -153,6 +154,25 @@ onMounted(() => {
         </section>
       </nav>
 
+      <div v-if="store.storyWorlds.length" class="v2-sidebar-story">
+        <label for="v2-story-world">故事空间</label>
+        <div class="v2-sidebar-story-row">
+          <Select
+            id="v2-story-world"
+            :model-value="store.activeStoryWorldId || ''"
+            :disabled="store.loading"
+            @update:model-value="store.selectStoryWorld"
+          >
+            <option v-for="world in store.storyWorlds" :key="world.storyWorldId" :value="world.storyWorldId">
+              {{ world.name }}
+            </option>
+          </Select>
+          <Button variant="ghost" size="icon" :loading="store.loading" aria-label="刷新状态" @click="store.loadSnapshot">
+            <RefreshCw :size="15" aria-hidden="true" />
+          </Button>
+        </div>
+      </div>
+
       <div class="v2-sidebar-footer">
         <span class="v2-runtime-dot" aria-hidden="true" />
         <span>V2 本地运行时</span>
@@ -161,28 +181,11 @@ onMounted(() => {
 
     <div v-if="mobileOpen" class="v2-sidebar-backdrop" aria-hidden="true" @click="mobileOpen = false" />
 
-    <div class="v2-app-content">
-      <header class="v2-topbar">
-        <div>
-          <p class="v2-topbar-kicker">Living Network / V2</p>
-          <h1>{{ currentTitle }}</h1>
-        </div>
-        <div class="v2-topbar-actions">
-          <div v-if="store.storyWorlds.length" class="v2-story-switcher">
-            <label for="v2-story-world">故事空间</label>
-            <Select id="v2-story-world" :model-value="store.activeStoryWorldId || ''" :disabled="store.loading" @update:model-value="store.selectStoryWorld">
-              <option v-for="world in store.storyWorlds" :key="world.storyWorldId" :value="world.storyWorldId">
-                {{ world.name }}
-              </option>
-            </Select>
-          </div>
-          <Button variant="secondary" size="md" :loading="store.loading" @click="store.loadSnapshot">
-            <Activity :size="16" aria-hidden="true" />
-            刷新状态
-          </Button>
-        </div>
-      </header>
-      <div class="v2-route-content">
+    <div class="v2-app-content" :class="{ 'v2-app-content-feature': isFeatureRoute }">
+      <div
+        class="v2-route-content"
+        :class="[`v2-route-content-${pageSize}`, { 'v2-route-content-feature': isFeatureRoute }]"
+      >
         <RouterView />
       </div>
     </div>
@@ -294,6 +297,34 @@ onMounted(() => {
   letter-spacing: 0.08em;
 }
 
+.v2-sidebar-story {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+.v2-sidebar-story label {
+  padding: 0 var(--space-3);
+  color: var(--faint);
+  font-size: var(--text-xs);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.v2-sidebar-story-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+}
+
+.v2-sidebar-story-row .ui-select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .v2-nav-link {
   display: flex;
   align-items: center;
@@ -339,51 +370,39 @@ onMounted(() => {
   min-width: 0;
 }
 
-.v2-topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  padding: var(--space-6) var(--space-6) var(--space-5);
-  border-bottom: 1px solid var(--border);
-}
-
-.v2-topbar-kicker {
-  margin: 0 0 var(--space-1);
-  color: var(--primary);
-  font-size: var(--text-xs);
-  font-weight: 800;
-  letter-spacing: 0.08em;
-}
-
-.v2-topbar-actions {
-  display: flex;
-  align-items: flex-end;
-  gap: var(--space-3);
-  min-width: 0;
-}
-
-.v2-story-switcher {
-  display: grid;
-  gap: var(--space-1);
-  min-width: min(240px, 36vw);
-}
-
-.v2-story-switcher label {
-  color: var(--muted);
-  font-size: var(--text-xs);
-  font-weight: 700;
-}
-
-.v2-topbar h1 {
-  margin: 0;
-  color: var(--text-strong);
-  font-size: var(--text-xl);
+.v2-app-content-feature {
+  height: 100dvh;
 }
 
 .v2-route-content {
+  width: 100%;
   min-width: 0;
   padding: var(--space-6);
+  margin-inline: auto;
+}
+
+.v2-route-content-narrow {
+  max-width: 960px;
+}
+
+.v2-route-content-standard {
+  max-width: 1200px;
+}
+
+.v2-route-content-wide {
+  max-width: 1560px;
+}
+
+.v2-route-content-full {
+  max-width: none;
+}
+
+.v2-route-content-feature {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0;
 }
 
 .v2-mobile-menu,
@@ -452,31 +471,12 @@ onMounted(() => {
     left: var(--space-4);
   }
 
-  .v2-topbar {
-    padding-top: calc(var(--space-6) + 44px);
-  }
 }
 
 @media (max-width: 540px) {
-  .v2-route-content,
-  .v2-topbar {
+  .v2-route-content {
     padding-right: var(--space-4);
     padding-left: var(--space-4);
-  }
-
-  .v2-topbar {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .v2-topbar-actions {
-    width: 100%;
-    flex-wrap: wrap;
-  }
-
-  .v2-story-switcher {
-    flex: 1 1 100%;
-    min-width: 0;
   }
 }
 </style>
