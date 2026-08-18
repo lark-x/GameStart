@@ -13,6 +13,7 @@ import type {
 } from "@living-network/contracts/v2";
 
 import { V2HttpError, toV2HttpError } from "../core/errors.ts";
+import { createV2ChatMediaResolver, type V2ChatMediaResolver } from "./media-resolver.ts";
 import {
   parseCreateInstantStoryRequest,
   parseGenerateChatReplyRequest,
@@ -48,6 +49,7 @@ export interface V2ChatPluginDependencies {
   readonly useCases: V2ChatUseCases;
   readonly resolveModel: () => Promise<V2ResolvedChatModel>;
   readonly mediaRoot?: string;
+  readonly mediaResolver?: V2ChatMediaResolver;
   readonly now?: () => Date;
 }
 
@@ -181,6 +183,7 @@ function toErrorMessage(error: unknown): string {
 
 export function createV2ChatPlugin(dependencies: V2ChatPluginDependencies): FastifyPluginAsync {
   const now = dependencies.now ?? (() => new Date());
+  const mediaResolver = dependencies.mediaResolver ?? createV2ChatMediaResolver();
   return async (app) => {
     app.setErrorHandler((error, _request, reply) => {
       const httpError = toV2HttpError(error);
@@ -250,8 +253,12 @@ export function createV2ChatPlugin(dependencies: V2ChatPluginDependencies): Fast
       reply.raw.on("close", onClose);
       let content = "";
       try {
+        const resolvedMessages = await mediaResolver.resolveMessageImages({
+          prompt: prepared.prompt,
+          mediaRoot: dependencies.mediaRoot ?? "",
+        });
         const deltas: AsyncIterable<ChatDelta> = model.provider.stream({
-          messages: prepared.prompt.messages,
+          messages: resolvedMessages,
           temperature: model.temperature,
           maxTokens: model.maxTokens,
           trace: { correlationId: `v2:chat:${randomUUID()}` },

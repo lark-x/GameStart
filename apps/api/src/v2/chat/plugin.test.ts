@@ -49,6 +49,21 @@ class SlowAbortAwareProvider implements ChatProvider {
   }
 }
 
+class CaptureRequestProvider implements ChatProvider {
+  public capturedRequest: ChatCompletionRequest | undefined;
+
+  public async complete(request: ChatCompletionRequest): Promise<ChatCompletionResult> {
+    this.capturedRequest = request;
+    return { id: "capture", model: "capture-model", content: "看到图片了" };
+  }
+
+  public async *stream(request: ChatCompletionRequest): AsyncIterable<ChatDelta> {
+    this.capturedRequest = request;
+    yield { id: "capture", model: "capture-model", content: "看到图片了" };
+    yield { finishReason: "stop" };
+  }
+}
+
 test("V2 chat API creates an instant story, sends a message, and streams a persisted reply", async () => {
   const temp = openV2TempSqliteConnection();
   const mediaRoot = mkdtempSync(path.join(tmpdir(), "v2-chat-media-"));
@@ -379,6 +394,90 @@ test("V2 chat rejects image attachments when model does not support vision modal
       });
       assert.equal(invalidMediaRes.statusCode, 422);
       assert.equal(invalidMediaRes.json().error.code, "INVALID_MEDIA_REF");
+    } finally {
+      await runtime.close();
+    }
+  } finally {
+    rmSync(mediaRoot, { recursive: true, force: true });
+    temp.cleanup();
+  }
+});
+
+test("V2 chat vision sends real image content to the provider", async () => {
+  const temp = openV2TempSqliteConnection();
+  const mediaRoot = mkdtempSync(path.join(tmpdir(), "v2-chat-media-vision-positive-"));
+  temp.db.close();
+  const onePixelPng = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/l2e3VwAAAABJRU5ErkJggg==",
+    "base64",
+  );
+  const boundary = `----v2-chat-${crypto.randomUUID()}`;
+  const body = Buffer.concat([
+    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="vision.png"\r\nContent-Type: image/png\r\n\r\n`, "utf8"),
+    onePixelPng,
+    Buffer.from(`\r\n--${boundary}--\r\n`, "utf8"),
+  ]);
+  const provider = new CaptureRequestProvider();
+  try {
+    const runtime = createV2ApiRuntime({
+      sqlitePath: temp.path,
+      mediaRoot,
+      chatProvider: provider,
+      chatInputModalities: ["text", "image"],
+    });
+    try {
+      const upload = await runtime.app.inject({
+        method: "POST",
+        url: "/api/v2/chat/media",
+        headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+        payload: body,
+      });
+      assert.equal(upload.statusCode, 201);
+      const media = (upload.json() as { readonly media: { readonly mediaId: string; readonly mediaRef: string } }).media;
+
+      const created = await runtime.app.inject({
+        method: "POST",
+        url: "/api/v2/instant-stories",
+        payload: { persona: "能看图的花火", displayName: "花火", idempotencyKey: "vision-positive-test" },
+      });
+      assert.equal(created.statusCode, 201);
+      const instant = created.json() as V2CreateInstantStoryResponse;
+      const conversationId = instant.conversation.conversationId;
+
+      const sent = await runtime.app.inject({
+        method: "POST",
+        url: `/api/v2/chat/conversations/${conversationId}/messages`,
+        payload: {
+          text: "看看这张图里有什么",
+          attachmentIds: [media.mediaId],
+          idempotencyKey: "send-vision-image",
+        },
+      });
+      assert.equal(sent.statusCode, 201);
+
+      const reply = await runtime.app.inject({
+        method: "POST",
+        url: `/api/v2/chat/conversations/${conversationId}/replies`,
+        payload: { idempotencyKey: "reply-vision-image" },
+      });
+      assert.equal(reply.statusCode, 200);
+      assert.match(reply.payload as string, /看到图片了/);
+
+      const request = provider.capturedRequest;
+      assert.ok(request);
+      const lastUser = [...request.messages].reverse().find((message) => message.role === "user");
+      assert.ok(lastUser);
+      assert.ok(Array.isArray(lastUser.content));
+      const imagePart = (lastUser.content as readonly { readonly type: string; readonly mediaType?: string; readonly dataBase64?: string }[])
+        .find((part) => part.type === "image");
+      assert.ok(imagePart);
+      assert.equal(imagePart.mediaType, "image/png");
+      assert.deepEqual(Buffer.from(imagePart.dataBase64!, "base64"), onePixelPng);
+
+      const textPart = (lastUser.content as readonly { readonly type: string; readonly text?: string }[])
+        .find((part) => part.type === "text");
+      assert.ok(textPart);
+      assert.match(textPart.text ?? "", /看看这张图里有什么/);
     } finally {
       await runtime.close();
     }

@@ -413,6 +413,13 @@ async function prepareReply(
         currentInput: {
           ...(currentUser.text === undefined ? {} : { text: currentUser.text }),
           imageCount: currentUser.attachments.length,
+          ...(currentUser.attachments.length === 0 ? {} : {
+            images: currentUser.attachments.map((attachment) => ({
+              mediaId: attachment.mediaId as V2MediaId,
+              mediaRef: attachment.mediaRef,
+              mimeType: attachment.mimeType,
+            })),
+          }),
         },
       }),
     };

@@ -6,6 +6,7 @@ import {
 } from "./budget.ts";
 import { hashV2PromptContext } from "./hash.ts";
 import {
+  type ChatImageContext,
   PromptBudgetExceededError,
   type PreparedPrompt,
   type PromptBudgetDebug,
@@ -103,7 +104,12 @@ function ensureRequiredFit(context: PromptContext, inputBudget: number): void {
 function selectRecentMessages(
   context: PromptContext,
   maxTokens: number,
-): { readonly messages: readonly ChatMessage[]; readonly sources: readonly PromptSource[]; readonly tokens: number } {
+): {
+  readonly messages: readonly ChatMessage[];
+  readonly contexts: PromptContext["recentMessages"];
+  readonly sources: readonly PromptSource[];
+  readonly tokens: number;
+} {
   const imageTokens = context.imageTokensPerImage ?? DEFAULT_IMAGE_TOKENS;
   const selected: PromptContext["recentMessages"][number][] = [];
   let used = 0;
@@ -131,7 +137,7 @@ function selectRecentMessages(
     label: (message.text ?? "").slice(0, 80),
     kind: "message" as const,
   }));
-  return { messages, sources, tokens: used };
+  return { messages, contexts: chronological, sources, tokens: used };
 }
 
 function selectMemories(
@@ -199,6 +205,7 @@ function estimateChatMessages(messages: readonly ChatMessage[]): number {
 
 interface BuiltChatReply {
   readonly messages: readonly ChatMessage[];
+  readonly messageImages?: MessageImageEntry[];
   readonly sources: readonly PromptSource[];
   readonly recentTokens: number;
   readonly memoryTokens: number;
@@ -211,6 +218,25 @@ interface BuiltChatReply {
   readonly contextWindow: number;
   readonly outputReserve: number;
   readonly safetyReserve: number;
+}
+
+type MessageImageEntry = {
+  readonly messageIndex: number;
+  readonly images: readonly ChatImageContext[];
+};
+
+function collectMessageImages(
+  messages: PromptContext["recentMessages"],
+  offset: number,
+): MessageImageEntry[] {
+  const collected: MessageImageEntry[] = [];
+  for (let index = 0; index < messages.length; index += 1) {
+    const images = messages[index]?.images;
+    if (images !== undefined && images.length > 0) {
+      collected.push({ messageIndex: offset + index, images });
+    }
+  }
+  return collected;
 }
 
 function buildChatReplyMessages(context: PromptContext): BuiltChatReply {
@@ -251,6 +277,7 @@ function buildChatReplyMessages(context: PromptContext): BuiltChatReply {
   };
 
   const messages: ChatMessage[] = [system, ...recent.messages];
+  const messageImages = collectMessageImages(recent.contexts, 1);
   const sources: PromptSource[] = [];
   if (personaText.length > 0) sources.push({ id: "persona", label: "Persona", kind: "persona" });
   if (worldText.length > 0) sources.push({ id: "world", label: "World", kind: "world" });
@@ -260,6 +287,9 @@ function buildChatReplyMessages(context: PromptContext): BuiltChatReply {
   if (context.currentInput !== undefined) {
     currentInputTokens = estimateV2ChatMessageTokens(context.currentInput, context.imageTokensPerImage ?? DEFAULT_IMAGE_TOKENS) + V2_PROMPT_MESSAGE_OVERHEAD;
     messages.push(toChatMessage(context.currentInput, "user"));
+    if (context.currentInput.images !== undefined && context.currentInput.images.length > 0) {
+      messageImages.push({ messageIndex: messages.length - 1, images: context.currentInput.images });
+    }
     sources.push({
       id: "current-input",
       label: (context.currentInput.text ?? "").slice(0, 80),
@@ -269,6 +299,7 @@ function buildChatReplyMessages(context: PromptContext): BuiltChatReply {
 
   return {
     messages,
+    ...(messageImages.length === 0 ? {} : { messageImages }),
     sources,
     recentTokens: recent.tokens,
     memoryTokens: memory.tokens,
@@ -369,6 +400,7 @@ export function prepareV2ChatReply(context: PromptContext): PreparedPrompt {
     templateId: template.id,
     templateVersion: template.version,
     messages: built.messages,
+    ...(built.messageImages === undefined ? {} : { messageImages: built.messageImages }),
     estimatedTokens,
     contextHash,
     sources: built.sources,
