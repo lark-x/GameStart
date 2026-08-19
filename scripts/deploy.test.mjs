@@ -17,7 +17,7 @@ import {
 import { createDockerClient } from "./deploy/docker.mjs";
 import { acquireDeployLock, readLockFile, isPidAlive } from "./deploy/lock.mjs";
 import { loadDotEnv, loadDeployState, saveDeployState } from "./deploy/state.mjs";
-import { checkComfyUiHealth, verifyCriticalEndpoints } from "./deploy/health.mjs";
+import { checkComfyUiHealth, verifyCriticalEndpoints, parseServiceHealth } from "./deploy/health.mjs";
 import { formatDeploymentBanner, formatDoctorReport } from "./deploy/output.mjs";
 
 const tmpRoot = resolve(import.meta.dirname, "..", ".tmp", "deploy-test");
@@ -340,3 +340,54 @@ test("formatDoctorReport structures pre-flight checklist", () => {
   assert.match(report, /Windows Host IP: 192\.168\.1\.30/);
   assert.match(report, /Ready to deploy/);
 });
+
+// ---------------------------------------------------------------------------
+// 9. Docker ps output parsing
+// ---------------------------------------------------------------------------
+
+test("parseServiceHealth accurately handles JSON array, object, and plain string outputs", () => {
+  // 1. Array output from Docker Compose (Worker without healthcheck)
+  const workerJsonArray = JSON.stringify([
+    {
+      ID: "abc12345",
+      Name: "living-network-worker-1",
+      Service: "worker",
+      State: "running",
+      Health: "",
+      Status: "Up 15 seconds",
+    },
+  ]);
+  const workerRes = parseServiceHealth(workerJsonArray, "worker");
+  assert.equal(workerRes.ok, true);
+  assert.match(workerRes.status, /running|Up 15 seconds/i);
+
+  // 2. Single object output (API with healthy status)
+  const apiJsonObject = JSON.stringify({
+    Health: "healthy",
+    State: "running",
+    Status: "Up 20 seconds (healthy)",
+  });
+  const apiRes = parseServiceHealth(apiJsonObject, "api");
+  assert.equal(apiRes.ok, true);
+  assert.equal(apiRes.status, "healthy");
+
+  // 3. Unhealthy object
+  const unhealthJsonObject = JSON.stringify({
+    Health: "unhealthy",
+    State: "running",
+    Status: "Up 20 seconds (unhealthy)",
+  });
+  const unhealthyRes = parseServiceHealth(unhealthJsonObject, "redis");
+  assert.equal(unhealthyRes.ok, false);
+  assert.equal(unhealthyRes.status, "unhealthy");
+
+  // 4. Empty or not running
+  const emptyRes = parseServiceHealth("", "worker");
+  assert.equal(emptyRes.ok, false);
+  assert.equal(emptyRes.status, "not running");
+
+  // 5. Raw string fallback
+  const rawRunning = parseServiceHealth("living-network-worker-1 Up 2 minutes", "worker");
+  assert.equal(rawRunning.ok, true);
+});
+

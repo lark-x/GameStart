@@ -4,6 +4,66 @@
 
 const DEFAULT_POLL_MS = 2500;
 
+/**
+ * Parse Docker Compose ps output (JSON array, single JSON object, NDJSON, or plain text).
+ */
+export function parseServiceHealth(raw, service) {
+  if (!raw || typeof raw !== "string" || !raw.trim()) {
+    return { ok: false, status: "not running" };
+  }
+
+  const trimmed = raw.trim();
+
+  // Try parsing JSON formats
+  try {
+    let items = [];
+    if (trimmed.startsWith("[")) {
+      items = JSON.parse(trimmed);
+    } else if (trimmed.startsWith("{")) {
+      const lines = trimmed.split(/\r?\n/).filter((l) => l.trim().startsWith("{"));
+      items = lines.map((l) => JSON.parse(l));
+    }
+
+    if (items.length > 0) {
+      const item = items[0];
+      const health = (item.Health || "").toLowerCase();
+      const state = (item.State || "").toLowerCase();
+      const statusStr = (item.Status || "").toLowerCase();
+
+      const displayStatus = health || state || statusStr || "running";
+
+      // Check unhealthy FIRST (because "unhealthy" includes the substring "healthy")
+      if (health === "unhealthy" || statusStr.includes("unhealthy")) {
+        return { ok: false, status: "unhealthy" };
+      }
+      if (health === "healthy" || (statusStr.includes("healthy") && !statusStr.includes("unhealthy"))) {
+        return { ok: true, status: displayStatus };
+      }
+      // Worker has no custom healthcheck, so running / up state is healthy
+      if (service === "worker" && (state === "running" || statusStr.includes("running") || statusStr.includes("up"))) {
+        return { ok: true, status: displayStatus };
+      }
+      if (state === "running" || statusStr.includes("up")) {
+        return { ok: true, status: displayStatus };
+      }
+      return { ok: false, status: displayStatus };
+    }
+  } catch {
+    // Fallback to string matching
+  }
+
+  const isUnhealthy = /unhealthy/i.test(trimmed);
+  const isHealthy = /healthy/i.test(trimmed) && !isUnhealthy;
+  const isRunning = /running|up/i.test(trimmed);
+
+  if (isUnhealthy) return { ok: false, status: "unhealthy" };
+  if (isHealthy) return { ok: true, status: "healthy" };
+  if (service === "worker" && isRunning) return { ok: true, status: "running" };
+  if (isRunning) return { ok: true, status: "running" };
+
+  return { ok: false, status: trimmed.slice(0, 30) };
+}
+
 export async function waitForService(
   dockerClient,
   service,
@@ -13,18 +73,9 @@ export async function waitForService(
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const raw = dockerClient.ps(service);
-    if (raw) {
-      try {
-        const parsed = JSON.parse(raw);
-        const health = parsed.Health ?? parsed.State ?? "";
-        if (/healthy/i.test(health) || (/running/i.test(health) && service === "worker")) {
-          return true;
-        }
-      } catch {
-        if (/healthy/i.test(raw) || (/running/i.test(raw) && service === "worker")) {
-          return true;
-        }
-      }
+    const parsed = parseServiceHealth(raw, service);
+    if (parsed.ok) {
+      return true;
     }
     await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
   }
