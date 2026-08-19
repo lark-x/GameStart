@@ -311,6 +311,38 @@ test("V2 platform capability status detects missing encrypted secret and validat
   }
 });
 
+test("V2 platform API rejects saving an API key without INTEGRATION_SECRET_KEY with a clear error", async () => {
+  const temp = openV2TempSqliteConnection();
+  const path = temp.path;
+  temp.db.close();
+  const runtime = createV2ApiRuntime({
+    sqlitePath: path,
+    capabilities: { sceneGeneration: { enabled: true }, assetGeneration: { enabled: false } },
+  });
+  try {
+    const created = await runtime.app.inject({
+      method: "POST",
+      url: "/api/v2/platform/model-profiles",
+      payload: { name: "NoSecret", protocol: "openai-compatible", baseUrl: "https://llm.example", model: "m", apiKey: "super-secret" },
+    });
+    assert.equal(created.statusCode, 409);
+    assert.equal(created.json().error.code, "SECRET_KEY_REQUIRED");
+    assert.match(created.json().error.message, /INTEGRATION_SECRET_KEY/);
+
+    // Saving a profile without an API key must still work without the secret key.
+    const plain = await runtime.app.inject({
+      method: "POST",
+      url: "/api/v2/platform/model-profiles",
+      payload: { name: "NoKey", protocol: "openai-compatible", baseUrl: "https://llm.example", model: "m" },
+    });
+    assert.equal(plain.statusCode, 201);
+    assert.equal(plain.json().profile.hasApiKey, false);
+  } finally {
+    await runtime.close();
+    temp.cleanup();
+  }
+});
+
 test("V2 platform API returns model call logs with filters and details", async () => {
   const temp = openV2TempSqliteConnection();
   const path = temp.path;
