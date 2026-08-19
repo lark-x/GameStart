@@ -25,6 +25,7 @@ services:
     env_file:
       - ../../.env
     environment: &v2-environment
+    user: root
       NODE_ENV: production
       V2_API_HOST: 0.0.0.0
       V2_API_PORT: 3003
