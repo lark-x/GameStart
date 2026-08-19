@@ -107,7 +107,7 @@ onMounted(() => {
   <div class="v2-model-logs">
     <PageHeader
 
-      title="模型调用日志"
+      title="调用日志"
       description="记录模型请求、响应、耗时、Token 用量和错误上下文。密钥、Bearer 令牌和超长文本会在写入前脱敏或截断，默认保留 30 天。"
     >
       <template #actions>

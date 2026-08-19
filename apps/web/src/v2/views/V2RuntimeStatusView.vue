@@ -68,8 +68,40 @@ function capabilityLabel(value: boolean | undefined): string {
   return value ? "可用" : "不可用";
 }
 
-function statusText(value: string | undefined): string {
+function sourceLabel(value: string | undefined): string {
+  if (value === "profile") return "模型档案";
+  if (value === "environment") return "环境变量";
+  if (value === "settings") return "平台设置";
+  if (value === "none") return "未配置";
   return value ?? "-";
+}
+
+function configurationLabel(value: string | undefined): string {
+  if (value === "complete") return "配置完整";
+  if (value === "incomplete") return "配置缺失";
+  return value ?? "-";
+}
+
+function bindingLabel(value: string | undefined): string {
+  if (value === "bound") return "已绑定";
+  if (value === "unbound") return "未绑定";
+  if (value === "not-applicable") return "无需绑定";
+  return value ?? "-";
+}
+
+function connectionLabel(value: string | undefined): string {
+  if (value === "ok") return "连接正常";
+  if (value === "failed") return "连接失败";
+  if (value === "checking") return "检测中";
+  if (value === "untested") return "未测试";
+  return value ?? "-";
+}
+
+function connectionTone(value: string | undefined): "success" | "danger" | "warning" | "neutral" {
+  if (value === "ok") return "success";
+  if (value === "failed") return "danger";
+  if (value === "checking") return "warning";
+  return "neutral";
 }
 
 onMounted(() => {
@@ -80,13 +112,12 @@ onMounted(() => {
 <template>
   <div class="v2-runtime-status">
     <PageHeader
-
-      title="V2 运行状态"
-      description="检查 API、SQLite 和外部生成能力的当前可观察状态。"
+      title="Runtime"
+      description="检查 API、SQLite 和外部生成能力的当前状态。"
     >
       <template #actions>
-        <Button variant="secondary" size="md" :loading="loading" @click="refresh">
-          <RefreshCw :size="16" aria-hidden="true" />
+        <Button variant="secondary" size="sm" :loading="loading" @click="refresh">
+          <RefreshCw :size="14" aria-hidden="true" />
           刷新
         </Button>
       </template>
@@ -97,49 +128,53 @@ onMounted(() => {
     <section class="v2-runtime-grid" aria-label="运行状态">
       <article class="v2-runtime-card">
         <div class="v2-runtime-card-head">
-          <Server :size="22" aria-hidden="true" />
-          <h2>API 健康</h2>
+          <Server :size="18" aria-hidden="true" />
+          <h3>API</h3>
         </div>
-        <Badge :tone="health?.ok ? 'success' : 'warning'">{{ health?.ok ? "正常" : "未知" }}</Badge>
-        <p>版本：{{ health?.version ?? "-" }}</p>
+        <Badge :tone="health?.ok ? 'success' : 'danger'">{{ health?.ok ? "正常" : "未连接" }}</Badge>
+        <p v-if="health?.version">版本 {{ health.version }}</p>
       </article>
 
       <article class="v2-runtime-card">
         <div class="v2-runtime-card-head">
-          <Database :size="22" aria-hidden="true" />
-          <h2>持久化</h2>
+          <Database :size="18" aria-hidden="true" />
+          <h3>数据库</h3>
         </div>
-        <Badge :tone="ready?.ok ? 'success' : 'warning'">{{ ready?.ok ? "就绪" : "未就绪" }}</Badge>
-        <p>存储：{{ ready?.storage ?? "-" }}</p>
+        <Badge :tone="ready?.ok ? 'success' : 'danger'">{{ ready?.ok ? "就绪" : "未就绪" }}</Badge>
+        <p v-if="ready?.storage">{{ ready.storage }}</p>
       </article>
 
       <article class="v2-runtime-card">
         <div class="v2-runtime-card-head">
-          <ShieldCheck :size="22" aria-hidden="true" />
-          <h2>模型生成</h2>
+          <ShieldCheck :size="18" aria-hidden="true" />
+          <h3>模型生成</h3>
         </div>
         <Badge :tone="capabilityTone(capabilities?.sceneGeneration.configured)">
           {{ capabilityLabel(capabilities?.sceneGeneration.configured) }}
         </Badge>
-        <p>来源：{{ capabilities?.sceneGeneration.source ?? "none" }}</p>
-        <p>开关：{{ capabilities?.sceneGeneration.enabled ? "enabled" : "disabled" }}</p>
-        <p>配置：{{ statusText(capabilities?.sceneGeneration.configuration) }}</p>
-        <p>绑定：{{ statusText(capabilities?.sceneGeneration.binding) }}</p>
-        <p>连接：{{ statusText(capabilities?.sceneGeneration.connection) }}</p>
+        <div class="v2-runtime-card-details">
+          <p>来源：{{ sourceLabel(capabilities?.sceneGeneration.source) }}</p>
+          <p>状态：{{ capabilities?.sceneGeneration.enabled ? "已启用" : "已禁用" }}</p>
+          <p>配置：{{ configurationLabel(capabilities?.sceneGeneration.configuration) }}</p>
+          <p>绑定：{{ bindingLabel(capabilities?.sceneGeneration.binding) }}</p>
+          <p>连接：<span :class="`v2-runtime-conn-${connectionTone(capabilities?.sceneGeneration.connection)}`">{{ connectionLabel(capabilities?.sceneGeneration.connection) }}</span></p>
+        </div>
       </article>
 
       <article class="v2-runtime-card">
         <div class="v2-runtime-card-head">
-          <Activity :size="22" aria-hidden="true" />
-          <h2>素材生成</h2>
+          <Activity :size="18" aria-hidden="true" />
+          <h3>素材生成</h3>
         </div>
         <Badge :tone="capabilityTone(capabilities?.assetGeneration.configured)">
           {{ capabilityLabel(capabilities?.assetGeneration.configured) }}
         </Badge>
-        <p>来源：{{ capabilities?.assetGeneration.source ?? "none" }}</p>
-        <p>开关：{{ capabilities?.assetGeneration.enabled ? "enabled" : "disabled" }}</p>
-        <p>配置：{{ statusText(capabilities?.assetGeneration.configuration) }}</p>
-        <p>连接：{{ statusText(capabilities?.assetGeneration.connection) }}</p>
+        <div class="v2-runtime-card-details">
+          <p>来源：{{ sourceLabel(capabilities?.assetGeneration.source) }}</p>
+          <p>状态：{{ capabilities?.assetGeneration.enabled ? "已启用" : "已禁用" }}</p>
+          <p>配置：{{ configurationLabel(capabilities?.assetGeneration.configuration) }}</p>
+          <p>连接：<span :class="`v2-runtime-conn-${connectionTone(capabilities?.assetGeneration.connection)}`">{{ connectionLabel(capabilities?.assetGeneration.connection) }}</span></p>
+        </div>
       </article>
     </section>
   </div>
@@ -167,32 +202,54 @@ onMounted(() => {
 
 .v2-runtime-card {
   display: grid;
-  gap: var(--space-3);
+  gap: var(--space-2);
   min-width: 0;
-  padding: var(--space-5);
+  padding: var(--space-4);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--surface);
-  box-shadow: var(--shadow-sm);
 }
 
 .v2-runtime-card-head {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
   color: var(--primary);
 }
 
-.v2-runtime-card h2 {
+.v2-runtime-card h3 {
   margin: 0;
   color: var(--text-strong);
-  font-size: var(--text-lg);
+  font-size: var(--text-base);
 }
 
 .v2-runtime-card p {
   margin: 0;
   color: var(--muted);
   font-size: var(--text-sm);
+}
+
+.v2-runtime-card-details {
+  display: grid;
+  gap: var(--space-1);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+}
+
+.v2-runtime-conn-success {
+  color: var(--success);
+}
+
+.v2-runtime-conn-danger {
+  color: var(--danger);
+}
+
+.v2-runtime-conn-warning {
+  color: var(--warning);
+}
+
+.v2-runtime-conn-neutral {
+  color: var(--muted);
 }
 
 @media (max-width: 720px) {
