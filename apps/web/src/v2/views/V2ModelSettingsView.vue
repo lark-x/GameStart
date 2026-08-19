@@ -18,6 +18,7 @@ import Input from "../../components/ui/Input.vue";
 import PageHeader from "../../components/layout/PageHeader.vue";
 import Select from "../../components/ui/Select.vue";
 import { platformErrorMessage, v2PlatformClient } from "./platform.ts";
+import { useNotificationStore } from "../stores/notification.ts";
 
 interface ModelForm {
   readonly id?: string | undefined;
@@ -35,6 +36,7 @@ interface ModelForm {
 }
 
 const client = v2PlatformClient();
+const toast = useNotificationStore();
 const profiles = ref<readonly V2ModelProfileDto[]>([]);
 const bindings = ref<readonly V2ModelBindingDto[]>([]);
 const capabilities = ref<V2PlatformCapabilities | null>(null);
@@ -54,7 +56,6 @@ const discoveredModels = ref<readonly string[]>([]);
 const modelFilter = ref("");
 const fetchModelError = ref<string | null>(null);
 const error = ref<string | null>(null);
-const message = ref<string | null>(null);
 const testMessage = ref<string | null>(null);
 
 function emptyForm(): ModelForm {
@@ -250,12 +251,11 @@ function bindingName(capability: string): string {
 async function save(): Promise<void> {
   saving.value = true;
   error.value = null;
-  message.value = null;
   try {
     const request = requestFromForm();
     form.value.apiKey = "";
     const saved = await client.saveModelProfile(request);
-    message.value = `模型档案“${saved.name}”已保存。`;
+    toast.success(`模型档案“${saved.name}”已保存。`);
     await refresh();
     selectProfile(saved);
   } catch (err) {
@@ -288,7 +288,7 @@ async function remove(): Promise<void> {
   error.value = null;
   try {
     await client.deleteModelProfile(form.value.id);
-    message.value = "模型档案已删除。";
+    toast.success("模型档案已删除。");
     newProfile();
     await refresh();
   } catch (err) {
@@ -304,7 +304,7 @@ async function saveBinding(capability: string): Promise<void> {
     const selected = bindingSelections.value[capability] ?? "none";
     await client.setModelBinding(capability, { profileId: selected === "none" ? null : selected });
     const label = bindingCapabilities.find((item) => item.capability === capability)?.label ?? capability;
-    message.value = selected === "none" ? `${label}已解除模型绑定。` : `${label}的模型绑定已更新。`;
+    toast.success(selected === "none" ? `${label}已解除模型绑定。` : `${label}的模型绑定已更新。`);
     await refresh();
   } catch (err) {
     error.value = platformErrorMessage(err, "更新模型绑定失败");
@@ -336,7 +336,6 @@ onMounted(() => {
     </PageHeader>
 
     <div v-if="error" class="v2-settings-alert" role="alert">{{ error }}</div>
-    <div v-if="message" class="v2-settings-success" role="status">{{ message }}</div>
 
     <section class="v2-capability-card" aria-labelledby="v2-capabilities-title">
       <div class="v2-section-heading">

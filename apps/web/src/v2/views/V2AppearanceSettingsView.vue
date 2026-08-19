@@ -7,8 +7,10 @@ import Badge from "../../components/ui/Badge.vue";
 import Button from "../../components/ui/Button.vue";
 import PageHeader from "../../components/layout/PageHeader.vue";
 import { platformErrorMessage, v2PlatformClient } from "./platform.ts";
+import { useNotificationStore } from "../stores/notification.ts";
 
 const client = v2PlatformClient();
+const toast = useNotificationStore();
 const { currentTheme, currentThemeMeta, syncState, setTheme, THEMES } = useTheme();
 const selectedTheme = ref(currentTheme.value);
 const savedTheme = ref(currentTheme.value);
@@ -16,7 +18,6 @@ const isDirty = computed(() => selectedTheme.value !== savedTheme.value);
 const loading = ref(false);
 const saving = ref(false);
 const error = ref<string | null>(null);
-const message = ref<string | null>(null);
 
 async function load(): Promise<void> {
   loading.value = true;
@@ -36,12 +37,11 @@ async function load(): Promise<void> {
 async function save(): Promise<void> {
   saving.value = true;
   error.value = null;
-  message.value = null;
   try {
     const settings = await client.saveAppearanceSettings({ themeId: selectedTheme.value });
     setTheme(settings.themeId);
     savedTheme.value = settings.themeId;
-    message.value = "外观主题已保存。";
+    toast.success("外观主题已保存。");
   } catch (err) {
     error.value = platformErrorMessage(err, "保存外观设置失败");
   } finally {
@@ -51,7 +51,6 @@ async function save(): Promise<void> {
 
 function preview(themeId: string): void {
   selectedTheme.value = themeId;
-  message.value = null;
   setTheme(themeId);
 }
 
@@ -73,7 +72,6 @@ onMounted(() => {
     </PageHeader>
 
     <div v-if="error" class="v2-appearance-message v2-appearance-error" role="alert">{{ error }}</div>
-    <div v-if="message" class="v2-appearance-message v2-appearance-success" role="status">{{ message }}</div>
 
     <section class="v2-theme-preview" aria-labelledby="v2-theme-preview-title">
       <div class="v2-theme-preview-copy">

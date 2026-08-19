@@ -8,8 +8,10 @@ import Field from "../../components/ui/Field.vue";
 import Input from "../../components/ui/Input.vue";
 import PageHeader from "../../components/layout/PageHeader.vue";
 import { platformErrorMessage, v2PlatformClient } from "./platform.ts";
+import { useNotificationStore } from "../stores/notification.ts";
 
 const client = v2PlatformClient();
+const toast = useNotificationStore();
 interface ImageForm {
   baseUrl: string;
   timeoutMs: string;
@@ -22,7 +24,6 @@ const loading = ref(false);
 const saving = ref(false);
 const testing = ref(false);
 const error = ref<string | null>(null);
-const message = ref<string | null>(null);
 
 async function load(): Promise<void> {
   loading.value = true;
@@ -48,7 +49,6 @@ async function load(): Promise<void> {
 async function save(): Promise<void> {
   saving.value = true;
   error.value = null;
-  message.value = null;
   try {
     const saved = await client.saveImageServiceSettings({
       baseUrl: settings.value.baseUrl.trim(),
@@ -60,7 +60,7 @@ async function save(): Promise<void> {
       timeoutMs: String(saved.timeoutMs),
       defaultWorkflowVersion: saved.defaultWorkflowVersion ?? "",
     };
-    message.value = "图片服务设置已保存。Worker 会在下一次任务执行时读取。";
+    toast.success("图片服务设置已保存。");
     capabilities.value = await client.getCapabilities();
   } catch (err) {
     error.value = platformErrorMessage(err, "保存图片服务设置失败");
@@ -72,12 +72,11 @@ async function save(): Promise<void> {
 async function testConnection(): Promise<void> {
   testing.value = true;
   error.value = null;
-  message.value = null;
   try {
     const check = await client.testImageServiceConnection();
     capabilities.value = await client.getCapabilities();
     if (check.connection === "ok") {
-      message.value = "ComfyUI 连接测试成功。";
+      toast.success("ComfyUI 连接测试成功。");
     } else {
       error.value = `ComfyUI 连接测试失败：${check.errorMessage ?? "未知错误"}`;
     }
@@ -116,7 +115,6 @@ onMounted(() => {
     </PageHeader>
 
     <div v-if="error" class="v2-image-message v2-image-error" role="alert">{{ error }}</div>
-    <div v-if="message" class="v2-image-message v2-image-success" role="status">{{ message }}</div>
 
     <section class="v2-image-card" aria-labelledby="v2-image-service-title">
       <div class="v2-image-card-icon"><ImageIcon :size="24" aria-hidden="true" /></div>
