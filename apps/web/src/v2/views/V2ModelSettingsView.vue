@@ -10,6 +10,7 @@ import type {
 } from "@living-network/contracts/v2";
 
 import Badge from "../../components/ui/Badge.vue";
+import Checkbox from "../../components/ui/Checkbox.vue";
 import Button from "../../components/ui/Button.vue";
 import EmptyState from "../../components/ui/EmptyState.vue";
 import Field from "../../components/ui/Field.vue";
@@ -28,7 +29,7 @@ interface ModelForm {
   timeoutMs: string;
   maxTokens: string;
   contextWindow: string;
-  inputModalitiesText: string;
+  inputModalities: string[];
   temperature: string;
   apiKey: string;
 }
@@ -65,10 +66,27 @@ function emptyForm(): ModelForm {
     timeoutMs: "30000",
     maxTokens: "4096",
     contextWindow: "8192",
-    inputModalitiesText: "text",
+    inputModalities: ["text"],
     temperature: "0.2",
     apiKey: "",
   };
+}
+
+const AVAILABLE_MODALITIES: readonly { readonly value: string; readonly label: string }[] = [
+  { value: "text", label: "文本" },
+  { value: "image", label: "图片" },
+  { value: "audio", label: "音频" },
+  { value: "video", label: "视频" },
+  { value: "file", label: "文件" },
+];
+
+function toggleModality(value: string): void {
+  const idx = form.value.inputModalities.indexOf(value);
+  if (idx >= 0) {
+    form.value.inputModalities = form.value.inputModalities.filter((m) => m !== value);
+  } else {
+    form.value.inputModalities = [...form.value.inputModalities, value];
+  }
 }
 
 const editing = computed(() => form.value.id !== undefined);
@@ -107,7 +125,7 @@ function selectProfile(profile: V2ModelProfileDto, resetTestMessage = true): voi
     timeoutMs: String(profile.timeoutMs),
     maxTokens: String(profile.maxTokens),
     contextWindow: profile.contextWindow !== undefined ? String(profile.contextWindow) : "8192",
-    inputModalitiesText: profile.inputModalities ? profile.inputModalities.join(", ") : "text",
+    inputModalities: profile.inputModalities && profile.inputModalities.length > 0 ? [...profile.inputModalities] : ["text"],
     temperature: String(profile.temperature),
     apiKey: "",
   };
@@ -205,10 +223,7 @@ async function refresh(): Promise<void> {
 }
 
 function requestFromForm(): V2SaveModelProfileRequest {
-  const modalities = form.value.inputModalitiesText
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const modalities = form.value.inputModalities;
 
   const input: V2SaveModelProfileRequest = {
     name: form.value.name.trim(),
@@ -471,8 +486,16 @@ onMounted(() => {
               <Field for-id="v2-model-temperature" label="温度（0 - 2）">
                 <Input id="v2-model-temperature" v-model="form.temperature" type="number" min="0" max="2" step="0.1" />
               </Field>
-              <Field for-id="v2-model-input-modalities" label="支持模态" hint="英文逗号隔开，例如 text, image">
-                <Input id="v2-model-input-modalities" v-model="form.inputModalitiesText" placeholder="text, image" />
+              <Field label="输入能力" hint="选择模型支持的输入类型">
+                <div class="v2-model-modalities">
+                  <Checkbox
+                    v-for="mod in AVAILABLE_MODALITIES"
+                    :key="mod.value"
+                    :model-value="form.inputModalities.includes(mod.value)"
+                    :label="mod.label"
+                    @update:model-value="toggleModality(mod.value)"
+                  />
+                </div>
               </Field>
             </div>
           </fieldset>
@@ -789,4 +812,10 @@ onMounted(() => {
     grid-template-columns: 1fr;
   }
 }
+.v2-model-modalities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
 </style>
