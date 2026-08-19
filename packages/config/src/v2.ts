@@ -122,7 +122,7 @@ export function loadV2RuntimeConfig(env: V2EnvironmentInput = process.env): V2Ru
   return Object.freeze({
     api: Object.freeze({
       host: requiredString(env, "V2_API_HOST", env.API_HOST ?? "127.0.0.1"),
-      port: positiveInteger(env, "V2_API_PORT", Number(env.API_PORT ?? 3002)),
+      port: positiveInteger(env, "V2_API_PORT", Number(env.API_PORT ?? 3003)),
     }),
     sqlitePath: pathValue(env, "V2_SQLITE_PATH", ".data/living-network-v2.sqlite"),
     mediaRoot: pathValue(env, "V2_MEDIA_ROOT", "./data/media"),
