@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { Check, Palette, Save } from "@lucide/vue";
 import { useTheme } from "../../lib/theme";
 
@@ -11,6 +11,8 @@ import { platformErrorMessage, v2PlatformClient } from "./platform.ts";
 const client = v2PlatformClient();
 const { currentTheme, currentThemeMeta, syncState, setTheme, THEMES } = useTheme();
 const selectedTheme = ref(currentTheme.value);
+const savedTheme = ref(currentTheme.value);
+const isDirty = computed(() => selectedTheme.value !== savedTheme.value);
 const loading = ref(false);
 const saving = ref(false);
 const error = ref<string | null>(null);
@@ -22,6 +24,7 @@ async function load(): Promise<void> {
   try {
     const settings = await client.getAppearanceSettings();
     selectedTheme.value = settings.themeId;
+    savedTheme.value = settings.themeId;
     setTheme(settings.themeId);
   } catch (err) {
     error.value = platformErrorMessage(err, "无法读取外观设置");
@@ -37,6 +40,7 @@ async function save(): Promise<void> {
   try {
     const settings = await client.saveAppearanceSettings({ themeId: selectedTheme.value });
     setTheme(settings.themeId);
+    savedTheme.value = settings.themeId;
     message.value = "外观主题已保存。";
   } catch (err) {
     error.value = platformErrorMessage(err, "保存外观设置失败");
@@ -47,6 +51,7 @@ async function save(): Promise<void> {
 
 function preview(themeId: string): void {
   selectedTheme.value = themeId;
+  message.value = null;
   setTheme(themeId);
 }
 
@@ -76,10 +81,13 @@ onMounted(() => {
         <h2 id="v2-theme-preview-title">{{ currentThemeMeta.symbol }} {{ currentThemeMeta.label }}</h2>
         <p>{{ currentThemeMeta.tagline }}</p>
       </div>
-      <Button variant="primary" size="md" :loading="saving" @click="save">
-        <Save :size="16" aria-hidden="true" />
-        保存主题
-      </Button>
+      <div class="v2-theme-save-area">
+        <span v-if="isDirty" class="v2-theme-dirty">● 有未保存更改</span>
+        <Button variant="primary" size="md" :loading="saving" :disabled="!isDirty" @click="save">
+          <Save :size="16" aria-hidden="true" />
+          保存主题
+        </Button>
+      </div>
     </section>
 
     <section class="v2-theme-grid" aria-label="主题选择">
@@ -246,4 +254,16 @@ onMounted(() => {
     grid-template-columns: 1fr;
   }
 }
+.v2-theme-save-area {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.v2-theme-dirty {
+  color: var(--warning);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
 </style>
