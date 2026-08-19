@@ -121,6 +121,13 @@ function isRecord(value: unknown): value is RecordValue {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+export class SecretKeyRequiredError extends Error {
+  public constructor() {
+    super("INTEGRATION_SECRET_KEY is required to save an API key");
+    this.name = "SecretKeyRequiredError";
+  }
+}
+
 function requiredString(value: unknown, field: string): string {
   if (typeof value !== "string" || value.trim().length === 0) throw new TypeError(`${field} must be a non-empty string`);
   return value.trim();
@@ -288,6 +295,7 @@ function publicProfile(profile: V2StoredModelProfile): V2ModelProfileDto {
 
 function errorStatus(error: unknown): number {
   if (error instanceof TypeError) return 422;
+  if (error instanceof SecretKeyRequiredError) return 409;
   if (error instanceof Error && error.message.includes("not found")) return 404;
   if (error instanceof Error && (error.message.includes("constraint") || error.message.includes("UNIQUE"))) return 409;
   return 500;
@@ -295,7 +303,13 @@ function errorStatus(error: unknown): number {
 
 function errorPayload(error: unknown): { readonly error: { readonly code: string; readonly message: string } } {
   const status = errorStatus(error);
-  return { error: { code: status === 422 ? "VALIDATION_FAILED" : status === 404 ? "NOT_FOUND" : status === 409 ? "CONFLICT" : "INTERNAL_ERROR", message: error instanceof Error ? error.message : String(error) } };
+  const code = error instanceof SecretKeyRequiredError
+    ? "SECRET_KEY_REQUIRED"
+    : status === 422 ? "VALIDATION_FAILED"
+    : status === 404 ? "NOT_FOUND"
+    : status === 409 ? "CONFLICT"
+    : "INTERNAL_ERROR";
+  return { error: { code, message: error instanceof Error ? error.message : String(error) } };
 }
 
 async function withError(reply: FastifyReply, operation: () => Promise<unknown>): Promise<unknown> {
@@ -417,7 +431,7 @@ export function createV2PlatformPlugin(dependencies: V2PlatformPluginDependencie
       const id = input.id ?? `profile:${randomUUID()}`;
       const encrypted: { encryptedApiKey?: string; encryptionIv?: string } = {};
       if (input.apiKey !== undefined && input.apiKey.length > 0) {
-          if (dependencies.secretCipher === undefined) throw new Error("INTEGRATION_SECRET_KEY is required to save an API key");
+          if (dependencies.secretCipher === undefined) throw new SecretKeyRequiredError();
           const value = dependencies.secretCipher.encrypt(input.apiKey);
           encrypted.encryptedApiKey = value.ciphertext;
           encrypted.encryptionIv = value.iv;
@@ -459,7 +473,7 @@ export function createV2PlatformPlugin(dependencies: V2PlatformPluginDependencie
       const encrypted = input.apiKey === undefined || input.apiKey.length === 0
         ? { ...(existing.encryptedApiKey === undefined ? {} : { encryptedApiKey: existing.encryptedApiKey }), ...(existing.encryptionIv === undefined ? {} : { encryptionIv: existing.encryptionIv }) }
         : (() => {
-          if (dependencies.secretCipher === undefined) throw new Error("INTEGRATION_SECRET_KEY is required to save an API key");
+          if (dependencies.secretCipher === undefined) throw new SecretKeyRequiredError();
           const value = dependencies.secretCipher.encrypt(input.apiKey);
           return { encryptedApiKey: value.ciphertext, encryptionIv: value.iv };
         })();

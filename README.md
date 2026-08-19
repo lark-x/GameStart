@@ -114,7 +114,7 @@ pnpm --filter @living-network/web dev
 | Ready | `GET /api/v2/ready` |
 | Capabilities | `GET /api/v2/capabilities` |
 
-首次访问空 SQLite 工作区时，Web 会显示创建 Starter World 的入口。主机进程默认使用代码中的 V2 默认配置；`.env` 主要供 Compose 使用，不会被 Node 进程自动加载。需要自定义环境变量时，请在启动进程前显式导出它们。
+首次访问空 SQLite 工作区时，Web 会显示创建 Starter World 的入口。V2 API 启动时自动从仓库根目录 `.env` 加载环境变量（已显式导出的变量优先），因此 `INTEGRATION_SECRET_KEY` 等配置可直接写入 `.env`。需要临时覆盖时，在启动进程前显式导出即可。
 
 ### 启动 V2 Worker
 

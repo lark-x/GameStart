@@ -95,6 +95,7 @@ function toggleModality(value: string): void {
 
 const editing = computed(() => form.value.id !== undefined);
 const selectedProfile = computed(() => profiles.value.find((profile) => profile.id === form.value.id));
+const secretUnavailable = computed(() => capabilities.value?.sceneGeneration.reason === "secret_unavailable");
 const bindingCapabilities: readonly { readonly capability: string; readonly label: string; readonly hint: string }[] = [
   { capability: "chat", label: "对话模型", hint: "Chat 回复与即时故事开场使用。" },
   { capability: "scene_generation", label: "场景生成模型", hint: "Worker 场景生成任务使用。" },
@@ -262,7 +263,10 @@ async function save(): Promise<void> {
     await refresh();
     selectProfile(saved);
   } catch (err) {
-    error.value = platformErrorMessage(err, "保存模型档案失败");
+    const message = platformErrorMessage(err, "保存模型档案失败");
+    error.value = message.includes("SECRET_KEY_REQUIRED")
+      ? "无法保存 API 密钥：服务器未配置 INTEGRATION_SECRET_KEY。请在仓库根目录 .env 中配置 Base64 编码的 32 字节密钥后重启 API。"
+      : message;
   } finally {
     saving.value = false;
   }
@@ -344,6 +348,13 @@ onMounted(() => {
     </PageHeader>
 
     <div v-if="error" class="v2-settings-alert" role="alert">{{ error }}</div>
+
+    <div v-if="secretUnavailable" class="v2-settings-alert v2-settings-alert--warning" role="alert">
+      <strong>无法保存或使用 API 密钥：</strong>服务器未配置 <code>INTEGRATION_SECRET_KEY</code>。
+      请在仓库根目录 <code>.env</code> 中设置 Base64 编码的 32 字节密钥（例如
+      <code>node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"</code>），
+      然后重启 API 服务。
+    </div>
 
     <section class="v2-capability-card" aria-labelledby="v2-capabilities-title">
       <div class="v2-section-heading">
@@ -782,6 +793,11 @@ onMounted(() => {
 .v2-settings-alert {
   background: var(--danger-soft);
   color: var(--danger);
+}
+
+.v2-settings-alert--warning {
+  background: var(--warning-soft);
+  color: var(--warning);
 }
 
 .v2-inline-message-success {
