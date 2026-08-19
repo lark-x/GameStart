@@ -11,23 +11,51 @@ test("V2 routes structure correctly configures entry points and redirects", () =
   const children = root.children ?? [];
   const paths = new Map(children.map((c) => [c.path, c]));
 
-  // Check key routes
+  // Core navigation routes
   assert.ok(paths.has(""), "Default redirect exists");
   assert.ok(paths.has("start"), "Start view exists");
   assert.ok(paths.has("chat/:conversationId"), "Chat view exists");
   assert.ok(paths.has("workspace/:area"), "Workspace area view exists");
-  assert.ok(paths.has("settings"), "Settings home exists");
-  assert.ok(paths.has("services/models"), "Models settings exists");
-  assert.ok(paths.has("services/comfyui"), "ComfyUI settings exists");
-  assert.ok(paths.has("services/runtime"), "Runtime status exists");
 
-  // Check aliases/redirects
+  // Settings is a layout route with children
+  const settingsRoute = paths.get("settings");
+  assert.ok(settingsRoute, "Settings layout route exists");
+  assert.equal(settingsRoute.name, "v2-settings");
+
+  const settingsChildren = settingsRoute.children ?? [];
+  const settingsPaths = new Map(settingsChildren.map((c) => [c.path, c]));
+
+  // Canonical settings child routes
+  assert.ok(settingsPaths.has(""), "Settings overview exists");
+  assert.ok(settingsPaths.has("models"), "Settings models exists");
+  assert.ok(settingsPaths.has("memory"), "Settings memory exists");
+  assert.ok(settingsPaths.has("prompt"), "Settings prompt exists");
+  assert.ok(settingsPaths.has("comfyui"), "Settings comfyui exists");
+  assert.ok(settingsPaths.has("runtime"), "Settings runtime exists");
+  assert.ok(settingsPaths.has("logs"), "Settings logs exists");
+  assert.ok(settingsPaths.has("automation"), "Settings automation exists");
+  assert.ok(settingsPaths.has("appearance"), "Settings appearance exists");
+
+  // Legacy redirects point to canonical settings routes
+  const servicesModels = paths.get("services/models");
+  assert.equal(servicesModels?.redirect, "/v2/settings/models");
+
+  const servicesComfyui = paths.get("services/comfyui");
+  assert.equal(servicesComfyui?.redirect, "/v2/settings/comfyui");
+
+  const servicesRuntime = paths.get("services/runtime");
+  assert.equal(servicesRuntime?.redirect, "/v2/settings/runtime");
+
+  const servicesLogs = paths.get("services/logs");
+  assert.equal(servicesLogs?.redirect, "/v2/settings/logs");
+
+  const automationRedirect = paths.get("automation");
+  assert.equal(automationRedirect?.redirect, "/v2/settings/automation");
+
+  const diagnosticsRedirect = paths.get("diagnostics/model-logs");
+  assert.equal(diagnosticsRedirect?.redirect, "/v2/settings/logs");
+
+  // Workspace redirect
   const reviewRedirect = paths.get("workspace/review");
   assert.equal(reviewRedirect?.redirect, "/v2/workspace/ai-scene-review");
-
-  const modelsRedirect = paths.get("settings/models");
-  assert.equal(modelsRedirect?.redirect, "/v2/services/models");
-
-  const imageRedirect = paths.get("settings/image");
-  assert.equal(imageRedirect?.redirect, "/v2/services/comfyui");
 });

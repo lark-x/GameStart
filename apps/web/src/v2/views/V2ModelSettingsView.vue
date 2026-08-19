@@ -10,6 +10,7 @@ import type {
 } from "@living-network/contracts/v2";
 
 import Badge from "../../components/ui/Badge.vue";
+import Checkbox from "../../components/ui/Checkbox.vue";
 import Button from "../../components/ui/Button.vue";
 import EmptyState from "../../components/ui/EmptyState.vue";
 import Field from "../../components/ui/Field.vue";
@@ -17,6 +18,7 @@ import Input from "../../components/ui/Input.vue";
 import PageHeader from "../../components/layout/PageHeader.vue";
 import Select from "../../components/ui/Select.vue";
 import { platformErrorMessage, v2PlatformClient } from "./platform.ts";
+import { useNotificationStore } from "../stores/notification.ts";
 
 interface ModelForm {
   readonly id?: string | undefined;
@@ -28,12 +30,13 @@ interface ModelForm {
   timeoutMs: string;
   maxTokens: string;
   contextWindow: string;
-  inputModalitiesText: string;
+  inputModalities: string[];
   temperature: string;
   apiKey: string;
 }
 
 const client = v2PlatformClient();
+const toast = useNotificationStore();
 const profiles = ref<readonly V2ModelProfileDto[]>([]);
 const bindings = ref<readonly V2ModelBindingDto[]>([]);
 const capabilities = ref<V2PlatformCapabilities | null>(null);
@@ -47,14 +50,16 @@ const bindingSelections = ref<Record<string, string>>({
 const loading = ref(false);
 const saving = ref(false);
 const testing = ref(false);
+type ConnectionTestStatus = "idle" | "testing" | "success" | "error";
 const deleting = ref(false);
 const fetchingModels = ref(false);
 const discoveredModels = ref<readonly string[]>([]);
 const modelFilter = ref("");
 const fetchModelError = ref<string | null>(null);
 const error = ref<string | null>(null);
-const message = ref<string | null>(null);
 const testMessage = ref<string | null>(null);
+const testStatus = ref<ConnectionTestStatus>("idle");
+const testResults = new Map<string, string>();
 
 function emptyForm(): ModelForm {
   return {
@@ -65,10 +70,27 @@ function emptyForm(): ModelForm {
     timeoutMs: "30000",
     maxTokens: "4096",
     contextWindow: "8192",
-    inputModalitiesText: "text",
+    inputModalities: ["text"],
     temperature: "0.2",
     apiKey: "",
   };
+}
+
+const AVAILABLE_MODALITIES: readonly { readonly value: string; readonly label: string }[] = [
+  { value: "text", label: "文本" },
+  { value: "image", label: "图片" },
+  { value: "audio", label: "音频" },
+  { value: "video", label: "视频" },
+  { value: "file", label: "文件" },
+];
+
+function toggleModality(value: string): void {
+  const idx = form.value.inputModalities.indexOf(value);
+  if (idx >= 0) {
+    form.value.inputModalities = form.value.inputModalities.filter((m) => m !== value);
+  } else {
+    form.value.inputModalities = [...form.value.inputModalities, value];
+  }
 }
 
 const editing = computed(() => form.value.id !== undefined);
@@ -107,7 +129,7 @@ function selectProfile(profile: V2ModelProfileDto, resetTestMessage = true): voi
     timeoutMs: String(profile.timeoutMs),
     maxTokens: String(profile.maxTokens),
     contextWindow: profile.contextWindow !== undefined ? String(profile.contextWindow) : "8192",
-    inputModalitiesText: profile.inputModalities ? profile.inputModalities.join(", ") : "text",
+    inputModalities: profile.inputModalities && profile.inputModalities.length > 0 ? [...profile.inputModalities] : ["text"],
     temperature: String(profile.temperature),
     apiKey: "",
   };
@@ -205,10 +227,7 @@ async function refresh(): Promise<void> {
 }
 
 function requestFromForm(): V2SaveModelProfileRequest {
-  const modalities = form.value.inputModalitiesText
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const modalities = form.value.inputModalities;
 
   const input: V2SaveModelProfileRequest = {
     name: form.value.name.trim(),
@@ -235,12 +254,11 @@ function bindingName(capability: string): string {
 async function save(): Promise<void> {
   saving.value = true;
   error.value = null;
-  message.value = null;
   try {
     const request = requestFromForm();
     form.value.apiKey = "";
     const saved = await client.saveModelProfile(request);
-    message.value = `模型档案“${saved.name}”已保存。`;
+    toast.success(`模型档案“${saved.name}”已保存。`);
     await refresh();
     selectProfile(saved);
   } catch (err) {
@@ -253,14 +271,19 @@ async function save(): Promise<void> {
 async function test(): Promise<void> {
   if (form.value.id === undefined) return;
   testing.value = true;
+  testStatus.value = "testing";
   error.value = null;
   testMessage.value = null;
   try {
     const result = await client.testModelProfile(form.value.id);
     const preview = typeof result.preview === "string" ? ` 返回：${result.preview}` : "";
     testMessage.value = `连接测试成功。${preview}`;
+    testStatus.value = "success";
+    testResults.set(form.value.id, testMessage.value);
   } catch (err) {
     testMessage.value = platformErrorMessage(err, "连接测试失败");
+    testStatus.value = "error";
+    testResults.set(form.value.id, testMessage.value);
   } finally {
     await refresh();
     testing.value = false;
@@ -273,7 +296,7 @@ async function remove(): Promise<void> {
   error.value = null;
   try {
     await client.deleteModelProfile(form.value.id);
-    message.value = "模型档案已删除。";
+    toast.success("模型档案已删除。");
     newProfile();
     await refresh();
   } catch (err) {
@@ -289,7 +312,7 @@ async function saveBinding(capability: string): Promise<void> {
     const selected = bindingSelections.value[capability] ?? "none";
     await client.setModelBinding(capability, { profileId: selected === "none" ? null : selected });
     const label = bindingCapabilities.find((item) => item.capability === capability)?.label ?? capability;
-    message.value = selected === "none" ? `${label}已解除模型绑定。` : `${label}的模型绑定已更新。`;
+    toast.success(selected === "none" ? `${label}已解除模型绑定。` : `${label}的模型绑定已更新。`);
     await refresh();
   } catch (err) {
     error.value = platformErrorMessage(err, "更新模型绑定失败");
@@ -304,7 +327,7 @@ onMounted(() => {
 <template>
   <div class="v2-model-settings">
     <PageHeader
-      eyebrow="平台配置 / 模型"
+
       title="模型与能力"
       description="模型密钥只写入服务端加密存储，页面不会回显原始密钥。场景生成能力从这里选择实际使用的模型。"
     >
@@ -321,7 +344,6 @@ onMounted(() => {
     </PageHeader>
 
     <div v-if="error" class="v2-settings-alert" role="alert">{{ error }}</div>
-    <div v-if="message" class="v2-settings-success" role="status">{{ message }}</div>
 
     <section class="v2-capability-card" aria-labelledby="v2-capabilities-title">
       <div class="v2-section-heading">
@@ -471,8 +493,16 @@ onMounted(() => {
               <Field for-id="v2-model-temperature" label="温度（0 - 2）">
                 <Input id="v2-model-temperature" v-model="form.temperature" type="number" min="0" max="2" step="0.1" />
               </Field>
-              <Field for-id="v2-model-input-modalities" label="支持模态" hint="英文逗号隔开，例如 text, image">
-                <Input id="v2-model-input-modalities" v-model="form.inputModalitiesText" placeholder="text, image" />
+              <Field label="输入能力" hint="选择模型支持的输入类型">
+                <div class="v2-model-modalities">
+                  <Checkbox
+                    v-for="mod in AVAILABLE_MODALITIES"
+                    :key="mod.value"
+                    :model-value="form.inputModalities.includes(mod.value)"
+                    :label="mod.label"
+                    @update:model-value="toggleModality(mod.value)"
+                  />
+                </div>
               </Field>
             </div>
           </fieldset>
@@ -536,7 +566,7 @@ onMounted(() => {
               删除
             </Button>
           </div>
-          <p v-if="testMessage" class="v2-inline-message" role="status">{{ testMessage }}</p>
+          <p v-if="testMessage" :class="testStatus === 'success' ? 'v2-inline-message-success' : 'v2-inline-message-danger'" role="status">{{ testMessage }}</p>
         </form>
       </section>
     </div>
@@ -616,6 +646,7 @@ onMounted(() => {
   grid-template-columns: minmax(220px, 0.72fr) minmax(0, 1.28fr);
   gap: var(--space-5);
   align-items: start;
+  container-type: inline-size;
 }
 
 .v2-profile-items {
@@ -748,23 +779,17 @@ onMounted(() => {
   white-space: nowrap;
 }
 
-.v2-inline-message,
-.v2-settings-alert,
-.v2-settings-success {
-  margin: 0;
-  padding: var(--space-3);
-  border-radius: var(--radius-md);
-  font-size: var(--text-sm);
-  line-height: 1.5;
+.v2-settings-alert {
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
-.v2-inline-message,
-.v2-settings-success {
+.v2-inline-message-success {
   background: var(--success-soft);
   color: var(--success);
 }
 
-.v2-settings-alert {
+.v2-inline-message-danger {
   background: var(--danger-soft);
   color: var(--danger);
 }
@@ -789,4 +814,10 @@ onMounted(() => {
     grid-template-columns: 1fr;
   }
 }
+.v2-model-modalities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
 </style>

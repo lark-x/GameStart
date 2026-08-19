@@ -14,6 +14,17 @@ import type {
   V2SaveModelProfileRequest,
   V2SetModelBindingRequest,
 } from "@living-network/contracts/v2";
+export interface V2RuntimeHealth {
+  readonly ok?: boolean;
+  readonly version?: string;
+}
+
+export interface V2RuntimeReady {
+  readonly ok?: boolean;
+  readonly version?: string;
+  readonly storage?: string;
+}
+
 
 export interface V2PlatformClientOptions {
   readonly baseUrl: string;
@@ -129,6 +140,12 @@ export function createV2PlatformClient(options: V2PlatformClientOptions): V2Plat
     async deleteModelCallLogs(before: string): Promise<number> {
       return (await send<{ readonly deleted: number }>("DELETE", `/model-call-logs?before=${encodeURIComponent(before)}`)).deleted;
     },
+    async getHealth(): Promise<V2RuntimeHealth> {
+      return readJson<V2RuntimeHealth>(await fetcher(`${baseUrl}/api/v2/health`, request("GET")));
+    },
+    async getReady(): Promise<V2RuntimeReady> {
+      return readJson<V2RuntimeReady>(await fetcher(`${baseUrl}/api/v2/ready`, request("GET")));
+    },
   };
 }
 
@@ -149,4 +166,6 @@ export interface V2PlatformClient {
   queryModelCallLogs(query?: V2ModelCallLogQuery): Promise<V2ModelCallLogPage>;
   getModelCallLog(id: string): Promise<V2ModelCallLogDto>;
   deleteModelCallLogs(before: string): Promise<number>;
+  getHealth(): Promise<V2RuntimeHealth>;
+  getReady(): Promise<V2RuntimeReady>;
 }

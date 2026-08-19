@@ -106,8 +106,8 @@ onMounted(() => {
 <template>
   <div class="v2-model-logs">
     <PageHeader
-      eyebrow="诊断 / 模型调用"
-      title="模型调用日志"
+
+      title="调用日志"
       description="记录模型请求、响应、耗时、Token 用量和错误上下文。密钥、Bearer 令牌和超长文本会在写入前脱敏或截断，默认保留 30 天。"
     >
       <template #actions>
@@ -240,6 +240,7 @@ onMounted(() => {
   grid-template-columns: minmax(300px, 0.85fr) minmax(0, 1.15fr);
   gap: var(--space-5);
   align-items: start;
+  container-type: inline-size;
 }
 
 .v2-log-list-head {
@@ -403,8 +404,13 @@ onMounted(() => {
   color: var(--success);
 }
 
+@container (max-width: 700px) {
+  .v2-log-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 900px) {
-  .v2-log-layout,
   .v2-log-filters {
     grid-template-columns: 1fr;
   }

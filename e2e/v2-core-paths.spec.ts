@@ -43,25 +43,32 @@ test("V2 keeps external service configuration outside manual authoring pages", a
   await expect(page.getByLabel("API 地址")).toHaveCount(0);
   await expect(page.getByLabel("ComfyUI 地址")).toHaveCount(0);
 
+  // Legacy URL redirects to canonical settings path
   await page.goto("/v2/services/models");
+  await expect(page).toHaveURL(/\/v2\/settings\/models$/);
   await expect(page.getByRole("heading", { name: "模型与能力" }).first()).toBeVisible();
   await expect(page.getByText("当前运行能力", { exact: true })).toBeVisible();
   await page.getByLabel("档案名称").fill("本地测试模型");
   await page.getByLabel("API 地址").fill("https://example.invalid/v1");
   await page.getByLabel("模型名称").fill("test-model");
   await page.getByRole("button", { name: "保存档案", exact: true }).click();
-  await expect(page.getByText("模型档案“本地测试模型”已保存。", { exact: true })).toBeVisible();
+  // Success is now a toast notification
+  await expect(page.getByText(`模型档案"本地测试模型"已保存。`, { exact: true })).toBeVisible();
 
   await page.goto("/v2/services/comfyui");
-  await expect(page.getByRole("heading", { name: "图片服务" }).first()).toBeVisible();
+  await expect(page).toHaveURL(/\/v2\/settings\/comfyui$/);
+  await expect(page.getByRole("heading", { name: "ComfyUI" }).first()).toBeVisible();
   await page.getByLabel("ComfyUI 地址").fill("http://127.0.0.1:8188");
   await page.getByLabel("默认工作流版本").fill("local-default@1");
   await page.getByRole("button", { name: "保存设置", exact: true }).click();
-  await expect(page.getByText("图片服务设置已保存。Worker 会在下一次任务执行时读取。", { exact: true })).toBeVisible();
+  // Success is now a toast notification
+  await expect(page.getByText(`图片服务设置已保存。`, { exact: true })).toBeVisible();
 
   await page.goto("/v2/services/logs");
+  await expect(page).toHaveURL(/\/v2\/settings\/logs$/);
   await expect(page.getByRole("heading", { name: "调用日志" }).first()).toBeVisible();
 
   await page.goto("/v2/services/runtime");
-  await expect(page.getByRole("heading", { name: "运行状态" }).first()).toBeVisible();
+  await expect(page).toHaveURL(/\/v2\/settings\/runtime$/);
+  await expect(page.getByText("Runtime", { exact: false }).first()).toBeVisible();
 });

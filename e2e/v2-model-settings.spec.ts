@@ -2,7 +2,10 @@ import { expect, test } from "@playwright/test";
 
 test("V2 model settings shows capability bindings summary and sectioned form", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/v2/services/models");
+  await page.goto("/v2/settings/models");
+
+  // Settings navigation is visible
+  await expect(page.getByRole("navigation", { name: "设置导航" })).toBeVisible();
 
   // Binding summary lists all four capabilities.
   const summary = page.locator(".v2-binding-summary");
@@ -20,5 +23,11 @@ test("V2 model settings shows capability bindings summary and sectioned form", a
   // Capability binding selects exist per capability.
   for (const capability of ["chat", "scene_generation", "memory", "story_analysis"]) {
     await expect(page.locator(`#v2-binding-${capability}`)).toBeVisible();
+  }
+
+  // Modalities are now checkboxes instead of free text
+  await expect(page.getByText("输入能力", { exact: false }).first()).toBeVisible();
+  for (const label of ["文本", "图片", "音频", "视频", "文件"]) {
+    await expect(page.getByLabel(label, { exact: true })).toBeVisible();
   }
 });
