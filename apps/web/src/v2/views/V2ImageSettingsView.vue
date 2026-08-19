@@ -106,7 +106,7 @@ onMounted(() => {
 <template>
   <div class="v2-image-settings">
     <PageHeader
-      eyebrow="平台配置 / 图片"
+
       title="图片服务"
       description="为素材生成配置 ComfyUI。地址为空时，素材生成功能保持未配置，不会误发起外部请求。"
     >

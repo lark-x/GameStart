@@ -80,7 +80,7 @@ onMounted(() => {
 <template>
   <div class="v2-runtime-status">
     <PageHeader
-      eyebrow="外部服务 / 运行状态"
+
       title="V2 运行状态"
       description="检查 API、SQLite 和外部生成能力的当前可观察状态。"
     >

@@ -8,7 +8,7 @@ import PageHeader from "../../components/layout/PageHeader.vue";
 <template>
   <div class="v2-automation">
     <PageHeader
-      eyebrow="诊断与自动化"
+
       title="触发器"
       description="触发器是独立的自动化模块，后续可以在这里编排定时任务、事件触发和人工重试。"
     />

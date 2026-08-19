@@ -58,7 +58,7 @@ onMounted(() => {
 <template>
   <div class="v2-appearance-settings">
     <PageHeader
-      eyebrow="平台配置 / 外观"
+
       title="外观主题"
       description="统一配置平台皮肤。主题切换会立即预览，保存后在本地 SQLite 中成为下次启动的默认主题。"
     >

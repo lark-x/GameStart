@@ -304,7 +304,7 @@ onMounted(() => {
 <template>
   <div class="v2-model-settings">
     <PageHeader
-      eyebrow="平台配置 / 模型"
+
       title="模型与能力"
       description="模型密钥只写入服务端加密存储，页面不会回显原始密钥。场景生成能力从这里选择实际使用的模型。"
     >

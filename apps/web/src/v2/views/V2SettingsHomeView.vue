@@ -3,7 +3,6 @@ import { Activity, Cpu, Image as ImageIcon, Palette, ScrollText, Settings2, Spar
 import { RouterLink } from "vue-router";
 
 import Badge from "../../components/ui/Badge.vue";
-import PageHeader from "../../components/layout/PageHeader.vue";
 
 interface SettingsEntry {
   readonly to: string;
@@ -24,22 +23,22 @@ const groups: readonly SettingsGroup[] = [
     label: "AI",
     entries: [
       {
-        to: "/v2/services/models",
+        to: "/v2/settings/models",
         label: "模型",
         description: "管理模型档案、API 密钥和不同功能的模型绑定。",
         icon: Cpu,
       },
       {
-        to: "/v2/services/models",
+        to: "/v2/settings/memory",
         label: "Memory",
-        description: "长期记忆引擎与评估（即将推出）。",
+        description: "长期记忆引擎与评估。",
         icon: Sparkles,
         soon: true,
       },
       {
-        to: "/v2/services/models",
+        to: "/v2/settings/prompt",
         label: "Prompt",
-        description: "提示词模板管理（即将推出）。",
+        description: "提示词模板版本管理。",
         icon: ScrollText,
         soon: true,
       },
@@ -49,7 +48,7 @@ const groups: readonly SettingsGroup[] = [
     label: "生成",
     entries: [
       {
-        to: "/v2/services/comfyui",
+        to: "/v2/settings/comfyui",
         label: "ComfyUI",
         description: "配置 ComfyUI 地址、超时和默认工作流版本。",
         icon: ImageIcon,
@@ -60,21 +59,21 @@ const groups: readonly SettingsGroup[] = [
     label: "系统",
     entries: [
       {
-        to: "/v2/services/runtime",
+        to: "/v2/settings/runtime",
         label: "运行状态",
         description: "查看服务健康、版本和外部连接状态。",
         icon: Activity,
       },
       {
-        to: "/v2/services/logs",
+        to: "/v2/settings/logs",
         label: "调用日志",
         description: "查看模型调用记录与错误详情。",
         icon: ScrollText,
       },
       {
-        to: "/v2/automation",
+        to: "/v2/settings/automation",
         label: "触发器",
-        description: "自动化与定时任务配置。",
+        description: "自动化与定时任务配置（实验性）。",
         icon: Settings2,
       },
     ],
@@ -95,12 +94,6 @@ const groups: readonly SettingsGroup[] = [
 
 <template>
   <div class="v2-settings-home">
-    <PageHeader
-      eyebrow="平台配置"
-      title="把系统配置集中在这里"
-      description="模型、图片服务和界面外观彼此独立，后续新增能力可以沿着同一配置边界扩展。"
-    />
-
     <section v-for="group in groups" :key="group.label" class="v2-settings-group">
       <h2 class="v2-settings-group-title">{{ group.label }}</h2>
       <div class="v2-settings-grid">
