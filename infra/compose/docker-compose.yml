@@ -6,7 +6,7 @@ services:
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "${REDIS_PORT:-6380}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -27,7 +27,7 @@ services:
     environment: &v2-environment
       NODE_ENV: production
       V2_API_HOST: 0.0.0.0
-      V2_API_PORT: 3002
+      V2_API_PORT: 3003
       V2_SQLITE_PATH: /app/data/sqlite/living-network-v2.sqlite
       V2_MEDIA_ROOT: /app/data/media
       REDIS_URL: redis://redis:6379
@@ -36,7 +36,7 @@ services:
       V2_ASSET_GENERATION_ENABLED: ${V2_ASSET_GENERATION_ENABLED:-false}
     command: ["pnpm", "--filter", "@living-network/api", "start:v2"]
     ports:
-      - "${API_PORT:-3002}:3002"
+      - "${API_PORT:-3003}:3003"
     depends_on:
       redis:
         condition: service_healthy
@@ -44,7 +44,7 @@ services:
       - media_data:/app/data/media
       - sqlite_data:/app/data/sqlite
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3002/api/v2/ready').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3003/api/v2/ready').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 10s
       timeout: 3s
       retries: 12
