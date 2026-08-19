@@ -9,7 +9,7 @@ import { createV2PlatformClient, V2PlatformClientError } from "../adapters/platf
 
 const apiBase = (() => {
   const env = (import.meta as ImportMeta & { readonly env?: Record<string, string | undefined> }).env ?? {};
-  return env.VITE_API_BASE || (typeof window === "undefined" ? "http://127.0.0.1:3002" : window.location.origin);
+  return env.VITE_API_BASE || (typeof window === "undefined" ? "http://127.0.0.1:3003" : window.location.origin);
 })();
 
 const client = createV2PlatformClient({ baseUrl: apiBase });

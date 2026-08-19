@@ -2,7 +2,7 @@ import { createV2PlatformClient, V2PlatformClientError } from "../adapters/platf
 
 export function v2PlatformClient() {
   const env = (import.meta as ImportMeta & { readonly env?: Record<string, string | undefined> }).env ?? {};
-  const baseUrl = env.VITE_API_BASE || (typeof window === "undefined" ? "http://127.0.0.1:3002" : window.location.origin);
+  const baseUrl = env.VITE_API_BASE || (typeof window === "undefined" ? "http://127.0.0.1:3003" : window.location.origin);
   return createV2PlatformClient({ baseUrl });
 }
 

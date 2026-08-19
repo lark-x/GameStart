@@ -75,7 +75,7 @@ export function createV2DefaultAdapter(
     return createV2MockAdapter();
   }
   return createV2HttpAdapter({
-    baseUrl: environment.VITE_API_BASE || (browser === undefined ? "http://127.0.0.1:3002" : browser.location.origin),
+    baseUrl: environment.VITE_API_BASE || (browser === undefined ? "http://127.0.0.1:3003" : browser.location.origin),
   });
 }
 
@@ -267,7 +267,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
     if (typeof window !== "undefined") window.localStorage.setItem("living-network-v2-adapter", nextMode);
     setAdapter(
       nextMode === "http"
-        ? createV2HttpAdapter({ baseUrl: runtimeEnv.VITE_API_BASE || (typeof window === "undefined" ? "http://127.0.0.1:3002" : window.location.origin) })
+        ? createV2HttpAdapter({ baseUrl: runtimeEnv.VITE_API_BASE || (typeof window === "undefined" ? "http://127.0.0.1:3003" : window.location.origin) })
         : createV2MockAdapter(),
     );
   }

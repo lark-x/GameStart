@@ -26,8 +26,8 @@ pnpm --filter @living-network/web dev
 打开 <http://127.0.0.1:4173/v2>，API 检查：
 
 ```sh
-curl http://127.0.0.1:3002/api/v2/health
-curl http://127.0.0.1:3002/api/v2/ready
+curl http://127.0.0.1:3003/api/v2/health
+curl http://127.0.0.1:3003/api/v2/ready
 ```
 
 V2 默认使用 `.data/living-network-v2.sqlite`；测试可使用 `V2_SQLITE_PATH=:memory:`。Web 默认使用 HTTP adapter，Mock 只能通过 `VITE_V2_ENABLE_MOCK=true` 显式启用。V2 Web 当前为中文单语言界面，不包含语言切换设置。

@@ -5,7 +5,7 @@ import { loadV2RuntimeConfig, V2ConfigError } from "./v2.ts";
 
 test("V2 runtime config defaults to disabled external lanes and SQLite", () => {
   const config = loadV2RuntimeConfig({});
-  assert.equal(config.api.port, 3002);
+  assert.equal(config.api.port, 3003);
   assert.equal(config.scene.enabled, false);
   assert.equal(config.asset.enabled, false);
   assert.equal(config.redisUrl, "redis://127.0.0.1:6379");

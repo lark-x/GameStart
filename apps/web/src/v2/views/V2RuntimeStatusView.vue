@@ -28,7 +28,7 @@ const error = ref<string | null>(null);
 
 const apiBase = computed(() => {
   const env = (import.meta as ImportMeta & { readonly env?: Record<string, string | undefined> }).env ?? {};
-  return env.VITE_API_BASE || (typeof window === "undefined" ? "http://127.0.0.1:3002" : window.location.origin);
+  return env.VITE_API_BASE || (typeof window === "undefined" ? "http://127.0.0.1:3003" : window.location.origin);
 });
 
 async function readJson<T>(path: string): Promise<T> {

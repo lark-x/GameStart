@@ -5,7 +5,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = dirname(fileURLToPath(import.meta.url));
-const v2ApiTarget = process.env.V2_API_PROXY_TARGET ?? "http://127.0.0.1:3002";
+const v2ApiTarget = process.env.V2_API_PROXY_TARGET ?? "http://127.0.0.1:3003";
 
 export default defineConfig({
   plugins: [

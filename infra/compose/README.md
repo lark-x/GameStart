@@ -21,7 +21,7 @@ The first run builds the application image and applies all pending V2 SQLite mig
 .\scripts\persistent-status.ps1
 ```
 
-Open the application at <http://127.0.0.1:4173>. The API is also exposed at <http://127.0.0.1:3002>.
+Open the application at <http://127.0.0.1:4173>. The API is also exposed at <http://127.0.0.1:3003>.
 
 Stop the stack without deleting data:
 

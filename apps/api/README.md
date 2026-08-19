@@ -8,7 +8,7 @@ V2 Fastify API。当前公共路径为 `/api/v2`，业务事实存储为 Node `n
 pnpm --filter @living-network/api dev:v2
 ```
 
-默认监听 `127.0.0.1:3002`，SQLite 路径由 `V2_SQLITE_PATH` 控制，默认是 `.data/living-network-v2.sqlite`。API 启动时只执行缺失的 V2 up migration，不执行 down migration；Worker 必须等待 `/api/v2/ready`。
+默认监听 `127.0.0.1:3003`，SQLite 路径由 `V2_SQLITE_PATH` 控制，默认是 `.data/living-network-v2.sqlite`。API 启动时只执行缺失的 V2 up migration，不执行 down migration；Worker 必须等待 `/api/v2/ready`。
 
 基础端点：
 
