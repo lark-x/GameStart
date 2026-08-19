@@ -21,8 +21,8 @@ test.describe("Settings navigation and routing", () => {
     const routes = [
       { path: "/v2/settings", expected: "系统" },
       { path: "/v2/settings/models", expected: "模型" },
-      { path: "/v2/settings/memory", expected: "Memory" },
-      { path: "/v2/settings/prompt", expected: "Prompt" },
+      { path: "/v2/settings/memory", expected: "记忆引擎" },
+      { path: "/v2/settings/prompt", expected: "提示词任务" },
       { path: "/v2/settings/comfyui", expected: "ComfyUI" },
       { path: "/v2/settings/runtime", expected: "Runtime" },
       { path: "/v2/settings/logs", expected: "调用日志" },
