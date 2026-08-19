@@ -44,7 +44,7 @@ export function createDockerClient({
     composeInteractive: (args, extraEnv, opts) => runComposeInteractive(args, extraEnv, opts),
 
     build: (extraEnv) => runComposeInteractive(["build"], extraEnv),
-    up: (extraEnv) => runComposeInteractive(["up", "-d"], extraEnv),
+    up: (extraEnv) => runComposeInteractive(["up", "-d", "--remove-orphans"], extraEnv),
     down: (extraEnv) => runComposeInteractive(["down"], extraEnv),
 
     ps: (service = "", extraEnv = {}) => {

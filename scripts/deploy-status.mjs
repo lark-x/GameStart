@@ -10,6 +10,7 @@ import { detectEnvironment } from "./deploy/environment.mjs";
 import { getLanAddresses } from "./deploy/network.mjs";
 import { parseDockerPublishedPort } from "./deploy/port.mjs";
 import { loadDeployState } from "./deploy/state.mjs";
+import { parseServiceHealth } from "./deploy/health.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");
@@ -25,19 +26,10 @@ function main() {
   // Query Docker for current service states
   for (const service of ["redis", "api", "worker", "web"]) {
     const raw = dockerClient.ps(service);
-    let status = "not running";
-    if (raw) {
-      try {
-        const p = JSON.parse(raw);
-        status = p.Health || p.State || "unknown";
-      } catch {
-        status = /healthy|running/i.test(raw) ? "running" : "unknown";
-      }
-    }
-    const isHealthy = /healthy/i.test(status) || (/running/i.test(status) && service === "worker");
-    const icon = isHealthy ? "✓" : "✖";
+    const parsed = parseServiceHealth(raw, service);
+    const icon = parsed.ok ? "✓" : "✖";
     const label = service.charAt(0).toUpperCase() + service.slice(1);
-    console.log(`  ${icon} ${label.padEnd(10)} ${status}`);
+    console.log(`  ${icon} ${label.padEnd(10)} ${parsed.status}`);
   }
 
   // Show access URL by querying Docker directly
