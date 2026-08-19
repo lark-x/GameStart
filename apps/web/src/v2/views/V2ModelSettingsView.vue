@@ -57,6 +57,7 @@ const modelFilter = ref("");
 const fetchModelError = ref<string | null>(null);
 const error = ref<string | null>(null);
 const testMessage = ref<string | null>(null);
+const testResults = new Map<string, string>();
 
 function emptyForm(): ModelForm {
   return {
@@ -274,8 +275,10 @@ async function test(): Promise<void> {
     const result = await client.testModelProfile(form.value.id);
     const preview = typeof result.preview === "string" ? ` 返回：${result.preview}` : "";
     testMessage.value = `连接测试成功。${preview}`;
+    testResults.set(form.value.id, testMessage.value);
   } catch (err) {
     testMessage.value = platformErrorMessage(err, "连接测试失败");
+    testResults.set(form.value.id, testMessage.value);
   } finally {
     await refresh();
     testing.value = false;
