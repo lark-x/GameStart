@@ -133,7 +133,15 @@ async function runDeployment(args, dotEnv) {
         continue;
       }
 
-      // Non-retryable error
+      // Non-retryable error: dump logs of failing containers
+      logError(`\n✖ Container startup failed. Dumping recent service logs:\n`);
+      for (const svc of ["api", "redis", "worker", "web"]) {
+        const svcLogs = dockerClient.logs(svc, 50);
+        if (svcLogs && !svcLogs.includes("(could not retrieve logs)")) {
+          logError(`--- [${svc}] ---`);
+          logError(svcLogs.trim());
+        }
+      }
       throw new DeploymentError(`Failed to start containers: ${errMsg}`);
     }
   }
