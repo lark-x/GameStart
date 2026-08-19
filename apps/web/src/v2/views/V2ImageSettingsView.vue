@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { Image as ImageIcon, Save, TestTube2 } from "@lucide/vue";
 import type { V2PlatformCapabilities } from "@living-network/contracts/v2";
 import Badge from "../../components/ui/Badge.vue";
@@ -24,6 +24,11 @@ const loading = ref(false);
 const saving = ref(false);
 const testing = ref(false);
 const error = ref<string | null>(null);
+
+const isLocalhostHostNotice = computed(() => {
+  const url = settings.value.baseUrl.toLowerCase().trim();
+  return url.includes("localhost") || url.includes("127.0.0.1");
+});
 
 async function load(): Promise<void> {
   loading.value = true;
@@ -133,8 +138,11 @@ onMounted(() => {
     </section>
 
     <form class="v2-image-form" @submit.prevent="save">
-      <Field for-id="v2-image-base-url" label="ComfyUI 地址" hint="例如 http://127.0.0.1:8188；留空表示暂不启用素材生成。">
-        <Input id="v2-image-base-url" v-model="settings.baseUrl" placeholder="http://127.0.0.1:8188" :disabled="loading" />
+      <Field for-id="v2-image-base-url" label="ComfyUI 地址" hint="例如 http://host.docker.internal:8188 或局域网地址 http://192.168.1.50:8188；留空表示暂不启用素材生成。">
+        <Input id="v2-image-base-url" v-model="settings.baseUrl" placeholder="http://host.docker.internal:8188" :disabled="loading" />
+        <div v-if="isLocalhostHostNotice" class="v2-image-docker-hint" role="note">
+          <span>提示：GameStart API 运行在 Docker 容器中。如果 ComfyUI 运行在宿主机，请使用 <code>http://host.docker.internal:8188</code>；若在另一台主机（如 Windows GPU 机），请使用该机局域网 IP。</span>
+        </div>
       </Field>
       <Field for-id="v2-image-timeout" label="请求超时（毫秒）">
         <Input id="v2-image-timeout" v-model="settings.timeoutMs" type="number" min="1" :disabled="loading" />

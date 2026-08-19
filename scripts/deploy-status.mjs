@@ -2,30 +2,29 @@
 /**
  * deploy-status.mjs — Show current GameStart deployment status.
  */
-import { execSync } from "node:child_process";
-import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { createDockerClient } from "./deploy/docker.mjs";
+import { detectEnvironment } from "./deploy/environment.mjs";
+import { getLanAddresses } from "./deploy/network.mjs";
+import { parseDockerPublishedPort } from "./deploy/port.mjs";
+import { loadDeployState } from "./deploy/state.mjs";
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");
-const COMPOSE_FILE = "infra/compose/docker-compose.yml";
+const COMPOSE_FILE = resolve(ROOT, "infra/compose/docker-compose.yml");
 const DEPLOY_STATE = resolve(ROOT, ".data", "deployment.json");
 
-function run(cmd) {
-  try {
-    return execSync(cmd, { cwd: ROOT, encoding: "utf8", stdio: "pipe" }).trim();
-  } catch {
-    return null;
-  }
-}
-
 function main() {
-  console.log("\nGameStart Status\n");
+  console.log("\nGameStart Deployment Status\n");
 
-  // Query Docker for current state.
+  const dockerClient = createDockerClient({ rootDir: ROOT, composeFile: COMPOSE_FILE });
+  const envType = detectEnvironment();
+
+  // Query Docker for current service states
   for (const service of ["redis", "api", "worker", "web"]) {
-    const raw = run(`docker compose -f ${COMPOSE_FILE} ps --format json ${service}`);
+    const raw = dockerClient.ps(service);
     let status = "not running";
     if (raw) {
       try {
@@ -35,26 +34,35 @@ function main() {
         status = /healthy|running/i.test(raw) ? "running" : "unknown";
       }
     }
-    const icon = /healthy|running/i.test(status) ? "✓" : "✖";
+    const isHealthy = /healthy/i.test(status) || (/running/i.test(status) && service === "worker");
+    const icon = isHealthy ? "✓" : "✖";
     const label = service.charAt(0).toUpperCase() + service.slice(1);
     console.log(`  ${icon} ${label.padEnd(10)} ${status}`);
   }
 
-  // Show access URL.
-  const portRaw = run(`docker compose -f ${COMPOSE_FILE} port web 80`);
-  const portMatch = portRaw?.match(/:(\d+)$/);
-  if (portMatch) {
-    const port = portMatch[1];
-    console.log(`\n  Local  http://127.0.0.1:${port}`);
-    console.log(`  API    http://127.0.0.1:${port}/api/v2`);
-  } else if (existsSync(DEPLOY_STATE)) {
-    try {
-      const s = JSON.parse(readFileSync(DEPLOY_STATE, "utf8"));
-      console.log(`\n  Last known port: ${s.webPort}`);
-    } catch {}
+  // Show access URL by querying Docker directly
+  const portRaw = dockerClient.port("web", 80);
+  const actualPort = parseDockerPublishedPort(portRaw);
+  const savedState = loadDeployState(DEPLOY_STATE);
+
+  if (actualPort) {
+    console.log(`\n  Local    http://127.0.0.1:${actualPort}`);
+    console.log(`  API      http://127.0.0.1:${actualPort}/api/v2`);
+    console.log(`  Health   http://127.0.0.1:${actualPort}/api/v2/health`);
+    console.log(`  Ready    http://127.0.0.1:${actualPort}/api/v2/ready`);
+
+    if (savedState?.mode === "lan") {
+      const lanAddrs = getLanAddresses({ envType });
+      for (const { name, address } of lanAddrs) {
+        console.log(`  LAN (${name}) http://${address}:${actualPort}`);
+      }
+    }
+  } else if (savedState) {
+    console.log(`\n  (Containers stopped. Last known port: ${savedState.webPort}, mode: ${savedState.mode})`);
   } else {
-    console.log("\n  No deployment detected.");
+    console.log("\n  No deployment detected. Run 'pnpm deploy' to start.");
   }
+
   console.log();
 }
 

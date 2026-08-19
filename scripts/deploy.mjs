@@ -1,41 +1,36 @@
 #!/usr/bin/env node
 /**
- * deploy.mjs — GameStart one-command Docker deployment.
+ * deploy.mjs — GameStart cross-platform Docker deployment.
  *
  * Usage:
- *   node scripts/deploy.mjs [--port <port>] [--mode local|lan]
+ *   pnpm deploy
+ *   pnpm deploy -- --mode lan
+ *   pnpm deploy -- --port 18050
  *
  * Container-internal ports are fixed (Web:80, API:3003, Redis:6379).
- * Only Web is published to the host; its port is selected automatically
- * unless explicitly provided via CLI or WEB_PORT env var.
+ * Only Web is published to the host.
  */
 
-import { execSync, spawn } from "node:child_process";
-import { createServer } from "node:net";
-import { networkInterfaces } from "node:os";
-import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync, statSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
+import { parseArgs, DeploymentError } from "./deploy/cli.mjs";
+import { detectEnvironment, checkDockerPrerequisites } from "./deploy/environment.mjs";
+import { resolveHostBind, getLanAddresses } from "./deploy/network.mjs";
+import { selectWebPort, findFreePort, parseDockerPublishedPort, classifyDockerError, MAX_PORT_RETRIES, PORT_RANGE_END } from "./deploy/port.mjs";
+import { createDockerClient } from "./deploy/docker.mjs";
+import { acquireDeployLock } from "./deploy/lock.mjs";
+import { loadDotEnv, loadDeployState, saveDeployState } from "./deploy/state.mjs";
+import { waitForService, verifyCriticalEndpoints, checkComfyUiHealth } from "./deploy/health.mjs";
+import { formatDeploymentBanner } from "./deploy/output.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");
-const COMPOSE_FILE = "infra/compose/docker-compose.yml";
+const COMPOSE_FILE = resolve(ROOT, "infra/compose/docker-compose.yml");
 const DATA_DIR = resolve(ROOT, ".data");
 const DEPLOY_STATE_FILE = resolve(DATA_DIR, "deployment.json");
 const DEPLOY_LOCK_FILE = resolve(DATA_DIR, "deploy.lock");
-const PORT_RANGE_START = 18000;
-const PORT_RANGE_END = 18999;
-const MAX_PORT_RETRIES = 5;
-const HEALTH_TIMEOUT_MS = 180_000;
-const HEALTH_POLL_MS = 3_000;
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+const ENV_FILE = resolve(ROOT, ".env");
 
 function log(msg) {
   process.stdout.write(msg + "\n");
@@ -45,359 +40,189 @@ function logError(msg) {
   process.stderr.write(msg + "\n");
 }
 
-function die(msg) {
-  logError(`\n✖ ${msg}`);
-  process.exit(1);
-}
-
-function run(cmd, opts = {}) {
-  try {
-    return execSync(cmd, { cwd: ROOT, encoding: "utf8", stdio: "pipe", ...opts }).trim();
-  } catch (err) {
-    if (!opts.allowFail) throw err;
-    return err.stdout?.trim?.() ?? "";
-  }
-}
-
-function runInteractive(cmd) {
-  execSync(cmd, { cwd: ROOT, stdio: "inherit" });
-}
-
-/** Check whether a TCP port is available on the host. */
-function isPortAvailable(port) {
-  return new Promise((resolve) => {
-    const server = createServer();
-    server.once("error", () => resolve(false));
-    server.once("listening", () => {
-      server.close(() => resolve(true));
-    });
-    server.listen(port, "127.0.0.1");
-  });
-}
-
-/** Find the first available port in [start, end]. */
-async function findFreePort(start, end) {
-  for (let port = start; port <= end; port++) {
-    if (await isPortAvailable(port)) return port;
-  }
-  return null;
-}
-
-/** Load .env file into a plain object (no shell expansion). */
-function loadDotEnv() {
-  const envPath = resolve(ROOT, ".env");
-  if (!existsSync(envPath)) return {};
-  const result = {};
-  for (const line of readFileSync(envPath, "utf8").split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const eq = trimmed.indexOf("=");
-    if (eq < 1) continue;
-    result[trimmed.slice(0, eq)] = trimmed.slice(eq + 1);
-  }
-  return result;
-}
-
-/** Save deployment state for future reuse. */
-function saveDeployState(state) {
-  mkdirSync(DATA_DIR, { recursive: true });
-  writeFileSync(DEPLOY_STATE_FILE, JSON.stringify(state, null, 2) + "\n");
-}
-
-/** Load previous deployment state. */
-function loadDeployState() {
-  if (!existsSync(DEPLOY_STATE_FILE)) return null;
-  try {
-    return JSON.parse(readFileSync(DEPLOY_STATE_FILE, "utf8"));
-  } catch {
-    return null;
-  }
-}
-
-/** Acquire a deployment lock (stale after 10 min). Returns a release function. */
-function acquireLock() {
-  mkdirSync(DATA_DIR, { recursive: true });
-  if (existsSync(DEPLOY_LOCK_FILE)) {
-    try {
-      const age = Date.now() - statSync(DEPLOY_LOCK_FILE).mtimeMs;
-      if (age < 10 * 60 * 1000) {
-        die("Another deployment is already running. If this is stale, delete .data/deploy.lock and retry.");
-      }
-      // Stale lock — remove and continue.
-      unlinkSync(DEPLOY_LOCK_FILE);
-    } catch {
-      die("Cannot read deployment lock file.");
-    }
-  }
-  writeFileSync(DEPLOY_LOCK_FILE, String(process.pid));
-  let released = false;
-  return () => {
-    if (released) return;
-    released = true;
-    try { unlinkSync(DEPLOY_LOCK_FILE); } catch {}
-  };
-}
-
-/** Resolve LAN IPv4 addresses (non-loopback, non-Docker). */
-function getLanAddresses() {
-  const ifaces = networkInterfaces();
-  const results = [];
-  for (const [name, addrs] of Object.entries(ifaces)) {
-    for (const a of addrs) {
-      if (a.family !== "IPv4" || a.internal) continue;
-      if (a.address.startsWith("172.") && parseInt(a.address.split(".")[1], 10) >= 17 && parseInt(a.address.split(".")[1], 10) <= 31) continue;
-      results.push({ name, address: a.address });
-    }
-  }
-  return results;
-}
-
-/** Wait until a URL responds with HTTP 2xx. */
-async function waitForHttp(url, timeoutMs, label) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
-      if (res.ok) return true;
-    } catch {
-      // service not ready yet
-    }
-    await new Promise((r) => setTimeout(r, HEALTH_POLL_MS));
-  }
-  return false;
-}
-
-/** Wait until a Docker service is healthy. */
-async function waitForService(service, timeoutMs) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const state = run(`docker compose -f ${COMPOSE_FILE} ps --format json ${service}`, { allowFail: true });
-    if (state) {
-      try {
-        const parsed = JSON.parse(state);
-        const health = parsed.Health ?? parsed.State ?? "";
-        if (/healthy/i.test(health) || (/running/i.test(health) && service === "worker")) {
-          return true;
-        }
-      } catch {
-        // multiline or array output
-        if (/healthy/i.test(state) || (/running/i.test(state) && service === "worker")) return true;
-      }
-    }
-    await new Promise((r) => setTimeout(r, HEALTH_POLL_MS));
-  }
-  return false;
-}
-
-// ---------------------------------------------------------------------------
-// CLI parsing
-// ---------------------------------------------------------------------------
-
-function parseArgs() {
-  const args = process.argv.slice(2);
-  const result = {};
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === "--port" && args[i + 1]) {
-      result.port = parseInt(args[++i], 10);
-    } else if (args[i] === "--mode" && args[i + 1]) {
-      result.mode = args[++i];
-    }
-  }
-  return result;
-}
-
-// ---------------------------------------------------------------------------
-// Main
-// ---------------------------------------------------------------------------
-
 async function main() {
   const args = parseArgs();
-  const dotEnv = loadDotEnv();
-  const releaseLock = acquireLock();
+  if (args.help) {
+    log("GameStart Deployment Tool\n");
+    log("Usage:");
+    log("  pnpm deploy                 Deploy in local mode (bind 127.0.0.1)");
+    log("  pnpm deploy -- --mode lan   Deploy in LAN mode (bind 0.0.0.0)");
+    log("  pnpm deploy -- --port 18050 Deploy on an explicit Web host port");
+    log("  pnpm deploy:doctor          Run environment & network pre-flight check");
+    log("  pnpm deploy:status          Check current deployment status");
+    log("  pnpm deploy:stop            Stop containers (preserves data volumes)");
+    return;
+  }
+
+  const dotEnv = loadDotEnv(ENV_FILE);
+  const releaseLock = acquireDeployLock(DEPLOY_LOCK_FILE);
+
   try {
-    await deploy(args, dotEnv);
+    await runDeployment(args, dotEnv);
   } finally {
     releaseLock();
   }
 }
 
-async function deploy(args, dotEnv) {
+async function runDeployment(args, dotEnv) {
+  const envType = detectEnvironment();
+  const dockerClient = createDockerClient({ rootDir: ROOT, composeFile: COMPOSE_FILE });
 
-  // ── Step 1: Check Docker ──────────────────────────────────────────────
-  log("\n[1/7] Checking Docker...");
-  try {
-    run("docker --version");
-  } catch {
-    die("Docker is not installed or not in PATH.");
-  }
-  try {
-    run("docker info", { stdio: "pipe" });
-  } catch {
-    die("Docker daemon is not running.");
-  }
-  try {
-    run("docker compose version");
-  } catch {
-    die("docker compose is not available.");
-  }
-  log("      ✓ Docker ready");
+  // ── Step 1: Check Environment & Docker ─────────────────────────────────
+  log("\n[1/7] Checking Docker environment...");
+  checkDockerPrerequisites((cmd) => {
+    const [executable, ...rest] = cmd;
+    import("node:child_process").then((cp) => cp.execFileSync(executable, rest, { stdio: "ignore" }));
+  });
+  log(`      ✓ Docker ready (${envType})`);
 
-  // ── Step 2: Select port ───────────────────────────────────────────────
-  log("\n[2/7] Selecting port...");
-  let webPort;
-  const explicitPort = args.port || parseInt(dotEnv.WEB_PORT, 10);
+  // ── Step 2: Determine Mode & Port ──────────────────────────────────────
+  log("\n[2/7] Selecting Web port & host binding...");
+  const mode = args.mode || (dotEnv.WEB_HOST_BIND === "127.0.0.1" ? "local" : "lan");
+  const hostBind = resolveHostBind(mode);
 
-  if (explicitPort) {
-    // Explicit port — fail hard if occupied.
-    if (!(await isPortAvailable(explicitPort))) {
-      die(`Port ${explicitPort} is already in use. Free it or choose another port.`);
-    }
-    webPort = explicitPort;
-    log(`      Using explicit port ${webPort}`);
-  } else {
-    // Auto mode — try last-used port first, then scan range.
-    const prevState = loadDeployState();
-    if (prevState?.webPort && (await isPortAvailable(prevState.webPort))) {
-      webPort = prevState.webPort;
-      log(`      Reusing previous port ${webPort}`);
-    } else {
-      webPort = await findFreePort(PORT_RANGE_START, PORT_RANGE_END);
-      if (!webPort) {
-        die(`No free port found in range ${PORT_RANGE_START}-${PORT_RANGE_END}.`);
-      }
-      log(`      Auto-selected port ${webPort}`);
-    }
-  }
+  const explicitPort = args.port || (dotEnv.WEB_PORT ? parseInt(dotEnv.WEB_PORT, 10) : undefined);
+  const lastState = loadDeployState(DEPLOY_STATE_FILE);
+  const lastStatePort = lastState?.webPort;
 
-  // ── Step 3 & 4: Build & Start (with retry for auto port) ────────────
-  const autoMode = !explicitPort;
+  const portSelection = await selectWebPort({ explicitPort, lastStatePort });
+  let currentWebPort = portSelection.port;
+
+  log(`      Mode: ${mode} (Host Bind: ${hostBind})`);
+  log(`      Web Port: ${currentWebPort} (${portSelection.source})`);
+
+  // ── Step 3: Build Images (Once) ────────────────────────────────────────
+  log("\n[3/7] Building container images...");
+  const buildEnv = {
+    WEB_PORT: String(currentWebPort),
+    WEB_HOST_BIND: hostBind,
+  };
+  dockerClient.build(buildEnv);
+  log("      ✓ Build complete");
+
+  // ── Step 4: Start Containers (with port collision retry) ───────────────
+  log(`\n[4/7] Starting containers...`);
+  const isAutoPort = portSelection.source !== "explicit";
   let attempt = 0;
 
   while (true) {
     attempt++;
-    log(`\n[3/7] Building images...`);
-    runInteractive(`WEB_PORT=${webPort} docker compose -f ${COMPOSE_FILE} build`);
-    log("      ✓ Build complete");
+    const upEnv = {
+      WEB_PORT: String(currentWebPort),
+      WEB_HOST_BIND: hostBind,
+    };
 
-    log(`\n[4/7] Starting containers (port ${webPort})...`);
     try {
-      runInteractive(`WEB_PORT=${webPort} docker compose -f ${COMPOSE_FILE} up -d`);
-      break; // success
+      dockerClient.up(upEnv);
+      log(`      ✓ Containers started (Web host port: ${currentWebPort})`);
+      break;
     } catch (err) {
-      if (!autoMode || attempt >= MAX_PORT_RETRIES) die(`docker compose up failed: ${err.message}`);
-      log(`      Port ${webPort} conflict detected, retrying with next port...`);
-      const nextPort = await findFreePort(webPort + 1, PORT_RANGE_END);
-      if (!nextPort) die("No more free ports available for retry.");
-      webPort = nextPort;
-      log(`      Retrying with port ${webPort}`);
+      const errMsg = err.message || String(err);
+      const classification = classifyDockerError(errMsg);
+
+      if (classification === "port_conflict" && isAutoPort && attempt < MAX_PORT_RETRIES) {
+        log(`      ⚠ Port ${currentWebPort} collision detected by Docker daemon.`);
+        const nextPort = await findFreePort(currentWebPort + 1, PORT_RANGE_END);
+        if (!nextPort) {
+          throw new DeploymentError("No more available ports in range for retry.");
+        }
+        currentWebPort = nextPort;
+        log(`      Retrying startup with port ${currentWebPort} (attempt ${attempt + 1}/${MAX_PORT_RETRIES})...`);
+        continue;
+      }
+
+      // Non-retryable error
+      throw new DeploymentError(`Failed to start containers: ${errMsg}`);
     }
   }
 
-  // ── Step 5: Wait for services ─────────────────────────────────────────
-  log("\n[5/7] Waiting for services...");
+  // ── Step 5: Wait for Service Health ────────────────────────────────────
+  log("\n[5/7] Waiting for services to become healthy...");
 
   process.stdout.write("      Redis   ");
-  const redisOk = await waitForService("redis", HEALTH_TIMEOUT_MS);
+  const redisOk = await waitForService(dockerClient, "redis", 180_000);
   log(redisOk ? "✓ healthy" : "✖ unhealthy");
-  if (!redisOk) dumpLogsAndDie("Redis", "redis");
-
-  process.stdout.write("      API     ");
-  const apiOk = await waitForService("api", HEALTH_TIMEOUT_MS);
-  log(apiOk ? "✓ healthy" : "✖ unhealthy");
-  if (!apiOk) dumpLogsAndDie("API", "api");
-
-  process.stdout.write("      Worker  ");
-  const workerOk = await waitForService("worker", 60_000);
-  log(workerOk ? "✓ running" : "✖ not running");
-  if (!workerOk) dumpLogsAndDie("Worker", "worker");
-
-  process.stdout.write("      Web     ");
-  const webOk = await waitForService("web", HEALTH_TIMEOUT_MS);
-  log(webOk ? "✓ healthy" : "✖ unhealthy");
-  if (!webOk) dumpLogsAndDie("Web", "web");
-
-  // ── Step 6: Verify HTTP through Nginx ─────────────────────────────────
-  log("\n[6/7] Verifying HTTP...");
-
-  // Query Docker for the actual published port (in case it differs from env).
-  let actualPort = webPort;
-  try {
-    const portOutput = run(`docker compose -f ${COMPOSE_FILE} port web 80`);
-    const match = portOutput.match(/:(\d+)$/);
-    if (match) actualPort = parseInt(match[1], 10);
-  } catch {
-    // fallback to env port
+  if (!redisOk) {
+    dumpLogsAndFail(dockerClient, "redis", "Redis failed to become healthy");
   }
 
+  process.stdout.write("      API     ");
+  const apiOk = await waitForService(dockerClient, "api", 180_000);
+  log(apiOk ? "✓ healthy" : "✖ unhealthy");
+  if (!apiOk) {
+    dumpLogsAndFail(dockerClient, "api", "API failed to become healthy");
+  }
+
+  process.stdout.write("      Worker  ");
+  const workerOk = await waitForService(dockerClient, "worker", 60_000);
+  log(workerOk ? "✓ running" : "✖ not running");
+  if (!workerOk) {
+    dumpLogsAndFail(dockerClient, "worker", "Worker failed to start");
+  }
+
+  process.stdout.write("      Web     ");
+  const webOk = await waitForService(dockerClient, "web", 180_000);
+  log(webOk ? "✓ healthy" : "✖ unhealthy");
+  if (!webOk) {
+    dumpLogsAndFail(dockerClient, "web", "Web reverse proxy failed to become healthy");
+  }
+
+  // ── Step 6: Verify Actual Port & Endpoints ─────────────────────────────
+  log("\n[6/7] Verifying Web reverse proxy and API routing...");
+
+  // Query Docker for the real published port
+  const publishedPortRaw = dockerClient.port("web", 80, { WEB_PORT: String(currentWebPort), WEB_HOST_BIND: hostBind });
+  const actualPort = parseDockerPublishedPort(publishedPortRaw) || currentWebPort;
+
   const baseUrl = `http://127.0.0.1:${actualPort}`;
-  const httpOk = await waitForHttp(`${baseUrl}/`, 30_000, "Web");
-  if (!httpOk) die(`HTTP GET ${baseUrl}/ failed.`);
-  log(`      ✓ ${baseUrl}/`);
+  const verifyResult = await verifyCriticalEndpoints(baseUrl, { timeoutMs: 25_000 });
 
-  const healthOk = await waitForHttp(`${baseUrl}/api/v2/health`, 15_000, "Health");
-  log(healthOk ? `      ✓ ${baseUrl}/api/v2/health` : `      ✖ ${baseUrl}/api/v2/health (non-critical)`);
+  if (!verifyResult.webOk) {
+    dumpLogsAndFail(dockerClient, "web", `HTTP GET ${baseUrl}/ failed.`);
+  }
+  log(`      ✓ ${baseUrl}/ (Web Frontend OK)`);
 
-  const readyOk = await waitForHttp(`${baseUrl}/api/v2/ready`, 15_000, "Ready");
-  log(readyOk ? `      ✓ ${baseUrl}/api/v2/ready` : `      ✖ ${baseUrl}/api/v2/ready (non-critical)`);
+  if (!verifyResult.healthOk || !verifyResult.readyOk) {
+    dumpLogsAndFail(dockerClient, "api", `API critical verification failed: /health=${verifyResult.healthOk}, /ready=${verifyResult.readyOk}`);
+  }
+  log(`      ✓ ${baseUrl}/api/v2/health (API Health OK)`);
+  log(`      ✓ ${baseUrl}/api/v2/ready (API Ready OK)`);
 
-  // ── Step 7: Save state & print result ─────────────────────────────────
-  const mode = args.mode || (dotEnv.WEB_HOST_BIND === "127.0.0.1" ? "local" : "lan");
-  const lanAddrs = getLanAddresses();
+  // ── Step 7: ComfyUI Check, Save State & Banner ─────────────────────────
+  log("\n[7/7] Finalizing deployment state...");
 
-  saveDeployState({
-    webPort: actualPort,
+  const comfyUrl = dotEnv.COMFYUI_BASE_URL || dotEnv.V2_IMAGE_BASE_URL;
+  const comfyResult = await checkComfyUiHealth(comfyUrl);
+  const lanAddrs = getLanAddresses({ envType });
+
+  saveDeployState(DEPLOY_STATE_FILE, {
+    environment: envType,
     mode,
+    webPort: actualPort,
+    hostBind,
     deployedAt: new Date().toISOString(),
   });
 
-  log("\n[7/7] Deployment complete\n");
-  log("────────────────────────────────────────");
-  log(" GameStart Deployment");
-  log("────────────────────────────────────────");
-  log("");
-  log("Status");
-  log("");
-  log("  ✓ Redis     healthy");
-  log("  ✓ API       healthy");
-  log("  ✓ Worker    running");
-  log("  ✓ Web       healthy");
-  log("");
-  log("Access");
-  log("");
-  log(`  Local    ${baseUrl}`);
-  if (lanAddrs.length > 0) {
-    for (const { address } of lanAddrs) {
-      log(`  LAN      http://${address}:${actualPort}`);
-    }
-  }
-  log("");
-  log(`  API      ${baseUrl}/api/v2`);
-  log(`  Health   ${baseUrl}/api/v2/health`);
-  log(`  Ready    ${baseUrl}/api/v2/ready`);
-  log("");
-  log("Internal (container-only)");
-  log("");
-  log("  Web      :80");
-  log("  API      api:3003");
-  log("  Redis    redis:6379");
-  log("");
-  log("────────────────────────────────────────");
-  log(" Deployment completed successfully.");
-  log("────────────────────────────────────────\n");
+  const banner = formatDeploymentBanner({
+    envType,
+    mode,
+    webPort: actualPort,
+    hostBind,
+    lanAddrs,
+    comfyResult,
+  });
+
+  log(banner);
 }
 
-function dumpLogsAndDie(label, service) {
-  logError(`\n${label} failed to become healthy. Recent logs:\n`);
-  try {
-    const logs = run(`docker compose -f ${COMPOSE_FILE} logs --tail=50 ${service}`);
-    logError(logs);
-  } catch {
-    logError("(could not retrieve logs)");
-  }
-  die(`${label} deployment failed.`);
+function dumpLogsAndFail(dockerClient, service, errorMessage) {
+  logError(`\n✖ ${errorMessage}. Recent logs from ${service}:\n`);
+  const logs = dockerClient.logs(service, 80);
+  logError(logs);
+  throw new DeploymentError(errorMessage);
 }
 
 main().catch((err) => {
   logError(`\n✖ Deployment failed: ${err.message}`);
-  process.exit(1);
+  process.exitCode = 1;
 });
