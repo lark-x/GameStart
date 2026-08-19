@@ -7,25 +7,25 @@ interface PromptTaskInfo {
   readonly task: string;
   readonly label: string;
   readonly description: string;
-  readonly status: "active" | "registered" | "planned";
+  readonly status: "registered" | "implemented" | "planned";
 }
 
 const promptTasks: readonly PromptTaskInfo[] = [
-  { task: "chat.reply", label: "对话回复", description: "用户消息的 AI 回复生成。", status: "active" },
-  { task: "story.bootstrap", label: "故事引导", description: "新故事的开场白和初始场景生成。", status: "active" },
-  { task: "memory.extract", label: "记忆提取", description: "从对话中提取结构化记忆数据。", status: "active" },
+  { task: "chat.reply", label: "对话回复", description: "用户消息的 AI 回复生成。", status: "registered" },
+  { task: "story.bootstrap", label: "故事引导", description: "新故事的开场白和初始场景生成。", status: "registered" },
+  { task: "memory.extract", label: "记忆提取", description: "从对话中提取结构化记忆数据。", status: "implemented" },
   { task: "memory.consolidate", label: "记忆整合", description: "合并和去重长期记忆条目。", status: "registered" },
-  { task: "scene.generate", label: "场景生成", description: "Worker 场景生成任务的提示词。", status: "active" },
+  { task: "scene.generate", label: "场景生成", description: "Worker 场景生成任务的提示词。", status: "implemented" },
 ];
 
 function statusLabel(status: PromptTaskInfo["status"]): string {
-  if (status === "active") return "运行中";
   if (status === "registered") return "已注册";
+  if (status === "implemented") return "已实现";
   return "计划中";
 }
 
 function statusTone(status: PromptTaskInfo["status"]): "success" | "info" | "neutral" {
-  if (status === "active") return "success";
+  if (status === "implemented") return "success";
   if (status === "registered") return "info";
   return "neutral";
 }

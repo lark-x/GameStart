@@ -27,7 +27,7 @@ interface EngineInfo {
 }
 
 const engines: readonly EngineInfo[] = [
-  { id: "builtin_structured", label: "Structured", description: "基于实体和关系的结构化记忆存储，支持精确检索。", mode: "primary" },
+  { id: "builtin_structured", label: "Structured", description: "基于实体和关系的结构化记忆存储，支持精确检索。", mode: "available" },
   { id: "builtin_hybrid", label: "Hybrid", description: "FTS 全文检索 + 实体索引的混合引擎。", mode: "available" },
 ];
 
@@ -94,7 +94,7 @@ onMounted(() => {
           <div class="v2-memory-engine-head">
             <strong>{{ engine.label }}</strong>
             <Badge :tone="engine.mode === 'primary' ? 'success' : 'neutral'">
-              {{ engine.mode === "primary" ? "主引擎" : engine.mode === "shadow" ? "影子引擎" : "可用" }}
+              {{ engine.mode === "primary" ? "内置" : engine.mode === "shadow" ? "影子" : "可用" }}
             </Badge>
           </div>
           <p class="v2-memory-engine-id">{{ engine.id }}</p>

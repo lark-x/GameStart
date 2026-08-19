@@ -28,6 +28,9 @@ const capabilities = ref<V2PlatformCapabilities | null>(null);
 const bindings = ref<readonly V2ModelBindingDto[]>([]);
 const loading = ref(false);
 const error = ref<string | null>(null);
+const healthError = ref<string | null>(null);
+const readyError = ref<string | null>(null);
+const capabilitiesError = ref<string | null>(null);
 
 function platformErrorMessage(err: unknown, fallback: string): string {
   if (err instanceof V2PlatformClientError) return `${err.code}: ${err.message}`;
@@ -63,8 +66,8 @@ const sections = computed<readonly StatusSection[]>(() => {
       label: "系统",
       icon: Terminal,
       rows: [
-        { label: "API", value: apiOk ? `正常${health.value?.version ? ` (v${health.value.version})` : ""}` : "未连接", tone: apiOk ? "success" : "danger" },
-        { label: "数据库", value: storageOk ? `就绪${ready.value?.storage ? ` (${ready.value.storage})` : ""}` : "未就绪", tone: storageOk ? "success" : "danger" },
+        { label: "API", value: healthError.value ? `读取失败` : apiOk ? `正常${health.value?.version ? ` (v${health.value.version})` : ""}` : "未连接", tone: healthError.value ? "warning" : apiOk ? "success" : "danger" },
+        { label: "数据库", value: readyError.value ? "读取失败" : storageOk ? `就绪${ready.value?.storage ? ` (${ready.value.storage})` : ""}` : "未就绪", tone: readyError.value ? "warning" : storageOk ? "success" : "danger" },
       ],
     },
     {
@@ -125,16 +128,20 @@ async function load(): Promise<void> {
   loading.value = true;
   error.value = null;
   try {
-    const [nextHealth, nextReady, nextCapabilities, nextBindings] = await Promise.all([
-      client.getHealth().catch(() => null),
-      client.getReady().catch(() => null),
-      client.getCapabilities().catch(() => null),
-      client.listModelBindings().catch(() => []),
+    const [healthResult, readyResult, capsResult, bindingsResult] = await Promise.allSettled([
+      client.getHealth(),
+      client.getReady(),
+      client.getCapabilities(),
+      client.listModelBindings(),
     ]);
-    health.value = nextHealth;
-    ready.value = nextReady;
-    capabilities.value = nextCapabilities;
-    bindings.value = nextBindings;
+    health.value = healthResult.status === "fulfilled" ? healthResult.value : null;
+    healthError.value = healthResult.status === "rejected" ? platformErrorMessage(healthResult.reason, "读取失败") : null;
+    ready.value = readyResult.status === "fulfilled" ? readyResult.value : null;
+    readyError.value = readyResult.status === "rejected" ? platformErrorMessage(readyResult.reason, "读取失败") : null;
+    capabilities.value = capsResult.status === "fulfilled" ? capsResult.value : null;
+    capabilitiesError.value = capsResult.status === "rejected" ? platformErrorMessage(capsResult.reason, "读取失败") : null;
+    bindings.value = bindingsResult.status === "fulfilled" ? bindingsResult.value : [];
+    error.value = null;
   } catch (err) {
     error.value = platformErrorMessage(err, "无法读取设置概览");
   } finally {

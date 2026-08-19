@@ -10,7 +10,14 @@ const VIEWPORTS = {
   desktop_wide: { width: 1920, height: 1080 },
 } as const;
 
-const THEMES = ["dawn", "dusk", "blossom", "forest", "ocean", "midnight"] as const;
+const THEMES = [
+  { id: "dawn", label: "暖阳" },
+  { id: "dusk", label: "夜幕" },
+  { id: "blossom", label: "樱语" },
+  { id: "forest", label: "青野" },
+  { id: "ocean", label: "海盐" },
+  { id: "midnight", label: "星夜" },
+] as const;
 
 test.describe("Settings responsive layout", () => {
   for (const [name, viewport] of Object.entries(VIEWPORTS)) {
@@ -18,7 +25,6 @@ test.describe("Settings responsive layout", () => {
       await page.setViewportSize(viewport);
       await page.goto("/v2/settings");
 
-      // Settings nav should be visible (sidebar on desktop, dropdown on mobile)
       if (viewport.width > 960) {
         const nav = page.getByRole("navigation", { name: "设置导航" });
         await expect(nav).toBeVisible();
@@ -27,7 +33,6 @@ test.describe("Settings responsive layout", () => {
         await expect(select).toBeVisible();
       }
 
-      // Content should always be visible
       await expect(page.locator(".v2-settings-overview")).toBeVisible();
     });
   }
@@ -35,8 +40,6 @@ test.describe("Settings responsive layout", () => {
   test("model settings master/detail stacks on mobile", async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.mobile_small);
     await page.goto("/v2/settings/models");
-
-    // Both profile list and editor should be visible (stacked)
     await expect(page.locator(".v2-profile-list")).toBeVisible();
     await expect(page.locator(".v2-model-editor")).toBeVisible();
   });
@@ -44,32 +47,36 @@ test.describe("Settings responsive layout", () => {
   test("logs list/detail stacks on mobile", async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.mobile_small);
     await page.goto("/v2/settings/logs");
-
-    // Layout container should exist
     await expect(page.locator(".v2-log-layout")).toBeVisible();
   });
 });
 
 test.describe("Settings theme regression", () => {
   for (const theme of THEMES) {
-    test(`settings pages render correctly with ${theme} theme`, async ({ page }) => {
+    test(`settings pages render correctly with ${theme.id} theme`, async ({ page }) => {
       await page.setViewportSize(VIEWPORTS.desktop);
 
-      // Set theme via appearance settings
+      // Go to Appearance and click the theme card to apply it
       await page.goto("/v2/settings/appearance");
-      const themeButton = page.locator(`.v2-theme-card`).filter({ hasText: new RegExp(theme, "i") });
+      const themeCard = page.locator(".v2-theme-card").filter({ hasText: theme.label });
+      await expect(themeCard).toBeVisible();
+      await themeCard.click();
 
-      // Check the theme exists in the list (may use Chinese label)
-      await expect(page.locator(".v2-theme-grid")).toBeVisible();
+      // Verify data-theme attribute changes on the document
+      await expect(page.locator("html")).toHaveAttribute("data-theme", theme.id);
 
-      // Navigate to overview to verify layout
+      // Save the theme
+      await page.getByRole("button", { name: "保存主题" }).click();
+
+      // Verify settings nav renders with the new theme
       await page.goto("/v2/settings");
       await expect(page.getByRole("navigation", { name: "设置导航" })).toBeVisible();
-      await expect(page.locator(".v2-settings-overview")).toBeVisible();
+      await expect(page.locator("html")).toHaveAttribute("data-theme", theme.id);
 
-      // Navigate to models
+      // Verify models page renders
       await page.goto("/v2/settings/models");
       await expect(page.locator(".v2-binding-summary")).toBeVisible();
+      await expect(page.locator("html")).toHaveAttribute("data-theme", theme.id);
     });
   }
 });

@@ -50,6 +50,7 @@ const bindingSelections = ref<Record<string, string>>({
 const loading = ref(false);
 const saving = ref(false);
 const testing = ref(false);
+type ConnectionTestStatus = "idle" | "testing" | "success" | "error";
 const deleting = ref(false);
 const fetchingModels = ref(false);
 const discoveredModels = ref<readonly string[]>([]);
@@ -57,6 +58,7 @@ const modelFilter = ref("");
 const fetchModelError = ref<string | null>(null);
 const error = ref<string | null>(null);
 const testMessage = ref<string | null>(null);
+const testStatus = ref<ConnectionTestStatus>("idle");
 const testResults = new Map<string, string>();
 
 function emptyForm(): ModelForm {
@@ -269,15 +271,18 @@ async function save(): Promise<void> {
 async function test(): Promise<void> {
   if (form.value.id === undefined) return;
   testing.value = true;
+  testStatus.value = "testing";
   error.value = null;
   testMessage.value = null;
   try {
     const result = await client.testModelProfile(form.value.id);
     const preview = typeof result.preview === "string" ? ` 返回：${result.preview}` : "";
     testMessage.value = `连接测试成功。${preview}`;
+    testStatus.value = "success";
     testResults.set(form.value.id, testMessage.value);
   } catch (err) {
     testMessage.value = platformErrorMessage(err, "连接测试失败");
+    testStatus.value = "error";
     testResults.set(form.value.id, testMessage.value);
   } finally {
     await refresh();
@@ -561,7 +566,7 @@ onMounted(() => {
               删除
             </Button>
           </div>
-          <p v-if="testMessage" class="v2-inline-message" role="status">{{ testMessage }}</p>
+          <p v-if="testMessage" :class="testStatus === 'success' ? 'v2-inline-message-success' : 'v2-inline-message-danger'" role="status">{{ testMessage }}</p>
         </form>
       </section>
     </div>
@@ -774,12 +779,17 @@ onMounted(() => {
   white-space: nowrap;
 }
 
-.v2-inline-message,
-.v2-settings-alert,
-
-.v2-inline-message,
-
 .v2-settings-alert {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.v2-inline-message-success {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.v2-inline-message-danger {
   background: var(--danger-soft);
   color: var(--danger);
 }
