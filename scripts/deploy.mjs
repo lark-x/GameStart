@@ -13,7 +13,7 @@
 import { execSync, spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { networkInterfaces } from "node:os";
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync, statSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -26,6 +26,7 @@ const ROOT = resolve(__dirname, "..");
 const COMPOSE_FILE = "infra/compose/docker-compose.yml";
 const DATA_DIR = resolve(ROOT, ".data");
 const DEPLOY_STATE_FILE = resolve(DATA_DIR, "deployment.json");
+const DEPLOY_LOCK_FILE = resolve(DATA_DIR, "deploy.lock");
 const PORT_RANGE_START = 18000;
 const PORT_RANGE_END = 18999;
 const MAX_PORT_RETRIES = 5;
@@ -113,6 +114,30 @@ function loadDeployState() {
   }
 }
 
+/** Acquire a deployment lock (stale after 10 min). Returns a release function. */
+function acquireLock() {
+  mkdirSync(DATA_DIR, { recursive: true });
+  if (existsSync(DEPLOY_LOCK_FILE)) {
+    try {
+      const age = Date.now() - statSync(DEPLOY_LOCK_FILE).mtimeMs;
+      if (age < 10 * 60 * 1000) {
+        die("Another deployment is already running. If this is stale, delete .data/deploy.lock and retry.");
+      }
+      // Stale lock — remove and continue.
+      unlinkSync(DEPLOY_LOCK_FILE);
+    } catch {
+      die("Cannot read deployment lock file.");
+    }
+  }
+  writeFileSync(DEPLOY_LOCK_FILE, String(process.pid));
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    try { unlinkSync(DEPLOY_LOCK_FILE); } catch {}
+  };
+}
+
 /** Resolve LAN IPv4 addresses (non-loopback, non-Docker). */
 function getLanAddresses() {
   const ifaces = networkInterfaces();
@@ -188,6 +213,15 @@ function parseArgs() {
 async function main() {
   const args = parseArgs();
   const dotEnv = loadDotEnv();
+  const releaseLock = acquireLock();
+  try {
+    await deploy(args, dotEnv);
+  } finally {
+    releaseLock();
+  }
+}
+
+async function deploy(args, dotEnv) {
 
   // ── Step 1: Check Docker ──────────────────────────────────────────────
   log("\n[1/7] Checking Docker...");
@@ -235,14 +269,29 @@ async function main() {
     }
   }
 
-  // ── Step 3: Build ─────────────────────────────────────────────────────
-  log("\n[3/7] Building images...");
-  runInteractive(`WEB_PORT=${webPort} docker compose -f ${COMPOSE_FILE} build`);
-  log("      ✓ Build complete");
+  // ── Step 3 & 4: Build & Start (with retry for auto port) ────────────
+  const autoMode = !explicitPort;
+  let attempt = 0;
 
-  // ── Step 4: Start containers ──────────────────────────────────────────
-  log("\n[4/7] Starting containers...");
-  runInteractive(`WEB_PORT=${webPort} docker compose -f ${COMPOSE_FILE} up -d`);
+  while (true) {
+    attempt++;
+    log(`\n[3/7] Building images...`);
+    runInteractive(`WEB_PORT=${webPort} docker compose -f ${COMPOSE_FILE} build`);
+    log("      ✓ Build complete");
+
+    log(`\n[4/7] Starting containers (port ${webPort})...`);
+    try {
+      runInteractive(`WEB_PORT=${webPort} docker compose -f ${COMPOSE_FILE} up -d`);
+      break; // success
+    } catch (err) {
+      if (!autoMode || attempt >= MAX_PORT_RETRIES) die(`docker compose up failed: ${err.message}`);
+      log(`      Port ${webPort} conflict detected, retrying with next port...`);
+      const nextPort = await findFreePort(webPort + 1, PORT_RANGE_END);
+      if (!nextPort) die("No more free ports available for retry.");
+      webPort = nextPort;
+      log(`      Retrying with port ${webPort}`);
+    }
+  }
 
   // ── Step 5: Wait for services ─────────────────────────────────────────
   log("\n[5/7] Waiting for services...");
