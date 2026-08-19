@@ -164,6 +164,11 @@ function isItemActive(item: SettingsNavItem): boolean {
   color: var(--text-strong);
 }
 
+.settings-nav-link:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
 .settings-nav-link-active {
   background: var(--primary-soft);
   color: var(--primary);
@@ -198,7 +203,12 @@ function isItemActive(item: SettingsNavItem): boolean {
     clip: rect(0, 0, 0, 0);
   }
 
-  .settings-nav-mobile-select {
+  .settings-nav-mobile-select:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+.settings-nav-mobile-select {
     width: 100%;
     padding: var(--space-2) var(--space-3);
     border: 1px solid var(--border);
