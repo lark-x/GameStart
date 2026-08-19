@@ -20,7 +20,7 @@ import { resolveHostBind, getLanAddresses } from "./deploy/network.mjs";
 import { selectWebPort, findFreePort, parseDockerPublishedPort, classifyDockerError, MAX_PORT_RETRIES, PORT_RANGE_END } from "./deploy/port.mjs";
 import { createDockerClient } from "./deploy/docker.mjs";
 import { acquireDeployLock } from "./deploy/lock.mjs";
-import { loadDotEnv, loadDeployState, saveDeployState } from "./deploy/state.mjs";
+import { loadDotEnv, loadDeployState, saveDeployState, ensureDotEnv } from "./deploy/state.mjs";
 import { waitForService, verifyCriticalEndpoints, checkComfyUiHealth } from "./deploy/health.mjs";
 import { formatDeploymentBanner } from "./deploy/output.mjs";
 
@@ -31,6 +31,7 @@ const DATA_DIR = resolve(ROOT, ".data");
 const DEPLOY_STATE_FILE = resolve(DATA_DIR, "deployment.json");
 const DEPLOY_LOCK_FILE = resolve(DATA_DIR, "deploy.lock");
 const ENV_FILE = resolve(ROOT, ".env");
+const ENV_EXAMPLE_FILE = resolve(ROOT, ".env.example");
 
 function log(msg) {
   process.stdout.write(msg + "\n");
@@ -54,6 +55,7 @@ async function main() {
     return;
   }
 
+  ensureDotEnv(ENV_FILE, ENV_EXAMPLE_FILE);
   const dotEnv = loadDotEnv(ENV_FILE);
   const releaseLock = acquireDeployLock(DEPLOY_LOCK_FILE);
 

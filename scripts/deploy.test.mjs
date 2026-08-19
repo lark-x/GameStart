@@ -16,7 +16,7 @@ import {
 } from "./deploy/port.mjs";
 import { createDockerClient } from "./deploy/docker.mjs";
 import { acquireDeployLock, readLockFile, isPidAlive } from "./deploy/lock.mjs";
-import { loadDotEnv, loadDeployState, saveDeployState } from "./deploy/state.mjs";
+import { loadDotEnv, loadDeployState, saveDeployState, ensureDotEnv } from "./deploy/state.mjs";
 import { checkComfyUiHealth, verifyCriticalEndpoints, parseServiceHealth } from "./deploy/health.mjs";
 import { formatDeploymentBanner, formatDoctorReport } from "./deploy/output.mjs";
 
@@ -262,6 +262,22 @@ EMPTY_VAL=
   assert.equal(parsed.WEB_HOST_BIND, "127.0.0.1");
   assert.equal(parsed.COMFYUI_BASE_URL, "http://192.168.1.50:8188");
   assert.equal(parsed.EMPTY_VAL, "");
+});
+
+test("ensureDotEnv copies .env.example when .env is missing", () => {
+  const exampleFile = resolve(tmpRoot, "env-example", ".env.example");
+  const targetEnv = resolve(tmpRoot, "env-example", ".env");
+  mkdirSync(resolve(tmpRoot, "env-example"), { recursive: true });
+  writeFileSync(exampleFile, "V2_API_PORT=3003\n");
+
+  const created = ensureDotEnv(targetEnv, exampleFile);
+  assert.equal(created, true);
+  assert.ok(existsSync(targetEnv));
+  assert.equal(readFileSync(targetEnv, "utf8"), "V2_API_PORT=3003\n");
+
+  // Second run does nothing
+  const skipped = ensureDotEnv(targetEnv, exampleFile);
+  assert.equal(skipped, false);
 });
 
 // ---------------------------------------------------------------------------
