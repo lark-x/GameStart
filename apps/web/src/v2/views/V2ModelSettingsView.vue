@@ -641,6 +641,7 @@ onMounted(() => {
   grid-template-columns: minmax(220px, 0.72fr) minmax(0, 1.28fr);
   gap: var(--space-5);
   align-items: start;
+  container-type: inline-size;
 }
 
 .v2-profile-items {
@@ -775,19 +776,8 @@ onMounted(() => {
 
 .v2-inline-message,
 .v2-settings-alert,
-.v2-settings-success {
-  margin: 0;
-  padding: var(--space-3);
-  border-radius: var(--radius-md);
-  font-size: var(--text-sm);
-  line-height: 1.5;
-}
 
 .v2-inline-message,
-.v2-settings-success {
-  background: var(--success-soft);
-  color: var(--success);
-}
 
 .v2-settings-alert {
   background: var(--danger-soft);

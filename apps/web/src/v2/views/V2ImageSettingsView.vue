@@ -256,10 +256,6 @@ onMounted(() => {
   color: var(--danger);
 }
 
-.v2-image-success {
-  background: var(--success-soft);
-  color: var(--success);
-}
 
 @media (max-width: 640px) {
   .v2-image-form {

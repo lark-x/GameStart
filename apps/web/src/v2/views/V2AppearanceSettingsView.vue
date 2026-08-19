@@ -231,10 +231,6 @@ onMounted(() => {
   color: var(--danger);
 }
 
-.v2-appearance-success {
-  background: var(--success-soft);
-  color: var(--success);
-}
 
 @media (max-width: 760px) {
   .v2-theme-grid {

@@ -240,6 +240,7 @@ onMounted(() => {
   grid-template-columns: minmax(300px, 0.85fr) minmax(0, 1.15fr);
   gap: var(--space-5);
   align-items: start;
+  container-type: inline-size;
 }
 
 .v2-log-list-head {
@@ -403,8 +404,13 @@ onMounted(() => {
   color: var(--success);
 }
 
+@container (max-width: 700px) {
+  .v2-log-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 900px) {
-  .v2-log-layout,
   .v2-log-filters {
     grid-template-columns: 1fr;
   }
