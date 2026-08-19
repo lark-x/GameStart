@@ -1,0 +1,10 @@
+name: living-network
+
+services:
+  redis:
+    ports:
+      - "${REDIS_DEV_PORT:-6379}:6379"
+
+  api:
+    ports:
+      - "${API_DEV_PORT:-3003}:3003"
