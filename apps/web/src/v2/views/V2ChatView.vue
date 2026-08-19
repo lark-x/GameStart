@@ -20,7 +20,7 @@ import { createV2ChatClient, type V2ChatStreamEvent } from "../chat/client.ts";
 const route = useRoute();
 const router = useRouter();
 const environment = import.meta.env as Record<string, string | undefined>;
-const baseUrl = environment.VITE_API_BASE || (typeof window === "undefined" ? "http://127.0.0.1:3002" : window.location.origin);
+const baseUrl = environment.VITE_API_BASE || (typeof window === "undefined" ? "http://127.0.0.1:3003" : window.location.origin);
 const client = createV2ChatClient({ baseUrl });
 const toast = useNotificationStore();
 

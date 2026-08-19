@@ -13,7 +13,7 @@ import { createV2ChatClient } from "../chat/client.ts";
 
 const router = useRouter();
 const environment = import.meta.env as Record<string, string | undefined>;
-const baseUrl = environment.VITE_API_BASE || (typeof window === "undefined" ? "http://127.0.0.1:3002" : window.location.origin);
+const baseUrl = environment.VITE_API_BASE || (typeof window === "undefined" ? "http://127.0.0.1:3003" : window.location.origin);
 const client = createV2ChatClient({ baseUrl });
 
 const persona = ref("");

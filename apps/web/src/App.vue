@@ -6,7 +6,7 @@ import { createV2PlatformClient } from './v2/adapters/platform'
 
 const runtimeEnv = (import.meta as ImportMeta & { readonly env?: Record<string, string | undefined> }).env ?? {}
 const platformClient = createV2PlatformClient({
-  baseUrl: runtimeEnv.VITE_API_BASE || (typeof window === 'undefined' ? 'http://127.0.0.1:3002' : window.location.origin),
+  baseUrl: runtimeEnv.VITE_API_BASE || (typeof window === 'undefined' ? 'http://127.0.0.1:3003' : window.location.origin),
 })
 
 onMounted(() => {

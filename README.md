@@ -109,7 +109,7 @@ pnpm --filter @living-network/web dev
 | 服务 | 地址 |
 | --- | --- |
 | Web | `http://127.0.0.1:4173/v2` |
-| API | `http://127.0.0.1:3002` |
+| API | `http://127.0.0.1:3003` |
 | Health | `GET /api/v2/health` |
 | Ready | `GET /api/v2/ready` |
 | Capabilities | `GET /api/v2/capabilities` |
@@ -134,7 +134,7 @@ docker compose --env-file .env -f infra/compose/docker-compose.yml up -d
 docker compose --env-file .env -f infra/compose/docker-compose.yml ps
 ```
 
-Compose 包含四个服务：`redis`、`api`、`worker`、`web`。SQLite、Redis 和媒体分别使用持久化卷。访问 <http://127.0.0.1:4173>，API 暴露在 <http://127.0.0.1:3002>。
+Compose 包含四个服务：`redis`、`api`、`worker`、`web`。SQLite、Redis 和媒体分别使用持久化卷。访问 <http://127.0.0.1:4173>，API 暴露在 <http://127.0.0.1:3003>。
 
 停止服务但保留数据：
 

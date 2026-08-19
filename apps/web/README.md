@@ -10,7 +10,7 @@ V2 Vue 3 + Vite 创作者工作区。`/v2` 是默认入口，旧 Web 路由统�
 pnpm --filter @living-network/web dev
 ```
 
-默认地址为 <http://127.0.0.1:4173/v2>。Vite 将 `/api/v2` 代理到 `V2_API_PROXY_TARGET`，默认是 `http://127.0.0.1:3002`。
+默认地址为 <http://127.0.0.1:4173/v2>。Vite 将 `/api/v2` 代理到 `V2_API_PROXY_TARGET`，默认是 `http://127.0.0.1:3003`。
 
 ## 验证
 

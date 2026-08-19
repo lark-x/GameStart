@@ -36,12 +36,12 @@ test("V2ChatClient listMessages builds beforeMessageId and limit query parameter
     });
   };
 
-  const client = createV2ChatClient({ baseUrl: "http://127.0.0.1:3002", fetchImpl: fakeFetch });
+  const client = createV2ChatClient({ baseUrl: "http://127.0.0.1:3003", fetchImpl: fakeFetch });
 
   // First page without beforeMessageId
   const page1 = await client.listMessages("conv_1" as V2ConversationId, { limit: 50 });
   assert.equal(calls.length, 1);
-  assert.equal(calls[0]?.url, "http://127.0.0.1:3002/api/v2/chat/conversations/conv_1/messages?limit=50");
+  assert.equal(calls[0]?.url, "http://127.0.0.1:3003/api/v2/chat/conversations/conv_1/messages?limit=50");
   assert.equal(page1.messages.length, 1);
   assert.equal(page1.hasMore, true);
   assert.equal(page1.nextBeforeMessageId, "msg_1");
@@ -52,13 +52,13 @@ test("V2ChatClient listMessages builds beforeMessageId and limit query parameter
     limit: 50,
   });
   assert.equal(calls.length, 2);
-  assert.equal(calls[1]?.url, "http://127.0.0.1:3002/api/v2/chat/conversations/conv_1/messages?limit=50&beforeMessageId=msg_50");
+  assert.equal(calls[1]?.url, "http://127.0.0.1:3003/api/v2/chat/conversations/conv_1/messages?limit=50&beforeMessageId=msg_50");
   assert.equal(page2.messages.length, 1);
 });
 
 test("V2ChatClient getLatestDiagnostics fetches diagnostics from api", async () => {
   const fakeFetch: typeof fetch = async (input) => {
-    assert.equal(String(input), "http://127.0.0.1:3002/api/v2/chat/conversations/conv_diag/diagnostics/latest");
+    assert.equal(String(input), "http://127.0.0.1:3003/api/v2/chat/conversations/conv_diag/diagnostics/latest");
     return new Response(
       JSON.stringify({
         templateId: "chat:roleplay:v1",
@@ -72,7 +72,7 @@ test("V2ChatClient getLatestDiagnostics fetches diagnostics from api", async () 
     );
   };
 
-  const client = createV2ChatClient({ baseUrl: "http://127.0.0.1:3002", fetchImpl: fakeFetch });
+  const client = createV2ChatClient({ baseUrl: "http://127.0.0.1:3003", fetchImpl: fakeFetch });
   const diag = await client.getLatestDiagnostics("conv_diag" as V2ConversationId);
 
   assert.equal(diag.templateId, "chat:roleplay:v1");
@@ -91,7 +91,7 @@ test("V2ChatClient maps error responses into V2ChatClientError", async () => {
     );
   };
 
-  const client = createV2ChatClient({ baseUrl: "http://127.0.0.1:3002", fetchImpl: fakeFetch });
+  const client = createV2ChatClient({ baseUrl: "http://127.0.0.1:3003", fetchImpl: fakeFetch });
   await assert.rejects(
     async () => client.listMessages("conv_missing" as V2ConversationId),
     (err: Error) => {
@@ -117,13 +117,13 @@ test("V2ChatClient triggerStoryAnalyze calls analyze endpoint with idempotencyKe
     );
   };
 
-  const client = createV2ChatClient({ baseUrl: "http://127.0.0.1:3002", fetchImpl: fakeFetch });
+  const client = createV2ChatClient({ baseUrl: "http://127.0.0.1:3003", fetchImpl: fakeFetch });
   const result = await client.triggerStoryAnalyze("conv_analyze_1" as V2ConversationId, {
     idempotencyKey: "test_key_123",
   });
 
   assert.equal(calls.length, 1);
-  assert.equal(calls[0]?.url, "http://127.0.0.1:3002/api/v2/chat/conversations/conv_analyze_1/analyze");
+  assert.equal(calls[0]?.url, "http://127.0.0.1:3003/api/v2/chat/conversations/conv_analyze_1/analyze");
   assert.equal(calls[0]?.method, "POST");
   assert.ok(calls[0]?.body?.includes('"idempotencyKey":"test_key_123"'));
   assert.equal(result.jobId, "job:maint:analyze_123");
@@ -131,8 +131,8 @@ test("V2ChatClient triggerStoryAnalyze calls analyze endpoint with idempotencyKe
 });
 
 test("V2ChatClient mediaUrl formats valid local chat media url", () => {
-  const client = createV2ChatClient({ baseUrl: "http://127.0.0.1:3002" });
+  const client = createV2ChatClient({ baseUrl: "http://127.0.0.1:3003" });
   const hash = "a".repeat(64);
   const formatted = client.mediaUrl(`media://local/v2/chat/${hash}.png`);
-  assert.equal(formatted, `http://127.0.0.1:3002/api/v2/chat/media/${hash}.png`);
+  assert.equal(formatted, `http://127.0.0.1:3003/api/v2/chat/media/${hash}.png`);
 });

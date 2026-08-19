@@ -36,7 +36,7 @@ test("compose runs the persistent V2 application stack with API-owned SQLite mig
 
 test("compose publishes the web application through an API reverse proxy", () => {
   const nginx = readFileSync(new URL("./nginx.conf", import.meta.url), "utf8");
-  assert.match(nginx, /proxy_pass http:\/\/api:3002/);
+  assert.match(nginx, /proxy_pass http:\/\/api:3003/);
   assert.match(nginx, /location \/api\/v2\//);
   assert.match(nginx, /try_files \$uri \$uri\/ \/index\.html/);
 });

@@ -71,7 +71,7 @@ const reviewPath = computed(() => isComfy.value ? "/v2/workspace/comfy-review" :
 
 function platformClient() {
   const env = (import.meta as ImportMeta & { readonly env?: Record<string, string | undefined> }).env ?? {};
-  const fallback = typeof window === "undefined" ? "http://127.0.0.1:3002" : window.location.origin;
+  const fallback = typeof window === "undefined" ? "http://127.0.0.1:3003" : window.location.origin;
   return createV2PlatformClient({ baseUrl: env.VITE_API_BASE || fallback });
 }
 

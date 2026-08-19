@@ -9,7 +9,7 @@
 Living Network 是 TypeScript monorepo，当前产品是本地优先的 AI 互动游戏创作、审核、发布和游玩系统：
 
 - Vue 3 + Vite Web，默认入口 `/v2`；当前 Web 为中文单语言界面，不提供语言切换入口。
-- Fastify V2 API，默认 `http://127.0.0.1:3002`，公共路径 `/api/v2`。
+- Fastify V2 API，默认 `http://127.0.0.1:3003`，公共路径 `/api/v2`。
 - 独立 V2 Worker，使用 BullMQ/Redis 派发长任务并回写 SQLite。
 - Node.js 24 内置 `node:sqlite` + FTS5 作为唯一业务事实来源。
 - 本地媒体根目录保存已批准资产；媒体只通过受控 `media://local/v2/assets/...` 引用访问。
@@ -17,7 +17,7 @@ Living Network 是 TypeScript monorepo，当前产品是本地优先的 AI 互�
 
 ```mermaid
 flowchart TD
-    Web["Vue Web /v2"] -->|"/api/v2"| API["Fastify V2 API :3002"]
+    Web["Vue Web /v2"] -->|"/api/v2"| API["Fastify V2 API :3003"]
     API --> Core["Core Use Cases"]
     API --> Generation["Generation / Asset API"]
     Core --> SQLite[("SQLite + FTS5")]
@@ -88,7 +88,7 @@ pnpm --filter @living-network/worker start:v2
 持久本地栈使用 `infra/compose/docker-compose.yml` 的 `api`、`worker`、`redis`、`web` 四个服务，SQLite、Redis 和媒体分别使用命名卷。启动后在 Web 的“平台配置”中填写模型和图片服务；只有需要环境变量兜底或加密密钥时才配置 `.env` 中的对应项。核心检查：
 
 ```sh
-curl http://127.0.0.1:3002/api/v2/ready
+curl http://127.0.0.1:3003/api/v2/ready
 pnpm check:boundaries
 pnpm typecheck
 pnpm test
