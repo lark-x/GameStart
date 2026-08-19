@@ -47,3 +47,18 @@ test("nginx serves the assets route instead of the static bundle directory", () 
   assert.match(nginx, /location = \/assets \{/);
   assert.match(nginx, /location = \/assets\/ \{/);
 });
+
+test("compose does not expose Redis or API host ports", () => {
+  // Only Web should publish a host port; Redis and API use `expose` for container-internal networking.
+  const redisBlock = compose.split(/^  api:/m)[0];
+  const apiBlock = compose.split(/^  api:/m)[1]?.split(/^  worker:/m)[0] ?? "";
+  assert.match(redisBlock, /expose:/);
+  assert.doesNotMatch(redisBlock, /ports:/);
+  assert.match(apiBlock, /expose:/);
+  assert.doesNotMatch(apiBlock, /ports:/);
+});
+
+test("web is the only service publishing a host port", () => {
+  const webBlock = compose.split(/^  web:/m)[1] ?? "";
+  assert.match(webBlock, /ports:/);
+});

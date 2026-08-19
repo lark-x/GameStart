@@ -5,8 +5,8 @@ services:
     image: redis:7.2-alpine
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
+    expose:
+      - "6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -35,8 +35,8 @@ services:
       V2_SCENE_GENERATION_ENABLED: ${V2_SCENE_GENERATION_ENABLED:-false}
       V2_ASSET_GENERATION_ENABLED: ${V2_ASSET_GENERATION_ENABLED:-false}
     command: ["pnpm", "--filter", "@living-network/api", "start:v2"]
-    ports:
-      - "${API_PORT:-3003}:3003"
+    expose:
+      - "3003"
     depends_on:
       redis:
         condition: service_healthy
