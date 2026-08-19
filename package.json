@@ -23,7 +23,11 @@
     "test:module:integration": "node scripts/run-module-tests.mjs integration",
     "verify:fast": "pnpm check:boundaries && pnpm typecheck",
     "verify:release": "pnpm check:boundaries && pnpm typecheck && pnpm test && pnpm test:coverage && pnpm --filter @living-network/web lint && pnpm build",
-    "verify": "pnpm verify:release"
+    "verify": "pnpm verify:release",
+    "deploy": "node scripts/deploy.mjs",
+    "deploy:status": "node scripts/deploy-status.mjs",
+    "deploy:logs": "docker compose -f infra/compose/docker-compose.yml logs -f",
+    "deploy:stop": "node scripts/deploy-stop.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",

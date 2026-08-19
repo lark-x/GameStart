@@ -77,7 +77,7 @@ services:
       target: web
     restart: unless-stopped
     ports:
-      - "${WEB_PORT:-4173}:80"
+      - "${WEB_PORT:?WEB_PORT is required – use 'pnpm deploy' or set it in .env}:80"
     depends_on:
       api:
         condition: service_healthy
