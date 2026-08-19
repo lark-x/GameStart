@@ -34,20 +34,24 @@ V2 默认使用 `.data/living-network-v2.sqlite`；测试可使用 `V2_SQLITE_PA
 
 ## 3. 持久本地栈
 
-```sh
-docker compose --env-file .env -f infra/compose/docker-compose.yml up -d
-docker compose --env-file .env -f infra/compose/docker-compose.yml ps
-```
-
-Compose 服务为 `redis`、`api`、`worker`、`web`；API 负责向上 migration，Worker 等待 `/api/v2/ready`。SQLite、Redis 和媒体使用命名卷。
-
-停止但保留数据：
+一键部署（推荐）：
 
 ```sh
-docker compose --env-file .env -f infra/compose/docker-compose.yml down
+cp .env.example .env
+pnpm deploy
 ```
 
-不要在普通停机中使用 `down -v`；它会删除本地 SQLite、Redis 和媒体卷。V1 数据未在本切换中删除。
+`pnpm deploy` 自动选择可用端口、构建镜像、等待服务健康并输出访问地址。容器内部端口固定（Web:80, API:3003, Redis:6379），只有 Web 发布到宿主机。
+
+查看状态和日志：
+
+```sh
+pnpm deploy:status
+pnpm deploy:logs
+pnpm deploy:stop
+```
+
+`deploy:stop` 停止容器但保留数据。手动编排方式见 [infra/compose/README.md](../infra/compose/README.md)。
 
 ## 4. 自动质量门槛
 

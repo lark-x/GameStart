@@ -128,21 +128,24 @@ Worker 使用同一个 `V2_SQLITE_PATH`，会先确认 SQLite schema 已由 API 
 
 ### Compose 持久化栈
 
+一键部署（推荐）：
+
 ```sh
 cp .env.example .env
-docker compose --env-file .env -f infra/compose/docker-compose.yml up -d
-docker compose --env-file .env -f infra/compose/docker-compose.yml ps
+pnpm deploy
 ```
 
-Compose 包含四个服务：`redis`、`api`、`worker`、`web`。SQLite、Redis 和媒体分别使用持久化卷。访问 <http://127.0.0.1:4173>，API 暴露在 <http://127.0.0.1:3003>。
+`pnpm deploy` 会自动选择可用端口、构建镜像、等待所有服务健康，然后输出访问地址。容器内部端口固定（Web:80, API:3003, Redis:6379），只有 Web 发布到宿主机。指定端口：`pnpm deploy -- --port 18888`。
 
-停止服务但保留数据：
+查看部署状态：
 
 ```sh
-docker compose --env-file .env -f infra/compose/docker-compose.yml down
+pnpm deploy:status
+pnpm deploy:logs
+pnpm deploy:stop
 ```
 
-`down -v` 会删除 V2 SQLite、Redis 和媒体卷，使用前必须确认备份。V1 数据删除不属于本项目当前切换流程。
+`deploy:stop` 停止容器但保留数据。如需手动编排，可参考 [infra/compose/README.md](infra/compose/README.md)。
 
 ## 可选能力
 
