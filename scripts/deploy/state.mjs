@@ -1,5 +1,23 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync } from "node:fs";
 import { dirname } from "node:path";
+
+/**
+ * Ensure a .env file exists; if missing, initialize from .env.example.
+ */
+export function ensureDotEnv(envPath, examplePath) {
+  if (existsSync(envPath)) return false;
+  try {
+    mkdirSync(dirname(envPath), { recursive: true });
+    if (examplePath && existsSync(examplePath)) {
+      copyFileSync(examplePath, envPath);
+    } else {
+      writeFileSync(envPath, "# Living Network V2 Environment\n");
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Load a .env file into key-value pairs without shell expansion.

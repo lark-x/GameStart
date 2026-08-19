@@ -23,7 +23,8 @@ services:
       target: app-runtime
     restart: unless-stopped
     env_file:
-      - ../../.env
+      - path: ../../.env
+        required: false
     environment: &v2-environment
       NODE_ENV: production
       V2_API_HOST: 0.0.0.0
@@ -58,7 +59,8 @@ services:
       target: app-runtime
     restart: unless-stopped
     env_file:
-      - ../../.env
+      - path: ../../.env
+        required: false
     environment: *v2-environment
     command: ["pnpm", "--filter", "@living-network/worker", "start:v2"]
     depends_on:
