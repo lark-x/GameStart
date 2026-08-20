@@ -329,3 +329,74 @@ export interface V2TriggerStoryAnalyzeResponse {
   readonly jobId: string;
   readonly conversationId: V2ConversationId;
 }
+
+export interface V2MemoryFactStatsDto {
+  readonly total: number;
+  readonly relatedCharacterCount: number;
+  readonly averageImportance: number;
+  readonly averageConfidence: number;
+  readonly typeDistribution: readonly { readonly kind: V2MemoryKind; readonly count: number }[];
+}
+
+export interface V2MemoryRunSummaryDto {
+  readonly jobId: string;
+  readonly status: V2MaintenanceJobStatus;
+  readonly startedAt?: V2IsoDateTime;
+  // NOTE: there is no dedicated completed_at column; this is the terminal
+  // job's updated_at (only meaningful for completed/failed jobs).
+  readonly updatedAt?: V2IsoDateTime;
+  readonly error?: string;
+}
+
+export interface V2MemoryOverviewDto {
+  readonly facts: V2MemoryFactStatsDto;
+  readonly extraction: {
+    readonly latest?: V2MemoryRunSummaryDto;
+    readonly latestFailure?: V2MemoryRunSummaryDto;
+  };
+  readonly consolidation: {
+    readonly latest?: V2MemoryRunSummaryDto;
+    readonly latestFailure?: V2MemoryRunSummaryDto;
+  };
+  readonly engines: readonly { readonly id: string; readonly mode: "primary" | "shadow" }[];
+  readonly recentFailures: readonly V2MemoryRunSummaryDto[];
+}
+
+export interface V2JobPayloadSummaryDto {
+  readonly conversationId?: string;
+  readonly characterId?: string;
+  readonly sourceMessageCount?: number;
+}
+
+export interface V2JobSummaryDto {
+  readonly jobId: string;
+  readonly jobType: V2MaintenanceJobType;
+  readonly status: V2MaintenanceJobStatus;
+  readonly createdAt: V2IsoDateTime;
+  readonly updatedAt: V2IsoDateTime;
+  readonly attempts: number;
+  readonly maxAttempts: number;
+  readonly lastError?: string;
+}
+
+export interface V2JobDetailDto extends V2JobSummaryDto {
+  readonly startedAt?: V2IsoDateTime;
+  readonly payloadSummary: V2JobPayloadSummaryDto;
+}
+
+export interface V2JobQuery {
+  readonly status?: V2MaintenanceJobStatus;
+  readonly type?: V2MaintenanceJobType;
+  readonly limit?: number;
+  readonly cursor?: string;
+}
+
+export interface V2JobListDto {
+  readonly items: readonly V2JobSummaryDto[];
+  readonly nextCursor?: string;
+}
+
+export interface V2RetryJobResponse {
+  readonly jobId: string;
+  readonly status: V2MaintenanceJobStatus;
+}

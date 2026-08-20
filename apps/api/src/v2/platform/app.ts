@@ -20,6 +20,10 @@ export interface CreateV2FastifyAppOptions {
   readonly capabilitiesProvider?: () => V2CapabilitiesResponse | Promise<V2CapabilitiesResponse>;
   readonly platformPlugin?: FastifyPluginAsync;
   readonly platformOptions?: Record<string, unknown>;
+  readonly memoryPlugin?: FastifyPluginAsync;
+  readonly memoryOptions?: Record<string, unknown>;
+  readonly jobsPlugin?: FastifyPluginAsync;
+  readonly jobsOptions?: Record<string, unknown>;
   readonly chatPlugin?: FastifyPluginAsync;
   readonly chatOptions?: Record<string, unknown>;
   readonly mediaRoot?: string;
@@ -90,6 +94,12 @@ export function createV2FastifyApp(options: CreateV2FastifyAppOptions = {}): Fas
       prefix: "/generation",
       ...(options.generationOptions ?? {}),
     });
+    if (options.memoryPlugin !== undefined) {
+      await v2.register(options.memoryPlugin, { prefix: "/memory", ...(options.memoryOptions ?? {}) });
+    }
+    if (options.jobsPlugin !== undefined) {
+      await v2.register(options.jobsPlugin, { prefix: "/jobs", ...(options.jobsOptions ?? {}) });
+    }
     if (options.platformPlugin !== undefined) {
       await v2.register(options.platformPlugin, { prefix: "/platform", ...(options.platformOptions ?? {}) });
     }

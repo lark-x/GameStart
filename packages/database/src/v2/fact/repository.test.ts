@@ -179,3 +179,40 @@ test("V2 fact repository rolls back a failed batch transaction", async () => {
     cleanup();
   }
 });
+
+test("V2 fact repository counts distinct character subjects", async () => {
+  const { db, cleanup } = openV2TempSqliteConnection();
+  try {
+    applyV2Migrations(db);
+    const repository = new V2SqliteFactRepository(db);
+
+    assert.equal(await repository.countDistinctCharacterSubjects(), 0);
+
+    await repository.createBatch(sampleBatch());
+    await repository.createAssertions([
+      sampleAssertion({
+        assertionId: "fact:char:a",
+        subject: { entityType: "character", entityId: "character:a", label: "Alice" },
+      }),
+      sampleAssertion({
+        assertionId: "fact:char:b",
+        subject: { entityType: "character", entityId: "character:b", label: "Bob" },
+      }),
+      // Same character again — must be deduped by DISTINCT.
+      sampleAssertion({
+        assertionId: "fact:char:a2",
+        subject: { entityType: "character", entityId: "character:a", label: "Alice" },
+      }),
+      // A user subject must not be counted as a character.
+      sampleAssertion({
+        assertionId: "fact:user:u",
+        subject: { entityType: "user", entityId: "user:u", label: "User" },
+      }),
+    ]);
+
+    assert.equal(await repository.countDistinctCharacterSubjects(), 2);
+  } finally {
+    db.close();
+    cleanup();
+  }
+});

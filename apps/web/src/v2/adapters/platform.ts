@@ -3,7 +3,12 @@ import type {
   V2DiscoverModelsRequest,
   V2ExternalConnectionCheckDto,
   V2ImageServiceSettingsDto,
+  V2JobDetailDto,
+  V2JobListDto,
+  V2JobQuery,
+  V2MemoryOverviewDto,
   V2ModelBindingDto,
+  V2RetryJobResponse,
   V2ModelCallLogDto,
   V2ModelCallLogPage,
   V2ModelCallLogQuery,
@@ -146,6 +151,23 @@ export function createV2PlatformClient(options: V2PlatformClientOptions): V2Plat
     async getReady(): Promise<V2RuntimeReady> {
       return readJson<V2RuntimeReady>(await fetcher(`${baseUrl}/api/v2/ready`, request("GET")));
     },
+    async getMemoryOverview(): Promise<V2MemoryOverviewDto> {
+      return readJson<V2MemoryOverviewDto>(await fetcher(`${baseUrl}/api/v2/memory/overview`, request("GET")));
+    },
+    async listJobs(query: V2JobQuery = {}): Promise<V2JobListDto> {
+      const params = new URLSearchParams();
+      if (query.status !== undefined) params.set("status", query.status);
+      if (query.type !== undefined) params.set("type", query.type);
+      if (query.limit !== undefined) params.set("limit", String(query.limit));
+      if (query.cursor !== undefined) params.set("cursor", query.cursor);
+      return readJson<V2JobListDto>(await fetcher(`${baseUrl}/api/v2/jobs${params.size === 0 ? "" : `?${params.toString()}`}`, request("GET")));
+    },
+    async getJob(jobId: string): Promise<V2JobDetailDto> {
+      return readJson<V2JobDetailDto>(await fetcher(`${baseUrl}/api/v2/jobs/${encodeURIComponent(jobId)}`, request("GET")));
+    },
+    async retryJob(jobId: string): Promise<V2RetryJobResponse> {
+      return readJson<V2RetryJobResponse>(await fetcher(`${baseUrl}/api/v2/jobs/${encodeURIComponent(jobId)}/retry`, request("POST")));
+    },
   };
 }
 
@@ -168,4 +190,8 @@ export interface V2PlatformClient {
   deleteModelCallLogs(before: string): Promise<number>;
   getHealth(): Promise<V2RuntimeHealth>;
   getReady(): Promise<V2RuntimeReady>;
+  getMemoryOverview(): Promise<V2MemoryOverviewDto>;
+  listJobs(query?: V2JobQuery): Promise<V2JobListDto>;
+  getJob(jobId: string): Promise<V2JobDetailDto>;
+  retryJob(jobId: string): Promise<V2RetryJobResponse>;
 }

@@ -608,6 +608,42 @@ export class V2SqliteMemoryRepository implements V2MemoryRepository {
     if (updated === undefined) throw new Error("V2 memory supersede did not find a row");
     return updated;
   }
+
+  /** Aggregate active memory facts for the operational dashboard. */
+  public getMemoryFactStats(): {
+    readonly total: number;
+    readonly averageImportance: number;
+    readonly averageConfidence: number;
+    readonly typeDistribution: readonly { readonly kind: string; readonly count: number }[];
+  } {
+    const summary = this.db.prepare(`
+      SELECT
+        COUNT(*) AS total,
+        AVG(importance) AS average_importance,
+        AVG(confidence) AS average_confidence
+      FROM v2_memories
+      WHERE status = 'active'
+    `).get() as {
+      readonly total: number;
+      readonly average_importance: number | null;
+      readonly average_confidence: number | null;
+    };
+
+    const kindRows = this.db.prepare(`
+      SELECT kind, COUNT(*) AS count
+      FROM v2_memories
+      WHERE status = 'active'
+      GROUP BY kind
+      ORDER BY count DESC, kind ASC
+    `).all() as unknown as readonly { readonly kind: string; readonly count: number }[];
+
+    return {
+      total: summary.total,
+      averageImportance: summary.average_importance ?? 0,
+      averageConfidence: summary.average_confidence ?? 0,
+      typeDistribution: kindRows,
+    };
+  }
 }
 
 export class V2SqliteConversationSummaryRepository implements V2ConversationSummaryRepository {
@@ -1018,5 +1054,100 @@ export class V2SqliteChatMaintenanceJobRepository implements V2ChatMaintenanceJo
       LIMIT 1
     `).get(input.jobId, input.workerId, input.now);
     return row !== undefined;
+  }
+
+  /** Cursor-paginated job listing with status/type filters (no full-history dump). */
+  public listJobs(input: {
+    readonly status?: string;
+    readonly type?: string;
+    readonly limit: number;
+    readonly cursor?: { readonly createdAt: string; readonly jobId: string };
+  }): { readonly items: readonly V2ChatMaintenanceJob[]; readonly nextCursor?: { readonly createdAt: string; readonly jobId: string } } {
+    const limit = Math.min(Math.max(input.limit, 1), 100);
+    const conditions: string[] = [];
+    const values: (string | number)[] = [];
+    if (input.status !== undefined) {
+      conditions.push("status = ?");
+      values.push(input.status);
+    }
+    if (input.type !== undefined) {
+      conditions.push("job_type = ?");
+      values.push(input.type);
+    }
+    if (input.cursor !== undefined) {
+      conditions.push("(created_at, job_id) < (?, ?)");
+      values.push(input.cursor.createdAt, input.cursor.jobId);
+    }
+    values.push(limit + 1);
+    const rows = this.db.prepare(`
+      SELECT * FROM v2_chat_maintenance_jobs
+      ${conditions.length === 0 ? "" : `WHERE ${conditions.join(" AND ")}`}
+      ORDER BY created_at DESC, job_id DESC
+      LIMIT ?
+    `).all(...values) as MaintenanceJobRow[];
+    const hasMore = rows.length > limit;
+    const visible = rows.slice(0, limit);
+    const last = visible[visible.length - 1];
+    return {
+      items: visible.map(mapMaintenanceJob),
+      ...(hasMore && last !== undefined ? { nextCursor: { createdAt: last.created_at, jobId: last.job_id } } : {}),
+    };
+  }
+
+  /** Requeue a terminal failed job so the worker picks it up again. */
+  public retryFailed(input: { readonly jobId: string; readonly now: string }): V2ChatMaintenanceJob | undefined {
+    // A manual retry grants one additional execution opportunity while
+    // preserving the original attempt history. A terminal failed job has
+    // attempts >= max_attempts, so simply resetting status to 'pending'
+    // would make it unclaimable (claimNext requires attempts < max_attempts).
+    const result = this.db.prepare(`
+      UPDATE v2_chat_maintenance_jobs
+      SET
+        status = 'pending',
+        available_at = ?,
+        lease_expires_at = NULL,
+        claimed_by = NULL,
+        last_error = NULL,
+        max_attempts = CASE WHEN max_attempts <= attempts THEN attempts + 1 ELSE max_attempts END,
+        updated_at = ?
+      WHERE job_id = ? AND status = 'failed'
+    `).run(input.now, input.now, input.jobId);
+    if (Number(result.changes) === 0) return undefined;
+    const row = this.db.prepare("SELECT * FROM v2_chat_maintenance_jobs WHERE job_id = ?").get(input.jobId) as MaintenanceJobRow | undefined;
+    return row === undefined ? undefined : mapMaintenanceJob(row);
+  }
+
+  /** Latest run (any terminal status) of a given job type. */
+  public getLatestRun(jobType: string): V2ChatMaintenanceJob | undefined {
+    const row = this.db.prepare(`
+      SELECT * FROM v2_chat_maintenance_jobs
+      WHERE job_type = ? AND status IN ('completed', 'failed')
+      ORDER BY updated_at DESC, job_id DESC
+      LIMIT 1
+    `).get(jobType) as MaintenanceJobRow | undefined;
+    return row === undefined ? undefined : mapMaintenanceJob(row);
+  }
+
+  /** Latest failed run of a given job type. */
+  public getLatestFailure(jobType: string): V2ChatMaintenanceJob | undefined {
+    const row = this.db.prepare(`
+      SELECT * FROM v2_chat_maintenance_jobs
+      WHERE job_type = ? AND status = 'failed'
+      ORDER BY updated_at DESC, job_id DESC
+      LIMIT 1
+    `).get(jobType) as MaintenanceJobRow | undefined;
+    return row === undefined ? undefined : mapMaintenanceJob(row);
+  }
+
+  /** Most recent failed memory-related jobs (extraction/consolidation). */
+  public getRecentMemoryFailures(limit: number): readonly V2ChatMaintenanceJob[] {
+    const rows = this.db.prepare(`
+      SELECT * FROM v2_chat_maintenance_jobs
+      WHERE job_type IN ('memory_extract', 'memory_consolidate', 'memory_engine_consume')
+        AND status = 'failed'
+      ORDER BY updated_at DESC, job_id DESC
+      LIMIT ?
+    `).all(limit) as MaintenanceJobRow[];
+    return rows.map(mapMaintenanceJob);
   }
 }

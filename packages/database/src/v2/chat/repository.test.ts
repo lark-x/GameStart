@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createV2CanonWorld, createV2ChatConversation, createV2ChatMessage, createV2Memory } from "@living-network/domain/v2";
+import { createV2CanonWorld, createV2ChatConversation, createV2ChatMaintenanceJob, createV2ChatMessage, createV2Memory } from "@living-network/domain/v2";
 
 import { applyV2Migrations, openV2TempSqliteConnection } from "../platform/index.ts";
-import { V2SqliteChatUnitOfWork } from "./repository.ts";
+import { V2SqliteChatMaintenanceJobRepository, V2SqliteChatUnitOfWork, V2SqliteMemoryRepository } from "./repository.ts";
 
 test("V2 chat SQLite repository persists conversations, messages, and memories", async () => {
   const temp = openV2TempSqliteConnection();
@@ -324,6 +324,208 @@ test("V2 maintenance job dedupe key prevents duplicate job creation", async () =
     const differentKey = await unit.withChatTransaction(async ({ maintenanceJobs }) =>
       maintenanceJobs.findJobByDedupeKey("story_analyze", "story_analyze:conversation:dedupe:other-key"));
     assert.equal(differentKey, undefined);
+  } finally {
+    temp.db.close();
+    temp.cleanup();
+  }
+});
+
+
+test("V2 memory fact stats and maintenance run queries support the operational dashboard", async () => {
+  const temp = openV2TempSqliteConnection();
+  try {
+    applyV2Migrations(temp.db);
+    const memories = new V2SqliteMemoryRepository(temp.db);
+    const jobs = new V2SqliteChatMaintenanceJobRepository(temp.db);
+    const unit = new V2SqliteChatUnitOfWork(temp.db);
+
+    await unit.withChatTransaction(async ({ canon }) => canon.createWorld(createV2CanonWorld({
+      storyWorldId: "world:stats",
+      name: "Stats World",
+    })));
+    await unit.withChatTransaction(async ({ conversations }) => conversations.create(createV2ChatConversation({
+      conversationId: "conversation:stats",
+      storyWorldId: "world:stats",
+      primaryCharacterId: "character:stats",
+      title: "Stats",
+    })));
+
+    // Empty stats
+    const empty = memories.getMemoryFactStats();
+    assert.equal(empty.total, 0);
+    assert.equal(empty.averageImportance, 0);
+    assert.equal(empty.averageConfidence, 0);
+    assert.deepEqual(empty.typeDistribution, []);
+
+    await memories.create(createV2Memory({
+      memoryId: "memory:stats:1",
+      storyWorldId: "world:stats",
+      conversationId: "conversation:stats",
+      characterId: "character:a",
+      kind: "profile",
+      content: "用户喜欢猫",
+      importance: 0.8,
+      confidence: 0.9,
+      sourceMessageIds: [],
+    }));
+    await memories.create(createV2Memory({
+      memoryId: "memory:stats:2",
+      storyWorldId: "world:stats",
+      conversationId: "conversation:stats",
+      characterId: "character:b",
+      kind: "world_fact",
+      content: "世界存在魔法",
+      importance: 0.6,
+      confidence: 0.7,
+      sourceMessageIds: [],
+    }));
+    await memories.create(createV2Memory({
+      memoryId: "memory:stats:3",
+      storyWorldId: "world:stats",
+      conversationId: "conversation:stats",
+      kind: "episodic",
+      content: "无角色事件",
+      importance: 0.3,
+      confidence: 0.5,
+      sourceMessageIds: [],
+    }));
+    await memories.create(createV2Memory({
+      memoryId: "memory:stats:4",
+      storyWorldId: "world:stats",
+      conversationId: "conversation:stats",
+      kind: "episodic",
+      content: "已取代事件",
+      importance: 0.2,
+      confidence: 0.4,
+      sourceMessageIds: [],
+      status: "superseded",
+    }));
+
+    const stats = memories.getMemoryFactStats();
+    assert.equal(stats.total, 3);
+    assert.equal(stats.typeDistribution.length, 3);
+    assert.ok(stats.averageImportance > 0);
+    assert.ok(stats.averageConfidence > 0);
+
+    // Maintenance runs
+    await jobs.enqueue(createV2ChatMaintenanceJob({
+      jobId: "job:stats:1",
+      conversationId: "conversation:stats",
+      jobType: "memory_extract",
+      status: "completed",
+      payload: { jobType: "memory_extract", conversationId: "conversation:stats", sourceMessageIds: [] },
+    }));
+    await jobs.enqueue(createV2ChatMaintenanceJob({
+      jobId: "job:stats:2",
+      conversationId: "conversation:stats",
+      jobType: "memory_extract",
+      status: "failed",
+      payload: { jobType: "memory_extract", conversationId: "conversation:stats", sourceMessageIds: [] },
+      lastError: "extraction boom",
+    }));
+
+    const latestRun = jobs.getLatestRun("memory_extract");
+    assert.equal(latestRun?.status, "failed");
+    const latestFailure = jobs.getLatestFailure("memory_extract");
+    assert.equal(latestFailure?.jobId, "job:stats:2");
+    assert.equal(latestFailure?.lastError, "extraction boom");
+
+    const failures = jobs.getRecentMemoryFailures(5);
+    assert.equal(failures.length, 1);
+    assert.equal(failures[0]?.jobId, "job:stats:2");
+
+    assert.equal(jobs.getLatestRun("memory_consolidate"), undefined);
+    assert.equal(jobs.getLatestFailure("memory_consolidate"), undefined);
+  } finally {
+    temp.db.close();
+    temp.cleanup();
+  }
+});
+
+
+test("manual retry grants a claimable execution for a terminal failed job", async () => {
+  const temp = openV2TempSqliteConnection();
+  try {
+    applyV2Migrations(temp.db);
+    const unit = new V2SqliteChatUnitOfWork(temp.db);
+    await unit.withChatTransaction(async ({ canon }) => canon.createWorld(createV2CanonWorld({
+      storyWorldId: "world:retry",
+      name: "Retry World",
+    })));
+    await unit.withChatTransaction(async ({ conversations }) => conversations.create(createV2ChatConversation({
+      conversationId: "conversation:retry",
+      storyWorldId: "world:retry",
+      primaryCharacterId: "character:one",
+    })));
+
+    // Terminal failed job: attempts exhausted.
+    await unit.withChatTransaction(async ({ maintenanceJobs }) => maintenanceJobs.enqueue({
+      jobId: "job:retry:1",
+      conversationId: "conversation:retry" as never,
+      jobType: "memory_extract",
+      status: "failed",
+      payload: { conversationId: "conversation:retry" as never, sourceMessageIds: [] },
+      attempts: 3,
+      maxAttempts: 3,
+      availableAt: "2026-08-12T03:00:00.000Z",
+      lastError: "boom",
+    }));
+
+    // Before fix: claimNext returns undefined because 3 < 3 is false.
+    const before = await unit.withChatTransaction(async ({ maintenanceJobs }) =>
+      maintenanceJobs.claimNext({ workerId: "worker-r", leaseDurationMs: 30000, now: "2026-08-12T03:00:00.000Z" }));
+    assert.equal(before, undefined, "terminal failed job must not be claimable before manual retry");
+
+    // Manual retry.
+    const retried = await unit.withChatTransaction(async ({ maintenanceJobs }) =>
+      maintenanceJobs.retryFailed({ jobId: "job:retry:1", now: "2026-08-12T03:00:01.000Z" }));
+    assert.equal(retried?.status, "pending");
+    assert.equal(retried?.attempts, 3, "attempt history must be preserved");
+    assert.equal(retried?.maxAttempts, 4, "manual retry must grant one extra execution");
+
+    // Now the worker can claim it.
+    const claimed = await unit.withChatTransaction(async ({ maintenanceJobs }) =>
+      maintenanceJobs.claimNext({ workerId: "worker-r", leaseDurationMs: 30000, now: "2026-08-12T03:00:02.000Z" }));
+    assert.equal(claimed?.jobId, "job:retry:1");
+    assert.equal(claimed?.attempts, 4);
+    assert.equal(claimed?.status, "claimed");
+  } finally {
+    temp.db.close();
+    temp.cleanup();
+  }
+});
+
+test("manual retry does not regrant unlimited executions and keeps maxAttempts bounded", async () => {
+  const temp = openV2TempSqliteConnection();
+  try {
+    applyV2Migrations(temp.db);
+    const unit = new V2SqliteChatUnitOfWork(temp.db);
+    await unit.withChatTransaction(async ({ canon }) => canon.createWorld(createV2CanonWorld({
+      storyWorldId: "world:retry2",
+      name: "Retry2 World",
+    })));
+    await unit.withChatTransaction(async ({ conversations }) => conversations.create(createV2ChatConversation({
+      conversationId: "conversation:retry2",
+      storyWorldId: "world:retry2",
+      primaryCharacterId: "character:one",
+    })));
+    await unit.withChatTransaction(async ({ maintenanceJobs }) => maintenanceJobs.enqueue({
+      jobId: "job:retry:2",
+      conversationId: "conversation:retry2" as never,
+      jobType: "memory_extract",
+      status: "failed",
+      payload: { conversationId: "conversation:retry2" as never, sourceMessageIds: [] },
+      attempts: 2,
+      maxAttempts: 5,
+      availableAt: "2026-08-12T03:00:00.000Z",
+      lastError: "boom",
+    }));
+
+    // attempts(2) < maxAttempts(5): retry keeps maxAttempts unchanged.
+    const retried = await unit.withChatTransaction(async ({ maintenanceJobs }) =>
+      maintenanceJobs.retryFailed({ jobId: "job:retry:2", now: "2026-08-12T03:00:01.000Z" }));
+    assert.equal(retried?.maxAttempts, 5, "maxAttempts must not regress when it is already sufficient");
+    assert.equal(retried?.status, "pending");
   } finally {
     temp.db.close();
     temp.cleanup();
