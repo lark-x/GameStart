@@ -262,6 +262,50 @@ test("V2 platform API stores model profiles without returning secrets and expose
   }
 });
 
+test("V2 platform capability toggle persists enabled state and survives restart", async () => {
+  const temp = openV2TempSqliteConnection();
+  const path = temp.path;
+  temp.db.close();
+  const create = () => createV2ApiRuntime({
+    sqlitePath: path,
+    capabilities: { sceneGeneration: { enabled: true }, assetGeneration: { enabled: false } },
+  });
+  const runtime = create();
+  try {
+    const before = await runtime.app.inject({ method: "GET", url: "/api/v2/platform/capabilities" });
+    assert.equal(before.statusCode, 200);
+    assert.equal(before.json().sceneGeneration.enabled, true);
+    assert.equal(before.json().assetGeneration.enabled, false);
+
+    const disabled = await runtime.app.inject({ method: "PATCH", url: "/api/v2/platform/capabilities/scene_generation", payload: { enabled: false } });
+    assert.equal(disabled.statusCode, 200);
+    assert.equal(disabled.json().sceneGeneration.enabled, false);
+
+    const enabledAsset = await runtime.app.inject({ method: "PATCH", url: "/api/v2/platform/capabilities/asset_generation", payload: { enabled: true } });
+    assert.equal(enabledAsset.statusCode, 200);
+    assert.equal(enabledAsset.json().assetGeneration.enabled, true);
+    assert.equal(enabledAsset.json().assetGeneration.configured, false);
+
+    const unknown = await runtime.app.inject({ method: "PATCH", url: "/api/v2/platform/capabilities/unknown", payload: { enabled: true } });
+    assert.equal(unknown.statusCode, 422);
+
+    const invalid = await runtime.app.inject({ method: "PATCH", url: "/api/v2/platform/capabilities/scene_generation", payload: { enabled: "yes" } });
+    assert.equal(invalid.statusCode, 422);
+  } finally {
+    await runtime.close();
+  }
+
+  const restarted = create();
+  try {
+    const after = await restarted.app.inject({ method: "GET", url: "/api/v2/platform/capabilities" });
+    assert.equal(after.json().sceneGeneration.enabled, false);
+    assert.equal(after.json().assetGeneration.enabled, true);
+  } finally {
+    await restarted.close();
+    temp.cleanup();
+  }
+});
+
 test("V2 platform capability status detects missing encrypted secret and validates log retention input", async () => {
   const temp = openV2TempSqliteConnection();
   const path = temp.path;

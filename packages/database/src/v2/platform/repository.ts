@@ -3,6 +3,7 @@ import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 
 import type {
   V2AppearanceSettingsDto,
+  V2CapabilitySettingDto,
   V2ExternalConnectionCheckDto,
   V2ExternalServiceKind,
   V2ImageServiceSettingsDto,
@@ -13,6 +14,7 @@ import type {
   V2ModelCapability,
   V2ModelLogMessage,
   V2ModelProtocol,
+  V2RuntimeCapability,
   V2SaveAppearanceSettingsRequest,
   V2SaveImageServiceSettingsRequest,
   V2StoredModelProfile,
@@ -79,6 +81,12 @@ type ConnectionCheckRow = {
   checked_at: string;
   duration_ms: number | null;
   error_message: string | null;
+};
+
+type CapabilitySettingRow = {
+  capability: string;
+  enabled: number;
+  updated_at: string;
 };
 
 interface LogCursor {
@@ -296,6 +304,23 @@ export class V2SqlitePlatformRepository implements V2PlatformRepository {
 
   public async clearModelBinding(capability: V2ModelCapability): Promise<void> {
     this.db.prepare("DELETE FROM v2_model_bindings WHERE capability = ?").run(capability);
+  }
+
+  public async getCapabilitySetting(capability: V2RuntimeCapability): Promise<V2CapabilitySettingDto | undefined> {
+    const row = this.db.prepare("SELECT capability, enabled, updated_at FROM v2_capability_settings WHERE capability = ?").get(capability) as CapabilitySettingRow | undefined;
+    return row === undefined ? undefined : { capability: row.capability as V2RuntimeCapability, enabled: row.enabled === 1, updatedAt: row.updated_at };
+  }
+
+  public async setCapabilitySetting(input: { readonly capability: V2RuntimeCapability; readonly enabled: boolean }): Promise<V2CapabilitySettingDto> {
+    const updatedAt = now();
+    this.db.prepare(`
+      INSERT INTO v2_capability_settings (capability, enabled, updated_at)
+      VALUES (?, ?, ?)
+      ON CONFLICT(capability) DO UPDATE SET enabled = excluded.enabled, updated_at = excluded.updated_at
+    `).run(input.capability, input.enabled ? 1 : 0, updatedAt);
+    const saved = await this.getCapabilitySetting(input.capability);
+    if (saved === undefined) throw new Error("V2 capability setting could not be read back");
+    return saved;
   }
 
   public async getImageServiceSettings(): Promise<V2ImageServiceSettingsDto> {

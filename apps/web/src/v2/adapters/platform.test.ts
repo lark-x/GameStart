@@ -23,6 +23,7 @@ test("V2 platform client maps configuration endpoints and handles empty deletes"
       if (url.endsWith("/appearance") && method === "GET") return Response.json({ settings: { themeId: "dawn" } });
       if (url.endsWith("/appearance") && method === "PUT") return Response.json({ settings: { themeId: "ocean" } });
       if (url.endsWith("/capabilities") && method === "GET") return Response.json({ sceneGeneration: { enabled: true, configured: true, source: "profile" }, assetGeneration: { enabled: false, configured: false, source: "none" } });
+      if (url.endsWith("/capabilities/scene_generation") && method === "PATCH") return Response.json({ sceneGeneration: { enabled: false, configured: true, source: "profile" }, assetGeneration: { enabled: false, configured: false, source: "none" } });
       if (url.includes("/model-profiles/discover-models") && method === "POST") return Response.json({ models: ["model-a", "model-b"] });
       if (url.includes("/model-profiles/profile%3Aone/test") && method === "POST") return Response.json({ success: true, preview: "OK" });
       if (url.includes("/model-call-logs?") && method === "GET") return Response.json({ items: [], nextCursor: "next" });
@@ -45,6 +46,7 @@ test("V2 platform client maps configuration endpoints and handles empty deletes"
   assert.equal((await client.getAppearanceSettings()).themeId, "dawn");
   assert.equal((await client.saveAppearanceSettings({ themeId: "ocean" })).themeId, "ocean");
   assert.equal((await client.getCapabilities()).sceneGeneration.configured, true);
+  assert.equal((await client.updateCapability("scene_generation", { enabled: false })).sceneGeneration.enabled, false);
   assert.equal((await client.queryModelCallLogs({ query: "corr:one", limit: 10 })).nextCursor, "next");
   assert.equal((await client.getModelCallLog("log")).id, "log");
   assert.equal(await client.deleteModelCallLogs("2026-01-01T00:00:00.000Z"), 1);

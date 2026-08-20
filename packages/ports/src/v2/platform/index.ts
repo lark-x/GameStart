@@ -1,5 +1,6 @@
 import type {
   V2AppearanceSettingsDto,
+  V2CapabilitySettingDto,
   V2ExternalConnectionCheckDto,
   V2ExternalServiceKind,
   V2ImageServiceSettingsDto,
@@ -9,6 +10,7 @@ import type {
   V2ModelCallLogQuery,
   V2ModelCapability,
   V2ModelProfileDto,
+  V2RuntimeCapability,
   V2SaveAppearanceSettingsRequest,
   V2SaveImageServiceSettingsRequest,
   V2StoredModelProfile,
@@ -26,6 +28,11 @@ export interface V2ModelBindingRepository {
   getModelBinding(capability: V2ModelCapability): Promise<V2ModelBindingDto | undefined>;
   setModelBinding(input: { readonly capability: V2ModelCapability; readonly profileId?: string }): Promise<V2ModelBindingDto | undefined>;
   clearModelBinding(capability: V2ModelCapability): Promise<void>;
+}
+
+export interface V2CapabilitySettingsRepository {
+  getCapabilitySetting(capability: V2RuntimeCapability): Promise<V2CapabilitySettingDto | undefined>;
+  setCapabilitySetting(input: { readonly capability: V2RuntimeCapability; readonly enabled: boolean }): Promise<V2CapabilitySettingDto>;
 }
 
 export interface V2PlatformSettingsRepository {
@@ -72,6 +79,7 @@ export interface V2ModelCallLogRepository {
 export interface V2PlatformRepository extends
   V2ModelProfileRepository,
   V2ModelBindingRepository,
+  V2CapabilitySettingsRepository,
   V2PlatformSettingsRepository,
   V2ModelCallLogRepository {}
 

@@ -80,6 +80,27 @@ test("V2 platform repository persists profiles, bindings, and singleton settings
   }
 });
 
+test("V2 platform repository persists capability toggles independently of bindings", async () => {
+  const { db, cleanup } = openV2TempSqliteConnection();
+  try {
+    applyV2Migrations(db);
+    const repository = new V2SqlitePlatformRepository(db);
+    assert.equal(await repository.getCapabilitySetting("scene_generation"), undefined);
+    const enabled = await repository.setCapabilitySetting({ capability: "scene_generation", enabled: true });
+    assert.equal(enabled.capability, "scene_generation");
+    assert.equal(enabled.enabled, true);
+    assert.ok(enabled.updatedAt);
+    assert.equal((await repository.getCapabilitySetting("scene_generation"))?.enabled, true);
+    const disabled = await repository.setCapabilitySetting({ capability: "scene_generation", enabled: false });
+    assert.equal(disabled.enabled, false);
+    assert.equal((await repository.getCapabilitySetting("scene_generation"))?.enabled, false);
+    assert.equal(await repository.getCapabilitySetting("asset_generation"), undefined);
+  } finally {
+    db.close();
+    cleanup();
+  }
+});
+
 test("V2 platform repository records model call lifecycle and cursor pagination", async () => {
   const { db, cleanup } = openV2TempSqliteConnection();
   try {
