@@ -18,6 +18,7 @@ import {
   V2SqliteChatUnitOfWork,
   V2SqliteGenerationJobRepository,
   V2SqliteMemoryRepository,
+  V2SqliteFactRepository,
   V2SqliteGraphStateUnitOfWork,
   V2SqlitePlatformRepository,
   V2SqliteReleaseRuntimeUnitOfWork,
@@ -150,6 +151,7 @@ export function createV2ApiRuntime(options: {
     memoryRepository: new V2SqliteMemoryRepository(db),
     maintenanceJobRepository,
     memoryRuntime,
+    factRepository: new V2SqliteFactRepository(db),
   });
   const jobsPlugin = createV2JobsPlugin({ maintenanceJobRepository });
   const chatUseCases = createV2ChatUseCases(new V2SqliteChatUnitOfWork(db), {

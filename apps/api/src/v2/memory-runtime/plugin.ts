@@ -7,7 +7,7 @@ import type {
   V2MemoryRunSummaryDto,
   V2IsoDateTime,
 } from "@living-network/contracts/v2";
-import type { V2MemoryRuntime } from "@living-network/ports/v2";
+import type { V2FactRepository, V2MemoryRuntime } from "@living-network/ports/v2";
 import type {
   V2SqliteChatMaintenanceJobRepository,
   V2SqliteMemoryRepository,
@@ -18,6 +18,7 @@ export interface V2MemoryPluginDependencies {
   readonly memoryRepository: V2SqliteMemoryRepository;
   readonly maintenanceJobRepository: V2SqliteChatMaintenanceJobRepository;
   readonly memoryRuntime: V2MemoryRuntime;
+  readonly factRepository: V2FactRepository;
 }
 
 const iso = (value: string): V2IsoDateTime => value as V2IsoDateTime;
@@ -27,7 +28,7 @@ function toRunSummary(job: V2ChatMaintenanceJob): V2MemoryRunSummaryDto {
     jobId: job.jobId,
     status: job.status,
     ...(job.lastStartedAt === undefined ? {} : { startedAt: iso(job.lastStartedAt) }),
-    ...(job.updatedAt === undefined ? {} : { completedAt: iso(job.updatedAt) }),
+    ...(job.updatedAt === undefined ? {} : { updatedAt: iso(job.updatedAt) }),
     ...(job.lastError === undefined ? {} : { error: job.lastError }),
   };
 }
@@ -36,6 +37,10 @@ export function createV2MemoryPlugin(dependencies: V2MemoryPluginDependencies): 
   return async (app) => {
     app.get("/overview", async (): Promise<V2MemoryOverviewDto> => {
       const stats = dependencies.memoryRepository.getMemoryFactStats();
+      // "关联角色" counts distinct characters actually referenced as fact
+      // subjects in the Fact Ledger, not v2_memories.character_id (which is
+      // only the conversation's primary character).
+      const relatedCharacterCount = await dependencies.factRepository.countDistinctCharacterSubjects();
 
       const latestExtraction = dependencies.maintenanceJobRepository.getLatestRun("memory_extract");
       const latestExtractionFailure = dependencies.maintenanceJobRepository.getLatestFailure("memory_extract");
@@ -47,7 +52,7 @@ export function createV2MemoryPlugin(dependencies: V2MemoryPluginDependencies): 
       return {
         facts: {
           total: stats.total,
-          relatedCharacterCount: stats.relatedCharacterCount,
+          relatedCharacterCount,
           averageImportance: stats.averageImportance,
           averageConfidence: stats.averageConfidence,
           typeDistribution: stats.typeDistribution.map((item) => ({ kind: item.kind as V2MemoryKind, count: item.count })),

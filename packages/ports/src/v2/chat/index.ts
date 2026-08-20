@@ -120,6 +120,7 @@ export interface V2ChatMaintenanceJobRepository {
     readonly isTerminal: boolean;
     readonly now: string;
   }): Promise<boolean>;
+  retryFailed(input: { readonly jobId: string; readonly now: string }): V2ChatMaintenanceJob | undefined;
 }
 
 export interface V2ChatUnitOfWork {

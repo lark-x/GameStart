@@ -23,6 +23,8 @@ const selectedJob = ref<V2JobDetailDto | null>(null);
 const loadState = ref<LoadState>("idle");
 const error = ref<string | null>(null);
 const retrying = ref(false);
+const loadingMore = ref(false);
+const nextCursor = ref<string | undefined>(undefined);
 const statusFilter = ref("");
 const typeFilter = ref("");
 
@@ -74,6 +76,7 @@ function formatTime(value: string | undefined): string {
 async function load(): Promise<void> {
   loadState.value = "loading";
   error.value = null;
+  nextCursor.value = undefined;
   try {
     const page = await client.listJobs({
       ...(statusFilter.value === "" ? {} : { status: statusFilter.value as V2MaintenanceJobStatus }),
@@ -81,11 +84,32 @@ async function load(): Promise<void> {
       limit: 50,
     });
     jobs.value = page.items;
+    nextCursor.value = page.nextCursor;
     selectedJob.value = null;
     loadState.value = "ready";
   } catch (err) {
     error.value = err instanceof V2PlatformClientError ? `${err.code}: ${err.message}` : err instanceof Error ? err.message : "加载失败";
     loadState.value = "error";
+  }
+}
+
+async function loadMore(): Promise<void> {
+  if (nextCursor.value === undefined || loadingMore.value) return;
+  loadingMore.value = true;
+  error.value = null;
+  try {
+    const page = await client.listJobs({
+      ...(statusFilter.value === "" ? {} : { status: statusFilter.value as V2MaintenanceJobStatus }),
+      ...(typeFilter.value === "" ? {} : { type: typeFilter.value as V2MaintenanceJobType }),
+      limit: 50,
+      cursor: nextCursor.value,
+    });
+    jobs.value = [...jobs.value, ...page.items];
+    nextCursor.value = page.nextCursor;
+  } catch (err) {
+    error.value = err instanceof V2PlatformClientError ? `${err.code}: ${err.message}` : err instanceof Error ? err.message : "加载更多失败";
+  } finally {
+    loadingMore.value = false;
   }
 }
 
@@ -120,7 +144,7 @@ onMounted(() => {
   <div class="v2-automation">
     <PageHeader
       title="任务运行中心"
-      description="查看后台任务运行状态、历史记录和失败任务，并对允许重试的任务执行人工重试。"
+      description="查看后台任务的最近状态与当前失败任务，并对失败任务执行人工重试。这里展示的是 Job 记录的最近状态，不代表完整的 Attempt 审计历史。"
     >
       <template #actions>
         <Button variant="secondary" size="sm" :loading="loadState === 'loading'" @click="load">
@@ -177,6 +201,18 @@ onMounted(() => {
               <p class="v2-automation-job-meta">{{ formatTime(job.createdAt) }}</p>
             </div>
           </div>
+
+          <Button
+            v-if="nextCursor"
+            variant="secondary"
+            size="sm"
+            :loading="loadingMore"
+            :disabled="loadingMore"
+            class="v2-automation-load-more"
+            @click="loadMore"
+          >
+            加载更多
+          </Button>
 
           <div v-if="selectedJob" class="v2-automation-detail">
             <h3>任务详情</h3>
@@ -261,6 +297,10 @@ onMounted(() => {
   display: grid;
   gap: var(--space-2);
   align-content: start;
+}
+
+.v2-automation-load-more {
+  justify-self: start;
 }
 
 .v2-automation-job {

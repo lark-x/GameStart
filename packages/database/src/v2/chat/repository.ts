@@ -612,7 +612,6 @@ export class V2SqliteMemoryRepository implements V2MemoryRepository {
   /** Aggregate active memory facts for the operational dashboard. */
   public getMemoryFactStats(): {
     readonly total: number;
-    readonly relatedCharacterCount: number;
     readonly averageImportance: number;
     readonly averageConfidence: number;
     readonly typeDistribution: readonly { readonly kind: string; readonly count: number }[];
@@ -620,14 +619,12 @@ export class V2SqliteMemoryRepository implements V2MemoryRepository {
     const summary = this.db.prepare(`
       SELECT
         COUNT(*) AS total,
-        COUNT(DISTINCT CASE WHEN character_id IS NOT NULL AND character_id <> '' THEN character_id END) AS related_character_count,
         AVG(importance) AS average_importance,
         AVG(confidence) AS average_confidence
       FROM v2_memories
       WHERE status = 'active'
     `).get() as {
       readonly total: number;
-      readonly related_character_count: number | null;
       readonly average_importance: number | null;
       readonly average_confidence: number | null;
     };
@@ -642,7 +639,6 @@ export class V2SqliteMemoryRepository implements V2MemoryRepository {
 
     return {
       total: summary.total,
-      relatedCharacterCount: summary.related_character_count ?? 0,
       averageImportance: summary.average_importance ?? 0,
       averageConfidence: summary.average_confidence ?? 0,
       typeDistribution: kindRows,
@@ -1100,6 +1096,10 @@ export class V2SqliteChatMaintenanceJobRepository implements V2ChatMaintenanceJo
 
   /** Requeue a terminal failed job so the worker picks it up again. */
   public retryFailed(input: { readonly jobId: string; readonly now: string }): V2ChatMaintenanceJob | undefined {
+    // A manual retry grants one additional execution opportunity while
+    // preserving the original attempt history. A terminal failed job has
+    // attempts >= max_attempts, so simply resetting status to 'pending'
+    // would make it unclaimable (claimNext requires attempts < max_attempts).
     const result = this.db.prepare(`
       UPDATE v2_chat_maintenance_jobs
       SET
@@ -1108,6 +1108,7 @@ export class V2SqliteChatMaintenanceJobRepository implements V2ChatMaintenanceJo
         lease_expires_at = NULL,
         claimed_by = NULL,
         last_error = NULL,
+        max_attempts = CASE WHEN max_attempts <= attempts THEN attempts + 1 ELSE max_attempts END,
         updated_at = ?
       WHERE job_id = ? AND status = 'failed'
     `).run(input.now, input.now, input.jobId);

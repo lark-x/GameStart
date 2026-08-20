@@ -118,7 +118,7 @@ onMounted(() => {
         <div class="v2-memory-stat-grid">
           <div class="v2-memory-stat-card">
             <span class="v2-memory-stat-value">{{ overview.facts.total }}</span>
-            <span class="v2-memory-stat-label">记忆总数</span>
+            <span class="v2-memory-stat-label">活跃记忆</span>
           </div>
           <div class="v2-memory-stat-card">
             <span class="v2-memory-stat-value">{{ overview.facts.relatedCharacterCount }}</span>
@@ -159,22 +159,32 @@ onMounted(() => {
           <div class="v2-memory-row">
             <span class="v2-memory-row-label">提取</span>
             <Badge :tone="statusTone(overview.extraction.latest?.status)">{{ statusLabel(overview.extraction.latest?.status) }}</Badge>
-            <span class="v2-memory-row-value">最近：{{ formatTime(overview.extraction.latest?.completedAt) }}</span>
+            <span class="v2-memory-row-value">最近：{{ formatTime(overview.extraction.latest?.updatedAt) }}</span>
           </div>
-          <div v-if="overview.extraction.latestFailure" class="v2-memory-row">
+          <div v-if="overview.extraction.latest?.status === 'failed'" class="v2-memory-row">
             <span class="v2-memory-row-label">提取失败</span>
             <Badge tone="danger">失败</Badge>
-            <span class="v2-memory-row-value">{{ overview.extraction.latestFailure.error ?? "未知错误" }}</span>
+            <span class="v2-memory-row-value">{{ overview.extraction.latest.error ?? "未知错误" }}</span>
+          </div>
+          <div v-else-if="overview.extraction.latestFailure" class="v2-memory-row">
+            <span class="v2-memory-row-label">最近一次失败</span>
+            <Badge tone="neutral">历史</Badge>
+            <span class="v2-memory-row-value">{{ formatTime(overview.extraction.latestFailure.updatedAt) }} · {{ overview.extraction.latestFailure.error ?? "未知错误" }}</span>
           </div>
           <div class="v2-memory-row">
             <span class="v2-memory-row-label">整合</span>
             <Badge :tone="statusTone(overview.consolidation.latest?.status)">{{ statusLabel(overview.consolidation.latest?.status) }}</Badge>
-            <span class="v2-memory-row-value">最近：{{ formatTime(overview.consolidation.latest?.completedAt) }}</span>
+            <span class="v2-memory-row-value">最近：{{ formatTime(overview.consolidation.latest?.updatedAt) }}</span>
           </div>
-          <div v-if="overview.consolidation.latestFailure" class="v2-memory-row">
+          <div v-if="overview.consolidation.latest?.status === 'failed'" class="v2-memory-row">
             <span class="v2-memory-row-label">整合失败</span>
             <Badge tone="danger">失败</Badge>
-            <span class="v2-memory-row-value">{{ overview.consolidation.latestFailure.error ?? "未知错误" }}</span>
+            <span class="v2-memory-row-value">{{ overview.consolidation.latest.error ?? "未知错误" }}</span>
+          </div>
+          <div v-else-if="overview.consolidation.latestFailure" class="v2-memory-row">
+            <span class="v2-memory-row-label">最近一次失败</span>
+            <Badge tone="neutral">历史</Badge>
+            <span class="v2-memory-row-value">{{ formatTime(overview.consolidation.latestFailure.updatedAt) }} · {{ overview.consolidation.latestFailure.error ?? "未知错误" }}</span>
           </div>
         </div>
       </section>
@@ -183,11 +193,11 @@ onMounted(() => {
       <section v-if="overview.recentFailures.length > 0" class="v2-memory-section" aria-labelledby="v2-memory-failures-title">
         <div class="v2-memory-section-head">
           <Database :size="16" aria-hidden="true" />
-          <h2 id="v2-memory-failures-title">最近异常</h2>
+          <h2 id="v2-memory-failures-title">当前可见失败</h2>
         </div>
         <div class="v2-memory-rows">
           <div v-for="failure in overview.recentFailures" :key="failure.jobId" class="v2-memory-row">
-            <span class="v2-memory-row-label">{{ formatTime(failure.completedAt) }}</span>
+            <span class="v2-memory-row-label">{{ formatTime(failure.updatedAt) }}</span>
             <span class="v2-memory-row-value">{{ failure.error ?? "未知错误" }}</span>
           </div>
         </div>

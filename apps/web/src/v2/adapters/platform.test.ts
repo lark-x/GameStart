@@ -63,3 +63,47 @@ test("V2 platform client exposes structured API errors", async () => {
     (error: unknown) => error instanceof V2PlatformClientError && error.code === "VALIDATION_FAILED" && error.status === 422,
   );
 });
+
+test("V2 platform client maps memory overview and job runtime endpoints", async () => {
+  const calls: Array<{ readonly url: string; readonly method: string }> = [];
+  const client = createV2PlatformClient({
+    baseUrl: "http://localhost/",
+    fetchImpl: async (input, init) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      calls.push({ url, method });
+      if (url.endsWith("/memory/overview") && method === "GET") {
+        return Response.json({ facts: { total: 3, relatedCharacterCount: 2, averageImportance: 0.5, averageConfidence: 0.6, typeDistribution: [] }, extraction: {}, consolidation: {}, engines: [], recentFailures: [] });
+      }
+      if (url.includes("/api/v2/jobs") && !url.includes("/retry") && !url.includes("/jobs/job%3A1")) {
+        return Response.json({ items: [], nextCursor: "next-cursor" });
+      }
+      if (url.endsWith("/api/v2/jobs/job%3A1")) {
+        return Response.json({ jobId: "job:1", jobType: "memory_extract", status: "failed", createdAt: "a", updatedAt: "b", attempts: 1, maxAttempts: 3, payloadSummary: { conversationId: "c1" } });
+      }
+      if (url.endsWith("/api/v2/jobs/job%3A1/retry")) {
+        return Response.json({ jobId: "job:1", status: "pending" });
+      }
+      throw new Error(`Unhandled ${method} ${url}`);
+    },
+  });
+
+  const overview = await client.getMemoryOverview();
+  assert.equal(overview.facts.total, 3);
+  assert.equal(overview.facts.relatedCharacterCount, 2);
+
+  const page = await client.listJobs({ status: "failed", type: "memory_extract", limit: 50 });
+  assert.equal(page.nextCursor, "next-cursor");
+
+  const detail = await client.getJob("job:1");
+  assert.equal(detail.payloadSummary.conversationId, "c1");
+
+  const retried = await client.retryJob("job:1");
+  assert.equal(retried.status, "pending");
+
+  // Verify query params are encoded and cursor is forwarded.
+  const cursorPage = await client.listJobs({ cursor: "cur" });
+  assert.equal(cursorPage.nextCursor, "next-cursor");
+  assert.ok(calls.some((c) => c.url.includes("cursor=cur")));
+  assert.ok(calls.some((c) => c.url.includes("status=failed")));
+});

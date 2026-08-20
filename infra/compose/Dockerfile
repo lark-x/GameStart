@@ -8,7 +8,7 @@ RUN corepack enable \
   && pnpm install --frozen-lockfile --prod=false \
   && mkdir -p /app/data/media /app/data/sqlite \
   && chown -R node:node /app \
-  && chmod 770 /app/data /app/data/media /app/data/sqlite
+  && chmod -R 777 /app/data
 
 USER node
 

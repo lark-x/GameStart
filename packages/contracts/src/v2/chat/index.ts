@@ -342,7 +342,9 @@ export interface V2MemoryRunSummaryDto {
   readonly jobId: string;
   readonly status: V2MaintenanceJobStatus;
   readonly startedAt?: V2IsoDateTime;
-  readonly completedAt?: V2IsoDateTime;
+  // NOTE: there is no dedicated completed_at column; this is the terminal
+  // job's updated_at (only meaningful for completed/failed jobs).
+  readonly updatedAt?: V2IsoDateTime;
   readonly error?: string;
 }
 
