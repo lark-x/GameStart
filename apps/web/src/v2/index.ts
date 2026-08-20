@@ -8,6 +8,12 @@ export const v2Routes: readonly RouteRecordRaw[] = [
     meta: { v2Shell: true },
     children: [
       { path: "", redirect: "/v2/workspace/project" },
+      {
+        path: "chat",
+        name: "v2-chat",
+        component: () => import("./views/V2ChatHomeView.vue"),
+        meta: { title: "聊天", pageSize: "wide" },
+      },
       { path: "start", name: "v2-start", component: () => import("./views/V2StartView.vue"), meta: { title: "即时故事", pageSize: "standard" } },
       {
         path: "chat/:conversationId",

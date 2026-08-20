@@ -80,6 +80,37 @@ export interface V2ConversationSummary {
   readonly version: number;
 }
 
+export interface V2ChatSticker {
+  readonly stickerId: string;
+  readonly mediaId: string;
+  readonly mediaRef: string;
+  readonly label: string;
+  readonly createdAt?: string;
+  readonly lastUsedAt?: string;
+}
+
+export function createV2ChatSticker(input: {
+  readonly stickerId: string;
+  readonly mediaId: string;
+  readonly mediaRef: string;
+  readonly label: string;
+  readonly createdAt?: string;
+  readonly lastUsedAt?: string;
+}): V2ChatSticker {
+  const label = input.label.trim();
+  if (label.length === 0 || label.length > 120) {
+    throw new V2DomainError("INVALID_INPUT", "label must be between 1 and 120 characters");
+  }
+  return {
+    stickerId: assertNonEmptyId(input.stickerId, "stickerId"),
+    mediaId: assertNonEmptyId(input.mediaId, "mediaId"),
+    mediaRef: assertNonEmptyId(input.mediaRef, "mediaRef"),
+    label,
+    ...(input.createdAt === undefined ? {} : { createdAt: assertIsoTime(input.createdAt, "createdAt") }),
+    ...(input.lastUsedAt === undefined ? {} : { lastUsedAt: assertIsoTime(input.lastUsedAt, "lastUsedAt") }),
+  };
+}
+
 export function createV2ChatConversation(input: {
   readonly conversationId: string;
   readonly storyWorldId: string;

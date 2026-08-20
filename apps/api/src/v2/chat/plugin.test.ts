@@ -536,3 +536,230 @@ test("V2 chat diagnostics exposes the last real prompt trace", async () => {
     temp.cleanup();
   }
 });
+
+test("V2 chat contacts, character conversations, context, and features endpoints", async () => {
+  const temp = openV2TempSqliteConnection();
+  const mediaRoot = mkdtempSync(path.join(tmpdir(), "v2-chat-media-"));
+  temp.db.close();
+  try {
+    const runtime = createV2ApiRuntime({ sqlitePath: temp.path, mediaRoot, chatProvider: new FakeChatProvider() });
+    try {
+      const world = await runtime.app.inject({
+        method: "POST",
+        url: "/api/v2/core/worlds",
+        payload: { storyWorldId: "world:test", name: "星穹铁道", idempotencyKey: "world:test" },
+      });
+      assert.equal(world.statusCode, 201);
+      const character = await runtime.app.inject({
+        method: "POST",
+        url: "/api/v2/core/worlds/world:test/characters",
+        payload: { characterId: "character:hua", name: "花火", summary: "嘴硬心软", expectedRevision: 1, idempotencyKey: "character:hua" },
+      });
+      assert.equal(character.statusCode, 201);
+
+      const contacts = await runtime.app.inject({ method: "GET", url: "/api/v2/chat/contacts" });
+      assert.equal(contacts.statusCode, 200);
+      const contactList = contacts.json().contacts;
+      assert.equal(contactList.length, 1);
+      assert.equal(contactList[0].characterName, "花火");
+      assert.equal(contactList[0].storyWorldName, "星穹铁道");
+      assert.equal(contactList[0].activeMemoryCount, 0);
+
+      const createdConv = await runtime.app.inject({
+        method: "POST",
+        url: "/api/v2/chat/conversations",
+        payload: { storyWorldId: "world:test", characterId: "character:hua", idempotencyKey: "conv:1" },
+      });
+      assert.equal(createdConv.statusCode, 201);
+      const convId = createdConv.json().conversation.conversationId as string;
+      assert.ok(convId);
+
+      const context = await runtime.app.inject({ method: "GET", url: `/api/v2/chat/conversations/${convId}/context` });
+      assert.equal(context.statusCode, 200);
+      assert.equal(context.json().character.name, "花火");
+      assert.equal(context.json().world.name, "星穹铁道");
+      assert.equal(context.json().memory.activeCount, 0);
+
+      const features = await runtime.app.inject({ method: "GET", url: `/api/v2/chat/conversations/${convId}/features` });
+      assert.equal(features.statusCode, 200);
+      assert.equal(features.json().modelConfigured, true);
+      assert.equal(features.json().text, true);
+      assert.equal(features.json().imageUpload, false);
+
+      const replay = await runtime.app.inject({
+        method: "POST",
+        url: "/api/v2/chat/conversations",
+        payload: { storyWorldId: "world:test", characterId: "character:hua", idempotencyKey: "conv:2" },
+      });
+      assert.equal(replay.statusCode, 201);
+      assert.equal(replay.json().conversation.conversationId, convId);
+
+      const missing = await runtime.app.inject({
+        method: "POST",
+        url: "/api/v2/chat/conversations",
+        payload: { storyWorldId: "world:test", characterId: "character:missing", idempotencyKey: "conv:3" },
+      });
+      assert.equal(missing.statusCode, 404);
+
+      await runtime.app.inject({
+        method: "POST",
+        url: "/api/v2/core/worlds",
+        payload: { storyWorldId: "world:other", name: "枫丹", idempotencyKey: "world:other" },
+      });
+      await runtime.app.inject({
+        method: "POST",
+        url: "/api/v2/core/worlds/world:other/characters",
+        payload: { characterId: "character:fnn", name: "芙宁娜", expectedRevision: 1, idempotencyKey: "character:fnn" },
+      });
+      const crossWorld = await runtime.app.inject({
+        method: "POST",
+        url: "/api/v2/chat/conversations",
+        payload: { storyWorldId: "world:test", characterId: "character:fnn", idempotencyKey: "conv:4" },
+      });
+      assert.equal(crossWorld.statusCode, 404);
+    } finally {
+      await runtime.close();
+    }
+  } finally {
+    rmSync(mediaRoot, { recursive: true, force: true });
+    temp.cleanup();
+  }
+});
+
+test("V2 chat features reflect multimodal modality and missing chat binding", async () => {
+  const temp = openV2TempSqliteConnection();
+  const mediaRoot = mkdtempSync(path.join(tmpdir(), "v2-chat-media-"));
+  temp.db.close();
+  try {
+    const multimodal = createV2ApiRuntime({
+      sqlitePath: temp.path,
+      mediaRoot,
+      chatProvider: new FakeChatProvider(),
+      chatInputModalities: ["text", "image"],
+    });
+    try {
+      const created = await multimodal.app.inject({
+        method: "POST",
+        url: "/api/v2/instant-stories",
+        payload: { persona: "p", displayName: "M", idempotencyKey: "feat-multi" },
+      });
+      const convId = (created.json() as V2CreateInstantStoryResponse).conversation.conversationId;
+      const features = await multimodal.app.inject({ method: "GET", url: `/api/v2/chat/conversations/${convId}/features` });
+      assert.equal(features.statusCode, 200);
+      assert.equal(features.json().imageUpload, true);
+      assert.equal(features.json().stickers, true);
+      assert.equal(features.json().imageUnderstanding, true);
+    } finally {
+      await multimodal.close();
+    }
+
+    const noModel = createV2ApiRuntime({ sqlitePath: temp.path, mediaRoot });
+    try {
+      const created = await noModel.app.inject({
+        method: "POST",
+        url: "/api/v2/instant-stories",
+        payload: { persona: "p", displayName: "M", idempotencyKey: "feat-none" },
+      });
+      const convId = (created.json() as V2CreateInstantStoryResponse).conversation.conversationId;
+      const features = await noModel.app.inject({ method: "GET", url: `/api/v2/chat/conversations/${convId}/features` });
+      assert.equal(features.statusCode, 200);
+      assert.equal(features.json().modelConfigured, false);
+      assert.equal(features.json().text, false);
+      assert.equal(features.json().imageUpload, false);
+    } finally {
+      await noModel.close();
+    }
+  } finally {
+    rmSync(mediaRoot, { recursive: true, force: true });
+    temp.cleanup();
+  }
+});
+
+test("V2 chat prompt carries Canon persona text into the provider request", async () => {
+  const temp = openV2TempSqliteConnection();
+  const mediaRoot = mkdtempSync(path.join(tmpdir(), "v2-chat-media-"));
+  temp.db.close();
+  try {
+    const provider = new CaptureRequestProvider();
+    const runtime = createV2ApiRuntime({ sqlitePath: temp.path, mediaRoot, chatProvider: provider });
+    try {
+      const created = await runtime.app.inject({
+        method: "POST",
+        url: "/api/v2/instant-stories",
+        payload: { persona: "花火最爱吃桂花糕，嘴硬心软。", displayName: "花火", idempotencyKey: "persona-prompt" },
+      });
+      const convId = (created.json() as V2CreateInstantStoryResponse).conversation.conversationId;
+      await runtime.app.inject({
+        method: "POST",
+        url: `/api/v2/chat/conversations/${convId}/messages`,
+        payload: { text: "你好", idempotencyKey: "persona-msg" },
+      });
+      await runtime.app.inject({
+        method: "POST",
+        url: `/api/v2/chat/conversations/${convId}/replies`,
+        payload: { idempotencyKey: "persona-reply" },
+      });
+      const serialized = JSON.stringify(provider.capturedRequest?.messages ?? []);
+      assert.match(serialized, /花火最爱吃桂花糕/);
+    } finally {
+      await runtime.close();
+    }
+  } finally {
+    rmSync(mediaRoot, { recursive: true, force: true });
+    temp.cleanup();
+  }
+});
+
+test("V2 chat stickers create from media and reorder on use", async () => {
+  const temp = openV2TempSqliteConnection();
+  const mediaRoot = mkdtempSync(path.join(tmpdir(), "v2-chat-media-"));
+  temp.db.close();
+  try {
+    const runtime = createV2ApiRuntime({ sqlitePath: temp.path, mediaRoot, chatProvider: new FakeChatProvider() });
+    try {
+      const onePixelPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+      const boundary = "sticker-boundary";
+      const multipart = Buffer.concat([
+        Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="sticker.png"\r\nContent-Type: image/png\r\n\r\n`, "utf8"),
+        onePixelPng,
+        Buffer.from(`\r\n--${boundary}--\r\n`, "utf8"),
+      ]);
+      const uploaded = await runtime.app.inject({
+        method: "POST",
+        url: "/api/v2/chat/media",
+        headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+        payload: multipart,
+      });
+      assert.equal(uploaded.statusCode, 201);
+      const mediaId = uploaded.json().media.mediaId as string;
+
+      const created = await runtime.app.inject({
+        method: "POST",
+        url: "/api/v2/chat/stickers",
+        payload: { mediaId, label: "开心" },
+      });
+      assert.equal(created.statusCode, 201);
+      assert.equal(created.json().sticker.label, "开心");
+      const stickerId = created.json().sticker.stickerId as string;
+
+      const list = await runtime.app.inject({ method: "GET", url: "/api/v2/chat/stickers" });
+      assert.equal(list.statusCode, 200);
+      assert.equal(list.json().stickers.length, 1);
+
+      const used = await runtime.app.inject({ method: "POST", url: `/api/v2/chat/stickers/${stickerId}/use` });
+      assert.equal(used.statusCode, 200);
+
+      const missing = await runtime.app.inject({
+        method: "POST",
+        url: "/api/v2/chat/stickers",
+        payload: { mediaId: "media:missing", label: "x" },
+      });
+      assert.equal(missing.statusCode, 404);
+    } finally {
+      await runtime.close();
+    }
+  } finally {
+    rmSync(mediaRoot, { recursive: true, force: true });
+    temp.cleanup();
+  }
+});

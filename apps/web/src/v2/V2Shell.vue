@@ -27,10 +27,10 @@ interface PrimaryNavItem {
 
 const primaryNavItems: readonly PrimaryNavItem[] = [
   {
-    to: "/v2/start",
+    to: "/v2/chat",
     label: "对话",
     icon: MessageSquare,
-    matchPrefixes: ["/v2/start", "/v2/chat"],
+    matchPrefixes: ["/v2/chat", "/v2/start"],
   },
   {
     to: "/v2/workspace/project",

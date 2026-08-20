@@ -14,6 +14,7 @@ test("V2 routes structure correctly configures entry points and redirects", () =
   // Core navigation routes
   assert.ok(paths.has(""), "Default redirect exists");
   assert.ok(paths.has("start"), "Start view exists");
+  assert.ok(paths.has("chat"), "Chat home view exists");
   assert.ok(paths.has("chat/:conversationId"), "Chat view exists");
   assert.ok(paths.has("workspace/:area"), "Workspace area view exists");
 
