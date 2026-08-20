@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import test from "node:test";
 
 import { parseArgs, DeploymentError } from "./deploy/cli.mjs";
-import { detectEnvironment, isWsl, formatEnvironmentLabel, checkDockerPrerequisites } from "./deploy/environment.mjs";
+import { detectEnvironment, isWsl, formatEnvironmentLabel, checkDockerPrerequisites, resolveDeployMode } from "./deploy/environment.mjs";
 import { resolveHostBind, getStandardLanAddresses, getWslWindowsLanAddresses, getLanAddresses } from "./deploy/network.mjs";
 import {
   selectWebPort,
@@ -15,8 +15,8 @@ import {
   MAX_PORT_RETRIES,
 } from "./deploy/port.mjs";
 import { createDockerClient } from "./deploy/docker.mjs";
-import { acquireDeployLock, readLockFile, isPidAlive } from "./deploy/lock.mjs";
-import { loadDotEnv, loadDeployState, saveDeployState, ensureDotEnv } from "./deploy/state.mjs";
+import { acquireDeployLock, readLockFile, isPidAlive, getPidStatus } from "./deploy/lock.mjs";
+import { loadDotEnv, loadDeployState, saveDeployState, ensureDotEnv, ensureSecretKey } from "./deploy/state.mjs";
 import { checkComfyUiHealth, verifyCriticalEndpoints, parseServiceHealth } from "./deploy/health.mjs";
 import { formatDeploymentBanner, formatDoctorReport } from "./deploy/output.mjs";
 
@@ -52,6 +52,27 @@ test("CLI argument parser rejects invalid port and mode", () => {
   assert.throws(() => parseArgs(["--port", "not-a-port"]), DeploymentError);
   assert.throws(() => parseArgs(["--port", "70000"]), DeploymentError);
   assert.throws(() => parseArgs(["--mode", "invalid-mode"]), DeploymentError);
+});
+
+// ---------------------------------------------------------------------------
+// 1b. Deploy Mode Resolution (P0-1: default local)
+// ---------------------------------------------------------------------------
+
+test("deploy mode defaults to local when nothing is configured", () => {
+  assert.equal(resolveDeployMode({}), "local");
+  assert.equal(resolveDeployMode({ webHostBind: undefined }), "local");
+  assert.equal(resolveDeployMode({ webHostBind: "" }), "local");
+});
+
+test("deploy mode honors explicit WEB_HOST_BIND values", () => {
+  assert.equal(resolveDeployMode({ webHostBind: "127.0.0.1" }), "local");
+  assert.equal(resolveDeployMode({ webHostBind: "0.0.0.0" }), "lan");
+});
+
+test("deploy mode prefers CLI mode over env binding", () => {
+  assert.equal(resolveDeployMode({ cliMode: "local", webHostBind: "0.0.0.0" }), "local");
+  assert.equal(resolveDeployMode({ cliMode: "lan", webHostBind: "127.0.0.1" }), "lan");
+  assert.equal(resolveDeployMode({ cliMode: "lan" }), "lan");
 });
 
 // ---------------------------------------------------------------------------
@@ -219,6 +240,81 @@ test("acquireDeployLock blocks if active process holds recent lock", () => {
   writeFileSync(lockFile, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }));
 
   assert.throws(() => acquireDeployLock(lockFile, 60000), DeploymentError);
+});
+
+test("getPidStatus categorizes alive, dead, and invalid PIDs", () => {
+  assert.equal(getPidStatus(process.pid), "alive");
+  assert.equal(getPidStatus(99999999), "dead");
+  assert.equal(getPidStatus(0), "dead");
+  assert.equal(getPidStatus(NaN), "dead");
+});
+
+test("acquireDeployLock blocks an alive PID even when lock is old", () => {
+  const lockFile = resolve(tmpRoot, "lock-alive-old", "deploy.lock");
+  mkdirSync(resolve(tmpRoot, "lock-alive-old"), { recursive: true });
+
+  // Current process PID is alive; startedAt is > 10 minutes ago
+  const old = new Date(Date.now() - 20 * 60 * 1000).toISOString();
+  writeFileSync(lockFile, JSON.stringify({ pid: process.pid, startedAt: old }));
+
+  assert.throws(() => acquireDeployLock(lockFile, 10 * 60 * 1000), DeploymentError);
+});
+
+test("acquireDeployLock clears a dead PID lock regardless of age", () => {
+  const lockFile = resolve(tmpRoot, "lock-dead-old", "deploy.lock");
+  mkdirSync(resolve(tmpRoot, "lock-dead-old"), { recursive: true });
+
+  // Dead PID, recent timestamp
+  writeFileSync(lockFile, JSON.stringify({ pid: 99999999, startedAt: new Date().toISOString() }));
+  const release = acquireDeployLock(lockFile);
+  assert.equal(readLockFile(lockFile).pid, process.pid);
+  release();
+});
+
+// ---------------------------------------------------------------------------
+// 6b. INTEGRATION_SECRET_KEY Auto Generation (P1-3)
+// ---------------------------------------------------------------------------
+
+test("ensureSecretKey generates a key when missing", () => {
+  const envFile = resolve(tmpRoot, "secret-missing", ".env");
+  mkdirSync(resolve(tmpRoot, "secret-missing"), { recursive: true });
+  writeFileSync(envFile, "NODE_ENV=development\n\nINTEGRATION_SECRET_KEY=\n");
+
+  const generated = ensureSecretKey(envFile);
+  assert.equal(generated, true);
+
+  const content = readFileSync(envFile, "utf8");
+  const match = content.match(/^INTEGRATION_SECRET_KEY=(.+)$/m);
+  assert.ok(match, "key line should exist");
+  const decoded = Buffer.from(match[1], "base64");
+  assert.equal(decoded.length, 32, "generated key must decode to 32 bytes");
+});
+
+test("ensureSecretKey does not overwrite an existing key", () => {
+  const envFile = resolve(tmpRoot, "secret-existing", ".env");
+  mkdirSync(resolve(tmpRoot, "secret-existing"), { recursive: true });
+  const existing = Buffer.alloc(32, 7).toString("base64");
+  writeFileSync(envFile, `INTEGRATION_SECRET_KEY=${existing}\n`);
+
+  const generated = ensureSecretKey(envFile);
+  assert.equal(generated, false);
+  assert.match(readFileSync(envFile, "utf8"), new RegExp(`^INTEGRATION_SECRET_KEY=${existing}$`, "m"));
+});
+
+test("ensureSecretKey appends the variable when entirely absent", () => {
+  const envFile = resolve(tmpRoot, "secret-absent", ".env");
+  mkdirSync(resolve(tmpRoot, "secret-absent"), { recursive: true });
+  writeFileSync(envFile, "NODE_ENV=development\n");
+
+  const generated = ensureSecretKey(envFile);
+  assert.equal(generated, true);
+
+  const content = readFileSync(envFile, "utf8");
+  assert.match(content, /^INTEGRATION_SECRET_KEY=.+$/m);
+});
+
+test("ensureSecretKey returns false when .env is missing", () => {
+  assert.equal(ensureSecretKey(resolve(tmpRoot, "no-such-dir", ".env")), false);
 });
 
 // ---------------------------------------------------------------------------

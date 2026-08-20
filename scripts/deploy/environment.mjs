@@ -47,6 +47,19 @@ export function formatEnvironmentLabel(envType) {
 }
 
 /**
+ * Resolve the deployment mode.
+ *
+ * Explicit CLI mode always wins. Otherwise the mode is derived from
+ * WEB_HOST_BIND: only an explicit 0.0.0.0 opts into LAN; missing/empty
+ * values default to local (127.0.0.1) so a first deploy never
+ * accidentally exposes the service to the LAN.
+ */
+export function resolveDeployMode({ cliMode, webHostBind } = {}) {
+  if (cliMode === "local" || cliMode === "lan") return cliMode;
+  return webHostBind === "0.0.0.0" ? "lan" : "local";
+}
+
+/**
  * Verify that Docker CLI, daemon, and Compose are accessible and running.
  */
 export function checkDockerPrerequisites(runCommand) {

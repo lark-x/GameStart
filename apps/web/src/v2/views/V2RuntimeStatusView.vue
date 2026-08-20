@@ -19,10 +19,15 @@ interface RuntimeReady {
   readonly storage?: string;
 }
 
+type LoadState = "idle" | "loading" | "ready" | "error";
+
 const client = v2PlatformClient();
 const health = ref<RuntimeHealth | null>(null);
 const ready = ref<RuntimeReady | null>(null);
 const capabilities = ref<V2PlatformCapabilities | null>(null);
+const healthState = ref<LoadState>("idle");
+const readyState = ref<LoadState>("idle");
+const capabilitiesState = ref<LoadState>("idle");
 const loading = ref(false);
 const error = ref<string | null>(null);
 
@@ -44,6 +49,9 @@ async function readJson<T>(path: string): Promise<T> {
 async function refresh(): Promise<void> {
   loading.value = true;
   error.value = null;
+  healthState.value = "loading";
+  readyState.value = "loading";
+  capabilitiesState.value = "loading";
   try {
     const [nextHealth, nextReady, nextCapabilities] = await Promise.all([
       readJson<RuntimeHealth>("/api/v2/health"),
@@ -53,18 +61,42 @@ async function refresh(): Promise<void> {
     health.value = nextHealth;
     ready.value = nextReady;
     capabilities.value = nextCapabilities;
+    healthState.value = "ready";
+    readyState.value = "ready";
+    capabilitiesState.value = "ready";
   } catch (err) {
     error.value = platformErrorMessage(err, "无法读取运行状态");
+    healthState.value = "error";
+    readyState.value = "error";
+    capabilitiesState.value = "error";
   } finally {
     loading.value = false;
   }
 }
 
-function capabilityTone(value: boolean | undefined): "success" | "warning" {
+/** API card: loading shows "读取中", error shows "读取失败", only ready shows real state. */
+function apiBadgeTone(state: LoadState, ok: boolean | undefined): "success" | "danger" | "warning" {
+  if (state === "error") return "danger";
+  if (state !== "ready") return "warning";
+  return ok ? "success" : "danger";
+}
+
+function apiBadgeLabel(state: LoadState, ok: boolean | undefined): string {
+  if (state === "error") return "读取失败";
+  if (state !== "ready") return "读取中";
+  return ok ? "正常" : "未连接";
+}
+
+/** Capability card: only show "不可用" when data is actually loaded. */
+function capabilityStateTone(state: LoadState, value: boolean | undefined): "success" | "warning" | "neutral" {
+  if (state === "error") return "neutral";
+  if (state !== "ready") return "neutral";
   return value ? "success" : "warning";
 }
 
-function capabilityLabel(value: boolean | undefined): string {
+function capabilityStateLabel(state: LoadState, value: boolean | undefined): string {
+  if (state === "error") return "读取失败";
+  if (state !== "ready") return "读取中";
   return value ? "可用" : "不可用";
 }
 
@@ -131,8 +163,8 @@ onMounted(() => {
           <Server :size="18" aria-hidden="true" />
           <h3>API</h3>
         </div>
-        <Badge :tone="health?.ok ? 'success' : 'danger'">{{ health?.ok ? "正常" : "未连接" }}</Badge>
-        <p v-if="health?.version">版本 {{ health.version }}</p>
+        <Badge :tone="apiBadgeTone(healthState, health?.ok)">{{ apiBadgeLabel(healthState, health?.ok) }}</Badge>
+        <p v-if="healthState === 'ready' && health?.version">版本 {{ health.version }}</p>
       </article>
 
       <article class="v2-runtime-card">
@@ -140,8 +172,8 @@ onMounted(() => {
           <Database :size="18" aria-hidden="true" />
           <h3>数据库</h3>
         </div>
-        <Badge :tone="ready?.ok ? 'success' : 'danger'">{{ ready?.ok ? "就绪" : "未就绪" }}</Badge>
-        <p v-if="ready?.storage">{{ ready.storage }}</p>
+        <Badge :tone="apiBadgeTone(readyState, ready?.ok)">{{ apiBadgeLabel(readyState, ready?.ok) }}</Badge>
+        <p v-if="readyState === 'ready' && ready?.storage">{{ ready.storage }}</p>
       </article>
 
       <article class="v2-runtime-card">
@@ -149,16 +181,17 @@ onMounted(() => {
           <ShieldCheck :size="18" aria-hidden="true" />
           <h3>模型生成</h3>
         </div>
-        <Badge :tone="capabilityTone(capabilities?.sceneGeneration.configured)">
-          {{ capabilityLabel(capabilities?.sceneGeneration.configured) }}
+        <Badge :tone="capabilityStateTone(capabilitiesState, capabilities?.sceneGeneration.configured)">
+          {{ capabilityStateLabel(capabilitiesState, capabilities?.sceneGeneration.configured) }}
         </Badge>
-        <div class="v2-runtime-card-details">
+        <div v-if="capabilitiesState === 'ready'" class="v2-runtime-card-details">
           <p>来源：{{ sourceLabel(capabilities?.sceneGeneration.source) }}</p>
           <p>状态：{{ capabilities?.sceneGeneration.enabled ? "已启用" : "已禁用" }}</p>
           <p>配置：{{ configurationLabel(capabilities?.sceneGeneration.configuration) }}</p>
           <p>绑定：{{ bindingLabel(capabilities?.sceneGeneration.binding) }}</p>
           <p>连接：<span :class="`v2-runtime-conn-${connectionTone(capabilities?.sceneGeneration.connection)}`">{{ connectionLabel(capabilities?.sceneGeneration.connection) }}</span></p>
         </div>
+        <p v-else class="v2-runtime-card-details">{{ capabilitiesState === "error" ? "状态读取失败" : "正在读取..." }}</p>
       </article>
 
       <article class="v2-runtime-card">
@@ -166,15 +199,16 @@ onMounted(() => {
           <Activity :size="18" aria-hidden="true" />
           <h3>素材生成</h3>
         </div>
-        <Badge :tone="capabilityTone(capabilities?.assetGeneration.configured)">
-          {{ capabilityLabel(capabilities?.assetGeneration.configured) }}
+        <Badge :tone="capabilityStateTone(capabilitiesState, capabilities?.assetGeneration.configured)">
+          {{ capabilityStateLabel(capabilitiesState, capabilities?.assetGeneration.configured) }}
         </Badge>
-        <div class="v2-runtime-card-details">
+        <div v-if="capabilitiesState === 'ready'" class="v2-runtime-card-details">
           <p>来源：{{ sourceLabel(capabilities?.assetGeneration.source) }}</p>
           <p>状态：{{ capabilities?.assetGeneration.enabled ? "已启用" : "已禁用" }}</p>
           <p>配置：{{ configurationLabel(capabilities?.assetGeneration.configuration) }}</p>
           <p>连接：<span :class="`v2-runtime-conn-${connectionTone(capabilities?.assetGeneration.connection)}`">{{ connectionLabel(capabilities?.assetGeneration.connection) }}</span></p>
         </div>
+        <p v-else class="v2-runtime-card-details">{{ capabilitiesState === "error" ? "状态读取失败" : "正在读取..." }}</p>
       </article>
     </section>
   </div>

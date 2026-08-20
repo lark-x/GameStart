@@ -41,3 +41,18 @@ test("e2e job depends on verify and runs Playwright on main push or manual dispa
   assert.match(workflow, /playwright install --with-deps chromium/);
   assert.match(workflow, /pnpm test:e2e/);
 });
+
+test("deploy-unit runs deploy tests on all three platforms", () => {
+  assert.match(workflow, /deploy-unit:/);
+  assert.match(workflow, /matrix:/);
+  assert.match(workflow, /os: \[ubuntu-latest, windows-latest, macos-latest\]/);
+  assert.match(workflow, /node --test scripts\/deploy\.test\.mjs/);
+});
+
+test("docker-smoke runs deploy, verifies endpoints, and stops", () => {
+  assert.match(workflow, /docker-smoke:/);
+  assert.match(workflow, /pnpm deploy -- --mode local/);
+  assert.match(workflow, /deployment\.json/);
+  assert.match(workflow, /pnpm deploy:status/);
+  assert.match(workflow, /pnpm deploy:stop/);
+});

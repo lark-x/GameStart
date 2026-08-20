@@ -6,6 +6,7 @@ const DEFAULT_STALE_LOCK_MS = 10 * 60 * 1000; // 10 minutes
 
 /**
  * Check whether a process with the given PID is currently active.
+ * EPERM means the process exists (alive) but is not signalable.
  */
 export function isPidAlive(pid) {
   if (typeof pid !== "number" || isNaN(pid) || pid <= 0) return false;
@@ -15,6 +16,22 @@ export function isPidAlive(pid) {
   } catch (err) {
     // EPERM means the process exists but we don't have permission to signal it
     return err.code === "EPERM";
+  }
+}
+
+/**
+ * Categorize a PID's lifecycle status.
+ * Returns "alive" (confirmed running), "dead" (confirmed gone),
+ * or "unknown" (cannot confirm; e.g. no permission to signal).
+ */
+export function getPidStatus(pid) {
+  if (typeof pid !== "number" || isNaN(pid) || pid <= 0) return "dead";
+  try {
+    process.kill(pid, 0);
+    return "alive";
+  } catch (err) {
+    if (err.code === "EPERM") return "unknown";
+    return "dead";
   }
 }
 
@@ -47,18 +64,28 @@ export function acquireDeployLock(lockPath, maxAgeMs = DEFAULT_STALE_LOCK_MS) {
 
   const existing = readLockFile(lockPath);
   if (existing) {
-    const alive = isPidAlive(existing.pid);
+    const pidStatus = getPidStatus(existing.pid);
     const startedTime = existing.startedAt ? new Date(existing.startedAt).getTime() : 0;
     const age = Date.now() - (startedTime || Date.now());
 
-    if (alive && age < maxAgeMs) {
+    if (pidStatus === "alive") {
+      // A live PID always blocks a second deploy, regardless of lock age.
+      // A long Docker build can legitimately hold the lock for > 10 minutes.
       throw new DeploymentError(
         `Another deployment is currently running (PID: ${existing.pid}, started at ${existing.startedAt}). ` +
         `If you are sure this is stale, remove "${lockPath}" and retry.`
       );
     }
 
-    // Stale or dead process lock — clear it safely
+    if (pidStatus === "unknown" && age < maxAgeMs) {
+      // Cannot confirm the PID; only clear an old lock.
+      throw new DeploymentError(
+        `Another deployment may still be running (PID: ${existing.pid}, started at ${existing.startedAt}). ` +
+        `If you are sure this is stale, remove "${lockPath}" and retry.`
+      );
+    }
+
+    // PID is dead (or unconfirmable but old) — clear the stale lock safely.
     try {
       unlinkSync(lockPath);
     } catch {}

@@ -170,3 +170,36 @@ export async function checkComfyUiHealth(
     };
   }
 }
+
+/**
+ * Read the ComfyUI configuration that the running API actually uses.
+ *
+ * The V2 Settings page persists ComfyUI settings in SQLite, which is the
+ * authoritative runtime source. Environment variables are only a bootstrap
+ * fallback for containers that never opened Settings.
+ *
+ * Returns:
+ *   { runtimeAvailable: false }            — API is not reachable
+ *   { runtimeAvailable: true, baseUrl }    — API answered; baseUrl may be ""
+ */
+export async function fetchRuntimeComfyConfig(
+  baseUrl,
+  { timeoutMs = 6_000, fetchFn = globalThis.fetch } = {},
+) {
+  try {
+    const res = await fetchFn(`${baseUrl}/api/v2/platform/image-service`, {
+      signal: AbortSignal.timeout(timeoutMs),
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) {
+      return { runtimeAvailable: false, status: res.status };
+    }
+    const payload = await res.json().catch(() => null);
+    const settings = payload?.settings;
+    const comfyBaseUrl =
+      settings && typeof settings.baseUrl === "string" ? settings.baseUrl.trim() : "";
+    return { runtimeAvailable: true, baseUrl: comfyBaseUrl };
+  } catch {
+    return { runtimeAvailable: false };
+  }
+}
