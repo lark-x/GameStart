@@ -75,6 +75,12 @@ test("V2 platform client maps memory overview and job runtime endpoints", async 
       if (url.endsWith("/memory/overview") && method === "GET") {
         return Response.json({ facts: { total: 3, relatedCharacterCount: 2, averageImportance: 0.5, averageConfidence: 0.6, typeDistribution: [] }, extraction: {}, consolidation: {}, engines: [], recentFailures: [] });
       }
+      if (url.endsWith("/memory/diagnostics") && method === "GET") {
+        return Response.json({ window: "24h", extraction: { completed: 2, failed: 1, successRate: 2 / 3 }, consolidation: { completed: 1, failed: 0 }, facts: { batchCount: 4, assertionCount: 8 }, engineConsume: { completed: 2, failed: 0 }, currentFailedJobs: 1 });
+      }
+      if (url.endsWith("/api/v2/jobs/overview") && method === "GET") {
+        return Response.json({ pending: 1, claimed: 2, running: 3, completed: 4, failed: 5 });
+      }
       if (url.includes("/api/v2/jobs") && !url.includes("/retry") && !url.includes("/jobs/job%3A1")) {
         return Response.json({ items: [], nextCursor: "next-cursor" });
       }
@@ -92,8 +98,17 @@ test("V2 platform client maps memory overview and job runtime endpoints", async 
   assert.equal(overview.facts.total, 3);
   assert.equal(overview.facts.relatedCharacterCount, 2);
 
+  const diagnostics = await client.getMemoryDiagnostics();
+  assert.equal(diagnostics.window, "24h");
+  assert.equal(diagnostics.facts.assertionCount, 8);
+  assert.equal(diagnostics.currentFailedJobs, 1);
+
   const page = await client.listJobs({ status: "failed", type: "memory_extract", limit: 50 });
   assert.equal(page.nextCursor, "next-cursor");
+
+  const jobOverview = await client.getJobOverview();
+  assert.equal(jobOverview.running, 3);
+  assert.equal(jobOverview.failed, 5);
 
   const detail = await client.getJob("job:1");
   assert.equal(detail.payloadSummary.conversationId, "c1");

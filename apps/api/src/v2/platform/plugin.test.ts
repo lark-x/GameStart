@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createV2ModelCallLog, openV2TempSqliteConnection, V2SqliteChatMaintenanceJobRepository, V2SqliteChatUnitOfWork, V2SqlitePlatformRepository } from "@living-network/database/v2";
-import { createV2CanonWorld, createV2ChatConversation, createV2ChatMaintenanceJob } from "@living-network/domain/v2";
+import { createV2ModelCallLog, openV2TempSqliteConnection, V2SqliteChatMaintenanceJobRepository, V2SqliteChatUnitOfWork, V2SqliteFactRepository, V2SqlitePlatformRepository } from "@living-network/database/v2";
+import { createV2CanonWorld, createV2ChatConversation, createV2ChatMaintenanceJob, createV2FactAssertion, createV2FactAssertionBatch } from "@living-network/domain/v2";
 import { createV2ApiRuntime } from "./runtime.ts";
 
 test("V2 platform API stores model profiles without returning secrets and exposes live capabilities", async () => {
@@ -517,6 +517,91 @@ test("V2 memory overview endpoint returns fact stats, runs, and engines", async 
 });
 
 
+test("V2 memory diagnostics endpoint returns 24h runtime and fact ledger metrics", async () => {
+  const temp = openV2TempSqliteConnection();
+  const path = temp.path;
+  temp.db.close();
+  const runtime = createV2ApiRuntime({ sqlitePath: path });
+  try {
+    const jobs = new V2SqliteChatMaintenanceJobRepository(runtime.db);
+    const facts = new V2SqliteFactRepository(runtime.db);
+    const unit = new V2SqliteChatUnitOfWork(runtime.db);
+    await unit.withChatTransaction(async ({ canon, conversations }) => {
+      await canon.createWorld(createV2CanonWorld({
+        storyWorldId: "world:diagnostics",
+        name: "Diagnostics World",
+      }));
+      await conversations.create(createV2ChatConversation({
+        conversationId: "conversation:diagnostics",
+        storyWorldId: "world:diagnostics",
+        primaryCharacterId: "character:diagnostics",
+      }));
+    });
+
+    await facts.createBatch(createV2FactAssertionBatch({
+      batchId: "batch:diagnostics:1",
+      storyWorldId: "world:diagnostics",
+      conversationId: "conversation:diagnostics",
+      fromMessageId: "message:diagnostics:1",
+      toMessageId: "message:diagnostics:1",
+      sourceMessageIds: ["message:diagnostics:1"],
+      sourceHash: "hash",
+      extractorVersion: "fact.extract:v1",
+      status: "completed",
+      createdAt: "2026-08-20T00:00:00.000Z",
+      completedAt: "2026-08-20T00:00:01.000Z",
+    }));
+    await facts.createAssertions([
+      createV2FactAssertion({
+        assertionId: "fact:diagnostics:1",
+        batchId: "batch:diagnostics:1",
+        storyWorldId: "world:diagnostics",
+        conversationId: "conversation:diagnostics",
+        scopeType: "user",
+        scopeId: "user:local",
+        subject: { entityType: "user", entityId: "user:local" },
+        predicate: "likes",
+        object: { type: "text", value: "tea" },
+        kind: "preference",
+        text: "用户喜欢茶",
+        changeHint: "new",
+        confidence: 0.9,
+        importanceHint: 0.7,
+        sourceMessageIds: ["message:diagnostics:1"],
+        observedAt: "2026-08-20T00:00:00.000Z",
+        extractorVersion: "fact.extract:v1",
+      }),
+    ]);
+
+    for (const job of [
+      createV2ChatMaintenanceJob({ jobId: "job:diag:extract:ok", conversationId: "conversation:diagnostics", jobType: "memory_extract", status: "completed", payload: { jobType: "memory_extract", conversationId: "conversation:diagnostics", sourceMessageIds: [] }, updatedAt: new Date().toISOString() }),
+      createV2ChatMaintenanceJob({ jobId: "job:diag:extract:fail", conversationId: "conversation:diagnostics", jobType: "memory_extract", status: "failed", payload: { jobType: "memory_extract", conversationId: "conversation:diagnostics", sourceMessageIds: [] }, updatedAt: new Date().toISOString(), lastError: "timeout" }),
+      createV2ChatMaintenanceJob({ jobId: "job:diag:extract:old", conversationId: "conversation:diagnostics", jobType: "memory_extract", status: "completed", payload: { jobType: "memory_extract", conversationId: "conversation:diagnostics", sourceMessageIds: [] }, updatedAt: "2020-01-01T00:00:00.000Z" }),
+      createV2ChatMaintenanceJob({ jobId: "job:diag:consolidate:ok", conversationId: "conversation:diagnostics", jobType: "memory_consolidate", status: "completed", payload: { jobType: "memory_consolidate", conversationId: "conversation:diagnostics" }, updatedAt: new Date().toISOString() }),
+      createV2ChatMaintenanceJob({ jobId: "job:diag:engine:ok", conversationId: "conversation:diagnostics", jobType: "memory_engine_consume", status: "completed", payload: { jobType: "memory_engine_consume", conversationId: "conversation:diagnostics" }, updatedAt: new Date().toISOString() }),
+    ]) {
+      await jobs.enqueue(job);
+    }
+
+    const res = await runtime.app.inject({ method: "GET", url: "/api/v2/memory/diagnostics" });
+    assert.equal(res.statusCode, 200);
+    const body = res.json();
+    assert.equal(body.window, "24h");
+    assert.equal(body.extraction.completed, 1);
+    assert.equal(body.extraction.failed, 1);
+    assert.equal(body.extraction.successRate, 0.5);
+    assert.equal(body.consolidation.completed, 1);
+    assert.equal(body.facts.batchCount, 1);
+    assert.equal(body.facts.assertionCount, 1);
+    assert.equal(body.engineConsume.completed, 1);
+    assert.equal(body.currentFailedJobs, 1);
+  } finally {
+    await runtime.close();
+    temp.cleanup();
+  }
+});
+
+
 test("V2 jobs endpoint lists history, shows detail, and retries only failed jobs", async () => {
   const temp = openV2TempSqliteConnection();
   const path = temp.path;
@@ -565,6 +650,16 @@ test("V2 jobs endpoint lists history, shows detail, and retries only failed jobs
       payload: { jobType: "memory_consolidate", conversationId: "conversation:y", existingMemoryId: "mem:1", candidate: { kind: "profile", content: "x", importance: 0.5, confidence: 0.5, sourceMessageIds: [] }, idempotencyKey: "k" },
     }));
 
+    const overview = await runtime.app.inject({ method: "GET", url: "/api/v2/jobs/overview" });
+    assert.equal(overview.statusCode, 200);
+    assert.deepEqual(overview.json(), {
+      pending: 0,
+      claimed: 0,
+      running: 0,
+      completed: 1,
+      failed: 1,
+    });
+
     // List with status filter
     const failed = await runtime.app.inject({ method: "GET", url: "/api/v2/jobs?status=failed" });
     assert.equal(failed.statusCode, 200);
@@ -585,6 +680,11 @@ test("V2 jobs endpoint lists history, shows detail, and retries only failed jobs
     const retryOk = await runtime.app.inject({ method: "POST", url: "/api/v2/jobs/job%3Aapi%3A1/retry" });
     assert.equal(retryOk.statusCode, 200);
     assert.equal(retryOk.json().status, "pending");
+
+    const overviewAfterRetry = await runtime.app.inject({ method: "GET", url: "/api/v2/jobs/overview" });
+    assert.equal(overviewAfterRetry.statusCode, 200);
+    assert.equal(overviewAfterRetry.json().pending, 1);
+    assert.equal(overviewAfterRetry.json().failed, 0);
 
     // Retry again is rejected (now pending, not failed)
     const retryAgain = await runtime.app.inject({ method: "POST", url: "/api/v2/jobs/job%3Aapi%3A1/retry" });

@@ -43,6 +43,8 @@ export interface V2FactRepository {
 
   // Count distinct characters actually referenced as fact subjects.
   countDistinctCharacterSubjects(): Promise<number>;
+  countFactBatches(): Promise<number>;
+  countFactAssertions(): Promise<number>;
 }
 
 export interface V2FactWorldSummary {
