@@ -61,91 +61,49 @@ export function readLockFile(lockPath) {
  */
 export function acquireDeployLock(lockPath, maxAgeMs = DEFAULT_STALE_LOCK_MS) {
   mkdirSync(dirname(lockPath), { recursive: true });
+
+  const existing = readLockFile(lockPath);
+  if (existing) {
+    const pidStatus = getPidStatus(existing.pid);
+    const startedTime = existing.startedAt ? new Date(existing.startedAt).getTime() : 0;
+    const age = Date.now() - (startedTime || Date.now());
+
+    if (pidStatus === "alive") {
+      // A live PID always blocks a second deploy, regardless of lock age.
+      // A long Docker build can legitimately hold the lock for > 10 minutes.
+      throw new DeploymentError(
+        `Another deployment is currently running (PID: ${existing.pid}, started at ${existing.startedAt}). ` +
+        `If you are sure this is stale, remove "${lockPath}" and retry.`
+      );
+    }
+
+    if (pidStatus === "unknown" && age < maxAgeMs) {
+      // Cannot confirm the PID; only clear an old lock.
+      throw new DeploymentError(
+        `Another deployment may still be running (PID: ${existing.pid}, started at ${existing.startedAt}). ` +
+        `If you are sure this is stale, remove "${lockPath}" and retry.`
+      );
+    }
+
+    // PID is dead (or unconfirmable but old) — clear the stale lock safely.
+    try {
+      unlinkSync(lockPath);
+    } catch {}
+  }
+
   const payload = {
     pid: process.pid,
     startedAt: new Date().toISOString(),
   };
 
-  // Use O_EXCL (the `wx` flag) so two deploy processes cannot both pass a
-  // read-then-write check and believe they own the lock.
-  while (true) {
-    try {
-      writeFileSync(lockPath, JSON.stringify(payload, null, 2) + "\n", { flag: "wx" });
-      break;
-    } catch (error) {
-      if (error?.code !== "EEXIST") {
-        throw new DeploymentError(`Unable to create deployment lock "${lockPath}": ${error?.message || String(error)}`);
-      }
-
-      const existing = readLockFile(lockPath);
-      const lockStat = (() => {
-        try {
-          return statSync(lockPath);
-        } catch {
-          return undefined;
-        }
-      })();
-      // A contender may have removed a stale lock between our failed create
-      // and the stat/read above; retry the atomic create in that case.
-      if (lockStat === undefined) continue;
-      if (!existing) {
-        const age = Date.now() - lockStat.mtimeMs;
-        if (age >= maxAgeMs) {
-          try {
-            unlinkSync(lockPath);
-          } catch (error) {
-            if (error?.code !== "ENOENT") {
-              throw new DeploymentError(`Unable to clear stale deployment lock "${lockPath}": ${error?.message || String(error)}`);
-            }
-          }
-          continue;
-        }
-        throw new DeploymentError(
-          `Another deployment is creating the lock "${lockPath}". ` +
-          `If you are sure this is stale, remove the lock and retry.`
-        );
-      }
-
-      const pidStatus = getPidStatus(existing.pid);
-      const startedTime = existing.startedAt ? new Date(existing.startedAt).getTime() : 0;
-      const age = Date.now() - (startedTime || lockStat?.mtimeMs || Date.now());
-
-      if (pidStatus === "alive") {
-        // A live PID always blocks a second deploy, regardless of lock age.
-        // A long Docker build can legitimately hold the lock for > 10 minutes.
-        throw new DeploymentError(
-          `Another deployment is currently running (PID: ${existing.pid}, started at ${existing.startedAt}). ` +
-          `If you are sure this is stale, remove "${lockPath}" and retry.`
-        );
-      }
-
-      if (pidStatus === "unknown" && age < maxAgeMs) {
-        // Cannot confirm the PID; only clear an old lock.
-        throw new DeploymentError(
-          `Another deployment may still be running (PID: ${existing.pid}, started at ${existing.startedAt}). ` +
-          `If you are sure this is stale, remove "${lockPath}" and retry.`
-        );
-      }
-
-      // PID is dead (or unconfirmable but old) — clear the stale lock and
-      // loop so the atomic create below wins the race against any contender.
-      try {
-        unlinkSync(lockPath);
-      } catch (error) {
-        if (error?.code !== "ENOENT") {
-          throw new DeploymentError(`Unable to clear stale deployment lock "${lockPath}": ${error?.message || String(error)}`);
-        }
-      }
-    }
-  }
+  writeFileSync(lockPath, JSON.stringify(payload, null, 2) + "\n");
 
   let released = false;
   return function release() {
     if (released) return;
     released = true;
     try {
-      const current = readLockFile(lockPath);
-      if (current?.pid === payload.pid && current?.startedAt === payload.startedAt) {
+      if (existsSync(lockPath)) {
         unlinkSync(lockPath);
       }
     } catch {}

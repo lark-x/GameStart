@@ -1,48 +1,205 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { useRouter } from "vue-router";
-import { ChevronRight, Cpu, Plus, RefreshCw, ShieldCheck, Sparkles } from "@lucide/vue";
+import { Copy, Cpu, Download, Plus, RefreshCw, Save, ShieldCheck, Trash2, Wifi } from "@lucide/vue";
 import type {
   V2ModelBindingDto,
   V2ModelProfileDto,
+  V2ModelProtocol,
   V2PlatformCapabilities,
-  V2RuntimeCapability,
+  V2SaveModelProfileRequest,
 } from "@living-network/contracts/v2";
 
 import Badge from "../../components/ui/Badge.vue";
+import Checkbox from "../../components/ui/Checkbox.vue";
 import Button from "../../components/ui/Button.vue";
 import EmptyState from "../../components/ui/EmptyState.vue";
-import Modal from "../../components/ui/Modal.vue";
+import Field from "../../components/ui/Field.vue";
+import Input from "../../components/ui/Input.vue";
 import PageHeader from "../../components/layout/PageHeader.vue";
 import Select from "../../components/ui/Select.vue";
-import Switch from "../../components/ui/Switch.vue";
 import { platformErrorMessage, v2PlatformClient } from "./platform.ts";
 import { useNotificationStore } from "../stores/notification.ts";
-import {
-  buildCapabilityBindingRows,
-  buildCapabilityRuntimeItems,
-  buildModelProfileSummaries,
-  formatCapabilityToggleError,
-} from "./models-view-model.ts";
+
+interface ModelForm {
+  readonly id?: string | undefined;
+  readonly sourceProfileId?: string | undefined;
+  name: string;
+  protocol: V2ModelProtocol;
+  baseUrl: string;
+  model: string;
+  timeoutMs: string;
+  maxTokens: string;
+  contextWindow: string;
+  inputModalities: string[];
+  temperature: string;
+  apiKey: string;
+}
 
 const client = v2PlatformClient();
 const toast = useNotificationStore();
-const router = useRouter();
-
 const profiles = ref<readonly V2ModelProfileDto[]>([]);
 const bindings = ref<readonly V2ModelBindingDto[]>([]);
 const capabilities = ref<V2PlatformCapabilities | null>(null);
-const loading = ref(true);
+const form = ref<ModelForm>(emptyForm());
+const bindingSelections = ref<Record<string, string>>({
+  chat: "none",
+  scene_generation: "none",
+  memory: "none",
+  story_analysis: "none",
+});
+const loading = ref(false);
+const saving = ref(false);
+const testing = ref(false);
+type ConnectionTestStatus = "idle" | "testing" | "success" | "error";
+const deleting = ref(false);
+const fetchingModels = ref(false);
+const discoveredModels = ref<readonly string[]>([]);
+const modelFilter = ref("");
+const fetchModelError = ref<string | null>(null);
 const error = ref<string | null>(null);
-const toggling = ref<Set<string>>(new Set());
-const toggleError = ref<string | null>(null);
-const bindingTarget = ref<string | null>(null);
-const bindingSelection = ref<string>("none");
-const bindingSaving = ref(false);
+const testMessage = ref<string | null>(null);
+const testStatus = ref<ConnectionTestStatus>("idle");
+const draftNotice = ref<string | null>(null);
+const testResults = new Map<string, string>();
 
-const capabilityItems = computed(() => buildCapabilityRuntimeItems(capabilities.value, bindings.value));
-const bindingRows = computed(() => buildCapabilityBindingRows(bindings.value));
-const profileSummaries = computed(() => buildModelProfileSummaries(profiles.value));
+function emptyForm(): ModelForm {
+  return {
+    name: "",
+    protocol: "openai-compatible",
+    baseUrl: "",
+    model: "",
+    timeoutMs: "30000",
+    maxTokens: "4096",
+    contextWindow: "8192",
+    inputModalities: ["text"],
+    temperature: "0.2",
+    apiKey: "",
+  };
+}
+
+const AVAILABLE_MODALITIES: readonly { readonly value: string; readonly label: string; readonly required?: boolean }[] = [
+  { value: "text", label: "文本", required: true },
+  { value: "image", label: "图片" },
+];
+
+/** text is always required by the API contract; image is optional. */
+function toggleModality(value: string): void {
+  if (value === "text") return;
+  const idx = form.value.inputModalities.indexOf(value);
+  if (idx >= 0) {
+    form.value.inputModalities = form.value.inputModalities.filter((m) => m !== value);
+  } else {
+    form.value.inputModalities = [...form.value.inputModalities, value];
+  }
+}
+
+const editing = computed(() => form.value.id !== undefined);
+const selectedProfile = computed(() => profiles.value.find((profile) => profile.id === form.value.id));
+const secretUnavailable = computed(() => capabilities.value?.sceneGeneration.reason === "secret_unavailable");
+const bindingCapabilities: readonly { readonly capability: string; readonly label: string; readonly hint: string }[] = [
+  { capability: "chat", label: "对话模型", hint: "Chat 回复与即时故事开场使用。" },
+  { capability: "scene_generation", label: "场景生成模型", hint: "Worker 场景生成任务使用。" },
+  { capability: "memory", label: "记忆模型", hint: "Memory Extraction / Consolidation 使用。" },
+  { capability: "story_analysis", label: "剧情分析模型", hint: "Story Analyzer 使用。" },
+];
+const filteredDiscoveredModels = computed(() => {
+  if (!modelFilter.value.trim()) return discoveredModels.value;
+  const q = modelFilter.value.toLowerCase().trim();
+  return discoveredModels.value.filter((m) => m.toLowerCase().includes(q));
+});
+
+function statusLabel(value: string | undefined): string {
+  if (value === "complete") return "配置完整";
+  if (value === "incomplete") return "配置缺失";
+  if (value === "bound") return "已绑定";
+  if (value === "unbound") return "未绑定";
+  if (value === "not-applicable") return "无需绑定";
+  if (value === "ok") return "连接正常";
+  if (value === "failed") return "连接失败";
+  if (value === "checking") return "检测中";
+  return "未测试";
+}
+
+function selectProfile(profile: V2ModelProfileDto, resetTestMessage = true): void {
+  form.value = {
+    id: profile.id,
+    name: profile.name,
+    protocol: profile.protocol,
+    baseUrl: profile.baseUrl,
+    model: profile.model,
+    timeoutMs: String(profile.timeoutMs),
+    maxTokens: String(profile.maxTokens),
+    contextWindow: profile.contextWindow !== undefined ? String(profile.contextWindow) : "8192",
+    inputModalities: profile.inputModalities && profile.inputModalities.length > 0 ? [...profile.inputModalities] : ["text"],
+    temperature: String(profile.temperature),
+    apiKey: "",
+  };
+  if (resetTestMessage) {
+    testMessage.value = null;
+    draftNotice.value = null;
+  }
+  fetchModelError.value = null;
+  discoveredModels.value = [];
+  modelFilter.value = "";
+}
+
+function newProfile(): void {
+  form.value = emptyForm();
+  testMessage.value = null;
+  draftNotice.value = null;
+  fetchModelError.value = null;
+  discoveredModels.value = [];
+  modelFilter.value = "";
+}
+
+function duplicateProfile(): void {
+  if (form.value.id === undefined) return;
+  const originalId = form.value.id;
+  const baseName = form.value.name.replace(/\s*\(副本\d*\)$/, "");
+  const copyName = baseName + " (副本)";
+  form.value = {
+    ...form.value,
+    id: undefined,
+    sourceProfileId: originalId,
+    name: copyName,
+    apiKey: "",
+  };
+  draftNotice.value = "已基于当前配置复制为新档案草稿，可直接修改模型名称后保存。";
+}
+
+async function fetchModels(): Promise<void> {
+  if (!form.value.baseUrl.trim()) {
+    fetchModelError.value = "请先填写 API 地址";
+    return;
+  }
+  fetchingModels.value = true;
+  fetchModelError.value = null;
+  try {
+    const apiKey = form.value.apiKey.trim();
+    form.value.apiKey = "";
+    const models = await client.discoverModels({
+      protocol: form.value.protocol,
+      baseUrl: form.value.baseUrl.trim(),
+      apiKey: apiKey.length > 0 ? apiKey : undefined,
+      profileId: form.value.id || form.value.sourceProfileId,
+    });
+    discoveredModels.value = models;
+    if (models.length === 0) {
+      fetchModelError.value = "未能从该地址获取到模型列表，你可以手动输入模型名称。";
+    }
+  } catch (err) {
+    fetchModelError.value = platformErrorMessage(err, "获取模型列表失败");
+  } finally {
+    fetchingModels.value = false;
+  }
+}
+
+function selectDiscoveredModel(modelId: string): void {
+  form.value.model = modelId;
+  if (!form.value.name || form.value.name.trim().length === 0) {
+    form.value.name = modelId;
+  }
+}
 
 async function refresh(): Promise<void> {
   loading.value = true;
@@ -56,6 +213,15 @@ async function refresh(): Promise<void> {
     profiles.value = nextProfiles;
     bindings.value = nextBindings;
     capabilities.value = nextCapabilities;
+    const current = form.value.id === undefined ? undefined : nextProfiles.find((profile) => profile.id === form.value.id);
+    if (current) selectProfile(current, false);
+    else if (form.value.id !== undefined) newProfile();
+    const byCapability: Record<string, string> = {};
+    for (const capability of bindingCapabilities) {
+      const binding = nextBindings.find((item) => item.capability === capability.capability);
+      byCapability[capability.capability] = binding?.profileId ?? "none";
+    }
+    bindingSelections.value = byCapability;
   } catch (err) {
     error.value = platformErrorMessage(err, "无法读取模型配置");
   } finally {
@@ -63,54 +229,100 @@ async function refresh(): Promise<void> {
   }
 }
 
-async function toggleCapability(capability: V2RuntimeCapability, enabled: boolean): Promise<void> {
-  if (toggling.value.has(capability)) return;
-  toggling.value = new Set(toggling.value).add(capability);
-  toggleError.value = null;
+function requestFromForm(): V2SaveModelProfileRequest {
+  const modalities = form.value.inputModalities;
+
+  const input: V2SaveModelProfileRequest = {
+    name: form.value.name.trim(),
+    protocol: form.value.protocol,
+    baseUrl: form.value.baseUrl.trim(),
+    model: form.value.model.trim(),
+    timeoutMs: Number(form.value.timeoutMs),
+    maxTokens: Number(form.value.maxTokens),
+    temperature: Number(form.value.temperature),
+    ...(form.value.contextWindow ? { contextWindow: Number(form.value.contextWindow) } : {}),
+    ...(modalities.length > 0 ? { inputModalities: Array.from(new Set(["text", ...modalities])) } : { inputModalities: ["text"] }),
+    ...(form.value.id === undefined ? {} : { id: form.value.id }),
+    ...(form.value.apiKey.trim().length === 0 ? {} : { apiKey: form.value.apiKey.trim() }),
+    ...(form.value.sourceProfileId && form.value.apiKey.trim().length === 0 ? { sourceProfileId: form.value.sourceProfileId } : {}),
+  };
+  return input;
+}
+
+function bindingName(capability: string): string {
+  const binding = bindings.value.find((item) => item.capability === capability);
+  return binding?.profileName ?? "未绑定";
+}
+
+async function save(): Promise<void> {
+  saving.value = true;
+  error.value = null;
   try {
-    capabilities.value = await client.updateCapability(capability, { enabled });
+    const request = requestFromForm();
+    form.value.apiKey = "";
+    const saved = await client.saveModelProfile(request);
+    toast.success(`模型档案“${saved.name}”已保存。`);
+    await refresh();
+    selectProfile(saved);
   } catch (err) {
-    toggleError.value = formatCapabilityToggleError(err);
+    const message = platformErrorMessage(err, "保存模型档案失败");
+    error.value = message.includes("SECRET_KEY_REQUIRED")
+      ? "无法保存 API 密钥：服务器未配置 INTEGRATION_SECRET_KEY。请在仓库根目录 .env 中配置 Base64 编码的 32 字节密钥后重启 API。"
+      : message;
   } finally {
-    const next = new Set(toggling.value);
-    next.delete(capability);
-    toggling.value = next;
+    saving.value = false;
   }
 }
 
-function openBinding(capability: string): void {
-  const binding = bindings.value.find((item) => item.capability === capability);
-  bindingSelection.value = binding?.profileId ?? "none";
-  bindingTarget.value = capability;
+async function test(): Promise<void> {
+  if (form.value.id === undefined) return;
+  testing.value = true;
+  testStatus.value = "testing";
+  error.value = null;
+  testMessage.value = null;
+  try {
+    const result = await client.testModelProfile(form.value.id);
+    const preview = typeof result.preview === "string" ? ` 返回：${result.preview}` : "";
+    testMessage.value = `连接测试成功。${preview}`;
+    testStatus.value = "success";
+    testResults.set(form.value.id, testMessage.value);
+  } catch (err) {
+    testMessage.value = platformErrorMessage(err, "连接测试失败");
+    testStatus.value = "error";
+    testResults.set(form.value.id, testMessage.value);
+  } finally {
+    await refresh();
+    testing.value = false;
+  }
 }
 
-function closeBinding(): void {
-  bindingTarget.value = null;
-}
-
-async function saveBinding(): Promise<void> {
-  if (bindingTarget.value === null) return;
-  bindingSaving.value = true;
+async function remove(): Promise<void> {
+  if (form.value.id === undefined || !window.confirm("确定删除这个模型档案吗？已绑定的档案需要先解除绑定。")) return;
+  deleting.value = true;
   error.value = null;
   try {
-    const selected = bindingSelection.value;
-    await client.setModelBinding(bindingTarget.value, { profileId: selected === "none" ? null : selected });
-    toast.success("模型绑定已更新。");
-    closeBinding();
+    await client.deleteModelProfile(form.value.id);
+    toast.success("模型档案已删除。");
+    newProfile();
+    await refresh();
+  } catch (err) {
+    error.value = platformErrorMessage(err, "删除模型档案失败");
+  } finally {
+    deleting.value = false;
+  }
+}
+
+async function saveBinding(capability: string): Promise<void> {
+  error.value = null;
+  try {
+    const selected = bindingSelections.value[capability] ?? "none";
+    await client.setModelBinding(capability, { profileId: selected === "none" ? null : selected });
+    const label = bindingCapabilities.find((item) => item.capability === capability)?.label ?? capability;
+    toast.success(selected === "none" ? `${label}已解除模型绑定。` : `${label}的模型绑定已更新。`);
     await refresh();
   } catch (err) {
     error.value = platformErrorMessage(err, "更新模型绑定失败");
-  } finally {
-    bindingSaving.value = false;
   }
-}
-
-function goToProfile(id: string): void {
-  void router.push(`/v2/settings/models/${encodeURIComponent(id)}`);
-}
-
-function goToNewProfile(): void {
-  void router.push("/v2/settings/models/new");
 }
 
 onMounted(() => {
@@ -119,168 +331,274 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="models-page">
+  <div class="v2-model-settings">
     <PageHeader
+
       title="模型与能力"
-      description="管理 AI 能力的运行状态、模型绑定和模型档案。"
+      description="模型密钥只写入服务端加密存储，页面不会回显原始密钥。场景生成能力从这里选择实际使用的模型。"
     >
       <template #actions>
         <Button variant="secondary" size="md" :loading="loading" @click="refresh">
-          <RefreshCw :size="15" aria-hidden="true" />
+          <RefreshCw :size="16" aria-hidden="true" />
           刷新
         </Button>
-        <Button variant="primary" size="md" @click="goToNewProfile">
-          <Plus :size="15" aria-hidden="true" />
-          新建模型
+        <Button variant="primary" size="md" @click="newProfile">
+          <Plus :size="16" aria-hidden="true" />
+          新建档案
         </Button>
       </template>
     </PageHeader>
 
-    <div v-if="error" class="models-alert" role="alert">{{ error }}</div>
-    <div v-if="toggleError" class="models-alert models-alert--warning" role="alert">{{ toggleError }}</div>
+    <div v-if="error" class="v2-settings-alert" role="alert">{{ error }}</div>
 
-    <div v-if="loading && profiles.length === 0" class="models-empty" role="status">正在读取模型配置...</div>
+    <div v-if="secretUnavailable" class="v2-settings-alert v2-settings-alert--warning" role="alert">
+      <strong>无法保存或使用 API 密钥：</strong>服务器未配置 <code>INTEGRATION_SECRET_KEY</code>。
+      请在仓库根目录 <code>.env</code> 中设置 Base64 编码的 32 字节密钥（例如
+      <code>node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"</code>），
+      然后重启 API 服务。
+    </div>
 
-    <template v-else>
-      <div class="models-overview">
-        <section class="models-card" aria-labelledby="models-runtime-title">
-          <div class="models-section-head">
-            <ShieldCheck :size="18" aria-hidden="true" />
-            <h2 id="models-runtime-title">当前运行</h2>
-          </div>
-          <div class="capability-list">
-            <article v-for="item in capabilityItems" :key="item.capability" class="capability-row">
-              <div class="capability-row-main">
-                <div class="capability-row-head">
-                  <span class="capability-name">{{ item.name }}</span>
-                  <Switch
-                    :model-value="item.enabled"
-                    :disabled="toggling.has(item.capability)"
-                    :aria-label="`${item.name} 开关`"
-                    @update:model-value="(value: boolean) => toggleCapability(item.capability, value)"
-                  />
-                </div>
-                <small class="capability-model">{{ item.modelLabel }}</small>
-                <small class="capability-status" :class="`tone-${item.statusTone}`">{{ item.statusLabel }}</small>
-              </div>
-            </article>
-          </div>
-        </section>
-
-        <section class="models-card" aria-labelledby="models-binding-title">
-          <div class="models-section-head">
-            <Sparkles :size="18" aria-hidden="true" />
-            <h2 id="models-binding-title">能力绑定</h2>
-          </div>
-          <div class="binding-list">
-            <button
-              v-for="row in bindingRows"
-              :key="row.capability"
-              type="button"
-              class="binding-row"
-              :aria-label="`${row.label} 当前 ${row.modelLabel}`"
-              @click="openBinding(row.capability)"
-            >
-              <span class="binding-label">{{ row.label }}</span>
-              <span class="binding-model" :class="{ muted: row.modelLabel === '未绑定' }">{{ row.modelLabel }}</span>
-              <ChevronRight :size="16" aria-hidden="true" />
-            </button>
-          </div>
-        </section>
+    <section class="v2-capability-card" aria-labelledby="v2-capabilities-title">
+      <div class="v2-section-heading">
+        <div>
+          <p class="v2-section-kicker">能力开关</p>
+          <h2 id="v2-capabilities-title">当前运行能力</h2>
+        </div>
+        <ShieldCheck :size="22" aria-hidden="true" />
       </div>
+      <div class="v2-capability-grid">
+        <article>
+          <span>场景生成</span>
+          <Badge :tone="capabilities?.sceneGeneration.configured ? 'success' : 'warning'">
+            {{ capabilities?.sceneGeneration.enabled ? "已启用" : "已关闭" }}
+          </Badge>
+          <small>配置：{{ statusLabel(capabilities?.sceneGeneration.configuration) }} · 绑定：{{ statusLabel(capabilities?.sceneGeneration.binding) }}</small>
+          <small>连接：{{ statusLabel(capabilities?.sceneGeneration.connection) }} · 来源：{{ capabilities?.sceneGeneration.source ?? "none" }}</small>
+          <small v-if="capabilities?.sceneGeneration.errorMessage">{{ capabilities.sceneGeneration.errorMessage }}</small>
+        </article>
+        <article>
+          <span>素材生成</span>
+          <Badge :tone="capabilities?.assetGeneration.configured ? 'success' : 'warning'">
+            {{ capabilities?.assetGeneration.enabled ? "已启用" : "已关闭" }}
+          </Badge>
+          <small>配置：{{ statusLabel(capabilities?.assetGeneration.configuration) }} · 绑定：{{ statusLabel(capabilities?.assetGeneration.binding) }}</small>
+          <small>连接：{{ statusLabel(capabilities?.assetGeneration.connection) }} · 来源：{{ capabilities?.assetGeneration.source ?? "none" }}</small>
+        </article>
+      </div>
+    </section>
 
-      <section class="models-card models-profiles" aria-labelledby="models-profiles-title">
-        <div class="models-section-head">
-          <Cpu :size="18" aria-hidden="true" />
-          <h2 id="models-profiles-title">模型档案</h2>
+    <section class="v2-binding-card" aria-labelledby="v2-binding-title">
+      <div class="v2-section-heading">
+        <div>
+          <p class="v2-section-kicker">能力绑定</p>
+          <h2 id="v2-binding-title">各能力使用哪个模型？</h2>
+        </div>
+      </div>
+      <div class="v2-binding-summary">
+        <div v-for="item in bindingCapabilities" :key="item.capability" class="v2-binding-summary-item">
+          <span>{{ item.label }}</span>
+          <strong>{{ bindingName(item.capability) }}</strong>
+        </div>
+      </div>
+      <div v-for="item in bindingCapabilities" :key="`${item.capability}-select`" class="v2-binding-row">
+        <Field :for-id="`v2-binding-${item.capability}`" :label="item.label" :hint="item.hint">
+          <Select
+            :id="`v2-binding-${item.capability}`"
+            :model-value="bindingSelections[item.capability] ?? 'none'"
+            :disabled="profiles.length === 0"
+            @update:model-value="(value: string) => { bindingSelections[item.capability] = value; }"
+          >
+            <option value="none">不绑定（使用环境变量兜底）</option>
+            <option v-for="profileItem in profiles" :key="profileItem.id" :value="profileItem.id">
+              {{ profileItem.name }} · {{ profileItem.model }}
+            </option>
+          </Select>
+        </Field>
+        <Button variant="secondary" size="md" :disabled="profiles.length === 0" @click="saveBinding(item.capability)">保存绑定</Button>
+      </div>
+    </section>
+
+    <div class="v2-model-layout">
+      <section class="v2-profile-list" aria-labelledby="v2-profile-list-title">
+        <div class="v2-section-heading">
+          <div>
+            <p class="v2-section-kicker">模型档案</p>
+            <h2 id="v2-profile-list-title">可用模型</h2>
+          </div>
           <Badge tone="neutral">{{ profiles.length }}</Badge>
         </div>
-        <EmptyState
-          v-if="profiles.length === 0"
-          title="还没有模型档案"
-          description="创建模型档案后，可以将其绑定到对话、场景生成或 Memory 等能力。"
-        >
+        <EmptyState v-if="profiles.length === 0" title="还没有模型档案" description="新建一个档案后，就可以绑定到场景生成能力。">
           <template #icon><Cpu :size="23" aria-hidden="true" /></template>
         </EmptyState>
-        <div v-else class="profile-list">
-          <button
-            v-for="profile in profileSummaries"
-            :key="profile.id"
+        <div v-else class="v2-profile-items">
+          <Button
+            v-for="profileItem in profiles"
+            :key="profileItem.id"
             type="button"
-            class="profile-row"
-            @click="goToProfile(profile.id)"
+            variant="secondary"
+            size="md"
+            class="v2-profile-item"
+            :class="{ selected: profileItem.id === form.id }"
+            @click="selectProfile(profileItem)"
           >
-            <span class="profile-name">{{ profile.name }}</span>
-            <span class="profile-provider">{{ profile.providerLabel }}</span>
-            <span class="profile-modalities">{{ profile.modalityLabel }}</span>
-            <Badge :tone="profile.hasApiKey ? 'success' : 'neutral'">{{ profile.hasApiKey ? "已加密" : "无密钥" }}</Badge>
-            <ChevronRight :size="16" aria-hidden="true" />
-          </button>
+            <span class="v2-profile-item-main">
+              <strong>{{ profileItem.name }}</strong>
+              <small>{{ profileItem.model }}</small>
+            </span>
+            <Badge :tone="profileItem.hasApiKey ? 'success' : 'neutral'">{{ profileItem.hasApiKey ? "已加密" : "无密钥" }}</Badge>
+          </Button>
         </div>
       </section>
-    </template>
 
-    <Modal
-      :open="bindingTarget !== null"
-      title="选择模型"
-      description="为能力选择使用哪个模型档案。模型本身的参数在模型档案详情中配置。"
-      @close="closeBinding"
-    >
-      <div class="models-binding-field">
-        <label class="models-binding-label" for="models-binding-select">选择模型档案</label>
-        <Select id="models-binding-select" v-model="bindingSelection" aria-label="选择模型">
-          <option value="none">不绑定（使用环境变量兜底）</option>
-          <option v-for="profile in profiles" :key="profile.id" :value="profile.id">
-            {{ profile.name }} · {{ profile.model }}
-          </option>
-        </Select>
-      </div>
-      <template #footer>
-        <Button variant="secondary" size="md" @click="closeBinding">取消</Button>
-        <Button variant="primary" size="md" :loading="bindingSaving" @click="saveBinding">保存绑定</Button>
-      </template>
-    </Modal>
+      <section class="v2-model-editor" aria-labelledby="v2-model-editor-title">
+        <div class="v2-section-heading">
+          <div>
+            <p class="v2-section-kicker">{{ editing ? "编辑档案" : "新建档案" }}</p>
+            <h2 id="v2-model-editor-title">连接参数</h2>
+          </div>
+          <Badge v-if="selectedProfile?.hasApiKey" tone="success">密钥已保存</Badge>
+        </div>
+        <form @submit.prevent="save">
+          <fieldset class="v2-form-section">
+            <legend>基础信息</legend>
+            <div class="v2-form-grid">
+              <Field for-id="v2-model-name" label="档案名称" required hint="例如：主创作模型">
+                <Input id="v2-model-name" v-model="form.name" placeholder="例如：主创作模型" required />
+              </Field>
+              <Field for-id="v2-model-name-value" label="模型名称" required>
+                <div class="model-input-row">
+                  <Input id="v2-model-name-value" v-model="form.model" placeholder="模型 ID" required />
+                </div>
+              </Field>
+              <Field for-id="v2-model-protocol" label="协议" hint="Anthropic 会使用对应消息协议。">
+                <Select id="v2-model-protocol" v-model="form.protocol">
+                  <option value="openai-compatible">OpenAI 兼容</option>
+                  <option value="anthropic">Anthropic</option>
+                </Select>
+              </Field>
+            </div>
+          </fieldset>
+
+          <fieldset class="v2-form-section">
+            <legend>连接</legend>
+            <div class="v2-form-grid">
+              <Field for-id="v2-model-base-url" label="API 地址" required hint="例如 https://api.example.com/v1">
+                <Input id="v2-model-base-url" v-model="form.baseUrl" placeholder="https://..." required />
+              </Field>
+              <Field for-id="v2-model-api-key" label="API 密钥" hint="留空表示保持已有密钥；新建档案时留空表示无密钥。">
+                <Input id="v2-model-api-key" v-model="form.apiKey" type="password" placeholder="sk-..." autocomplete="new-password" />
+              </Field>
+              <Field for-id="v2-model-timeout" label="超时（毫秒）">
+                <Input id="v2-model-timeout" v-model="form.timeoutMs" type="number" min="1" />
+              </Field>
+            </div>
+          </fieldset>
+
+          <fieldset class="v2-form-section">
+            <legend>模型能力</legend>
+            <div class="v2-form-grid">
+              <Field for-id="v2-model-context-window" label="上下文窗口（Token）" hint="模型的总上下文限制，默认 8192">
+                <Input id="v2-model-context-window" v-model="form.contextWindow" type="number" min="1" />
+              </Field>
+              <Field for-id="v2-model-max-tokens" label="最大输出 Token">
+                <Input id="v2-model-max-tokens" v-model="form.maxTokens" type="number" min="1" />
+              </Field>
+              <Field for-id="v2-model-temperature" label="温度（0 - 2）">
+                <Input id="v2-model-temperature" v-model="form.temperature" type="number" min="0" max="2" step="0.1" />
+              </Field>
+              <Field label="输入能力" hint="选择模型支持的输入类型">
+                <div class="v2-model-modalities">
+                  <Checkbox
+                    v-for="mod in AVAILABLE_MODALITIES"
+                    :key="mod.value"
+                    :model-value="form.inputModalities.includes(mod.value)"
+                    :label="mod.required ? `${mod.label}（必需）` : mod.label"
+                    :disabled="mod.required === true"
+                    @update:model-value="toggleModality(mod.value)"
+                  />
+                </div>
+              </Field>
+            </div>
+          </fieldset>
+
+          <div class="v2-model-discovery-actions">
+            <Button
+              variant="secondary"
+              size="sm"
+              type="button"
+              class="btn-fetch-models"
+              :loading="fetchingModels"
+              :disabled="!form.baseUrl.trim()"
+              @click="fetchModels"
+            >
+              <Download :size="13" aria-hidden="true" />
+              获取模型列表
+            </Button>
+          </div>
+
+          <div v-if="fetchModelError || discoveredModels.length > 0" class="v2-discovery-area">
+            <div v-if="fetchModelError" class="v2-model-fetch-error" role="alert">
+              {{ fetchModelError }}
+            </div>
+            <div v-if="discoveredModels.length > 0" class="discovered-models-box">
+              <div class="box-head">
+                <span class="box-title">可用模型 ({{ discoveredModels.length }}) - 点击快速选用</span>
+                <div v-if="discoveredModels.length > 6" class="box-search">
+                  <Input v-model="modelFilter" placeholder="过滤模型..." size="sm" />
+                </div>
+              </div>
+              <div class="models-pill-grid">
+                <button
+                  v-for="m in filteredDiscoveredModels"
+                  :key="m"
+                  type="button"
+                  class="model-chip"
+                  :class="{ active: form.model === m }"
+                  @click="selectDiscoveredModel(m)"
+                >
+                  {{ m }}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="v2-form-actions">
+            <Button variant="primary" size="md" type="submit" :loading="saving">
+              <Save :size="16" aria-hidden="true" />
+              保存档案
+            </Button>
+            <Button v-if="editing" variant="secondary" size="md" type="button" @click="duplicateProfile">
+              <Copy :size="16" aria-hidden="true" />
+              复制档案
+            </Button>
+            <Button v-if="editing" variant="secondary" size="md" type="button" :loading="testing" @click="test">
+              <Wifi :size="16" aria-hidden="true" />
+              测试连接
+            </Button>
+            <Button v-if="editing" variant="danger" size="md" type="button" :loading="deleting" @click="remove">
+              <Trash2 :size="16" aria-hidden="true" />
+              删除
+            </Button>
+          </div>
+          <p v-if="draftNotice" class="v2-inline-message-success" role="status">{{ draftNotice }}</p>
+          <p v-if="testMessage" :class="testStatus === 'success' ? 'v2-inline-message-success' : 'v2-inline-message-danger'" role="status">{{ testMessage }}</p>
+        </form>
+      </section>
+    </div>
+
   </div>
 </template>
 
 <style scoped>
-.models-page {
+.v2-model-settings {
   display: grid;
   gap: var(--space-5);
-  width: 100%;
-  max-width: 1280px;
-  margin: 0 auto;
 }
 
-.models-alert {
-  padding: var(--space-3);
-  border-radius: var(--radius-md);
-  background: var(--danger-soft);
-  color: var(--danger);
-  font-size: var(--text-sm);
-}
-
-.models-alert--warning {
-  background: var(--warning-soft);
-  color: var(--warning);
-}
-
-.models-empty {
-  padding: var(--space-8);
-  border: 1px dashed var(--border);
-  border-radius: var(--radius-lg);
-  color: var(--muted);
-  text-align: center;
-}
-
-.models-overview {
-  display: grid;
-  grid-template-columns: minmax(320px, 0.8fr) minmax(420px, 1.2fr);
-  gap: var(--space-5);
-  align-items: start;
-}
-
-.models-card {
+.v2-capability-card,
+.v2-profile-list,
+.v2-model-editor,
+.v2-binding-card {
   min-width: 0;
   padding: var(--space-5);
   border: 1px solid var(--border);
@@ -289,82 +607,73 @@ onMounted(() => {
   box-shadow: var(--shadow-sm);
 }
 
-.models-section-head {
+.v2-section-heading {
   display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
   margin-bottom: var(--space-4);
 }
 
-.models-section-head h2 {
+.v2-section-heading h2 {
   margin: 0;
   color: var(--text-strong);
   font-size: var(--text-lg);
 }
 
-.capability-list {
+.v2-section-kicker {
+  margin: 0 0 var(--space-1);
+  color: var(--primary);
+  font-size: var(--text-xs);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.v2-capability-grid {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-3);
 }
 
-.capability-row {
+.v2-capability-grid article {
   display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-2);
   padding: var(--space-3);
   border-radius: var(--radius-md);
   background: var(--surface-soft);
 }
 
-.capability-row-main {
-  display: grid;
-  gap: var(--space-1);
-  min-width: 0;
+.v2-capability-grid span {
+  color: var(--text-strong);
+  font-size: var(--text-sm);
+  font-weight: 800;
 }
 
-.capability-row-head {
+.v2-capability-grid small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.v2-model-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.72fr) minmax(0, 1.28fr);
+  gap: var(--space-5);
+  align-items: start;
+  container-type: inline-size;
+}
+
+.v2-profile-items {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.v2-profile-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-}
-
-.capability-name {
-  color: var(--text-strong);
-  font-size: var(--text-base);
-  font-weight: 700;
-}
-
-.capability-model,
-.capability-status {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--text-sm);
-}
-
-.capability-model {
-  color: var(--text);
-}
-
-.capability-status {
-  color: var(--muted);
-}
-
-.capability-status.tone-success { color: var(--success); }
-.capability-status.tone-warning { color: var(--warning); }
-.capability-status.tone-danger { color: var(--danger); }
-.capability-status.tone-neutral { color: var(--muted); }
-
-.binding-list {
-  display: grid;
-  gap: var(--space-2);
-}
-
-.binding-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, auto) auto;
-  align-items: center;
-  gap: var(--space-3);
   width: 100%;
   padding: var(--space-3);
   border: 1px solid var(--border);
@@ -375,103 +684,160 @@ onMounted(() => {
   text-align: left;
 }
 
-.binding-row:hover,
-.binding-row:focus-visible {
+.v2-profile-item:hover,
+.v2-profile-item.selected {
   border-color: var(--primary);
+  background: var(--primary-soft);
 }
 
-.binding-label {
-  color: var(--text-strong);
-  font-weight: 700;
-  font-size: var(--text-sm);
-}
-
-.binding-model {
+.v2-profile-item-main {
+  display: grid;
+  gap: 3px;
   min-width: 0;
+}
+
+.v2-profile-item-main strong,
+.v2-profile-item-main small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--text);
+}
+
+.v2-profile-item-main strong {
+  color: var(--text-strong);
   font-size: var(--text-sm);
 }
 
-.binding-model.muted {
+.v2-profile-item-main small {
   color: var(--muted);
+  font-size: var(--text-xs);
 }
 
-.profile-list {
+.v2-editor-form { display: grid; gap: var(--space-4); }
+.form-block { padding: var(--space-4); border-radius: var(--radius-md); background: var(--surface-soft); border: 1px solid var(--border); display: grid; gap: var(--space-3); }
+.form-block-title { margin: 0; font-size: var(--text-sm); font-weight: 700; color: var(--text-strong); }
+.model-select-header { display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); }
+.form-row-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.discovered-models-box { padding: var(--space-3); border-radius: var(--radius-sm); background: var(--surface); border: 1px dashed var(--border-strong); display: grid; gap: var(--space-2); }
+.box-head { display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); }
+.box-title { font-size: var(--text-xs); font-weight: 700; color: var(--primary); }
+.box-search { max-width: 200px; }
+.models-pill-grid { display: flex; flex-wrap: wrap; gap: 6px; max-height: 140px; overflow-y: auto; }
+.model-chip { padding: 3px 8px; font-size: var(--text-xs); border-radius: var(--radius-xs); border: 1px solid var(--border); background: var(--surface-soft); color: var(--text); cursor: pointer; transition: all 0.15s ease; }
+.model-chip:hover { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
+.model-chip.active { border-color: var(--primary); background: var(--primary); color: var(--on-primary); font-weight: 700; }
+.v2-model-fetch-error { padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); background: var(--danger-soft); color: var(--danger); font-size: var(--text-xs); }
+.model-input-row { display: flex; gap: var(--space-2); align-items: stretch; }
+.model-input-row .ui-input { flex: 1; min-width: 0; }
+.btn-fetch-models { flex: 0 0 auto; white-space: nowrap; }
+.v2-discovery-area { grid-column: 1 / -1; display: grid; gap: var(--space-2); }
+.v2-form-grid {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.v2-form-actions {
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
+  align-items: center;
+  margin-top: var(--space-4);
 }
 
-.profile-row {
+.v2-form-section {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 0.9fr) auto auto;
-  align-items: center;
-  gap: var(--space-3);
-  width: 100%;
+  gap: var(--space-4);
+  margin: 0 0 var(--space-5);
+  padding: 0;
+  border: 0;
+}
+
+.v2-form-section legend {
+  padding: 0;
+  font-size: var(--text-sm);
+  font-weight: 800;
+  color: var(--text-strong);
+}
+
+.v2-model-discovery-actions {
+  margin: var(--space-2) 0;
+}
+
+.v2-binding-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.v2-binding-summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   padding: var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: var(--surface-soft);
-  color: var(--text);
-  cursor: pointer;
-  text-align: left;
+  background: var(--background);
 }
 
-.profile-row:hover,
-.profile-row:focus-visible {
-  border-color: var(--primary);
-}
-
-.profile-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text-strong);
-  font-weight: 700;
-  font-size: var(--text-sm);
-}
-
-.profile-provider,
-.profile-modalities {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.v2-binding-summary-item span {
+  font-size: var(--text-xs);
   color: var(--muted);
+}
+
+.v2-binding-summary-item strong {
   font-size: var(--text-sm);
-}
-
-.models-binding-field {
-  display: grid;
-  gap: var(--space-2);
-}
-
-.models-binding-label {
   color: var(--text);
-  font-size: var(--text-sm);
-  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-@media (max-width: 1000px) {
-  .models-overview {
+.v2-settings-alert {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.v2-settings-alert--warning {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.v2-inline-message-success {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.v2-inline-message-danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.v2-binding-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-4);
+  align-items: end;
+}
+
+@media (max-width: 820px) {
+  .v2-model-layout,
+  .v2-capability-grid {
     grid-template-columns: 1fr;
   }
 }
 
-@media (max-width: 640px) {
-  .profile-row {
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas:
-      "name chevron"
-      "meta badge";
+@media (max-width: 560px) {
+  .v2-form-grid,
+  .v2-binding-row {
+    grid-template-columns: 1fr;
   }
-
-  .profile-name { grid-area: name; }
-  .profile-provider { grid-area: meta; }
-  .profile-modalities { grid-area: meta; justify-self: end; }
-  .profile-row > :last-child { grid-area: chevron; }
 }
+.v2-model-modalities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
 </style>

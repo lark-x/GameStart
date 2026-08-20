@@ -56,19 +56,16 @@ async function main() {
     return;
   }
 
+  ensureDotEnv(ENV_FILE, ENV_EXAMPLE_FILE);
+  const generatedSecret = ensureSecretKey(ENV_FILE);
+  const dotEnv = loadDotEnv(ENV_FILE);
+  if (generatedSecret) {
+    log("      ✓ Generated INTEGRATION_SECRET_KEY");
+    log("      ✓ Saved to .env (kept stable on future deploys)");
+  }
   const releaseLock = acquireDeployLock(DEPLOY_LOCK_FILE);
 
   try {
-    // Initialize shared configuration only after taking the lock. Otherwise
-    // two first-time deploys can generate different encryption keys and one
-    // process can launch containers with a key the other has just replaced.
-    ensureDotEnv(ENV_FILE, ENV_EXAMPLE_FILE);
-    const generatedSecret = ensureSecretKey(ENV_FILE);
-    const dotEnv = loadDotEnv(ENV_FILE);
-    if (generatedSecret) {
-      log("      ✓ Generated INTEGRATION_SECRET_KEY");
-      log("      ✓ Saved to .env (kept stable on future deploys)");
-    }
     await runDeployment(args, dotEnv);
   } finally {
     releaseLock();
