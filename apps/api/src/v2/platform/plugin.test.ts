@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createV2ModelCallLog, openV2TempSqliteConnection, V2SqlitePlatformRepository } from "@living-network/database/v2";
+import { createV2ModelCallLog, openV2TempSqliteConnection, V2SqliteChatMaintenanceJobRepository, V2SqliteChatUnitOfWork, V2SqlitePlatformRepository } from "@living-network/database/v2";
+import { createV2CanonWorld, createV2ChatConversation, createV2ChatMaintenanceJob } from "@living-network/domain/v2";
 import { createV2ApiRuntime } from "./runtime.ts";
 
 test("V2 platform API stores model profiles without returning secrets and exposes live capabilities", async () => {
@@ -483,6 +484,119 @@ test("V2 platform API binds memory and story analysis capabilities", async () =>
       payload: { profileId },
     });
     assert.equal(invalidCapability.statusCode, 422);
+  } finally {
+    await runtime.close();
+    temp.cleanup();
+  }
+});
+
+
+test("V2 memory overview endpoint returns fact stats, runs, and engines", async () => {
+  const temp = openV2TempSqliteConnection();
+  const path = temp.path;
+  temp.db.close();
+  const runtime = createV2ApiRuntime({ sqlitePath: path });
+  try {
+    const res = await runtime.app.inject({ method: "GET", url: "/api/v2/memory/overview" });
+    assert.equal(res.statusCode, 200);
+    const body = res.json();
+    assert.equal(body.facts.total, 0);
+    assert.equal(body.facts.relatedCharacterCount, 0);
+    assert.equal(body.facts.averageImportance, 0);
+    assert.equal(body.facts.averageConfidence, 0);
+    assert.deepEqual(body.facts.typeDistribution, []);
+    assert.deepEqual(body.extraction, {});
+    assert.deepEqual(body.consolidation, {});
+    assert.deepEqual(body.recentFailures, []);
+    assert.equal(body.engines[0].id, "builtin_structured");
+    assert.equal(body.engines[0].mode, "primary");
+  } finally {
+    await runtime.close();
+    temp.cleanup();
+  }
+});
+
+
+test("V2 jobs endpoint lists history, shows detail, and retries only failed jobs", async () => {
+  const temp = openV2TempSqliteConnection();
+  const path = temp.path;
+  temp.db.close();
+  const runtime = createV2ApiRuntime({ sqlitePath: path });
+  try {
+    const repo = new V2SqliteChatMaintenanceJobRepository(runtime.db);
+    const unit = new V2SqliteChatUnitOfWork(runtime.db);
+    await unit.withChatTransaction(async ({ canon }) => canon.createWorld(createV2CanonWorld({
+      storyWorldId: "world:jobs",
+      name: "Jobs World",
+    })));
+    await unit.withChatTransaction(async ({ conversations }) => {
+      await conversations.create(createV2ChatConversation({
+        conversationId: "conversation:x",
+        storyWorldId: "world:jobs",
+        primaryCharacterId: "character:x",
+        title: "X",
+      }));
+      await conversations.create(createV2ChatConversation({
+        conversationId: "conversation:y",
+        storyWorldId: "world:jobs",
+        primaryCharacterId: "character:y",
+        title: "Y",
+      }));
+    });
+
+    // Empty list
+    const empty = await runtime.app.inject({ method: "GET", url: "/api/v2/jobs" });
+    assert.equal(empty.statusCode, 200);
+    assert.deepEqual(empty.json().items, []);
+
+    await repo.enqueue(createV2ChatMaintenanceJob({
+      jobId: "job:api:1",
+      conversationId: "conversation:x",
+      jobType: "memory_extract",
+      status: "failed",
+      payload: { jobType: "memory_extract", conversationId: "conversation:x", characterId: "character:x", sourceMessageIds: ["m1", "m2"] },
+      lastError: "boom",
+    }));
+    await repo.enqueue(createV2ChatMaintenanceJob({
+      jobId: "job:api:2",
+      conversationId: "conversation:y",
+      jobType: "memory_consolidate",
+      status: "completed",
+      payload: { jobType: "memory_consolidate", conversationId: "conversation:y", existingMemoryId: "mem:1", candidate: { kind: "profile", content: "x", importance: 0.5, confidence: 0.5, sourceMessageIds: [] }, idempotencyKey: "k" },
+    }));
+
+    // List with status filter
+    const failed = await runtime.app.inject({ method: "GET", url: "/api/v2/jobs?status=failed" });
+    assert.equal(failed.statusCode, 200);
+    assert.equal(failed.json().items.length, 1);
+    assert.equal(failed.json().items[0].jobId, "job:api:1");
+
+    // Detail with safe payload summary (no raw payload)
+    const detail = await runtime.app.inject({ method: "GET", url: "/api/v2/jobs/job%3Aapi%3A1" });
+    assert.equal(detail.statusCode, 200);
+    const body = detail.json();
+    assert.equal(body.payloadSummary.conversationId, "conversation:x");
+    assert.equal(body.payloadSummary.characterId, "character:x");
+    assert.equal(body.payloadSummary.sourceMessageCount, 2);
+    assert.equal("payload" in body, false, "raw payload must not be exposed");
+    assert.equal(body.lastError, "boom");
+
+    // Retry a failed job succeeds
+    const retryOk = await runtime.app.inject({ method: "POST", url: "/api/v2/jobs/job%3Aapi%3A1/retry" });
+    assert.equal(retryOk.statusCode, 200);
+    assert.equal(retryOk.json().status, "pending");
+
+    // Retry again is rejected (now pending, not failed)
+    const retryAgain = await runtime.app.inject({ method: "POST", url: "/api/v2/jobs/job%3Aapi%3A1/retry" });
+    assert.equal(retryAgain.statusCode, 409);
+
+    // Retry a completed job is rejected
+    const retryCompleted = await runtime.app.inject({ method: "POST", url: "/api/v2/jobs/job%3Aapi%3A2/retry" });
+    assert.equal(retryCompleted.statusCode, 409);
+
+    // Missing job 404
+    const missing = await runtime.app.inject({ method: "GET", url: "/api/v2/jobs/job%3Anone" });
+    assert.equal(missing.statusCode, 404);
   } finally {
     await runtime.close();
     temp.cleanup();

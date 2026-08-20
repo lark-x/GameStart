@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createV2CanonWorld, createV2ChatConversation, createV2ChatMessage, createV2Memory } from "@living-network/domain/v2";
+import { createV2CanonWorld, createV2ChatConversation, createV2ChatMaintenanceJob, createV2ChatMessage, createV2Memory } from "@living-network/domain/v2";
 
 import { applyV2Migrations, openV2TempSqliteConnection } from "../platform/index.ts";
-import { V2SqliteChatUnitOfWork } from "./repository.ts";
+import { V2SqliteChatMaintenanceJobRepository, V2SqliteChatUnitOfWork, V2SqliteMemoryRepository } from "./repository.ts";
 
 test("V2 chat SQLite repository persists conversations, messages, and memories", async () => {
   const temp = openV2TempSqliteConnection();
@@ -324,6 +324,120 @@ test("V2 maintenance job dedupe key prevents duplicate job creation", async () =
     const differentKey = await unit.withChatTransaction(async ({ maintenanceJobs }) =>
       maintenanceJobs.findJobByDedupeKey("story_analyze", "story_analyze:conversation:dedupe:other-key"));
     assert.equal(differentKey, undefined);
+  } finally {
+    temp.db.close();
+    temp.cleanup();
+  }
+});
+
+
+test("V2 memory fact stats and maintenance run queries support the operational dashboard", async () => {
+  const temp = openV2TempSqliteConnection();
+  try {
+    applyV2Migrations(temp.db);
+    const memories = new V2SqliteMemoryRepository(temp.db);
+    const jobs = new V2SqliteChatMaintenanceJobRepository(temp.db);
+    const unit = new V2SqliteChatUnitOfWork(temp.db);
+
+    await unit.withChatTransaction(async ({ canon }) => canon.createWorld(createV2CanonWorld({
+      storyWorldId: "world:stats",
+      name: "Stats World",
+    })));
+    await unit.withChatTransaction(async ({ conversations }) => conversations.create(createV2ChatConversation({
+      conversationId: "conversation:stats",
+      storyWorldId: "world:stats",
+      primaryCharacterId: "character:stats",
+      title: "Stats",
+    })));
+
+    // Empty stats
+    const empty = memories.getMemoryFactStats();
+    assert.equal(empty.total, 0);
+    assert.equal(empty.relatedCharacterCount, 0);
+    assert.equal(empty.averageImportance, 0);
+    assert.equal(empty.averageConfidence, 0);
+    assert.deepEqual(empty.typeDistribution, []);
+
+    await memories.create(createV2Memory({
+      memoryId: "memory:stats:1",
+      storyWorldId: "world:stats",
+      conversationId: "conversation:stats",
+      characterId: "character:a",
+      kind: "profile",
+      content: "用户喜欢猫",
+      importance: 0.8,
+      confidence: 0.9,
+      sourceMessageIds: [],
+    }));
+    await memories.create(createV2Memory({
+      memoryId: "memory:stats:2",
+      storyWorldId: "world:stats",
+      conversationId: "conversation:stats",
+      characterId: "character:b",
+      kind: "world_fact",
+      content: "世界存在魔法",
+      importance: 0.6,
+      confidence: 0.7,
+      sourceMessageIds: [],
+    }));
+    await memories.create(createV2Memory({
+      memoryId: "memory:stats:3",
+      storyWorldId: "world:stats",
+      conversationId: "conversation:stats",
+      kind: "episodic",
+      content: "无角色事件",
+      importance: 0.3,
+      confidence: 0.5,
+      sourceMessageIds: [],
+    }));
+    await memories.create(createV2Memory({
+      memoryId: "memory:stats:4",
+      storyWorldId: "world:stats",
+      conversationId: "conversation:stats",
+      kind: "episodic",
+      content: "已取代事件",
+      importance: 0.2,
+      confidence: 0.4,
+      sourceMessageIds: [],
+      status: "superseded",
+    }));
+
+    const stats = memories.getMemoryFactStats();
+    assert.equal(stats.total, 3);
+    assert.equal(stats.relatedCharacterCount, 2);
+    assert.equal(stats.typeDistribution.length, 3);
+    assert.ok(stats.averageImportance > 0);
+    assert.ok(stats.averageConfidence > 0);
+
+    // Maintenance runs
+    await jobs.enqueue(createV2ChatMaintenanceJob({
+      jobId: "job:stats:1",
+      conversationId: "conversation:stats",
+      jobType: "memory_extract",
+      status: "completed",
+      payload: { jobType: "memory_extract", conversationId: "conversation:stats", sourceMessageIds: [] },
+    }));
+    await jobs.enqueue(createV2ChatMaintenanceJob({
+      jobId: "job:stats:2",
+      conversationId: "conversation:stats",
+      jobType: "memory_extract",
+      status: "failed",
+      payload: { jobType: "memory_extract", conversationId: "conversation:stats", sourceMessageIds: [] },
+      lastError: "extraction boom",
+    }));
+
+    const latestRun = jobs.getLatestRun("memory_extract");
+    assert.equal(latestRun?.status, "failed");
+    const latestFailure = jobs.getLatestFailure("memory_extract");
+    assert.equal(latestFailure?.jobId, "job:stats:2");
+    assert.equal(latestFailure?.lastError, "extraction boom");
+
+    const failures = jobs.getRecentMemoryFailures(5);
+    assert.equal(failures.length, 1);
+    assert.equal(failures[0]?.jobId, "job:stats:2");
+
+    assert.equal(jobs.getLatestRun("memory_consolidate"), undefined);
+    assert.equal(jobs.getLatestFailure("memory_consolidate"), undefined);
   } finally {
     temp.db.close();
     temp.cleanup();
