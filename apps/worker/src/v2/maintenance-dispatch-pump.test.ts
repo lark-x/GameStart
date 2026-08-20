@@ -474,6 +474,126 @@ test("V2MaintenanceDispatchPump retries with exponential backoff on failure", as
   cleanup();
 });
 
+test("manual retry requeues a terminal failed extraction and the worker completes final state without duplicate facts", async () => {
+  const { db, uow, cleanup } = await setupTestDb();
+
+  const convId = "conv_manual_retry_loop" as V2ConversationId;
+  const worldId = "world_manual_retry_loop" as V2StoryWorldId;
+  const msgId = "msg_manual_retry_loop_1" as V2MessageId;
+
+  await uow.withChatTransaction(async (repos) => {
+    await repos.canon.createWorld(createV2CanonWorld({
+      storyWorldId: worldId,
+      name: "Manual Retry Loop",
+      summary: "World summary",
+    }));
+    await repos.canon.createCharacter(createV2CanonCharacter({
+      characterId: "char_manual_retry_loop" as any,
+      storyWorldId: worldId,
+      name: "Mira",
+      summary: "A companion",
+      personaText: "Friendly, casual",
+    }));
+    await repos.conversations.create(createV2ChatConversation({
+      conversationId: convId,
+      storyWorldId: worldId,
+      primaryCharacterId: "char_manual_retry_loop" as any,
+      title: "Manual Retry Loop",
+    }));
+    await repos.messages.create(createV2ChatMessage({
+      messageId: msgId,
+      conversationId: convId,
+      role: "user",
+      text: "我喜欢把重要约定写在纸质笔记本里。",
+      createdAt: now,
+      idempotencyKey: "key_manual_retry_loop_1",
+    }));
+    await repos.maintenanceJobs.enqueue(createV2ChatMaintenanceJob({
+      jobId: "job_manual_retry_loop" as V2MaintenanceJobId,
+      conversationId: convId,
+      jobType: "memory_extract",
+      status: "pending",
+      payload: {
+        conversationId: convId,
+        storyWorldId: worldId,
+        characterId: "char_manual_retry_loop" as any,
+        sourceMessageIds: [msgId],
+        range: { fromMessageId: msgId, toMessageId: msgId },
+      },
+      attempts: 0,
+      maxAttempts: 1,
+      availableAt: now,
+    }));
+  });
+
+  const failingPump = new V2MaintenanceDispatchPump({
+    workerId: "worker_manual_retry_fail",
+    unitOfWork: uow,
+    provider: {
+      async complete() {
+        throw new Error("provider timeout before extraction");
+      },
+      async *stream() {
+        throw new Error("provider timeout before extraction");
+      },
+    },
+    engines: [engineFor(uow, db)],
+  });
+  assert.equal(await failingPump.tick(), true);
+
+  await uow.withChatTransaction(async (repos) => {
+    const failed = await repos.maintenanceJobs.get("job_manual_retry_loop" as V2MaintenanceJobId);
+    assert.equal(failed?.status, "failed");
+    assert.match(failed?.lastError ?? "", /provider timeout/);
+    assert.equal((await repos.facts.listBatchesByConversation(convId)).length, 0);
+    assert.equal((await repos.memories.listByConversation(convId)).length, 0);
+
+    const retried = repos.maintenanceJobs.retryFailed({
+      jobId: "job_manual_retry_loop",
+      now: "2026-08-12T03:00:05.000Z",
+    });
+    assert.equal(retried?.status, "pending");
+    assert.equal(retried?.attempts, 1);
+    assert.equal(retried?.maxAttempts, 2);
+  });
+
+  const successPump = new V2MaintenanceDispatchPump({
+    workerId: "worker_manual_retry_success",
+    unitOfWork: uow,
+    provider: createTestProvider(JSON.stringify([
+      {
+        subject: { entityType: "user", entityId: "user:local" },
+        predicate: "preferred_note_medium",
+        object: { type: "text", value: "paper notebook" },
+        kind: "preference",
+        text: "用户喜欢把重要约定写在纸质笔记本里",
+        changeHint: "new",
+        confidence: 0.91,
+        importanceHint: 0.76,
+        sourceMessageIds: [msgId],
+      },
+    ])),
+    engines: [engineFor(uow, db)],
+  });
+
+  assert.equal(await successPump.tick(), true);
+  assert.equal(await successPump.tick(), true);
+
+  await uow.withChatTransaction(async (repos) => {
+    const completed = await repos.maintenanceJobs.get("job_manual_retry_loop" as V2MaintenanceJobId);
+    assert.equal(completed?.status, "completed");
+    assert.equal(completed?.attempts, 2);
+    const batches = await repos.facts.listBatchesByConversation(convId);
+    assert.equal(batches.length, 1);
+    assert.equal((await repos.facts.listAssertionsByBatch(batches[0]!.batchId)).length, 1);
+    const memories = await repos.memories.listByConversation(convId);
+    assert.equal(memories.length, 1);
+    assert.equal(memories[0]?.content, "用户喜欢把重要约定写在纸质笔记本里");
+  });
+
+  cleanup();
+});
+
 test("V2MaintenanceDispatchPump processes story_analyze job and submits scene candidate", async () => {
   const { db, uow, cleanup } = await setupTestDb();
 

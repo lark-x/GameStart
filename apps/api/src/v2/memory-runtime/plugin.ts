@@ -3,6 +3,7 @@ import type {
 } from "@living-network/domain/v2";
 import type {
   V2MemoryKind,
+  V2MemoryDiagnosticsDto,
   V2MemoryOverviewDto,
   V2MemoryRunSummaryDto,
   V2IsoDateTime,
@@ -19,6 +20,7 @@ export interface V2MemoryPluginDependencies {
   readonly maintenanceJobRepository: V2SqliteChatMaintenanceJobRepository;
   readonly memoryRuntime: V2MemoryRuntime;
   readonly factRepository: V2FactRepository;
+  readonly now?: () => Date;
 }
 
 const iso = (value: string): V2IsoDateTime => value as V2IsoDateTime;
@@ -34,6 +36,7 @@ function toRunSummary(job: V2ChatMaintenanceJob): V2MemoryRunSummaryDto {
 }
 
 export function createV2MemoryPlugin(dependencies: V2MemoryPluginDependencies): FastifyPluginAsync {
+  const now = dependencies.now ?? (() => new Date());
   return async (app) => {
     app.get("/overview", async (): Promise<V2MemoryOverviewDto> => {
       const stats = dependencies.memoryRepository.getMemoryFactStats();
@@ -67,6 +70,27 @@ export function createV2MemoryPlugin(dependencies: V2MemoryPluginDependencies): 
         },
         engines: dependencies.memoryRuntime.listEngines().map((engine) => ({ id: engine.id, mode: engine.mode })),
         recentFailures: recentFailures.map(toRunSummary),
+      };
+    });
+
+    app.get("/diagnostics", async (): Promise<V2MemoryDiagnosticsDto> => {
+      const since = new Date(now().getTime() - 24 * 60 * 60 * 1000).toISOString();
+      const jobs = dependencies.maintenanceJobRepository.getMemoryDiagnosticsJobCounts(since);
+      const extractionTotal = jobs.extraction.completed + jobs.extraction.failed;
+      return {
+        window: "24h",
+        extraction: {
+          completed: jobs.extraction.completed,
+          failed: jobs.extraction.failed,
+          successRate: extractionTotal === 0 ? null : jobs.extraction.completed / extractionTotal,
+        },
+        consolidation: jobs.consolidation,
+        facts: {
+          batchCount: await dependencies.factRepository.countFactBatches(),
+          assertionCount: await dependencies.factRepository.countFactAssertions(),
+        },
+        engineConsume: jobs.engineConsume,
+        currentFailedJobs: jobs.currentFailedJobs,
       };
     });
   };

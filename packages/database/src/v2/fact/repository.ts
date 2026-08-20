@@ -313,4 +313,14 @@ export class V2SqliteFactRepository implements V2FactRepository {
     `).get() as { readonly count: number };
     return row.count;
   }
+
+  public async countFactBatches(): Promise<number> {
+    const row = this.db.prepare("SELECT COUNT(*) AS count FROM v2_fact_batches").get() as { readonly count: number };
+    return row.count;
+  }
+
+  public async countFactAssertions(): Promise<number> {
+    const row = this.db.prepare("SELECT COUNT(*) AS count FROM v2_fact_assertions").get() as { readonly count: number };
+    return row.count;
+  }
 }

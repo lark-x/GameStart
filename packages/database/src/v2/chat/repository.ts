@@ -1094,6 +1094,72 @@ export class V2SqliteChatMaintenanceJobRepository implements V2ChatMaintenanceJo
     };
   }
 
+  /** Global maintenance job counts by status for the Automation overview. */
+  public getJobOverview(): {
+    readonly pending: number;
+    readonly claimed: number;
+    readonly running: number;
+    readonly completed: number;
+    readonly failed: number;
+  } {
+    const rows = this.db.prepare(`
+      SELECT status, COUNT(*) AS count
+      FROM v2_chat_maintenance_jobs
+      GROUP BY status
+    `).all() as Array<{ readonly status: string; readonly count: number }>;
+    const counts = {
+      pending: 0,
+      claimed: 0,
+      running: 0,
+      completed: 0,
+      failed: 0,
+    };
+    for (const row of rows) {
+      if (row.status === "pending" || row.status === "claimed" || row.status === "running" || row.status === "completed" || row.status === "failed") {
+        counts[row.status] = row.count;
+      }
+    }
+    return counts;
+  }
+
+  /** Windowed memory runtime counts for Diagnostics. */
+  public getMemoryDiagnosticsJobCounts(since: string): {
+    readonly extraction: { readonly completed: number; readonly failed: number };
+    readonly consolidation: { readonly completed: number; readonly failed: number };
+    readonly engineConsume: { readonly completed: number; readonly failed: number };
+    readonly currentFailedJobs: number;
+  } {
+    const count = (jobType: string, status: string): number => {
+      const row = this.db.prepare(`
+        SELECT COUNT(*) AS count
+        FROM v2_chat_maintenance_jobs
+        WHERE job_type = ? AND status = ? AND updated_at >= ?
+      `).get(jobType, status, since) as { readonly count: number };
+      return row.count;
+    };
+    const currentFailed = this.db.prepare(`
+      SELECT COUNT(*) AS count
+      FROM v2_chat_maintenance_jobs
+      WHERE job_type IN ('memory_extract', 'memory_consolidate', 'memory_engine_consume')
+        AND status = 'failed'
+    `).get() as { readonly count: number };
+    return {
+      extraction: {
+        completed: count("memory_extract", "completed"),
+        failed: count("memory_extract", "failed"),
+      },
+      consolidation: {
+        completed: count("memory_consolidate", "completed"),
+        failed: count("memory_consolidate", "failed"),
+      },
+      engineConsume: {
+        completed: count("memory_engine_consume", "completed"),
+        failed: count("memory_engine_consume", "failed"),
+      },
+      currentFailedJobs: currentFailed.count,
+    };
+  }
+
   /** Requeue a terminal failed job so the worker picks it up again. */
   public retryFailed(input: { readonly jobId: string; readonly now: string }): V2ChatMaintenanceJob | undefined {
     // A manual retry grants one additional execution opportunity while

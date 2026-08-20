@@ -5,6 +5,7 @@ import type {
   V2IsoDateTime,
   V2JobDetailDto,
   V2JobListDto,
+  V2JobOverviewDto,
   V2JobPayloadSummaryDto,
   V2JobQuery,
   V2MaintenanceJobStatus,
@@ -141,6 +142,10 @@ export function createV2JobsPlugin(dependencies: V2JobsPluginDependencies): Fast
         items: result.items.map(toSummary),
         ...(result.nextCursor === undefined ? {} : { nextCursor: encodeCursor(result.nextCursor) }),
       };
+    });
+
+    app.get("/overview", async (): Promise<V2JobOverviewDto> => {
+      return dependencies.maintenanceJobRepository.getJobOverview();
     });
 
     app.get("/:jobId", async (request, reply): Promise<V2JobDetailDto | ReturnType<FastifyReply["send"]>> => {

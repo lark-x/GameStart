@@ -362,6 +362,28 @@ export interface V2MemoryOverviewDto {
   readonly recentFailures: readonly V2MemoryRunSummaryDto[];
 }
 
+export interface V2MemoryDiagnosticsDto {
+  readonly window: "24h";
+  readonly extraction: {
+    readonly completed: number;
+    readonly failed: number;
+    readonly successRate: number | null;
+  };
+  readonly consolidation: {
+    readonly completed: number;
+    readonly failed: number;
+  };
+  readonly facts: {
+    readonly batchCount: number;
+    readonly assertionCount: number;
+  };
+  readonly engineConsume: {
+    readonly completed: number;
+    readonly failed: number;
+  };
+  readonly currentFailedJobs: number;
+}
+
 export interface V2JobPayloadSummaryDto {
   readonly conversationId?: string;
   readonly characterId?: string;
@@ -394,6 +416,14 @@ export interface V2JobQuery {
 export interface V2JobListDto {
   readonly items: readonly V2JobSummaryDto[];
   readonly nextCursor?: string;
+}
+
+export interface V2JobOverviewDto {
+  readonly pending: number;
+  readonly claimed: number;
+  readonly running: number;
+  readonly completed: number;
+  readonly failed: number;
 }
 
 export interface V2RetryJobResponse {

@@ -241,6 +241,7 @@
         "apps/web/src/v2/views/V2ModelLogsView.vue",
         "apps/web/src/v2/views/V2AutomationView.vue",
         "apps/web/src/v2/views/V2MemorySettingsView.vue",
+        "apps/web/src/v2/views/runtime-view-model*.ts",
         "apps/web/src/v2/views/V2PromptSettingsView.vue"
       ]
     }

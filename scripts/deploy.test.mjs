@@ -376,6 +376,13 @@ test("ensureDotEnv copies .env.example when .env is missing", () => {
   assert.equal(skipped, false);
 });
 
+test("compose Dockerfile keeps application data writable without world-writable permissions", () => {
+  const dockerfile = readFileSync(resolve(import.meta.dirname, "..", "infra", "compose", "Dockerfile"), "utf8");
+  assert.match(dockerfile, /chown -R node:node \/app/);
+  assert.match(dockerfile, /chmod -R 770 \/app\/data/);
+  assert.doesNotMatch(dockerfile, /chmod -R 777 \/app\/data/);
+});
+
 // ---------------------------------------------------------------------------
 // 7. Health & ComfyUI Diagnostics
 // ---------------------------------------------------------------------------
@@ -502,4 +509,3 @@ test("parseServiceHealth accurately handles JSON array, object, and plain string
   const rawRunning = parseServiceHealth("living-network-worker-1 Up 2 minutes", "worker");
   assert.equal(rawRunning.ok, true);
 });
-
