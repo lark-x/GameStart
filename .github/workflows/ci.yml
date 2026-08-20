@@ -38,6 +38,64 @@ jobs:
       - name: Build
         run: pnpm build
 
+  deploy-unit:
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.2
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Run deploy unit tests
+        run: node --test scripts/deploy.test.mjs
+
+  docker-smoke:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    needs: deploy-unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.2
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build images and deploy
+        run: pnpm deploy -- --mode local
+      - name: Verify endpoints via Docker-published port
+        run: |
+          WEB_PORT=$(node -e "console.log(JSON.parse(require('fs').readFileSync('.data/deployment.json','utf8')).webPort)")
+          echo "Web port: $WEB_PORT"
+          curl -sf "http://127.0.0.1:${WEB_PORT}/" > /dev/null
+          curl -sf "http://127.0.0.1:${WEB_PORT}/api/v2/health" > /dev/null
+          curl -sf "http://127.0.0.1:${WEB_PORT}/api/v2/ready" > /dev/null
+      - name: Check deployment status
+        run: pnpm deploy:status
+      - name: Stop stack (preserve volumes)
+        run: pnpm deploy:stop
+
   integration:
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     needs: verify

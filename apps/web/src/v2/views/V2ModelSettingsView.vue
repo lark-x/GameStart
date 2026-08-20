@@ -59,6 +59,7 @@ const fetchModelError = ref<string | null>(null);
 const error = ref<string | null>(null);
 const testMessage = ref<string | null>(null);
 const testStatus = ref<ConnectionTestStatus>("idle");
+const draftNotice = ref<string | null>(null);
 const testResults = new Map<string, string>();
 
 function emptyForm(): ModelForm {
@@ -76,15 +77,14 @@ function emptyForm(): ModelForm {
   };
 }
 
-const AVAILABLE_MODALITIES: readonly { readonly value: string; readonly label: string }[] = [
-  { value: "text", label: "文本" },
+const AVAILABLE_MODALITIES: readonly { readonly value: string; readonly label: string; readonly required?: boolean }[] = [
+  { value: "text", label: "文本", required: true },
   { value: "image", label: "图片" },
-  { value: "audio", label: "音频" },
-  { value: "video", label: "视频" },
-  { value: "file", label: "文件" },
 ];
 
+/** text is always required by the API contract; image is optional. */
 function toggleModality(value: string): void {
+  if (value === "text") return;
   const idx = form.value.inputModalities.indexOf(value);
   if (idx >= 0) {
     form.value.inputModalities = form.value.inputModalities.filter((m) => m !== value);
@@ -136,6 +136,7 @@ function selectProfile(profile: V2ModelProfileDto, resetTestMessage = true): voi
   };
   if (resetTestMessage) {
     testMessage.value = null;
+    draftNotice.value = null;
   }
   fetchModelError.value = null;
   discoveredModels.value = [];
@@ -145,6 +146,7 @@ function selectProfile(profile: V2ModelProfileDto, resetTestMessage = true): voi
 function newProfile(): void {
   form.value = emptyForm();
   testMessage.value = null;
+  draftNotice.value = null;
   fetchModelError.value = null;
   discoveredModels.value = [];
   modelFilter.value = "";
@@ -162,7 +164,7 @@ function duplicateProfile(): void {
     name: copyName,
     apiKey: "",
   };
-  testMessage.value = "已基于当前配置复制为新档案草稿，可直接修改模型名称后保存。";
+  draftNotice.value = "已基于当前配置复制为新档案草稿，可直接修改模型名称后保存。";
 }
 
 async function fetchModels(): Promise<void> {
@@ -239,7 +241,7 @@ function requestFromForm(): V2SaveModelProfileRequest {
     maxTokens: Number(form.value.maxTokens),
     temperature: Number(form.value.temperature),
     ...(form.value.contextWindow ? { contextWindow: Number(form.value.contextWindow) } : {}),
-    ...(modalities.length > 0 ? { inputModalities: modalities } : {}),
+    ...(modalities.length > 0 ? { inputModalities: Array.from(new Set(["text", ...modalities])) } : { inputModalities: ["text"] }),
     ...(form.value.id === undefined ? {} : { id: form.value.id }),
     ...(form.value.apiKey.trim().length === 0 ? {} : { apiKey: form.value.apiKey.trim() }),
     ...(form.value.sourceProfileId && form.value.apiKey.trim().length === 0 ? { sourceProfileId: form.value.sourceProfileId } : {}),
@@ -510,7 +512,8 @@ onMounted(() => {
                     v-for="mod in AVAILABLE_MODALITIES"
                     :key="mod.value"
                     :model-value="form.inputModalities.includes(mod.value)"
-                    :label="mod.label"
+                    :label="mod.required ? `${mod.label}（必需）` : mod.label"
+                    :disabled="mod.required === true"
                     @update:model-value="toggleModality(mod.value)"
                   />
                 </div>
@@ -577,6 +580,7 @@ onMounted(() => {
               删除
             </Button>
           </div>
+          <p v-if="draftNotice" class="v2-inline-message-success" role="status">{{ draftNotice }}</p>
           <p v-if="testMessage" :class="testStatus === 'success' ? 'v2-inline-message-success' : 'v2-inline-message-danger'" role="status">{{ testMessage }}</p>
         </form>
       </section>

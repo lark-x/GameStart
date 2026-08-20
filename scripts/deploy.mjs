@@ -11,17 +11,18 @@
  * Only Web is published to the host.
  */
 
+import { execFileSync } from "node:child_process";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { parseArgs, DeploymentError } from "./deploy/cli.mjs";
-import { detectEnvironment, checkDockerPrerequisites } from "./deploy/environment.mjs";
+import { detectEnvironment, checkDockerPrerequisites, resolveDeployMode } from "./deploy/environment.mjs";
 import { resolveHostBind, getLanAddresses } from "./deploy/network.mjs";
 import { selectWebPort, findFreePort, parseDockerPublishedPort, classifyDockerError, MAX_PORT_RETRIES, PORT_RANGE_END } from "./deploy/port.mjs";
 import { createDockerClient } from "./deploy/docker.mjs";
 import { acquireDeployLock } from "./deploy/lock.mjs";
-import { loadDotEnv, loadDeployState, saveDeployState, ensureDotEnv } from "./deploy/state.mjs";
-import { waitForService, verifyCriticalEndpoints, checkComfyUiHealth } from "./deploy/health.mjs";
+import { loadDotEnv, loadDeployState, saveDeployState, ensureDotEnv, ensureSecretKey } from "./deploy/state.mjs";
+import { waitForService, verifyCriticalEndpoints, checkComfyUiHealth, fetchRuntimeComfyConfig } from "./deploy/health.mjs";
 import { formatDeploymentBanner } from "./deploy/output.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -56,7 +57,12 @@ async function main() {
   }
 
   ensureDotEnv(ENV_FILE, ENV_EXAMPLE_FILE);
+  const generatedSecret = ensureSecretKey(ENV_FILE);
   const dotEnv = loadDotEnv(ENV_FILE);
+  if (generatedSecret) {
+    log("      ✓ Generated INTEGRATION_SECRET_KEY");
+    log("      ✓ Saved to .env (kept stable on future deploys)");
+  }
   const releaseLock = acquireDeployLock(DEPLOY_LOCK_FILE);
 
   try {
@@ -74,13 +80,13 @@ async function runDeployment(args, dotEnv) {
   log("\n[1/7] Checking Docker environment...");
   checkDockerPrerequisites((cmd) => {
     const [executable, ...rest] = cmd;
-    import("node:child_process").then((cp) => cp.execFileSync(executable, rest, { stdio: "ignore" }));
+    execFileSync(executable, rest, { stdio: "ignore" });
   });
   log(`      ✓ Docker ready (${envType})`);
 
   // ── Step 2: Determine Mode & Port ──────────────────────────────────────
   log("\n[2/7] Selecting Web port & host binding...");
-  const mode = args.mode || (dotEnv.WEB_HOST_BIND === "127.0.0.1" ? "local" : "lan");
+  const mode = resolveDeployMode({ cliMode: args.mode, webHostBind: dotEnv.WEB_HOST_BIND });
   const hostBind = resolveHostBind(mode);
 
   const explicitPort = args.port || (dotEnv.WEB_PORT ? parseInt(dotEnv.WEB_PORT, 10) : undefined);
@@ -201,8 +207,21 @@ async function runDeployment(args, dotEnv) {
   // ── Step 7: ComfyUI Check, Save State & Banner ─────────────────────────
   log("\n[7/7] Finalizing deployment state...");
 
-  const comfyUrl = dotEnv.COMFYUI_BASE_URL || dotEnv.V2_IMAGE_BASE_URL;
-  const comfyResult = await checkComfyUiHealth(comfyUrl);
+  // ComfyUI configuration source of truth: SQLite runtime settings
+  // (persisted by the V2 Settings page), with env vars as bootstrap fallback.
+  const runtimeComfy = await fetchRuntimeComfyConfig(baseUrl);
+  let comfyResult = null;
+  if (runtimeComfy.runtimeAvailable) {
+    const comfyUrl = runtimeComfy.baseUrl || dotEnv.COMFYUI_BASE_URL || dotEnv.V2_IMAGE_BASE_URL;
+    comfyResult = await checkComfyUiHealth(comfyUrl);
+  } else {
+    const comfyUrl = dotEnv.COMFYUI_BASE_URL || dotEnv.V2_IMAGE_BASE_URL;
+    comfyResult = await checkComfyUiHealth(comfyUrl);
+    comfyResult = {
+      ...comfyResult,
+      message: `${comfyResult.message} (Runtime config unavailable)`,
+    };
+  }
   const lanAddrs = getLanAddresses({ envType });
 
   saveDeployState(DEPLOY_STATE_FILE, {
