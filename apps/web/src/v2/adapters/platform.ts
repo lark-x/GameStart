@@ -1,5 +1,6 @@
 import type {
   V2AppearanceSettingsDto,
+  V2CapabilityToggleRequest,
   V2DiscoverModelsRequest,
   V2ExternalConnectionCheckDto,
   V2ImageServiceSettingsDto,
@@ -16,6 +17,7 @@ import type {
   V2ModelCallLogQuery,
   V2ModelProfileDto,
   V2PlatformCapabilities,
+  V2RuntimeCapability,
   V2SaveAppearanceSettingsRequest,
   V2SaveImageServiceSettingsRequest,
   V2SaveModelProfileRequest,
@@ -134,6 +136,9 @@ export function createV2PlatformClient(options: V2PlatformClientOptions): V2Plat
     async getCapabilities(): Promise<V2PlatformCapabilities> {
       return get<V2PlatformCapabilities>("/capabilities");
     },
+    async updateCapability(capability: V2RuntimeCapability, input: V2CapabilityToggleRequest): Promise<V2PlatformCapabilities> {
+      return send<V2PlatformCapabilities>("PATCH", `/capabilities/${encodeURIComponent(capability)}`, input);
+    },
     async queryModelCallLogs(query: V2ModelCallLogQuery = {}): Promise<V2ModelCallLogPage> {
       const params = new URLSearchParams();
       for (const [key, value] of Object.entries(query)) {
@@ -193,6 +198,7 @@ export interface V2PlatformClient {
   getAppearanceSettings(): Promise<V2AppearanceSettingsDto>;
   saveAppearanceSettings(input: V2SaveAppearanceSettingsRequest): Promise<V2AppearanceSettingsDto>;
   getCapabilities(): Promise<V2PlatformCapabilities>;
+  updateCapability(capability: V2RuntimeCapability, input: V2CapabilityToggleRequest): Promise<V2PlatformCapabilities>;
   queryModelCallLogs(query?: V2ModelCallLogQuery): Promise<V2ModelCallLogPage>;
   getModelCallLog(id: string): Promise<V2ModelCallLogDto>;
   deleteModelCallLogs(before: string): Promise<number>;

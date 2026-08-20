@@ -28,6 +28,8 @@ test("V2 routes structure correctly configures entry points and redirects", () =
   // Canonical settings child routes
   assert.ok(settingsPaths.has(""), "Settings overview exists");
   assert.ok(settingsPaths.has("models"), "Settings models exists");
+  assert.ok(settingsPaths.has("models/new"), "Settings new model exists");
+  assert.ok(settingsPaths.has("models/:profileId"), "Settings model detail exists");
   assert.ok(settingsPaths.has("memory"), "Settings memory exists");
   assert.ok(settingsPaths.has("prompt"), "Settings prompt exists");
   assert.ok(settingsPaths.has("comfyui"), "Settings comfyui exists");

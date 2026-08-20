@@ -43,6 +43,18 @@ export const v2Routes: readonly RouteRecordRaw[] = [
             meta: { title: "模型" },
           },
           {
+            path: "models/new",
+            name: "v2-settings-models-new",
+            component: () => import("./views/V2ModelProfileDetailView.vue"),
+            meta: { title: "新建模型" },
+          },
+          {
+            path: "models/:profileId",
+            name: "v2-settings-models-detail",
+            component: () => import("./views/V2ModelProfileDetailView.vue"),
+            meta: { title: "模型档案" },
+          },
+          {
             path: "memory",
             name: "v2-settings-memory",
             component: () => import("./views/V2MemorySettingsView.vue"),

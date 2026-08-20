@@ -9,6 +9,7 @@ import {
 } from "@living-network/contracts/v2";
 import type {
   V2AppearanceSettingsDto,
+  V2CapabilityToggleRequest,
   V2DiscoverModelsRequest,
   V2DiscoverModelsResponse,
   V2ExternalConnectionCheckDto,
@@ -20,6 +21,7 @@ import type {
   V2ModelProfileDto,
   V2ModelProtocol,
   V2PlatformCapabilities,
+  V2RuntimeCapability,
   V2SaveAppearanceSettingsRequest,
   V2SaveImageServiceSettingsRequest,
   V2SaveModelProfileRequest,
@@ -59,6 +61,10 @@ export async function getV2PlatformCapabilities(dependencies: Pick<V2PlatformPlu
   const sceneProfile = sceneBinding?.profileId === undefined ? undefined : await dependencies.repository.getModelProfile(sceneBinding.profileId);
   const imageSettings = await dependencies.repository.getImageServiceSettings();
   const imageConnection = await dependencies.repository.getExternalConnectionCheck("comfyui");
+  const sceneSetting = await dependencies.repository.getCapabilitySetting("scene_generation");
+  const assetSetting = await dependencies.repository.getCapabilitySetting("asset_generation");
+  const sceneEnabled = sceneSetting?.enabled ?? dependencies.sceneGenerationEnabled;
+  const assetEnabled = assetSetting?.enabled ?? dependencies.assetGenerationEnabled;
   const latestModelConnection = await dependencies.repository.queryModelCallLogs({
     capability: "model_connection_test",
     ...(sceneProfile === undefined ? {} : { profileId: sceneProfile.id }),
@@ -77,9 +83,9 @@ export async function getV2PlatformCapabilities(dependencies: Pick<V2PlatformPlu
   }
   const profileConfigured = sceneProfile !== undefined && profileSecretAvailable;
   const sceneCandidateConfigured = sceneBinding !== undefined ? profileConfigured : dependencies.environmentSceneConfigured;
-  const sceneConfigured = dependencies.sceneGenerationEnabled && sceneCandidateConfigured;
+  const sceneConfigured = sceneEnabled && sceneCandidateConfigured;
   const assetCandidateConfigured = imageSettings.baseUrl.length > 0 || dependencies.environmentAssetConfigured;
-  const assetConfigured = dependencies.assetGenerationEnabled && assetCandidateConfigured;
+  const assetConfigured = assetEnabled && assetCandidateConfigured;
   const sceneSource = sceneBinding !== undefined && profileConfigured
     ? "profile"
     : sceneBinding === undefined && dependencies.environmentSceneConfigured ? "environment" : "none";
@@ -89,26 +95,26 @@ export async function getV2PlatformCapabilities(dependencies: Pick<V2PlatformPlu
   const sceneConnection = connectionStatusFromLog(latestModelConnection.items[0]);
   return {
     sceneGeneration: {
-      enabled: dependencies.sceneGenerationEnabled,
+      enabled: sceneEnabled,
       configuration: sceneCandidateConfigured ? "complete" : "incomplete",
       binding: sceneBinding === undefined ? "unbound" : "bound",
       ...sceneConnection,
       configured: sceneConfigured,
-      source: dependencies.sceneGenerationEnabled ? sceneSource : "none",
-      ...(dependencies.sceneGenerationEnabled
+      source: sceneEnabled ? sceneSource : "none",
+      ...(sceneEnabled
         ? sceneConfigured ? {} : profileNeedsSecret && !profileSecretAvailable ? { reason: "secret_unavailable" as const } : { reason: "profile_missing" as const }
         : { reason: "disabled_by_environment" as const }),
     },
     assetGeneration: {
-      enabled: dependencies.assetGenerationEnabled,
+      enabled: assetEnabled,
       configuration: assetCandidateConfigured ? "complete" : "incomplete",
       binding: "not-applicable",
       connection: imageConnection?.connection ?? "untested",
       ...(imageConnection?.checkedAt === undefined ? {} : { lastCheckedAt: imageConnection.checkedAt }),
       ...(imageConnection?.errorMessage === undefined ? {} : { errorMessage: imageConnection.errorMessage }),
       configured: assetConfigured,
-      source: dependencies.assetGenerationEnabled ? assetSource : "none",
-      ...(dependencies.assetGenerationEnabled ? assetConfigured ? {} : { reason: "settings_missing" as const } : { reason: "disabled_by_environment" as const }),
+      source: assetEnabled ? assetSource : "none",
+      ...(assetEnabled ? assetConfigured ? {} : { reason: "settings_missing" as const } : { reason: "disabled_by_environment" as const }),
     },
   };
 }
@@ -223,6 +229,16 @@ function parseBindingRequest(value: unknown): V2SetModelBindingRequest {
 function capability(value: unknown): V2ModelCapability {
   if (value === "chat" || value === "scene_generation" || value === "memory" || value === "story_analysis") return value;
   throw new TypeError("unsupported model capability");
+}
+
+function runtimeCapability(value: unknown): V2RuntimeCapability {
+  if (value === "scene_generation" || value === "asset_generation") return value;
+  throw new TypeError("unknown capability");
+}
+
+function parseCapabilityToggle(value: unknown): V2CapabilityToggleRequest {
+  if (!isRecord(value) || typeof value.enabled !== "boolean") throw new TypeError("enabled must be a boolean");
+  return { enabled: value.enabled };
 }
 
 function parseImageSettings(value: unknown): V2SaveImageServiceSettingsRequest {
@@ -603,5 +619,12 @@ export function createV2PlatformPlugin(dependencies: V2PlatformPluginDependencie
     app.get("/capabilities", async () => {
       return getV2PlatformCapabilities(dependencies);
     });
+    app.patch("/capabilities/:capability", async (request, reply) => withError(reply, async () => {
+      const params = request.params as { capability?: unknown };
+      const selected = runtimeCapability(params.capability);
+      const input = parseCapabilityToggle(request.body);
+      await dependencies.repository.setCapabilitySetting({ capability: selected, enabled: input.enabled });
+      return getV2PlatformCapabilities(dependencies);
+    }));
   };
 }

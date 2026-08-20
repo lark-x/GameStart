@@ -8,6 +8,11 @@ export const V2ModelCapability = {
 } as const;
 
 export type V2ModelCapability = (typeof V2ModelCapability)[keyof typeof V2ModelCapability];
+export const V2RuntimeCapability = {
+  SCENE_GENERATION: "scene_generation",
+  ASSET_GENERATION: "asset_generation",
+} as const;
+export type V2RuntimeCapability = (typeof V2RuntimeCapability)[keyof typeof V2RuntimeCapability];
 export type V2ModelInputModality = "text" | "image";
 export type V2ModelProtocol = "openai-compatible" | "anthropic";
 export type V2ModelCallStatus = "running" | "success" | "error" | "interrupted";
@@ -84,6 +89,16 @@ export interface V2ModelBindingDto {
 
 export interface V2SetModelBindingRequest {
   readonly profileId?: string | null;
+}
+
+export interface V2CapabilityToggleRequest {
+  readonly enabled: boolean;
+}
+
+export interface V2CapabilitySettingDto {
+  readonly capability: V2RuntimeCapability;
+  readonly enabled: boolean;
+  readonly updatedAt: string;
 }
 
 export interface V2ImageServiceSettingsDto {

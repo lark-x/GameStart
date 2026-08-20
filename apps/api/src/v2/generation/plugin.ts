@@ -233,7 +233,15 @@ async function replyWithError(reply: FastifyReply, error: unknown): Promise<neve
 }
 
 function replyMissingCapability(reply: FastifyReply, capability: string): FastifyReply {
-  return reply.code(503).send({ error: { code: "CAPABILITY_UNAVAILABLE", message: `${capability} is not configured` } });
+  return reply.code(503).send({ error: { code: "CAPABILITY_UNAVAILABLE", message: capability + " is not configured" } });
+}
+
+function replyCapabilityDisabled(reply: FastifyReply, capability: string): FastifyReply {
+  return reply.code(409).send({ error: { code: "CAPABILITY_DISABLED", message: capability + " is disabled" } });
+}
+
+function replyCapabilityUnconfigured(reply: FastifyReply, capability: string): FastifyReply {
+  return reply.code(503).send({ error: { code: "MODEL_NOT_BOUND", message: capability + " is not configured" } });
 }
 
 export function createV2GenerationPlugin(
@@ -243,19 +251,24 @@ export function createV2GenerationPlugin(
   const defaultTokenBudget = dependencies.defaultTokenBudget ?? 4096;
   const capabilities = dependencies.capabilities ?? { sceneGenerationEnabled: false, assetGenerationEnabled: false };
 
-  const sceneCapabilityAvailable = async (): Promise<boolean> => {
+  interface RuntimeCapabilityState {
+    readonly enabled: boolean;
+    readonly configured: boolean;
+  }
+
+  const sceneCapabilityState = async (): Promise<RuntimeCapabilityState> => {
     if (dependencies.capabilitiesProvider !== undefined) {
       const current = await dependencies.capabilitiesProvider();
-      return current.sceneGeneration.enabled && current.sceneGeneration.configured;
+      return { enabled: current.sceneGeneration.enabled, configured: current.sceneGeneration.configured };
     }
-    return capabilities.sceneGenerationEnabled;
+    return { enabled: capabilities.sceneGenerationEnabled, configured: capabilities.sceneGenerationEnabled };
   };
-  const assetCapabilityAvailable = async (): Promise<boolean> => {
+  const assetCapabilityState = async (): Promise<RuntimeCapabilityState> => {
     if (dependencies.capabilitiesProvider !== undefined) {
       const current = await dependencies.capabilitiesProvider();
-      return current.assetGeneration.enabled && current.assetGeneration.configured;
+      return { enabled: current.assetGeneration.enabled, configured: current.assetGeneration.configured };
     }
-    return capabilities.assetGenerationEnabled;
+    return { enabled: capabilities.assetGenerationEnabled, configured: capabilities.assetGenerationEnabled };
   };
 
   return async (app) => {
@@ -314,7 +327,9 @@ export function createV2GenerationPlugin(
 
     app.post("/jobs/scene", async (request, reply) => {
       try {
-        if (!await sceneCapabilityAvailable()) return replyMissingCapability(reply, "scene generation");
+        const state = await sceneCapabilityState();
+        if (!state.enabled) return replyCapabilityDisabled(reply, "scene generation");
+        if (!state.configured) return replyCapabilityUnconfigured(reply, "scene generation");
         const input = parseCreateJobRequest(request.body);
         const requestedAt = now().toISOString() as V2IsoDateTime;
         const context = input.preparedContext ?? buildV2GenerationContextSnapshot({
@@ -385,7 +400,9 @@ export function createV2GenerationPlugin(
 
     app.post("/assets/jobs", async (request, reply) => {
       try {
-        if (!await assetCapabilityAvailable()) return replyMissingCapability(reply, "asset generation");
+        const state = await assetCapabilityState();
+        if (!state.enabled) return replyCapabilityDisabled(reply, "asset generation");
+        if (!state.configured) return replyCapabilityUnconfigured(reply, "asset generation");
         if (dependencies.assetJobs === undefined) return replyMissingCapability(reply, "asset generation repository");
         const input = parseCreateAssetJobRequest(request.body);
         const createdAt = now().toISOString() as V2IsoDateTime;
