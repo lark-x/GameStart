@@ -72,6 +72,7 @@
         "apps/api/src/v2/chat/**",
         "apps/web/src/v2/chat/**",
         "apps/web/src/v2/views/V2StartView.vue",
+        "apps/web/src/v2/views/V2ChatHomeView.vue",
         "apps/web/src/v2/views/V2ChatView.vue",
         "packages/ai/src/prompt-engine/**",
         "packages/contracts/src/v2/chat/**",

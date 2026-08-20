@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
-import { useRoute, useRouter } from "vue-router";
-import { Activity, ArrowLeft, BookOpen, Copy, ImagePlus, MoreHorizontal, RefreshCw, Send, Sparkles, Square, X } from "@lucide/vue";
+import { RouterLink, useRoute, useRouter } from "vue-router";
+import { Activity, ArrowLeft, BookOpen, Copy, ImagePlus, MoreHorizontal, RefreshCw, Send, Smile, Sparkles, Square, Sticker, UserRound, X } from "@lucide/vue";
 
 import Button from "../../components/ui/Button.vue";
 import Textarea from "../../components/ui/Textarea.vue";
 import V2ToastNotification from "../components/V2ToastNotification.vue";
 import { useNotificationStore } from "../stores/notification.ts";
 import type {
+  V2ChatContextResponse,
   V2ChatDiagnosticsResponse,
+  V2ChatFeaturesDto,
   V2ChatMessageDto,
   V2ConversationId,
   V2IdempotencyKey,
@@ -16,6 +18,10 @@ import type {
   V2MessageId,
 } from "@living-network/contracts/v2";
 import { createV2ChatClient, type V2ChatStreamEvent } from "../chat/client.ts";
+import ChatCharacterPanel from "../chat/components/ChatCharacterPanel.vue";
+import ChatConversationSidebar from "../chat/components/ChatConversationSidebar.vue";
+import ChatEmojiPicker from "../chat/components/ChatEmojiPicker.vue";
+import ChatStickerPicker from "../chat/components/ChatStickerPicker.vue";
 
 const route = useRoute();
 const router = useRouter();
@@ -35,6 +41,37 @@ const imageUploading = ref(false);
 const errorMessage = ref("");
 const fileInput = ref<HTMLInputElement | null>(null);
 const messagesContainer = ref<HTMLElement | null>(null);
+
+// Character context + effective chat features
+const features = ref<V2ChatFeaturesDto | null>(null);
+const context = ref<V2ChatContextResponse | null>(null);
+const showCharacterPanel = ref(false);
+const loadingContext = ref(false);
+const contextError = ref<string | null>(null);
+const modelConfigured = computed(() => features.value?.modelConfigured !== false);
+const imageEnabled = computed(() => features.value?.imageUpload === true);
+const modelSummary = computed(() => {
+  const model = features.value?.model;
+  if (model === undefined) return "";
+  return `${model.profileName ?? model.model} · ${model.inputModalities.includes("image") ? "文本 · 图片" : "文本"}`;
+});
+
+// Multimodal composer state
+interface PendingAttachment {
+  readonly mediaId: string;
+  readonly mediaRef: string;
+  readonly mimeType: string;
+}
+const pendingAttachments = ref<readonly PendingAttachment[]>([]);
+const emojiOpen = ref(false);
+const stickerOpen = ref(false);
+const MAX_ATTACHMENTS = 4;
+
+const canSend = computed(() =>
+  modelConfigured.value &&
+  (input.value.trim().length > 0 || pendingAttachments.value.length > 0) &&
+  !sending.value && !streaming.value && !loading.value && !imageUploading.value,
+);
 
 // Pagination state
 const hasMore = ref(false);
@@ -148,7 +185,8 @@ let abortController: AbortController | undefined;
 
 onMounted(async () => {
   await loadChat();
-  if (messages.value.length === 0) {
+  await loadExtras();
+  if (messages.value.length === 0 && modelConfigured.value) {
     await generateOpening();
   }
 });
@@ -175,6 +213,37 @@ async function loadChat(): Promise<void> {
     errorMessage.value = error instanceof Error ? error.message : "加载对话失败";
   } finally {
     loading.value = false;
+  }
+}
+
+async function loadExtras(): Promise<void> {
+  const id = conversationId.value as V2ConversationId;
+  const [nextFeatures, nextContext] = await Promise.allSettled([
+    client.getConversationFeatures(id),
+    client.getConversationContext(id),
+  ]);
+  if (nextFeatures.status === "fulfilled") features.value = nextFeatures.value;
+  if (nextContext.status === "fulfilled") {
+    context.value = nextContext.value;
+    conversationTitle.value = nextContext.value.character.name || conversationTitle.value;
+    contextError.value = null;
+  } else {
+    contextError.value = nextContext.reason instanceof Error ? nextContext.reason.message : "读取角色信息失败";
+  }
+}
+
+async function toggleCharacterPanel(): Promise<void> {
+  showCharacterPanel.value = !showCharacterPanel.value;
+  if (showCharacterPanel.value && context.value === null) {
+    loadingContext.value = true;
+    contextError.value = null;
+    try {
+      context.value = await client.getConversationContext(conversationId.value as V2ConversationId);
+    } catch (error) {
+      contextError.value = error instanceof Error ? error.message : "读取角色信息失败";
+    } finally {
+      loadingContext.value = false;
+    }
   }
 }
 
@@ -230,8 +299,9 @@ async function generateOpening(): Promise<void> {
   await startAssistantReply(`story-bootstrap:${conversationId.value}`);
 }
 
-async function sendMessage(attachmentIds: readonly string[] = []): Promise<void> {
+async function sendMessage(): Promise<void> {
   const text = input.value.trim();
+  const attachmentIds = pendingAttachments.value.map((item) => item.mediaId);
   if ((!text && attachmentIds.length === 0) || sending.value || streaming.value) return;
   sending.value = true;
   errorMessage.value = "";
@@ -243,6 +313,7 @@ async function sendMessage(attachmentIds: readonly string[] = []): Promise<void>
     });
     messages.value = [...messages.value, response.message];
     input.value = "";
+    pendingAttachments.value = [];
     await nextTick();
     scrollToBottom("smooth");
     await startAssistantReply();
@@ -259,19 +330,38 @@ async function pickImage(): Promise<void> {
 
 async function onImageSelected(event: Event): Promise<void> {
   const inputElement = event.target as HTMLInputElement;
-  const file = inputElement.files?.[0];
+  const files = Array.from(inputElement.files ?? []).slice(0, Math.max(0, MAX_ATTACHMENTS - pendingAttachments.value.length));
   inputElement.value = "";
-  if (!file || imageUploading.value) return;
+  if (files.length === 0 || imageUploading.value) return;
   imageUploading.value = true;
   errorMessage.value = "";
   try {
-    const media = await client.uploadMedia(file);
-    await sendMessage([media.mediaId]);
+    const uploaded: PendingAttachment[] = [];
+    for (const file of files) {
+      const media = await client.uploadMedia(file);
+      uploaded.push({ mediaId: media.mediaId, mediaRef: media.mediaRef, mimeType: media.mimeType });
+    }
+    pendingAttachments.value = [...pendingAttachments.value, ...uploaded].slice(0, MAX_ATTACHMENTS);
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : "图片发送失败";
+    errorMessage.value = error instanceof Error ? error.message : "图片上传失败";
   } finally {
     imageUploading.value = false;
   }
+}
+
+function removePendingAttachment(index: number): void {
+  pendingAttachments.value = pendingAttachments.value.filter((_, i) => i !== index);
+}
+
+function insertEmoji(emoji: string): void {
+  input.value += emoji;
+  emojiOpen.value = false;
+}
+
+async function sendSticker(sticker: { readonly mediaId: string; readonly mediaRef: string }): Promise<void> {
+  stickerOpen.value = false;
+  pendingAttachments.value = [{ mediaId: sticker.mediaId, mediaRef: sticker.mediaRef, mimeType: "image/png" }];
+  await sendMessage();
 }
 
 async function startAssistantReply(openingIdempotencyKey?: string): Promise<void> {
@@ -355,18 +445,37 @@ function stopGeneration(): void {
 function isUser(message: V2ChatMessageDto): boolean {
   return message.role === "user";
 }
+
+function openConversation(nextId: string): void {
+  if (nextId === conversationId.value) return;
+  void router.push(`/v2/chat/${encodeURIComponent(nextId)}`);
+}
 </script>
 
 <template>
   <div class="v2-chat-page">
+    <aside class="v2-chat-conversations" aria-label="会话列表">
+      <ChatConversationSidebar :active-conversation-id="conversationId" @select="openConversation" />
+    </aside>
+    <section class="v2-chat-main">
     <header class="v2-chat-header">
-      <Button variant="ghost" size="icon" aria-label="返回创建故事" @click="router.push('/v2/start')">
+      <Button variant="ghost" size="icon" aria-label="返回聊天" @click="router.push('/v2/chat')">
         <ArrowLeft :size="18" aria-hidden="true" />
       </Button>
       <div class="v2-chat-title">
         <h2>{{ conversationTitle }}</h2>
+        <small v-if="modelSummary" class="v2-chat-model">{{ modelSummary }}</small>
       </div>
       <div class="v2-chat-header-actions">
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="角色信息"
+          :aria-expanded="showCharacterPanel"
+          @click="toggleCharacterPanel"
+        >
+          <UserRound :size="18" aria-hidden="true" />
+        </Button>
         <Button
           v-if="streaming"
           variant="secondary"
@@ -469,16 +578,38 @@ function isUser(message: V2ChatMessageDto): boolean {
     </div>
 
     <form class="v2-chat-composer" @submit.prevent="sendMessage()">
+      <p v-if="!modelConfigured" class="v2-chat-composer-notice">
+        尚未配置聊天模型。
+        <RouterLink to="/v2/settings/models">前往模型与能力</RouterLink>
+      </p>
+      <div v-if="pendingAttachments.length" class="v2-chat-attachment-preview" aria-label="待发送图片">
+        <div v-for="(attachment, index) in pendingAttachments" :key="attachment.mediaId" class="v2-chat-attachment-chip">
+          <img :src="client.mediaUrl(attachment.mediaRef)" :alt="'待发送图片 ' + (index + 1)" />
+          <button type="button" :aria-label="'移除图片 ' + (index + 1)" @click="removePendingAttachment(index)">×</button>
+        </div>
+      </div>
       <input
         ref="fileInput"
         type="file"
         accept="image/png,image/jpeg,image/webp,image/gif"
+        multiple
         class="v2-chat-file-input"
         aria-hidden="true"
         tabindex="-1"
         @change="onImageSelected"
       />
       <Button
+        variant="ghost"
+        size="icon"
+        type="button"
+        aria-label="表情"
+        :aria-expanded="emojiOpen"
+        @click="emojiOpen = !emojiOpen"
+      >
+        <Smile :size="18" aria-hidden="true" />
+      </Button>
+      <Button
+        v-if="imageEnabled"
         variant="ghost"
         size="icon"
         type="button"
@@ -489,13 +620,24 @@ function isUser(message: V2ChatMessageDto): boolean {
       >
         <ImagePlus :size="18" aria-hidden="true" />
       </Button>
+      <Button
+        v-if="imageEnabled"
+        variant="ghost"
+        size="icon"
+        type="button"
+        aria-label="表情包"
+        :aria-expanded="stickerOpen"
+        @click="stickerOpen = !stickerOpen"
+      >
+        <Sticker :size="18" aria-hidden="true" />
+      </Button>
       <Textarea
         v-model="input"
         variant="composer"
         auto-grow
         :rows="1"
         placeholder="输入消息……"
-        :disabled="sending || streaming || loading"
+        :disabled="sending || streaming || loading || !modelConfigured"
         aria-label="输入消息"
       />
       <Button
@@ -503,12 +645,19 @@ function isUser(message: V2ChatMessageDto): boolean {
         size="md"
         type="submit"
         :loading="sending"
-        :disabled="(!input.trim() && !imageUploading) || streaming || loading"
+        :disabled="!canSend"
       >
         <Send :size="16" aria-hidden="true" />
         发送
       </Button>
     </form>
+    </section>
+    <aside class="v2-chat-context" aria-label="角色信息">
+      <ChatCharacterPanel :context="context" :loading="loadingContext" :error="contextError" />
+    </aside>
+
+    <ChatEmojiPicker :open="emojiOpen" @select="insertEmoji" @close="emojiOpen = false" />
+    <ChatStickerPicker :open="stickerOpen" @select="sendSticker" @close="stickerOpen = false" />
 
     <div v-if="showDiagnostics" class="v2-chat-drawer-backdrop" @click="showDiagnostics = false" />
     <aside v-if="showDiagnostics" class="v2-chat-drawer" role="dialog" aria-modal="true" aria-label="上下文诊断面板">
@@ -567,17 +716,79 @@ function isUser(message: V2ChatMessageDto): boolean {
       </div>
     </aside>
 
+    <div v-if="showCharacterPanel" class="v2-chat-drawer-backdrop" @click="showCharacterPanel = false" />
+    <aside v-if="showCharacterPanel" class="v2-chat-drawer" role="dialog" aria-modal="true" aria-label="角色信息面板">
+      <div class="v2-chat-diagnostics-header">
+        <h3>角色信息</h3>
+        <Button variant="ghost" size="icon" aria-label="关闭角色面板" @click="showCharacterPanel = false">
+          <X :size="14" aria-hidden="true" />
+        </Button>
+      </div>
+      <ChatCharacterPanel :context="context" :loading="loadingContext" :error="contextError" />
+    </aside>
+
     <V2ToastNotification />
   </div>
 </template>
 
 <style scoped>
 .v2-chat-page {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 260px minmax(520px, 1fr) 300px;
+  grid-template-areas: "sidebar main context";
+  gap: 0;
   height: 100%;
   min-height: 0;
   position: relative;
+}
+
+.v2-chat-conversations {
+  grid-area: sidebar;
+  min-width: 0;
+  min-height: 0;
+  padding: var(--space-2);
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.v2-chat-main {
+  grid-area: main;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.v2-chat-context {
+  grid-area: context;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-4);
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+}
+
+@media (max-width: 1199px) {
+  .v2-chat-page {
+    grid-template-columns: 240px minmax(0, 1fr);
+    grid-template-areas: "sidebar main";
+  }
+
+  .v2-chat-context {
+    display: none;
+  }
+}
+
+@media (max-width: 820px) {
+  .v2-chat-page {
+    grid-template-columns: 1fr;
+    grid-template-areas: "main";
+  }
+
+  .v2-chat-conversations {
+    display: none;
+  }
 }
 
 .v2-chat-header {
@@ -864,6 +1075,55 @@ function isUser(message: V2ChatMessageDto): boolean {
   border-top: 1px solid var(--border);
 }
 
+.v2-chat-composer-notice {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: var(--text-sm);
+}
+
+.v2-chat-composer-notice a {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.v2-chat-attachment-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.v2-chat-attachment-chip {
+  position: relative;
+  width: 64px;
+  height: 64px;
+}
+
+.v2-chat-attachment-chip img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+}
+
+.v2-chat-attachment-chip button {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
 .v2-chat-composer .ui-textarea-composer {
   flex: 1 1 auto;
   min-width: 0;
@@ -903,6 +1163,13 @@ function isUser(message: V2ChatMessageDto): boolean {
   display: grid;
   gap: var(--space-4);
   align-content: start;
+}
+
+.v2-chat-model {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--text-xs);
+  color: var(--muted);
 }
 
 @media (max-width: 640px) {

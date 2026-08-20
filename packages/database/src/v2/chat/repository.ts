@@ -12,6 +12,7 @@ import type {
   V2ChatMaintenanceJob,
   V2ChatMedia,
   V2ChatMessage,
+  V2ChatSticker,
   V2ChatTrace,
   V2ChatTraceStatus,
   V2ConversationSummary,
@@ -20,9 +21,11 @@ import type {
 import type {
   V2CanonRepository,
   V2ChatConversationRepository,
+  V2ChatConversationSummary,
   V2ChatMaintenanceJobRepository,
   V2ChatMediaRepository,
   V2ChatMessageRepository,
+  V2ChatStickerRepository,
   V2ChatTraceRepository,
   V2ChatUnitOfWork,
   V2ConversationSummaryRepository,
@@ -42,6 +45,19 @@ type ConversationRow = {
   created_at: string;
   updated_at: string;
   last_message_at: string | null;
+};
+
+type ConversationSummaryRow = {
+  conversation_id: string;
+  story_world_id: string;
+  primary_character_id: string;
+  title: string | null;
+  last_message_at: string | null;
+  character_name: string;
+  world_name: string;
+  last_message_text: string | null;
+  last_message_attachments: string | null;
+  last_message_status: "pending" | "completed" | "failed" | "interrupted" | null;
 };
 
 type MessageRow = {
@@ -66,6 +82,15 @@ type MediaRow = {
   width: number | null;
   height: number | null;
   created_at: string;
+};
+
+type StickerRow = {
+  sticker_id: string;
+  media_id: string;
+  media_ref: string;
+  label: string;
+  created_at: string;
+  last_used_at: string | null;
 };
 
 type MemoryRow = {
@@ -154,6 +179,30 @@ function mapConversation(row: ConversationRow): V2ChatConversation {
   };
 }
 
+function mapConversationSummary(row: ConversationSummaryRow): V2ChatConversationSummary {
+  let hasAttachments = false;
+  try {
+    hasAttachments = Array.isArray(JSON.parse(row.last_message_attachments ?? "[]"));
+  } catch {
+    hasAttachments = false;
+  }
+  const text = row.last_message_text?.trim();
+  let lastMessagePreview: string | undefined;
+  if (text !== undefined && text.length > 0) lastMessagePreview = text;
+  else if (hasAttachments) lastMessagePreview = "[图片]";
+  return {
+    conversationId: row.conversation_id,
+    storyWorldId: row.story_world_id,
+    primaryCharacterId: row.primary_character_id,
+    ...(row.title === null ? {} : { title: row.title }),
+    characterName: row.character_name,
+    storyWorldName: row.world_name,
+    ...(lastMessagePreview === undefined ? {} : { lastMessagePreview }),
+    ...(row.last_message_at === null ? {} : { lastMessageAt: row.last_message_at }),
+    ...(row.last_message_status === null ? {} : { lastMessageStatus: row.last_message_status }),
+  };
+}
+
 function parseAttachments(value: string): V2ChatMessage["attachments"] {
   const parsed = JSON.parse(value) as unknown;
   if (!Array.isArray(parsed)) return [];
@@ -194,6 +243,17 @@ function mapMedia(row: MediaRow): V2ChatMedia {
     ...(row.width === null ? {} : { width: row.width }),
     ...(row.height === null ? {} : { height: row.height }),
     createdAt: row.created_at,
+  };
+}
+
+function mapSticker(row: StickerRow): V2ChatSticker {
+  return {
+    stickerId: row.sticker_id,
+    mediaId: row.media_id,
+    mediaRef: row.media_ref,
+    label: row.label,
+    createdAt: row.created_at,
+    ...(row.last_used_at === null ? {} : { lastUsedAt: row.last_used_at }),
   };
 }
 
@@ -248,6 +308,7 @@ export class V2SqliteChatUnitOfWork implements V2ChatUnitOfWork {
     readonly conversations: V2ChatConversationRepository;
     readonly messages: V2ChatMessageRepository;
     readonly media: V2ChatMediaRepository;
+    readonly stickers: V2ChatStickerRepository;
     readonly memories: V2MemoryRepository;
     readonly summaries: V2ConversationSummaryRepository;
     readonly traces: V2ChatTraceRepository;
@@ -260,12 +321,43 @@ export class V2SqliteChatUnitOfWork implements V2ChatUnitOfWork {
       conversations: new V2SqliteChatConversationRepository(this.db),
       messages: new V2SqliteChatMessageRepository(this.db),
       media: new V2SqliteChatMediaRepository(this.db),
+      stickers: new V2SqliteChatStickerRepository(this.db),
       memories: new V2SqliteMemoryRepository(this.db),
       summaries: new V2SqliteConversationSummaryRepository(this.db),
       traces: new V2SqliteChatTraceRepository(this.db),
       maintenanceJobs: new V2SqliteChatMaintenanceJobRepository(this.db),
       facts: new V2SqliteFactRepository(this.db),
     }));
+  }
+}
+
+export class V2SqliteChatStickerRepository implements V2ChatStickerRepository {
+  private readonly db: DatabaseSync;
+
+  public constructor(db: DatabaseSync) {
+    this.db = db;
+  }
+
+  public async create(input: V2ChatSticker): Promise<V2ChatSticker> {
+    this.db.prepare(`
+      INSERT INTO v2_chat_stickers (sticker_id, media_id, media_ref, label, created_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(input.stickerId, input.mediaId, input.mediaRef, input.label, input.createdAt ?? new Date().toISOString());
+    const row = this.db.prepare("SELECT * FROM v2_chat_stickers WHERE sticker_id = ?").get(input.stickerId) as StickerRow | undefined;
+    if (row === undefined) throw new Error("V2 chat sticker insert did not return a row");
+    return mapSticker(row);
+  }
+
+  public async list(): Promise<readonly V2ChatSticker[]> {
+    const rows = this.db.prepare(`
+      SELECT * FROM v2_chat_stickers
+      ORDER BY COALESCE(last_used_at, created_at) DESC, sticker_id DESC
+    `).all() as StickerRow[];
+    return rows.map(mapSticker);
+  }
+
+  public async touchLastUsed(input: { readonly stickerId: string; readonly lastUsedAt: string }): Promise<void> {
+    this.db.prepare("UPDATE v2_chat_stickers SET last_used_at = ? WHERE sticker_id = ?").run(input.lastUsedAt, input.stickerId);
   }
 }
 
@@ -302,6 +394,30 @@ export class V2SqliteChatConversationRepository implements V2ChatConversationRep
 
   public async list(): Promise<readonly V2ChatConversation[]> {
     return (this.db.prepare("SELECT * FROM v2_conversations ORDER BY COALESCE(last_message_at, updated_at) DESC, conversation_id DESC").all() as ConversationRow[]).map(mapConversation);
+  }
+
+  public async listSummaries(): Promise<readonly V2ChatConversationSummary[]> {
+    const rows = this.db.prepare(`
+      SELECT
+        c.conversation_id, c.story_world_id, c.primary_character_id, c.title, c.last_message_at,
+        ch.name AS character_name,
+        w.name AS world_name,
+        m.text AS last_message_text,
+        m.attachments_json AS last_message_attachments,
+        m.status AS last_message_status
+      FROM v2_conversations c
+      JOIN v2_characters ch ON ch.story_world_id = c.story_world_id AND ch.character_id = c.primary_character_id
+      JOIN v2_worlds w ON w.story_world_id = c.story_world_id
+      LEFT JOIN v2_chat_messages m ON m.conversation_id = c.conversation_id
+        AND m.message_id = (
+          SELECT message_id FROM v2_chat_messages
+          WHERE conversation_id = c.conversation_id
+          ORDER BY created_at DESC, message_id DESC
+          LIMIT 1
+        )
+      ORDER BY COALESCE(c.last_message_at, c.updated_at) DESC, c.conversation_id DESC
+    `).all() as ConversationSummaryRow[];
+    return rows.map(mapConversationSummary);
   }
 
   public async touchLastMessage(input: {
@@ -550,6 +666,32 @@ export class V2SqliteMemoryRepository implements V2MemoryRepository {
       ORDER BY importance DESC, updated_at DESC
     `).all(storyWorldId) as MemoryRow[];
     return rows.map(mapMemory);
+  }
+
+  public async listActiveByCharacter(input: {
+    readonly storyWorldId: V2StoryWorldId;
+    readonly characterId: string;
+    readonly limit?: number;
+  }): Promise<readonly V2Memory[]> {
+    const limit = Math.min(Math.max(1, input.limit ?? 10), 20);
+    const rows = this.db.prepare(`
+      SELECT * FROM v2_memories
+      WHERE story_world_id = ? AND status = 'active' AND character_id = ?
+      ORDER BY importance DESC, updated_at DESC
+      LIMIT ?
+    `).all(input.storyWorldId, input.characterId, limit) as MemoryRow[];
+    return rows.map(mapMemory);
+  }
+
+  public async countActiveByCharacter(input: {
+    readonly storyWorldId: V2StoryWorldId;
+    readonly characterId: string;
+  }): Promise<number> {
+    const row = this.db.prepare(`
+      SELECT COUNT(*) AS count FROM v2_memories
+      WHERE story_world_id = ? AND status = 'active' AND character_id = ?
+    `).get(input.storyWorldId, input.characterId) as { readonly count: number };
+    return row.count;
   }
 
   public async searchActive(input: {

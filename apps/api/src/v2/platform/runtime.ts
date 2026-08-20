@@ -87,6 +87,7 @@ class V2ResolvingChatModelResolver {
           }),
           model: profile.model,
           profileId: profile.id,
+          profileName: profile.name,
           temperature: profile.temperature,
           maxTokens: profile.maxTokens,
           ...(profile.contextWindow === undefined ? {} : { contextWindow: profile.contextWindow }),

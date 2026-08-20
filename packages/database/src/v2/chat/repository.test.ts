@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createV2CanonWorld, createV2ChatConversation, createV2ChatMaintenanceJob, createV2ChatMessage, createV2Memory } from "@living-network/domain/v2";
+import { createV2CanonCharacter, createV2CanonWorld, createV2ChatConversation, createV2ChatMaintenanceJob, createV2ChatMessage, createV2ChatMedia, createV2ChatSticker, createV2Memory } from "@living-network/domain/v2";
 
 import { applyV2Migrations, openV2TempSqliteConnection } from "../platform/index.ts";
 import { V2SqliteChatMaintenanceJobRepository, V2SqliteChatUnitOfWork, V2SqliteMemoryRepository } from "./repository.ts";
@@ -62,6 +62,108 @@ test("V2 chat SQLite repository persists conversations, messages, and memories",
     assert.equal(history.length, 1);
     const byKey = await unit.withChatTransaction(async ({ messages }) => messages.findByIdempotencyKey("conversation:one" as never, "key:one"));
     assert.equal(byKey?.messageId, "message:one");
+  } finally {
+    temp.db.close();
+    temp.cleanup();
+  }
+});
+
+test("V2 chat repository exposes conversation summaries and character-scoped memory", async () => {
+  const temp = openV2TempSqliteConnection();
+  try {
+    applyV2Migrations(temp.db);
+    const unit = new V2SqliteChatUnitOfWork(temp.db);
+
+    await unit.withChatTransaction(async ({ canon }) => {
+      await canon.createWorld(createV2CanonWorld({ storyWorldId: "world:summary", name: "Summary World" }));
+      await canon.createCharacter(createV2CanonCharacter({
+        storyWorldId: "world:summary",
+        characterId: "character:summary",
+        name: "花火",
+        summary: "嘴硬心软",
+      }));
+    });
+
+    await unit.withChatTransaction(async ({ conversations, messages }) => {
+      await conversations.create(createV2ChatConversation({
+        conversationId: "conversation:summary",
+        storyWorldId: "world:summary",
+        primaryCharacterId: "character:summary",
+        title: "花火",
+      }));
+      await messages.create(createV2ChatMessage({
+        messageId: "message:summary",
+        conversationId: "conversation:summary",
+        role: "assistant",
+        text: "这么晚才来？",
+        idempotencyKey: "summary:key",
+      }));
+    });
+
+    const summaries = await unit.withChatTransaction(async ({ conversations }) => conversations.listSummaries());
+    assert.equal(summaries.length, 1);
+    assert.equal(summaries[0]?.characterName, "花火");
+    assert.equal(summaries[0]?.storyWorldName, "Summary World");
+    assert.equal(summaries[0]?.lastMessagePreview, "这么晚才来？");
+
+    await unit.withChatTransaction(async ({ memories }) => {
+      await memories.create(createV2Memory({
+        memoryId: "memory:summary",
+        storyWorldId: "world:summary",
+        characterId: "character:summary",
+        kind: "profile",
+        content: "花火记得用户的名字",
+        importance: 0.7,
+        confidence: 0.9,
+        sourceMessageIds: ["message:summary"],
+      }));
+    });
+
+    const count = await unit.withChatTransaction(async ({ memories }) => memories.countActiveByCharacter({
+      storyWorldId: "world:summary" as never,
+      characterId: "character:summary",
+    }));
+    assert.equal(count, 1);
+    const recent = await unit.withChatTransaction(async ({ memories }) => memories.listActiveByCharacter({
+      storyWorldId: "world:summary" as never,
+      characterId: "character:summary",
+      limit: 5,
+    }));
+    assert.equal(recent.length, 1);
+    assert.equal(recent[0]?.content, "花火记得用户的名字");
+  } finally {
+    temp.db.close();
+    temp.cleanup();
+  }
+});
+
+test("V2 chat repository persists stickers ordered by recent use", async () => {
+  const temp = openV2TempSqliteConnection();
+  try {
+    applyV2Migrations(temp.db);
+    const unit = new V2SqliteChatUnitOfWork(temp.db);
+
+    await unit.withChatTransaction(async ({ media }) => {
+      await media.create(createV2ChatMedia({
+        mediaId: "media:sticker",
+        contentHash: "a".repeat(64),
+        mediaRef: "media://local/v2/chat/a.png",
+        mimeType: "image/png",
+        byteSize: 10,
+      }));
+    });
+
+    const first = await unit.withChatTransaction(async ({ stickers }) =>
+      stickers.create(createV2ChatSticker({ stickerId: "sticker:one", mediaId: "media:sticker", mediaRef: "media://local/v2/chat/a.png", label: "开心" })));
+    assert.equal(first.label, "开心");
+    await unit.withChatTransaction(async ({ stickers }) =>
+      stickers.create(createV2ChatSticker({ stickerId: "sticker:two", mediaId: "media:sticker", mediaRef: "media://local/v2/chat/a.png", label: "加油" })));
+
+    await unit.withChatTransaction(async ({ stickers }) => stickers.touchLastUsed({ stickerId: "sticker:one", lastUsedAt: "2026-08-21T00:00:00.000Z" }));
+    const list = await unit.withChatTransaction(async ({ stickers }) => stickers.list());
+    assert.equal(list.length, 2);
+    assert.equal(list[0]?.stickerId, "sticker:one");
+    assert.equal(list[0]?.lastUsedAt, "2026-08-21T00:00:00.000Z");
   } finally {
     temp.db.close();
     temp.cleanup();

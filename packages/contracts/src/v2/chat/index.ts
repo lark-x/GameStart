@@ -3,6 +3,7 @@ import type {
   V2ConversationId,
   V2IdempotencyKey,
   V2IsoDateTime,
+  V2LocationId,
   V2MaintenanceJobId,
   V2MediaId,
   V2MemoryId,
@@ -24,6 +25,30 @@ export interface V2ChatConversationDto {
   readonly createdAt: V2IsoDateTime;
   readonly updatedAt: V2IsoDateTime;
   readonly lastMessageAt?: V2IsoDateTime;
+}
+
+export interface V2ChatConversationSummaryDto {
+  readonly conversationId: V2ConversationId;
+  readonly storyWorldId: V2StoryWorldId;
+  readonly primaryCharacterId: V2CharacterId;
+  readonly title?: string;
+  readonly characterName: string;
+  readonly storyWorldName: string;
+  readonly lastMessagePreview?: string;
+  readonly lastMessageAt?: V2IsoDateTime;
+  readonly lastMessageStatus?: V2ChatMessageStatus;
+}
+
+export interface V2ChatContactDto {
+  readonly characterId: V2CharacterId;
+  readonly storyWorldId: V2StoryWorldId;
+  readonly characterName: string;
+  readonly characterSummary?: string;
+  readonly storyWorldName: string;
+  readonly latestConversationId?: V2ConversationId;
+  readonly latestMessagePreview?: string;
+  readonly latestMessageAt?: V2IsoDateTime;
+  readonly activeMemoryCount: number;
 }
 
 export interface V2ChatMessageAttachment {
@@ -82,6 +107,79 @@ export interface V2CreateInstantStoryResponse {
 
 export interface V2ConversationListResponse {
   readonly conversations: readonly V2ChatConversationDto[];
+}
+
+export interface V2ChatConversationSummaryListResponse {
+  readonly conversations: readonly V2ChatConversationSummaryDto[];
+}
+
+export interface V2ChatContactsResponse {
+  readonly contacts: readonly V2ChatContactDto[];
+}
+
+export interface V2CreateConversationRequest {
+  readonly storyWorldId: V2StoryWorldId;
+  readonly characterId: V2CharacterId;
+  readonly idempotencyKey: V2IdempotencyKey;
+}
+
+export interface V2CreateConversationResponse {
+  readonly conversation: V2ChatConversationSummaryDto;
+}
+
+export interface V2ChatContextResponse {
+  readonly conversation: V2ChatConversationSummaryDto;
+  readonly character: {
+    readonly characterId: V2CharacterId;
+    readonly name: string;
+    readonly summary?: string;
+    readonly personaText?: string;
+    readonly homeLocationId?: V2LocationId;
+  };
+  readonly world: {
+    readonly storyWorldId: V2StoryWorldId;
+    readonly name: string;
+    readonly summary?: string;
+  };
+  readonly memory: {
+    readonly activeCount: number;
+    readonly recent: readonly V2MemoryDto[];
+  };
+}
+
+export interface V2ChatFeaturesDto {
+  readonly modelConfigured: boolean;
+  readonly text: boolean;
+  readonly emoji: boolean;
+  readonly imageUpload: boolean;
+  readonly imageUnderstanding: boolean;
+  readonly stickers: boolean;
+  readonly streaming: boolean;
+  readonly storyAnalyze: boolean;
+  readonly model?: {
+    readonly profileId: string;
+    readonly profileName: string;
+    readonly model: string;
+    readonly inputModalities: readonly string[];
+  };
+}
+
+export interface V2ChatStickerDto {
+  readonly stickerId: string;
+  readonly mediaId: V2MediaId;
+  readonly mediaRef: string;
+  readonly label: string;
+  readonly createdAt: V2IsoDateTime;
+  readonly lastUsedAt?: V2IsoDateTime;
+}
+
+export interface V2CreateChatStickerRequest {
+  readonly mediaId: V2MediaId;
+  readonly label: string;
+}
+
+export interface V2ChatStickerListResponse {
+  readonly stickers: readonly V2ChatStickerDto[];
 }
 
 export interface V2ChatMessageListResponse {
