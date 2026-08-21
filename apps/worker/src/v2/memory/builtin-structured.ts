@@ -4,7 +4,6 @@ import type {
   V2MemoryConsumeResult,
   V2MemoryEngineCapabilities,
   V2MemoryQuery,
-  V2MemoryScopeType,
   V2RetrievedMemory,
 } from "@living-network/contracts/v2";
 import type {
@@ -119,7 +118,7 @@ export class V2BuiltinStructuredEngine implements V2MemoryEngine {
             limit: input.limit,
           });
       const limited = rows.slice(0, input.limit);
-      return limited.map((memory, index) => this.toRetrievedMemory(memory, input, index));
+      return limited.map((memory, index) => this.toRetrievedMemory(memory, index));
     });
   }
 
@@ -136,10 +135,21 @@ export class V2BuiltinStructuredEngine implements V2MemoryEngine {
     return this.unitOfWork.withChatTransaction(async (repos) => {
       const conversation = await repos.conversations.get(input.batch.conversationId as V2ConversationId);
       const storyWorldId = input.batch.storyWorldId as V2StoryWorldId;
-      const existingMemories = await repos.memories.listByConversation(input.batch.conversationId as V2ConversationId);
+      const scopeCharacterId = assertion.scopeType === "character"
+        ? assertion.scopeId
+        : conversation?.primaryCharacterId;
+      const existingMemories = await repos.memories.listActiveScoped({
+        storyWorldId,
+        conversationId: input.batch.conversationId as V2ConversationId,
+        ...(scopeCharacterId === undefined ? {} : { characterId: scopeCharacterId }),
+        limit: 20,
+      });
       const content = assertion.text.trim();
+      const sameScope = (memory: V2Memory): boolean =>
+        memory.scopeType === assertion.scopeType && memory.scopeId === assertion.scopeId;
       const exactMatch = existingMemories.find(
         (memory: V2Memory) => memory.status === "active"
+          && sameScope(memory)
           && memory.kind === assertion.kind
           && memory.content.trim() === content,
       );
@@ -149,7 +159,7 @@ export class V2BuiltinStructuredEngine implements V2MemoryEngine {
 
       // Structured slot mutation: replaces_previous / corrects supersede the previous value.
       const sameSlot = existingMemories.filter(
-        (memory: V2Memory) => memory.status === "active" && memory.slotKey === slotKey,
+        (memory: V2Memory) => memory.status === "active" && sameScope(memory) && memory.slotKey === slotKey,
       );
       const shouldReplace = assertion.changeHint === "replaces_previous" || assertion.changeHint === "corrects";
       if (sameSlot.length > 0 && shouldReplace) {
@@ -161,13 +171,15 @@ export class V2BuiltinStructuredEngine implements V2MemoryEngine {
         }
       }
 
-      const similarCandidates = await repos.memories.searchActive({
+      const similarCandidates = await repos.memories.searchActiveScoped({
         storyWorldId,
+        conversationId: input.batch.conversationId as V2ConversationId,
+        ...(scopeCharacterId === undefined ? {} : { characterId: scopeCharacterId }),
         query: content,
-        limit: 5,
+        limit: 20,
       });
       const similarMemory = similarCandidates.find(
-        (memory: V2Memory) => memory.status === "active" && memory.kind === assertion.kind,
+        (memory: V2Memory) => memory.status === "active" && sameScope(memory) && memory.kind === assertion.kind,
       );
       if (similarMemory !== undefined && sameSlot.length === 0) {
         const idempotencyKey = `memory_consolidate:${similarMemory.memoryId}:${content}`;
@@ -231,17 +243,13 @@ export class V2BuiltinStructuredEngine implements V2MemoryEngine {
 
   private toRetrievedMemory(
     memory: V2Memory,
-    input: V2MemoryQuery,
     index: number,
   ): V2RetrievedMemory {
-    const scopeType: V2MemoryScopeType = memory.conversationId !== undefined
-      ? "conversation"
-      : "world";
     return {
       memoryId: memory.memoryId,
       engineId: this.id,
-      scopeType,
-      scopeId: memory.conversationId ?? input.storyWorldId,
+      scopeType: memory.scopeType,
+      scopeId: memory.scopeId,
       kind: memory.kind,
       text: memory.content,
       relevance: memory.importance > 0 ? memory.importance + 1 / (index + 2) : 0,

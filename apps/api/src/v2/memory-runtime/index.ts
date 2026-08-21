@@ -2,7 +2,6 @@ import type {
   V2MemoryConsumeResult,
   V2MemoryEngineConsumeInput,
   V2MemoryQuery,
-  V2MemoryScopeType,
   V2RetrievedMemory,
 } from "@living-network/contracts/v2";
 import type { V2MemoryRuntime } from "@living-network/ports/v2";
@@ -33,7 +32,7 @@ export function createV2ApiMemoryRuntime(db: DatabaseSync): V2MemoryRuntime {
             query,
             limit: input.limit,
           });
-      return rows.slice(0, input.limit).map((memory, index) => toRetrievedMemory(memory, input, index));
+      return rows.slice(0, input.limit).map((memory, index) => toRetrievedMemory(memory, index));
     },
     async consumeForAllEngines(_input: V2MemoryEngineConsumeInput): Promise<readonly V2MemoryConsumeResult[]> {
       // Consumption happens in the worker; the API runtime only serves retrieval.
@@ -47,15 +46,13 @@ export function createV2ApiMemoryRuntime(db: DatabaseSync): V2MemoryRuntime {
 
 function toRetrievedMemory(
   memory: V2Memory,
-  input: V2MemoryQuery,
   index: number,
 ): V2RetrievedMemory {
-  const scopeType: V2MemoryScopeType = memory.conversationId !== undefined ? "conversation" : "world";
   return {
     memoryId: memory.memoryId,
     engineId: API_PRIMARY_ENGINE_ID,
-    scopeType,
-    scopeId: memory.conversationId ?? input.storyWorldId,
+    scopeType: memory.scopeType,
+    scopeId: memory.scopeId,
     kind: memory.kind,
     text: memory.content,
     relevance: memory.importance > 0 ? memory.importance + 1 / (index + 2) : 0,
