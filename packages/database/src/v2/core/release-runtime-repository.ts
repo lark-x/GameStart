@@ -106,9 +106,12 @@ export class V2SqliteReleaseRuntimeRepository implements V2ReleaseRuntimeReposit
         release_version,
         current_scene_id,
         state_json,
-        choice_history_json
+        choice_history_json,
+        character_state_json,
+        relationship_runtime_json,
+        event_instances_json
       )
-      VALUES (?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       input.runId,
       input.releaseId,
@@ -116,6 +119,9 @@ export class V2SqliteReleaseRuntimeRepository implements V2ReleaseRuntimeReposit
       input.currentSceneId,
       JSON.stringify(input.stateValues),
       JSON.stringify(input.choiceHistory),
+      JSON.stringify(input.characterState ?? {}),
+      JSON.stringify(input.relationshipRuntime ?? {}),
+      JSON.stringify(input.eventInstances ?? []),
     );
     const created = await this.getRun(input.runId as V2RunId);
     if (!created) throw new Error("V2 runtime run insert did not return a row");
@@ -128,12 +134,18 @@ export class V2SqliteReleaseRuntimeRepository implements V2ReleaseRuntimeReposit
       SET current_scene_id = ?,
           state_json = ?,
           choice_history_json = ?,
+          character_state_json = ?,
+          relationship_runtime_json = ?,
+          event_instances_json = ?,
           updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
       WHERE run_id = ?
     `).run(
       input.currentSceneId,
       JSON.stringify(input.stateValues),
       JSON.stringify(input.choiceHistory),
+      JSON.stringify(input.characterState ?? {}),
+      JSON.stringify(input.relationshipRuntime ?? {}),
+      JSON.stringify(input.eventInstances ?? []),
       input.runId,
     );
     if (result.changes !== 1) throw new Error("V2 runtime run update did not affect one row");
@@ -168,9 +180,12 @@ export class V2SqliteReleaseRuntimeRepository implements V2ReleaseRuntimeReposit
         current_scene_id,
         state_json,
         choice_history_json,
-        label
+        label,
+        character_state_json,
+        relationship_runtime_json,
+        event_instances_json
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       input.saveId,
       input.runId,
@@ -180,6 +195,9 @@ export class V2SqliteReleaseRuntimeRepository implements V2ReleaseRuntimeReposit
       JSON.stringify(input.stateValues),
       JSON.stringify(input.choiceHistory),
       input.label ?? null,
+      JSON.stringify(input.characterState ?? {}),
+      JSON.stringify(input.relationshipRuntime ?? {}),
+      JSON.stringify(input.eventInstances ?? []),
     );
     const created = await this.getSave(input.saveId);
     if (!created) throw new Error("V2 runtime save insert did not return a row");
@@ -205,6 +223,9 @@ function mapRun(row: unknown): V2RuntimeRun {
     currentSceneId: requireString(record.current_scene_id, "current_scene_id"),
     stateValues: parseStateRecord(record.state_json),
     choiceHistory: parseJsonArray<string>(record.choice_history_json, "choice_history_json"),
+    characterState: parseJsonRecord<Record<string, Record<string, V2TypedStateValue>>>(record.character_state_json ?? "{}", "character_state_json"),
+    relationshipRuntime: parseJsonRecord<Record<string, number>>(record.relationship_runtime_json ?? "{}", "relationship_runtime_json"),
+    eventInstances: parseJsonArray(record.event_instances_json ?? "[]", "event_instances_json"),
     createdAt: requireString(record.created_at, "created_at"),
     updatedAt: requireString(record.updated_at, "updated_at"),
   };
@@ -220,6 +241,9 @@ function mapSave(row: unknown): V2RuntimeSaveRecord {
     currentSceneId: requireString(record.current_scene_id, "current_scene_id"),
     stateValues: parseStateRecord(record.state_json),
     choiceHistory: parseJsonArray<string>(record.choice_history_json, "choice_history_json"),
+    characterState: parseJsonRecord<Record<string, Record<string, V2TypedStateValue>>>(record.character_state_json ?? "{}", "character_state_json"),
+    relationshipRuntime: parseJsonRecord<Record<string, number>>(record.relationship_runtime_json ?? "{}", "relationship_runtime_json"),
+    eventInstances: parseJsonArray(record.event_instances_json ?? "[]", "event_instances_json"),
     ...(record.label === null || record.label === undefined ? {} : { label: requireString(record.label, "label") }),
     createdAt: requireString(record.created_at, "created_at"),
   };
@@ -245,6 +269,12 @@ function parseJsonArray<T>(value: unknown, field: string): readonly T[] {
   const parsed = JSON.parse(requireString(value, field));
   if (!Array.isArray(parsed)) throw new Error(`Expected ${field} to be a JSON array`);
   return parsed as readonly T[];
+}
+
+function parseJsonRecord<T>(value: unknown, field: string): T {
+  const parsed = JSON.parse(requireString(value, field));
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error(`Expected ${field} to be a JSON object`);
+  return parsed as T;
 }
 
 function requireRecord(value: unknown): Record<string, unknown> {

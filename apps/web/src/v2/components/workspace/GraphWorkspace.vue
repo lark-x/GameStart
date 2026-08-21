@@ -98,7 +98,7 @@ function openEditChoice(choice: V2ChoiceSummary): void {
   sourceSceneId.value = choice.sourceSceneId;
   targetSceneId.value = choice.targetSceneId ?? "";
   gates.value = choice.gates.map((gate) => ({ stateKey: gate.stateKey, operator: gate.operator, value: String(gate.value) }));
-  consequences.value = choice.consequences.map((consequence) => ({ stateKey: consequence.stateKey, operation: consequence.operation, value: String(consequence.value) }));
+  consequences.value = choice.consequences.filter((consequence) => consequence.kind === undefined || consequence.kind === "story").map((consequence) => ({ stateKey: consequence.stateKey ?? "", operation: consequence.operation === "increment" ? "increment" : "set", value: String(consequence.value ?? "") }));
   formError.value = null;
   drawerOpen.value = true;
 }
@@ -373,7 +373,7 @@ async function submitCreate(): Promise<void> {
             <span v-for="gate in choice.gates" :key="`${choice.choiceId}-gate-${gate.stateKey}-${gate.operator}`" class="rule-chip">{{ gate.stateKey }} {{ gate.operator }} {{ formatValue(gate.value) }}</span>
           </div>
           <div v-if="choice.consequences.length" class="choice-rules">
-            <span v-for="consequence in choice.consequences" :key="`${choice.choiceId}-consequence-${consequence.stateKey}-${consequence.operation}`" class="rule-chip consequence">{{ consequence.stateKey }} {{ consequence.operation }} {{ formatValue(consequence.value) }}</span>
+            <span v-for="consequence in choice.consequences" :key="`${choice.choiceId}-consequence-${consequence.stateKey ?? consequence.kind}-${consequence.operation}`" class="rule-chip consequence">{{ consequence.kind === "relationship" ? `${consequence.fromCharacterId} → ${consequence.toCharacterId}` : consequence.kind === "event" ? consequence.eventDefinitionId : consequence.stateKey }} {{ consequence.operation }} {{ formatValue(consequence.value ?? "") }}</span>
           </div>
           <Button variant="ghost" size="icon" aria-label="编辑选项" @click="openEditChoice(choice)"><Pencil :size="15" aria-hidden="true" /></Button>
         </article>

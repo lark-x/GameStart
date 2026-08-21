@@ -10,6 +10,7 @@ import type {
   V2ApprovedAssetListApiResponse,
   V2AssetGenerationJobApiResponse,
   V2AssetGenerationJobListApiResponse,
+  V2AssetGenerationPreparedRequest,
   V2CreateAssetGenerationJobApiRequest,
   V2CreateAssetGenerationJobApiResponse,
   V2CreateSceneGenerationJobApiRequest,
@@ -105,7 +106,21 @@ function parseContextPreviewRequest(value: unknown): V2GenerationContextPreviewA
     baseCanonRevision: revision(value.baseCanonRevision),
     prompt: nonEmptyString(value.prompt, "prompt"),
     ...(tokenBudget === undefined ? {} : { tokenBudget }),
-  };
+    ...(value.characterIds === undefined ? {} : { characterIds: parseStringArray(value.characterIds, "characterIds") as V2GenerationContextPreviewApiRequest["characterIds"] }),
+    ...(value.locationId === undefined ? {} : { locationId: nonEmptyString(value.locationId, "locationId") as never }),
+    ...(value.conversationId === undefined ? {} : { conversationId: nonEmptyString(value.conversationId, "conversationId") as never }),
+    ...(value.runId === undefined ? {} : { runId: nonEmptyString(value.runId, "runId") as never }),
+  } as unknown as V2GenerationContextPreviewApiRequest;
+}
+
+function parseStringArray(value: unknown, field: string): readonly string[] {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || item.trim().length === 0)) throw new TypeError(`${field} must be an array of non-empty strings`);
+  return value;
+}
+
+function buildGenerationContext(input: V2GenerationContextPreviewApiRequest, snapshot: Parameters<typeof buildV2GenerationContextSnapshot>[0]["snapshot"], requestedAt: V2IsoDateTime, defaultTokenBudget: number): V2GenerationContextSnapshot {
+  const filtered = input.characterIds === undefined ? snapshot : { ...snapshot, characters: snapshot.characters.filter((character) => input.characterIds?.includes(character.characterId as never)) };
+  return buildV2GenerationContextSnapshot({ snapshot: filtered, prompt: input.prompt, requestedAt, tokenBudget: input.tokenBudget ?? defaultTokenBudget }) as V2GenerationContextSnapshot;
 }
 
 function parseCreateJobRequest(value: unknown): V2CreateSceneGenerationJobApiRequest {
@@ -130,22 +145,40 @@ function parseCreateJobRequest(value: unknown): V2CreateSceneGenerationJobApiReq
 
 function workflowRecord(value: unknown): Record<string, unknown> {
   if (!isRecord(value)) throw new TypeError("workflow must be an object");
+  validateLoraWeights(value);
   return value;
+}
+
+function validateLoraWeights(value: unknown, path = "workflow"): void {
+  if (Array.isArray(value)) { value.forEach((item, index) => validateLoraWeights(item, `${path}[${index}]`)); return; }
+  if (!isRecord(value)) return;
+  for (const [key, item] of Object.entries(value)) {
+    if (/lora.*(weight|strength)|(weight|strength).*lora/i.test(key) && typeof item === "number" && (item < 0 || item > 2)) throw new TypeError(`${path}.${key} must be between 0 and 2`);
+    validateLoraWeights(item, `${path}.${key}`);
+  }
+}
+
+function normalizeNegativePrompt(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  const parts = nonEmptyString(value, "negativePrompt").split(/[,，\n]/).map((part) => part.trim()).filter(Boolean);
+  return [...new Set(parts)].join(", ");
 }
 
 function parseCreateAssetJobRequest(value: unknown): V2CreateAssetGenerationJobApiRequest {
   if (!isRecord(value)) throw new TypeError("request body must be an object");
   const seed = optionalNonNegativeInteger(value.seed, "seed");
   const maxAttempts = optionalPositiveInteger(value.maxAttempts, "maxAttempts");
+  const negativePrompt = value.negativePrompt === undefined ? undefined : normalizeNegativePrompt(value.negativePrompt);
   return {
     storyWorldId: nonEmptyString(value.storyWorldId, "storyWorldId") as V2StoryWorldId,
     idempotencyKey: nonEmptyString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey,
     prompt: nonEmptyString(value.prompt, "prompt"),
     workflowVersion: nonEmptyString(value.workflowVersion, "workflowVersion"),
     workflow: workflowRecord(value.workflow),
-    ...(value.negativePrompt === undefined ? {} : { negativePrompt: nonEmptyString(value.negativePrompt, "negativePrompt") }),
+    ...(negativePrompt === undefined ? {} : { negativePrompt }),
     ...(seed === undefined ? {} : { seed }),
     ...(maxAttempts === undefined ? {} : { maxAttempts }),
+    ...parseCharacterImageFields(value),
   };
 }
 
@@ -160,7 +193,35 @@ function parsePrepareAssetRequest(value: unknown): V2PrepareAssetGenerationApiRe
     workflow: workflowRecord(value.workflow),
     ...(value.negativePrompt === undefined ? {} : { negativePrompt: nonEmptyString(value.negativePrompt, "negativePrompt") }),
     ...(seed === undefined ? {} : { seed }),
+    ...parseCharacterImageFields(value),
   };
+}
+
+function parseCharacterImageFields(value: JsonRecord): Pick<V2PrepareAssetGenerationApiRequest, "mode" | "characterId" | "visualVariantId" | "scene" | "location" | "emotion"> {
+  const mode = value.mode === undefined ? undefined : value.mode === "manual" || value.mode === "character" ? value.mode : undefined;
+  if (value.mode !== undefined && mode === undefined) throw new TypeError("mode must be manual or character");
+  if (mode === "character" && typeof value.characterId !== "string") throw new TypeError("characterId is required for character image mode");
+  return {
+    ...(mode === undefined ? {} : { mode }),
+    ...(value.characterId === undefined ? {} : { characterId: String(value.characterId) as never }),
+    ...(value.visualVariantId === undefined ? {} : { visualVariantId: nonEmptyString(value.visualVariantId, "visualVariantId") }),
+    ...(value.scene === undefined ? {} : { scene: nonEmptyString(value.scene, "scene") }),
+    ...(value.location === undefined ? {} : { location: nonEmptyString(value.location, "location") }),
+    ...(value.emotion === undefined ? {} : { emotion: nonEmptyString(value.emotion, "emotion") }),
+  };
+}
+
+function renderAssetPrompt(input: Pick<V2AssetGenerationPreparedRequest, "prompt" | "mode" | "characterId" | "visualVariantId" | "scene" | "location" | "emotion">): string {
+  if (input.mode !== "character") return input.prompt;
+  return [
+    "平台画风预设：默认",
+    `角色：${input.characterId ?? "unknown"}`,
+    `视觉变体：${input.visualVariantId ?? "default"}`,
+    input.scene === undefined ? "" : `场景：${input.scene}`,
+    input.location === undefined ? "" : `地点：${input.location}`,
+    input.emotion === undefined ? "" : `情绪动作：${input.emotion}`,
+    `用户追加：${input.prompt}`,
+  ].filter(Boolean).join("\n");
 }
 
 function stableSceneJobId(input: V2CreateSceneGenerationJobApiRequest): V2JobId {
@@ -279,12 +340,7 @@ export function createV2GenerationPlugin(
           storyWorldId: input.storyWorldId,
           revision: input.baseCanonRevision,
         });
-        const context = buildV2GenerationContextSnapshot({
-          snapshot,
-          prompt: input.prompt,
-          requestedAt: now().toISOString(),
-          tokenBudget: input.tokenBudget ?? defaultTokenBudget,
-        }) as V2GenerationContextSnapshot;
+        const context = buildGenerationContext(input, snapshot, now().toISOString() as V2IsoDateTime, defaultTokenBudget);
         return { context } satisfies V2GenerationContextPreviewApiResponse;
       } catch (error) {
         return replyWithError(reply, error);
@@ -298,12 +354,7 @@ export function createV2GenerationPlugin(
           storyWorldId: input.storyWorldId,
           revision: input.baseCanonRevision,
         });
-        const context = buildV2GenerationContextSnapshot({
-          snapshot,
-          prompt: input.prompt,
-          requestedAt: now().toISOString(),
-          tokenBudget: input.tokenBudget ?? defaultTokenBudget,
-        }) as V2GenerationContextSnapshot;
+        const context = buildGenerationContext(input, snapshot, now().toISOString() as V2IsoDateTime, defaultTokenBudget);
         const providerRequest = buildV2SceneGenerationProviderRequest({ context });
         if (providerRequest.responseFormat !== "json_object") throw new TypeError("scene generation prepare must request JSON output");
         const messages = providerRequest.messages.map((message) => {
@@ -406,15 +457,16 @@ export function createV2GenerationPlugin(
         if (dependencies.assetJobs === undefined) return replyMissingCapability(reply, "asset generation repository");
         const input = parseCreateAssetJobRequest(request.body);
         const createdAt = now().toISOString() as V2IsoDateTime;
+        const negativePrompt = input.negativePrompt === undefined ? undefined : normalizeNegativePrompt(input.negativePrompt);
         const result = await dependencies.assetJobs.createAssetJob({
           jobId: stableAssetJobId(input),
           storyWorldId: input.storyWorldId,
           idempotencyKey: input.idempotencyKey,
-          prompt: input.prompt,
+          prompt: renderAssetPrompt(input),
           workflowVersion: input.workflowVersion,
           workflow: input.workflow,
           createdAt,
-          ...(input.negativePrompt === undefined ? {} : { negativePrompt: input.negativePrompt }),
+          ...(negativePrompt === undefined ? {} : { negativePrompt }),
           ...(input.seed === undefined ? {} : { seed: input.seed }),
           ...(input.maxAttempts === undefined ? {} : { maxAttempts: input.maxAttempts }),
         });
@@ -428,12 +480,13 @@ export function createV2GenerationPlugin(
       try {
         const input = parsePrepareAssetRequest(request.body);
         const jobId = stableAssetJobId(input);
+        const negativePrompt = input.negativePrompt === undefined ? undefined : normalizeNegativePrompt(input.negativePrompt);
         const prepared = {
           idempotencyKey: input.idempotencyKey,
-          prompt: input.prompt,
+          prompt: renderAssetPrompt(input),
           workflowVersion: input.workflowVersion,
           workflow: input.workflow,
-          ...(input.negativePrompt === undefined ? {} : { negativePrompt: input.negativePrompt }),
+          ...(negativePrompt === undefined ? {} : { negativePrompt }),
           ...(input.seed === undefined ? {} : { seed: input.seed }),
         };
         return {

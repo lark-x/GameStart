@@ -715,6 +715,20 @@ test("V2 asset API prepares the final ComfyUI payload for preview", async () => 
   }
 });
 
+test("V2 asset API renders character image prompt fields in deterministic order", async () => {
+  const { app } = createApp();
+  await app.ready();
+  try {
+    const response = await app.inject({ method: "POST", url: "/api/v2/generation/assets/prepare", payload: {
+      storyWorldId: "world_generation", idempotencyKey: "idem-character-preview", prompt: "雨夜灯光", workflowVersion: "workflow-v1", workflow: { "1": { class_type: "KSampler" } }, mode: "character", characterId: "character:mira", visualVariantId: "variant:night", scene: "码头", location: "北港", emotion: "警觉", negativePrompt: "低质, 低质, 模糊",
+    } });
+    assert.equal(response.statusCode, 200);
+    const prepared = response.json() as V2PrepareAssetGenerationApiResponse;
+    assert.match(prepared.request.prompt, /^平台画风预设：默认\n角色：character:mira\n视觉变体：variant:night\n场景：码头\n地点：北港\n情绪动作：警觉\n用户追加：雨夜灯光$/);
+    assert.equal(prepared.request.negativePrompt, "低质, 模糊");
+  } finally { await app.close(); }
+});
+
 test("V2 asset API creates, replays, reads, and cancels asset jobs", async () => {
   const { app, assets } = createApp();
   await app.ready();

@@ -2,6 +2,9 @@ import type {
   V2CandidateId,
   V2AssetId,
   V2CharacterId,
+  V2LocationId,
+  V2ConversationId,
+  V2RunId,
   V2IdempotencyKey,
   V2IsoDateTime,
   V2JobId,
@@ -150,6 +153,12 @@ export interface V2CreateAssetGenerationJobApiRequest {
   readonly negativePrompt?: string;
   readonly seed?: number;
   readonly maxAttempts?: number;
+  readonly mode?: "manual" | "character";
+  readonly characterId?: V2CharacterId;
+  readonly visualVariantId?: string;
+  readonly scene?: string;
+  readonly location?: string;
+  readonly emotion?: string;
 }
 
 export interface V2AssetGenerationPreparedRequest {
@@ -159,6 +168,12 @@ export interface V2AssetGenerationPreparedRequest {
   readonly workflow: Record<string, unknown>;
   readonly negativePrompt?: string;
   readonly seed?: number;
+  readonly mode?: "manual" | "character";
+  readonly characterId?: V2CharacterId;
+  readonly visualVariantId?: string;
+  readonly scene?: string;
+  readonly location?: string;
+  readonly emotion?: string;
 }
 
 export interface V2PrepareAssetGenerationApiRequest extends V2AssetGenerationPreparedRequest {
@@ -324,6 +339,10 @@ export interface V2GenerationContextPreviewApiRequest {
   readonly baseCanonRevision: V2Revision;
   readonly prompt: string;
   readonly tokenBudget?: number;
+  readonly characterIds?: readonly V2CharacterId[];
+  readonly locationId?: V2LocationId;
+  readonly conversationId?: V2ConversationId;
+  readonly runId?: V2RunId;
 }
 
 export interface V2GenerationContextPreviewApiResponse {

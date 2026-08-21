@@ -52,11 +52,13 @@
       ],
       "ownedPaths": [
         "apps/api/src/v2/core/**",
+        "apps/web/src/v2/views/V2CharactersView.vue",
         "packages/contracts/src/v2/core/**",
         "packages/domain/src/v2/core/**",
         "packages/ports/src/v2/core/**",
         "packages/database/src/v2/core/*-repository.ts",
-        "packages/database/src/v2/core/*-repository.test.ts"
+        "packages/database/src/v2/core/*-repository.test.ts",
+        "packages/database/src/v2/core/character-living-migrations.ts"
       ]
     },
     "chat": {

@@ -10,6 +10,7 @@ import type {
   V2MemoryConsolidatePayload,
   V2MemoryExtractPayload,
   V2MemoryEngineConsumePayload,
+  V2ProactiveMessagePayload,
   V2FactExtractorVersion,
   V2MemoryId,
   V2MemoryKind,
@@ -36,6 +37,7 @@ import {
   createV2ChatMaintenanceJob,
   createV2Memory,
   createV2SceneCandidate,
+  createV2ChatMessage,
   type V2ChatMaintenanceJob,
   type V2ChatMessage,
   type V2ConversationSummary,
@@ -212,6 +214,8 @@ export class V2MaintenanceDispatchPump {
         await this.handleStoryAnalyze(job);
       } else if (job.jobType === "memory_engine_consume") {
         await this.handleMemoryEngineConsume(job);
+      } else if (job.jobType === "proactive_message") {
+        await this.handleProactiveMessage(job);
       } else {
         throw new Error(`Unknown maintenance job type: ${job.jobType}`);
       }
@@ -249,6 +253,32 @@ export class V2MaintenanceDispatchPump {
         console.warn(`[MaintenancePump] LEASE_LOST: cannot mark job ${job.jobId} failed (lost lease)`);
       }
     }
+  }
+
+  private async handleProactiveMessage(job: V2ChatMaintenanceJob): Promise<void> {
+    const payload = job.payload as unknown as V2ProactiveMessagePayload;
+    if (!payload?.conversationId || !payload.text?.trim()) throw new Error("proactive message payload is invalid");
+    const now = this.now();
+    const nowIso = now.toISOString();
+    await this.unitOfWork.withChatTransaction(async (repos) => {
+      const conversation = await repos.conversations.get(payload.conversationId);
+      if (!conversation || conversation.storyWorldId !== payload.storyWorldId || conversation.primaryCharacterId !== payload.characterId) throw new Error("proactive conversation scope is invalid");
+      const policy = await repos.canon.getCharacterProactivePolicy(payload.storyWorldId, payload.characterId);
+      if (!policy?.enabled) return;
+      const hhmm = nowIso.slice(11, 16);
+      const inQuiet = policy.quietStart <= policy.quietEnd ? hhmm >= policy.quietStart && hhmm < policy.quietEnd : hhmm >= policy.quietStart || hhmm < policy.quietEnd;
+      if (inQuiet) return;
+      const recent = await repos.messages.listRecentByConversation(payload.conversationId, 200);
+      const cutoff = now.getTime() - 24 * 60 * 60 * 1000;
+      const proactive = recent.filter((message) => message.source === "proactive" && message.createdAt && Date.parse(message.createdAt) >= cutoff);
+      if (proactive.length >= policy.dailyLimit) return;
+      const last = proactive[0];
+      if (last?.createdAt && now.getTime() - Date.parse(last.createdAt) < policy.cooldownMinutes * 60 * 1000) return;
+      const existing = await repos.messages.findByIdempotencyKey(payload.conversationId, payload.idempotencyKey);
+      if (existing) return;
+      await repos.messages.create(createV2ChatMessage({ messageId: `message:proactive:${payload.timeBucket}:${payload.characterId}:${payload.conversationId}`, conversationId: payload.conversationId, role: "assistant", characterId: payload.characterId, text: payload.text, source: "proactive", idempotencyKey: payload.idempotencyKey, createdAt: nowIso }));
+      await repos.conversations.touchLastMessage({ conversationId: payload.conversationId, lastMessageAt: nowIso });
+    });
   }
 
   private async handleMemoryExtract(job: V2ChatMaintenanceJob): Promise<void> {

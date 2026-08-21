@@ -18,8 +18,10 @@ import {
   v2ChatStoryAnalyzeCursorMigration,
   v2ChatStickersMigration,
   v2ChatTracesMigration,
+  v2ChatMessageSourceMigration,
   v2MemoriesScopeMigration,
 } from "../chat/migrations.ts";
+import { v2CharacterLivingMigrations } from "../core/character-living-migrations.ts";
 
 export interface V2SqliteMigration {
   readonly id: string;
@@ -216,6 +218,7 @@ export function getV2Migrations(): readonly V2SqliteMigration[] {
     v2ChatMaintenanceJobsMigration,
     v2ChatMaintenanceCursorsMigration,
     v2ChatTracesMigration,
+    v2ChatMessageSourceMigration,
     v2ChatStoryAnalyzeCursorMigration,
     v2ChatMaintenanceDedupeKeyMigration,
     v2ChatStickersMigration,
@@ -225,6 +228,7 @@ export function getV2Migrations(): readonly V2SqliteMigration[] {
     v2MemoryEngineRunsMigration,
     v2MemoryEngineColumnsMigration,
     v2MemoryRetrievalTracesMigration,
+    ...v2CharacterLivingMigrations,
   ].sort((a, b) => a.id.localeCompare(b.id));
 }
 

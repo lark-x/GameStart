@@ -73,6 +73,7 @@ type MessageRow = {
   created_at: string;
   idempotency_key: string;
   reply_to_message_id: string | null;
+  source?: "user" | "assistant" | "proactive";
 };
 
 type MediaRow = {
@@ -236,6 +237,7 @@ function mapMessage(row: MessageRow): V2ChatMessage {
     createdAt: row.created_at,
     idempotencyKey: row.idempotency_key,
     ...(row.reply_to_message_id === null ? {} : { replyToMessageId: row.reply_to_message_id }),
+    ...(row.source === undefined ? {} : { source: row.source }),
   };
 }
 
@@ -476,8 +478,8 @@ export class V2SqliteChatMessageRepository implements V2ChatMessageRepository {
     this.db.prepare(`
       INSERT INTO v2_chat_messages (
         message_id, conversation_id, role, character_id, text, attachments_json, status,
-        created_at, idempotency_key, reply_to_message_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        created_at, idempotency_key, reply_to_message_id, source
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       input.messageId,
       input.conversationId,
@@ -489,6 +491,7 @@ export class V2SqliteChatMessageRepository implements V2ChatMessageRepository {
       input.createdAt ?? new Date().toISOString(),
       input.idempotencyKey,
       input.replyToMessageId ?? null,
+      input.source ?? (input.role === "user" ? "user" : "assistant"),
     );
     const created = await this.get(input.messageId as V2MessageId);
     if (created === undefined) throw new Error("V2 chat message insert did not return a row");

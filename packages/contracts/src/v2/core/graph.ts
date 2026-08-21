@@ -1,4 +1,5 @@
 import type {
+  V2CharacterId,
   V2ChoiceId,
   V2IdempotencyKey,
   V2Revision,
@@ -27,10 +28,41 @@ export interface V2StateGateDto {
 }
 
 export interface V2StateConsequenceDto {
+  readonly kind?: "story";
   readonly stateKey: string;
   readonly operation: V2StateConsequenceOperation;
   readonly value: V2StateValue;
 }
+
+export interface V2CharacterStateConsequenceDto {
+  readonly kind: "character";
+  readonly characterId: V2CharacterId;
+  readonly stateKey: string;
+  readonly operation: V2StateConsequenceOperation;
+  readonly value: V2StateValue;
+}
+
+export interface V2RelationshipConsequenceDto {
+  readonly kind: "relationship";
+  readonly fromCharacterId: V2CharacterId;
+  readonly toCharacterId: V2CharacterId;
+  readonly operation: V2StateConsequenceOperation;
+  readonly value: number;
+}
+
+export interface V2EventConsequenceDto {
+  readonly kind: "event";
+  readonly eventDefinitionId: string;
+  readonly operation: "create" | "transition";
+  readonly eventInstanceId?: string;
+  readonly state?: Record<string, V2StateValue>;
+}
+
+export type V2ChoiceConsequenceDto =
+  | V2StateConsequenceDto
+  | V2CharacterStateConsequenceDto
+  | V2RelationshipConsequenceDto
+  | V2EventConsequenceDto;
 
 export interface V2SceneDto {
   readonly sceneId: V2SceneId;
@@ -49,7 +81,7 @@ export interface V2ChoiceDto {
   readonly targetSceneId?: V2SceneId;
   readonly label: string;
   readonly gates: readonly V2StateGateDto[];
-  readonly consequences: readonly V2StateConsequenceDto[];
+  readonly consequences: readonly V2ChoiceConsequenceDto[];
   readonly createdAt: string;
 }
 
@@ -96,7 +128,7 @@ export interface V2CreateChoiceRequest {
   readonly targetSceneId?: V2SceneId;
   readonly label: string;
   readonly gates?: readonly V2StateGateDto[];
-  readonly consequences?: readonly V2StateConsequenceDto[];
+  readonly consequences?: readonly V2ChoiceConsequenceDto[];
   readonly expectedRevision: V2Revision;
   readonly idempotencyKey: V2IdempotencyKey;
 }
@@ -118,7 +150,7 @@ export interface V2UpdateChoiceRequest {
   readonly targetSceneId?: V2SceneId;
   readonly label: string;
   readonly gates?: readonly V2StateGateDto[];
-  readonly consequences?: readonly V2StateConsequenceDto[];
+  readonly consequences?: readonly V2ChoiceConsequenceDto[];
   readonly expectedRevision: V2Revision;
   readonly idempotencyKey: V2IdempotencyKey;
 }

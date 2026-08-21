@@ -1,4 +1,5 @@
 export * from "./canon.ts";
+export * from "./character-context.ts";
 export * from "./candidate-review.ts";
 export * from "./export.ts";
 export * from "./graph.ts";

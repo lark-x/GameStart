@@ -47,6 +47,8 @@ import type {
   V2StoryAnalyzePayload,
   V2StoryWorldId,
   V2TriggerStoryAnalyzeResponse,
+  V2PromoteMemoryRequest,
+  V2CharacterCandidateDto,
 } from "@living-network/contracts/v2";
 import {
   assertV2PersonaText,
@@ -165,6 +167,8 @@ export interface V2ChatUseCases {
     readonly height?: number;
     readonly createdAt: string;
   }): Promise<V2ChatMediaDto>;
+  promoteMemory(memoryId: V2MemoryId, input: V2PromoteMemoryRequest): Promise<V2CharacterCandidateDto>;
+  scheduleProactiveMessage(conversationId: V2ConversationId, input: { readonly text: string; readonly timeBucket: string; readonly idempotencyKey: string }): Promise<{ readonly jobId: V2MaintenanceJobId; readonly conversationId: V2ConversationId }>;
 }
 
 const DEFAULT_TOKEN_BUDGET = 4096;
@@ -326,6 +330,35 @@ export function createV2ChatUseCases(
       return { jobId, conversationId };
     }),
     createMedia: (input) => createMedia(unitOfWork, input),
+    promoteMemory: (memoryId, input) => unitOfWork.withChatTransaction(async ({ canon, memories }) => {
+      const memory = await memories.get(memoryId);
+      if (!memory) throw new V2HttpError(404, "NOT_FOUND", "Memory not found");
+      if (memory.status !== "active") throw new V2HttpError(422, "VALIDATION_FAILED", "Only active memories can be promoted");
+      const targetCharacterId = input.targetCharacterId ?? memory.characterId;
+      if (!targetCharacterId) throw new V2HttpError(422, "VALIDATION_FAILED", "targetCharacterId is required for promotion");
+      return canon.createCharacterCandidate({
+        candidateId: input.candidateId as never,
+        storyWorldId: memory.storyWorldId as V2StoryWorldId,
+        kind: input.targetKind ?? "profile_patch",
+        targetScope: targetCharacterId,
+        baseRevision: input.expectedRevision,
+        status: "pending",
+        payload: { characterId: targetCharacterId, profile: { persona: { advancedPrompt: memory.content } } },
+        provenance: { sourceMemoryId: memoryId, sourceScope: memory.scopeType, sourceMessageIds: memory.sourceMessageIds },
+      });
+    }),
+    scheduleProactiveMessage: (conversationId, input) => unitOfWork.withChatTransaction(async ({ canon, conversations, maintenanceJobs }) => {
+      const conversation = await requireConversation(conversations, conversationId);
+      if (!input.text.trim()) throw new V2HttpError(400, "VALIDATION_FAILED", "text is required");
+      const policy = await canon.getCharacterProactivePolicy(conversation.storyWorldId as V2StoryWorldId, conversation.primaryCharacterId as V2CharacterId);
+      if (!policy?.enabled) throw new V2HttpError(409, "VALIDATION_FAILED", "proactive policy is disabled");
+      const dedupeKey = `proactive:${conversation.primaryCharacterId}:${conversationId}:${input.timeBucket}`;
+      const existing = await maintenanceJobs.findJobByDedupeKey("proactive_message", dedupeKey);
+      if (existing) return { jobId: existing.jobId as V2MaintenanceJobId, conversationId };
+      const jobId = `job:maint:${randomUUID()}` as V2MaintenanceJobId;
+      await maintenanceJobs.enqueue(createV2ChatMaintenanceJob({ jobId, conversationId, jobType: "proactive_message", status: "pending", payload: { jobType: "proactive_message", conversationId, storyWorldId: conversation.storyWorldId as V2StoryWorldId, characterId: conversation.primaryCharacterId as V2CharacterId, text: input.text, idempotencyKey: input.idempotencyKey, timeBucket: input.timeBucket }, dedupeKey, attempts: 0, maxAttempts: 3, availableAt: new Date().toISOString() }));
+      return { jobId, conversationId };
+    }),
   };
 }
 
@@ -702,6 +735,7 @@ async function prepareReply(
 
     const facts = await canon.listFacts(conversation.storyWorldId as V2StoryWorldId);
     const rules = await canon.listRules(conversation.storyWorldId as V2StoryWorldId);
+    const relationships = await canon.listCharacterRelationships(conversation.storyWorldId as V2StoryWorldId, conversation.primaryCharacterId as V2CharacterId);
     const task = currentUser === undefined ? "story.bootstrap" : "chat.reply";
 
     const context: PromptContext = {
@@ -715,7 +749,7 @@ async function prepareReply(
       ...(character === undefined ? {} : {
         persona: {
           name: character.name,
-          personaText: character.personaText ?? "",
+          personaText: character.personaText ?? formatStructuredPersona(character),
         },
       }),
       ...(world === undefined ? {} : {
@@ -729,6 +763,7 @@ async function prepareReply(
         canon: [
           ...facts.map((fact) => ({ id: fact.factId, kind: "fact" as const, text: fact.text })),
           ...rules.map((rule) => ({ id: rule.ruleId, kind: "rule" as const, text: rule.text })),
+          ...relationships.map((relationship) => ({ id: relationship.relationshipId, kind: "fact" as const, text: `关系：${relationship.fromCharacterId} -> ${relationship.toCharacterId}，${relationship.type}，强度 ${relationship.strength}${relationship.description ? `，${relationship.description}` : ""}` })),
         ],
       }),
       ...(summary === undefined ? {} : { sessionSummary: summary.summary }),
@@ -748,6 +783,20 @@ async function prepareReply(
     };
 
     const prompt = prepareV2Prompt(context);
+    await canon.recordCharacterContextTrace({
+      traceId: `trace:character:chat:${randomUUID()}` as never,
+      storyWorldId: conversation.storyWorldId as V2StoryWorldId,
+      task,
+      contextHash: prompt.contextHash,
+      canonRevision: (world?.revision ?? 1) as never,
+      sources: [
+        ...(character === undefined ? [] : [{ path: `characters.${character.characterId}`, sourceId: character.characterId, reason: "selected_character", tokens: 1 }]),
+        ...relationships.map((relationship) => ({ path: `relationships.${relationship.relationshipId}`, sourceId: relationship.relationshipId, reason: "selected_character_relationship", tokens: 1 })),
+        ...memoryContexts.map((memory) => ({ path: `memories.${memory.memoryId}`, sourceId: memory.memoryId, reason: "relevance", tokens: 1 })),
+      ],
+      omittedSources: [],
+      budget: { tokenBudget: context.tokenBudget },
+    });
     const assistantMessageId = stableAssistantMessageId(conversationId, input.idempotencyKey);
     return {
       conversationId,
@@ -758,6 +807,23 @@ async function prepareReply(
       ...(summary === undefined ? {} : { summaryVersion: summary.version }),
     };
   });
+}
+
+function formatStructuredPersona(character: V2CanonCharacter): string {
+  const profile = character.profile;
+  if (!profile) return "";
+  const persona = profile.persona;
+  return [
+    profile.identity ? `身份：${profile.identity}` : "",
+    profile.aliases.length ? `别名：${profile.aliases.join("、")}` : "",
+    persona.traits.length ? `特质：${persona.traits.join("、")}` : "",
+    persona.behaviorPatterns.length ? `行为模式：${persona.behaviorPatterns.join("、")}` : "",
+    persona.values.length ? `价值观：${persona.values.join("、")}` : "",
+    persona.taboos.length ? `禁忌：${persona.taboos.join("、")}` : "",
+    persona.speechStyle ? `说话风格：${persona.speechStyle}` : "",
+    persona.backgroundStory ? `背景：${persona.backgroundStory}` : "",
+    persona.advancedPrompt ? `补充提示：${persona.advancedPrompt}` : "",
+  ].filter(Boolean).join("\n");
 }
 
 async function saveReply(
@@ -989,6 +1055,7 @@ function toMessageDto(message: V2ChatMessage): V2ChatMessageDto {
       ...(attachment.height === undefined ? {} : { height: attachment.height }),
     })),
     status: message.status,
+    ...(message.source === undefined ? {} : { source: message.source }),
     createdAt: (message.createdAt ?? "1970-01-01T00:00:00.000Z") as V2IsoDateTime,
     idempotencyKey: message.idempotencyKey as V2IdempotencyKey,
     ...(message.replyToMessageId === undefined ? {} : { replyToMessageId: message.replyToMessageId as V2MessageId }),

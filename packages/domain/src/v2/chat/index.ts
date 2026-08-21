@@ -36,6 +36,7 @@ export interface V2ChatMessage {
   readonly text?: string;
   readonly attachments: readonly V2ChatMessageAttachment[];
   readonly status: V2ChatMessageStatus;
+  readonly source?: "user" | "assistant" | "proactive";
   readonly createdAt?: string;
   readonly idempotencyKey: string;
   readonly replyToMessageId?: string;
@@ -137,6 +138,7 @@ export function createV2ChatMessage(input: {
   readonly text?: string;
   readonly attachments?: readonly V2ChatMessageAttachment[];
   readonly status?: V2ChatMessageStatus;
+  readonly source?: "user" | "assistant" | "proactive";
   readonly createdAt?: string;
   readonly idempotencyKey: string;
   readonly replyToMessageId?: string;
@@ -172,6 +174,7 @@ export function createV2ChatMessage(input: {
       ...(attachment.height === undefined ? {} : { height: assertOptionalDimension(attachment.height, "height") }),
     })),
     status,
+    ...(input.source === undefined ? {} : { source: input.source }),
     ...(input.createdAt === undefined ? {} : { createdAt: assertIsoTime(input.createdAt, "createdAt") }),
     idempotencyKey: assertNonEmptyId(input.idempotencyKey, "idempotencyKey"),
     ...(input.replyToMessageId === undefined ? {} : { replyToMessageId: assertNonEmptyId(input.replyToMessageId, "replyToMessageId") }),
@@ -314,7 +317,8 @@ export type V2ChatMaintenanceJobType =
   | "conversation_summary"
   | "memory_consolidate"
   | "story_analyze"
-  | "memory_engine_consume";
+  | "memory_engine_consume"
+  | "proactive_message";
 
 export type V2ChatMaintenanceJobStatus = "pending" | "claimed" | "running" | "completed" | "failed";
 
@@ -359,6 +363,7 @@ export function createV2ChatMaintenanceJob(input: {
     "memory_consolidate",
     "story_analyze",
     "memory_engine_consume",
+    "proactive_message",
   ];
   if (!validJobTypes.includes(input.jobType)) {
     throw new V2DomainError("INVALID_INPUT", `Invalid jobType: ${String(input.jobType)}`);

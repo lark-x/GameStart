@@ -16,6 +16,12 @@ export type V2MessageId = Brand<string, "V2MessageId">;
 export type V2MediaId = Brand<string, "V2MediaId">;
 export type V2MemoryId = Brand<string, "V2MemoryId">;
 export type V2MaintenanceJobId = Brand<string, "V2MaintenanceJobId">;
+export type V2CharacterRelationshipId = Brand<string, "V2CharacterRelationshipId">;
+export type V2CharacterVisualVariantId = Brand<string, "V2CharacterVisualVariantId">;
+export type V2CharacterStateDefinitionId = Brand<string, "V2CharacterStateDefinitionId">;
+export type V2CharacterEventDefinitionId = Brand<string, "V2CharacterEventDefinitionId">;
+export type V2CharacterContextTraceId = Brand<string, "V2CharacterContextTraceId">;
+export type V2CharacterCandidateId = Brand<string, "V2CharacterCandidateId">;
 
 export type V2IsoDateTime = Brand<string, "V2IsoDateTime">;
 export type V2Revision = Brand<number, "V2Revision">;
@@ -24,7 +30,7 @@ export type V2IdempotencyKey = Brand<string, "V2IdempotencyKey">;
 export interface V2ReleaseBlockerDto {
   readonly code: string;
   readonly message: string;
-  readonly targetPage: "world" | "state" | "story" | "formal-assets" | "release";
+  readonly targetPage: "world" | "state" | "story" | "characters" | "formal-assets" | "release";
   readonly entityId?: string;
 }
 

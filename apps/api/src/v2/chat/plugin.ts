@@ -11,6 +11,7 @@ import type {
   V2ConversationId,
   V2MediaId,
   V2MessageId,
+  V2PromoteMemoryRequest,
 } from "@living-network/contracts/v2";
 
 import { V2HttpError, toV2HttpError } from "../core/errors.ts";
@@ -71,6 +72,19 @@ function routeId(value: unknown, field: string): string {
     throw new V2HttpError(400, "BAD_REQUEST", `${field} must be a non-empty string`);
   }
   return raw.trim();
+}
+
+function parsePromoteMemoryBody(value: unknown): V2PromoteMemoryRequest {
+  if (!isRecord(value)) throw new V2HttpError(400, "BAD_REQUEST", "request body must be an object");
+  if (typeof value.candidateId !== "string" || typeof value.expectedRevision !== "number" || typeof value.idempotencyKey !== "string") throw new V2HttpError(400, "BAD_REQUEST", "candidateId, expectedRevision and idempotencyKey are required");
+  if (value.targetKind !== undefined && value.targetKind !== "profile_patch" && value.targetKind !== "relationship_upsert" && value.targetKind !== "event_definition_upsert") throw new V2HttpError(400, "BAD_REQUEST", "targetKind is not supported");
+  return {
+    candidateId: value.candidateId,
+    expectedRevision: value.expectedRevision as never,
+    idempotencyKey: value.idempotencyKey as never,
+    ...(value.targetCharacterId === undefined ? {} : { targetCharacterId: String(value.targetCharacterId) as never }),
+    ...(value.targetKind === undefined ? {} : { targetKind: value.targetKind as "profile_patch" | "relationship_upsert" | "event_definition_upsert" }),
+  } as V2PromoteMemoryRequest;
 }
 
 function parseMessagesQuery(value: unknown): { readonly beforeMessageId?: V2MessageId; readonly limit?: number } {
@@ -413,6 +427,15 @@ export function createV2ChatPlugin(dependencies: V2ChatPluginDependencies): Fast
         request.raw.off("aborted", onClose);
         reply.raw.off("close", onClose);
       }
+    });
+    app.post("/memories/:memoryId/promote", async (request) => {
+      const memoryId = routeId(request.params, "memoryId") as never;
+      return dependencies.useCases.promoteMemory(memoryId, parsePromoteMemoryBody(request.body));
+    });
+    app.post("/conversations/:conversationId/proactive", async (request) => {
+      const body = request.body as Record<string, unknown>;
+      if (!body || typeof body.text !== "string" || typeof body.timeBucket !== "string" || typeof body.idempotencyKey !== "string") throw new TypeError("text, timeBucket and idempotencyKey are required");
+      return dependencies.useCases.scheduleProactiveMessage(routeId(request.params, "conversationId") as never, { text: body.text, timeBucket: body.timeBucket, idempotencyKey: body.idempotencyKey });
     });
 
     if (dependencies.mediaRoot !== undefined) {

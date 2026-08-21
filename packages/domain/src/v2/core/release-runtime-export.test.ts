@@ -127,6 +127,30 @@ test("V2 runtime domain starts at entry scene and applies gated choice consequen
   }
 });
 
+test("V2 runtime applies character, relationship, and event consequences without touching story state", () => {
+  const entry = createV2GraphScene({ storyWorldId: "world_living", sceneId: "entry_living", title: "Entry", isEntry: true });
+  const choice = createV2GraphChoice({
+    storyWorldId: "world_living",
+    choiceId: "choice_living",
+    sourceScene: entry,
+    label: "Evolve",
+    consequences: [
+      { kind: "character", characterId: "character:a", stateKey: "mood", operation: "set", value: "happy" },
+      { kind: "relationship", fromCharacterId: "character:a", toCharacterId: "character:b", operation: "set", value: 42 },
+      { kind: "event", eventDefinitionId: "event:meeting", operation: "create", eventInstanceId: "instance:meeting", state: { active: true } },
+    ],
+  });
+  const updated = submitV2RuntimeChoice({
+    run: startV2RuntimeRun({ runId: "run_living", releaseId: "release_living", releaseVersion: "1", scenes: [entry], stateSchema: [] }),
+    choice,
+    scenes: [entry],
+    stateSchema: [],
+  });
+  assert.deepEqual(updated.characterState, { "character:a": { mood: "happy" } });
+  assert.deepEqual(updated.relationshipRuntime, { "character:a->character:b": 42 });
+  assert.deepEqual(updated.eventInstances, [{ eventInstanceId: "instance:meeting", eventDefinitionId: "event:meeting", state: { active: true } }]);
+});
+
 test("V2 release preflight rejects unknown or incompatible typed state references", () => {
   const world = createV2CanonWorld({ storyWorldId: "world_state", name: "State World" });
   const entry = createV2GraphScene({

@@ -329,6 +329,12 @@ export const v2MemoriesScopeMigration: V2SqliteMigration = {
   down: (db) => db.exec("DROP INDEX IF EXISTS v2_memories_scope_idx;"),
 };
 
+export const v2ChatMessageSourceMigration: V2SqliteMigration = {
+  id: "0380_v2_chat_message_source",
+  up: (db) => db.exec("ALTER TABLE v2_chat_messages ADD COLUMN source TEXT NOT NULL DEFAULT 'assistant' CHECK (source IN ('user', 'assistant', 'proactive'))"),
+  down: (db) => db.exec("ALTER TABLE v2_chat_messages DROP COLUMN source"),
+};
+
 export const v2ChatMigrations: readonly V2SqliteMigration[] = [
   v2ChatMemoryMigration,
   v2ChatCoreFinalizationMigration,
@@ -339,4 +345,5 @@ export const v2ChatMigrations: readonly V2SqliteMigration[] = [
   v2ChatMaintenanceDedupeKeyMigration,
   v2ChatStickersMigration,
   v2MemoriesScopeMigration,
+  v2ChatMessageSourceMigration,
 ];

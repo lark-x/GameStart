@@ -10,6 +10,7 @@ import {
   createV2CanonWorld,
   assertV2ExpectedRevision,
 } from "./canon.ts";
+import { buildV2CharacterContext } from "./character-context.ts";
 import { V2DomainError } from "../shared/index.ts";
 
 test("V2 canon domain creates immutable world and trims user text", () => {
@@ -72,4 +73,14 @@ test("V2 canon domain validates enum and date boundaries", () => {
 
 test("V2 canon domain rejects stale expected revisions", () => {
   assert.throws(() => assertV2ExpectedRevision(2, 1), (error) => error instanceof V2DomainError && error.code === "STALE_REVISION");
+});
+
+test("character profile and context builder remain scoped and deterministic", () => {
+  const world = createV2CanonWorld({ storyWorldId: "world", name: "World" });
+  const primary = createV2CanonCharacter({ storyWorldId: "world", characterId: "a", name: "A", profile: { aliases: ["Alpha"], tags: ["hero"], persona: { traits: ["brave"] } } });
+  const other = createV2CanonCharacter({ storyWorldId: "world", characterId: "b", name: "B" });
+  const input = { world, characters: [primary, other], relationships: [], task: "chat" as const, primaryCharacterId: "a", currentInput: "hello" };
+  const context = buildV2CharacterContext(input);
+  assert.deepEqual(context.stable.characters.map((character) => character.characterId), ["a"]);
+  assert.equal(context.contextHash, buildV2CharacterContext(input).contextHash);
 });

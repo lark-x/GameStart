@@ -1,7 +1,25 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import type {
   V2CharacterDto,
+  V2CharacterProfileInput,
+  V2CharacterRelationshipDto,
+  V2UpsertCharacterRelationshipRequest,
+  V2CharacterContextPreviewRequest,
+  V2CharacterContextPreviewResponse,
+  V2CharacterContextTraceDto,
+  V2CharacterStateDefinitionDto,
+  V2CreateCharacterStateDefinitionRequest,
+  V2UpdateCharacterStateDefinitionRequest,
+  V2CharacterVisualVariantDto,
+  V2UpsertCharacterVisualVariantRequest,
+  V2CharacterEventDefinitionDto,
+  V2UpsertCharacterEventDefinitionRequest,
+  V2CharacterProactivePolicyDto,
+  V2UpdateCharacterProactivePolicyRequest,
+  V2CharacterCandidateDto,
+  V2CreateCharacterCandidateRequest,
+  V2ReviewCharacterCandidateRequest,
   V2ArcDto,
   V2CandidateId,
   V2CandidateReviewAuditDto,
@@ -70,6 +88,10 @@ import {
   buildV2ReleasePreflight,
   createV2SceneCandidate,
   createV2CanonCharacter,
+  createV2CanonCharacterRelationship,
+  createV2CanonCharacterStateDefinition,
+  createV2CanonCharacterVisualVariant,
+  createV2CanonCharacterEventDefinition,
   createV2CanonFact,
   createV2CanonLocation,
   createV2CanonRule,
@@ -87,6 +109,7 @@ import {
   startV2RuntimeRun,
   submitV2RuntimeChoice,
   validateV2Graph,
+  buildV2CharacterContext,
 } from "@living-network/domain/v2";
 import type {
   V2CanonMutationRecord,
@@ -110,6 +133,24 @@ export interface V2CoreUseCases {
   getSnapshot(storyWorldId: V2StoryWorldId): Promise<V2CanonSnapshotDto>;
   createLocation(storyWorldId: V2StoryWorldId, input: V2CreateLocationRequest): Promise<V2CanonWriteResponse<V2LocationDto>>;
   createCharacter(storyWorldId: V2StoryWorldId, input: V2CreateCharacterRequest): Promise<V2CanonWriteResponse<V2CharacterDto>>;
+  previewCharacterContext(storyWorldId: V2StoryWorldId, characterId: V2CharacterDto["characterId"], input: V2CharacterContextPreviewRequest): Promise<V2CharacterContextPreviewResponse>;
+  listCharacterContextTraces(storyWorldId: V2StoryWorldId): Promise<readonly V2CharacterContextTraceDto[]>;
+  listCharacterStateDefinitions(storyWorldId: V2StoryWorldId, characterId: V2CharacterDto["characterId"]): Promise<readonly V2CharacterStateDefinitionDto[]>;
+  createCharacterStateDefinition(storyWorldId: V2StoryWorldId, input: V2CreateCharacterStateDefinitionRequest): Promise<V2CanonWriteResponse<V2CharacterStateDefinitionDto>>;
+  updateCharacterStateDefinition(storyWorldId: V2StoryWorldId, stateDefinitionId: string, input: V2UpdateCharacterStateDefinitionRequest): Promise<V2CanonWriteResponse<V2CharacterStateDefinitionDto>>;
+  listCharacterVisualVariants(storyWorldId: V2StoryWorldId, characterId: V2CharacterDto["characterId"]): Promise<readonly V2CharacterVisualVariantDto[]>;
+  upsertCharacterVisualVariant(storyWorldId: V2StoryWorldId, input: V2UpsertCharacterVisualVariantRequest): Promise<V2CanonWriteResponse<V2CharacterVisualVariantDto>>;
+  listCharacterEventDefinitions(storyWorldId: V2StoryWorldId): Promise<readonly V2CharacterEventDefinitionDto[]>;
+  upsertCharacterEventDefinition(storyWorldId: V2StoryWorldId, input: V2UpsertCharacterEventDefinitionRequest): Promise<V2CanonWriteResponse<V2CharacterEventDefinitionDto>>;
+  getCharacterProactivePolicy(storyWorldId: V2StoryWorldId, characterId: V2CharacterDto["characterId"]): Promise<V2CharacterProactivePolicyDto>;
+  updateCharacterProactivePolicy(storyWorldId: V2StoryWorldId, characterId: V2CharacterDto["characterId"], input: V2UpdateCharacterProactivePolicyRequest): Promise<V2CharacterProactivePolicyDto>;
+  listCharacterCandidates(storyWorldId: V2StoryWorldId, status?: V2CharacterCandidateDto["status"]): Promise<readonly V2CharacterCandidateDto[]>;
+  createCharacterCandidate(storyWorldId: V2StoryWorldId, input: V2CreateCharacterCandidateRequest): Promise<V2CharacterCandidateDto>;
+  getCharacterCandidate(storyWorldId: V2StoryWorldId, candidateId: string): Promise<V2CharacterCandidateDto>;
+  reviewCharacterCandidate(storyWorldId: V2StoryWorldId, candidateId: string, input: V2ReviewCharacterCandidateRequest): Promise<V2CharacterCandidateDto>;
+  getCharacter(storyWorldId: V2StoryWorldId, characterId: V2CharacterDto["characterId"]): Promise<V2CharacterDto>;
+  listCharacterRelationships(storyWorldId: V2StoryWorldId, characterId?: V2CharacterDto["characterId"]): Promise<readonly V2CharacterRelationshipDto[]>;
+  upsertCharacterRelationship(storyWorldId: V2StoryWorldId, input: V2UpsertCharacterRelationshipRequest): Promise<V2CanonWriteResponse<V2CharacterRelationshipDto>>;
   createFact(storyWorldId: V2StoryWorldId, input: V2CreateFactRequest): Promise<V2CanonWriteResponse<V2FactDto>>;
   createRule(storyWorldId: V2StoryWorldId, input: V2CreateRuleRequest): Promise<V2CanonWriteResponse<V2RuleDto>>;
   createTimelineEvent(storyWorldId: V2StoryWorldId, input: V2CreateTimelineEventRequest): Promise<V2CanonWriteResponse<V2TimelineEventDto>>;
@@ -190,6 +231,182 @@ export function createV2CoreUseCases(
     listWorlds: () => unitOfWork.withCanonTransaction(async ({ canon }) =>
       (await canon.listWorlds()).map(toWorldDto),
     ),
+    getCharacter: (storyWorldId, characterId) => unitOfWork.withCanonTransaction(async ({ canon }) => {
+      const character = await requireCharacter(canon, storyWorldId, characterId);
+      return toCharacterDto(character);
+    }),
+    previewCharacterContext: (storyWorldId, characterId, input) => unitOfWork.withCanonTransaction(async ({ canon }) => {
+      const world = await requireWorld(canon, storyWorldId);
+      await requireCharacter(canon, storyWorldId, characterId);
+      const snapshot = buildV2CharacterContext({
+        world,
+        characters: await canon.listCharacters(storyWorldId),
+        relationships: await canon.listCharacterRelationships(storyWorldId),
+        facts: (await canon.listFacts(storyWorldId)).map((fact) => ({ id: fact.factId, text: fact.text })),
+        task: input.task,
+        primaryCharacterId: characterId,
+        selectedCharacterIds: input.characterIds ?? [characterId],
+        ...(input.currentInput === undefined ? {} : { currentInput: input.currentInput }),
+        ...(input.tokenBudget === undefined ? {} : { tokenBudget: input.tokenBudget }),
+      });
+      await canon.recordCharacterContextTrace({
+        traceId: `trace:${randomUUID()}` as never,
+        storyWorldId,
+        task: input.task,
+        contextHash: snapshot.contextHash,
+        canonRevision: snapshot.baseCanonRevision as V2Revision,
+        sources: snapshot.sources,
+        omittedSources: snapshot.omittedSources,
+        budget: snapshot.budget,
+      });
+      return {
+        contextHash: snapshot.contextHash,
+        baseCanonRevision: snapshot.baseCanonRevision as V2Revision,
+        stable: {
+          characters: snapshot.stable.characters.map(toCharacterDto),
+          relationships: snapshot.stable.relationships.map(toCharacterRelationshipDto),
+          facts: snapshot.stable.facts.map((fact) => ({ factId: fact.id, storyWorldId, text: fact.text, visibility: "player_visible" as const, createdAt: "1970-01-01T00:00:00.000Z" })),
+        },
+        sources: snapshot.sources,
+        omittedSources: snapshot.omittedSources,
+        budget: snapshot.budget,
+      };
+    }),
+    listCharacterContextTraces: (storyWorldId) => unitOfWork.withCanonTransaction(({ canon }) => canon.listCharacterContextTraces(storyWorldId)),
+    listCharacterRelationships: (storyWorldId, characterId) => unitOfWork.withCanonTransaction(async ({ canon }) =>
+      (await canon.listCharacterRelationships(storyWorldId, characterId)).map(toCharacterRelationshipDto),
+    ),
+    listCharacterStateDefinitions: (storyWorldId, characterId) => unitOfWork.withCanonTransaction(async ({ canon }) =>
+      (await canon.listCharacterStateDefinitions(storyWorldId, characterId)).map(toCharacterStateDefinitionDto),
+    ),
+    createCharacterStateDefinition: (storyWorldId, input) => unitOfWork.withCanonTransaction(async ({ canon }) =>
+      withIdempotency(canon, "createCharacterStateDefinition", input.idempotencyKey, { storyWorldId, ...input }, async () => {
+        await requireCharacter(canon, storyWorldId, input.characterId);
+        const item = await canon.createCharacterStateDefinition(createV2CanonCharacterStateDefinition({ storyWorldId, ...input, constraints: input.constraints ?? {} }));
+        const revision = await canon.advanceRevision(storyWorldId, input.expectedRevision);
+        return { item: toCharacterStateDefinitionDto(item), revision };
+      }),
+    ),
+    updateCharacterStateDefinition: (storyWorldId, stateDefinitionId, input) => unitOfWork.withCanonTransaction(async ({ canon }) =>
+      withIdempotency(canon, "updateCharacterStateDefinition", input.idempotencyKey, { storyWorldId, stateDefinitionId, ...input }, async () => {
+        const existing = (await canon.listCharacterStateDefinitions(storyWorldId)).find((item) => item.stateDefinitionId === stateDefinitionId);
+        if (!existing) throw new V2HttpError(404, "NOT_FOUND", "Character state definition not found");
+        const item = await canon.updateCharacterStateDefinition({ ...existing, defaultValue: input.defaultValue, constraints: input.constraints ?? existing.constraints });
+        const revision = await canon.advanceRevision(storyWorldId, input.expectedRevision);
+        return { item: toCharacterStateDefinitionDto(item), revision };
+      }),
+    ),
+    listCharacterVisualVariants: (storyWorldId, characterId) => unitOfWork.withCanonTransaction(async ({ canon }) =>
+      (await canon.listCharacterVisualVariants(storyWorldId, characterId)).map(toCharacterVisualVariantDto),
+    ),
+    upsertCharacterVisualVariant: (storyWorldId, input) => unitOfWork.withCanonTransaction(async ({ canon }) =>
+      withIdempotency(canon, "upsertCharacterVisualVariant", input.idempotencyKey, { storyWorldId, ...input }, async () => {
+        await requireCharacter(canon, storyWorldId, input.characterId);
+        const existing = (await canon.listCharacterVisualVariants(storyWorldId, input.characterId)).find((item) => item.visualVariantId === input.visualVariantId);
+        const item = await canon.upsertCharacterVisualVariant(createV2CanonCharacterVisualVariant({
+          visualVariantId: input.visualVariantId,
+          storyWorldId,
+          characterId: input.characterId,
+          name: input.name,
+          appearance: input.appearance ?? existing?.appearance ?? {},
+          loras: input.loras ?? existing?.loras ?? [],
+          triggerWords: input.triggerWords ?? existing?.triggerWords ?? [],
+          ...(input.negativePrompt === undefined ? existing?.negativePrompt === undefined ? {} : { negativePrompt: existing.negativePrompt } : input.negativePrompt === null ? {} : { negativePrompt: input.negativePrompt }),
+          ...(input.workflowPreset === undefined ? existing?.workflowPreset === undefined ? {} : { workflowPreset: existing.workflowPreset } : input.workflowPreset === null ? {} : { workflowPreset: input.workflowPreset }),
+          isDefault: input.isDefault ?? existing?.isDefault ?? false,
+          referenceAssetIds: input.referenceAssetIds ?? existing?.referenceAssetIds ?? [],
+        }));
+        const revision = await canon.advanceRevision(storyWorldId, input.expectedRevision);
+        return { item: toCharacterVisualVariantDto(item), revision };
+      }),
+    ),
+    listCharacterEventDefinitions: (storyWorldId) => unitOfWork.withCanonTransaction(async ({ canon }) => (await canon.listCharacterEventDefinitions(storyWorldId)).map(toCharacterEventDefinitionDto)),
+    upsertCharacterEventDefinition: (storyWorldId, input) => unitOfWork.withCanonTransaction(async ({ canon }) => withIdempotency(canon, "upsertCharacterEventDefinition", input.idempotencyKey, { storyWorldId, ...input }, async () => {
+      await requireWorld(canon, storyWorldId);
+      for (const characterId of input.participantCharacterIds) await requireCharacter(canon, storyWorldId, characterId);
+      const existing = (await canon.listCharacterEventDefinitions(storyWorldId)).find((item) => item.eventDefinitionId === input.eventDefinitionId);
+      const item = await canon.upsertCharacterEventDefinition(createV2CanonCharacterEventDefinition({
+        eventDefinitionId: input.eventDefinitionId,
+        storyWorldId,
+        name: input.name,
+        ...(input.description === undefined ? existing?.description === undefined ? {} : { description: existing.description } : input.description === null ? {} : { description: input.description }),
+        participantCharacterIds: input.participantCharacterIds,
+        initialState: input.initialState ?? existing?.initialState ?? {},
+      }));
+      const revision = await canon.advanceRevision(storyWorldId, input.expectedRevision);
+      return { item: toCharacterEventDefinitionDto(item), revision };
+    })),
+    getCharacterProactivePolicy: (storyWorldId, characterId) => unitOfWork.withCanonTransaction(async ({ canon }) => {
+      await requireCharacter(canon, storyWorldId, characterId);
+      return (await canon.getCharacterProactivePolicy(storyWorldId, characterId)) ?? {
+        storyWorldId,
+        characterId,
+        enabled: false,
+        cooldownMinutes: 360,
+        dailyLimit: 3,
+        quietStart: "23:00",
+        quietEnd: "08:00",
+      };
+    }),
+    updateCharacterProactivePolicy: (storyWorldId, characterId, input) => unitOfWork.withCanonTransaction(async ({ canon }) => {
+      await requireCharacter(canon, storyWorldId, characterId);
+      const current = (await canon.getCharacterProactivePolicy(storyWorldId, characterId)) ?? { storyWorldId, characterId, enabled: false, cooldownMinutes: 360, dailyLimit: 3, quietStart: "23:00", quietEnd: "08:00" };
+      if (input.cooldownMinutes !== undefined && (!Number.isInteger(input.cooldownMinutes) || input.cooldownMinutes < 0)) throw new V2HttpError(400, "VALIDATION_FAILED", "cooldownMinutes must be non-negative");
+      if (input.dailyLimit !== undefined && (!Number.isInteger(input.dailyLimit) || input.dailyLimit < 0)) throw new V2HttpError(400, "VALIDATION_FAILED", "dailyLimit must be non-negative");
+      return canon.updateCharacterProactivePolicy({ ...current, enabled: input.enabled, cooldownMinutes: input.cooldownMinutes ?? current.cooldownMinutes, dailyLimit: input.dailyLimit ?? current.dailyLimit, quietStart: input.quietStart ?? current.quietStart, quietEnd: input.quietEnd ?? current.quietEnd });
+    }),
+    listCharacterCandidates: (storyWorldId, status) => unitOfWork.withCanonTransaction(({ canon }) => canon.listCharacterCandidates(storyWorldId, status)),
+    createCharacterCandidate: (storyWorldId, input) => unitOfWork.withCanonTransaction(async ({ canon }) =>
+      withIdempotency(canon, "createCharacterCandidate", input.idempotencyKey, { storyWorldId, ...input }, async () => {
+        await requireWorld(canon, storyWorldId);
+        const candidate = await canon.createCharacterCandidate({ candidateId: input.candidateId, storyWorldId, kind: input.kind, targetScope: input.targetScope, baseRevision: input.expectedRevision, status: "pending", payload: input.payload, provenance: input.provenance, ...(input.contextHash === undefined ? {} : { contextHash: input.contextHash }) });
+        return candidate;
+      }),
+    ),
+    getCharacterCandidate: (storyWorldId, candidateId) => unitOfWork.withCanonTransaction(async ({ canon }) => {
+      const candidate = await canon.getCharacterCandidate(storyWorldId, candidateId);
+      if (!candidate) throw new V2HttpError(404, "NOT_FOUND", "Character candidate not found");
+      return candidate;
+    }),
+    reviewCharacterCandidate: (storyWorldId, candidateId, input) => unitOfWork.withCanonTransaction(async ({ canon }) =>
+      withIdempotency(canon, "reviewCharacterCandidate", input.idempotencyKey, { storyWorldId, candidateId, ...input }, async () => {
+        const candidate = await canon.getCharacterCandidate(storyWorldId, candidateId);
+        if (!candidate) throw new V2HttpError(404, "NOT_FOUND", "Character candidate not found");
+        if (candidate.baseRevision !== input.expectedRevision) throw new V2HttpError(409, "STALE_REVISION", "Character candidate revision is stale");
+        const status = input.action === "approve" ? "approved" : input.action === "reject" ? "rejected" : "changes_requested";
+        if (status === "approved" && (candidate.kind === "profile_patch" || candidate.kind === "memory_promotion")) {
+          const payload = candidate.payload as { readonly characterId?: string; readonly profile?: V2CharacterProfileInput };
+          if (!payload.characterId || !payload.profile) throw new V2HttpError(422, "VALIDATION_FAILED", "profile_patch candidate payload is invalid");
+          const existing = await requireCharacter(canon, storyWorldId, payload.characterId as never);
+          const profile = mergeProfile(existing.profile ?? emptyCharacterProfile(), payload.profile);
+          await canon.updateCharacter({ ...existing, profile });
+        }
+        const reviewed = await canon.reviewCharacterCandidate({ storyWorldId, candidateId, status, reviewer: input.reviewer, ...(input.reason === undefined ? {} : { reason: input.reason }) });
+        if (status === "approved") await canon.advanceRevision(storyWorldId, input.expectedRevision);
+        return reviewed;
+      }),
+    ),
+    upsertCharacterRelationship: (storyWorldId, input) => unitOfWork.withCanonTransaction(async ({ canon }) =>
+      withIdempotency(canon, "upsertCharacterRelationship", input.idempotencyKey, { storyWorldId, ...input }, async () => {
+        await requireWorld(canon, storyWorldId);
+        await requireCharacter(canon, storyWorldId, input.fromCharacterId);
+        await requireCharacter(canon, storyWorldId, input.toCharacterId);
+        const relationship = createV2CanonCharacterRelationship({
+          relationshipId: input.relationshipId,
+          storyWorldId,
+          fromCharacterId: input.fromCharacterId,
+          toCharacterId: input.toCharacterId,
+          type: input.type,
+          ...(input.customLabel === undefined || input.customLabel === null ? {} : { customLabel: input.customLabel }),
+          ...(input.description === undefined || input.description === null ? {} : { description: input.description }),
+          strength: input.strength,
+          visibility: input.visibility,
+        });
+        const item = await canon.upsertCharacterRelationship(relationship);
+        const revision = await canon.advanceRevision(storyWorldId, input.expectedRevision);
+        return { item: toCharacterRelationshipDto(item), revision };
+      }),
+    ),
     getSnapshot: (storyWorldId) => unitOfWork.withCanonTransaction(async ({ canon }) =>
       buildSnapshot(canon, storyWorldId),
     ),
@@ -211,6 +428,7 @@ export function createV2CoreUseCases(
           name: input.name,
           ...(input.summary === undefined || input.summary === null ? {} : { summary: input.summary }),
           ...(input.personaText === undefined || input.personaText === null ? {} : { personaText: input.personaText }),
+          ...(input.profile === undefined || input.profile === null ? {} : { profile: toDomainProfile(input.profile) }),
           ...(input.homeLocationId === undefined ? {} : {
             homeLocation: await requireLocation(canon, storyWorldId, input.homeLocationId as V2LocationId),
           }),
@@ -301,6 +519,7 @@ export function createV2CoreUseCases(
           ...(input.summary === undefined || input.summary === null ? {} : { summary: input.summary }),
           ...(input.personaText === undefined || input.personaText === null ? {} : { personaText: input.personaText }),
           ...(homeLocationId === undefined ? {} : { homeLocationId }),
+          profile: input.profile === undefined ? (existing.profile ?? emptyCharacterProfile()) : input.profile === null ? {} : mergeProfile(existing.profile ?? emptyCharacterProfile(), input.profile),
         });
         const summary = input.summary === undefined
           ? existing.summary
@@ -318,6 +537,7 @@ export function createV2CoreUseCases(
           name: validated.name,
           ...(summary === undefined ? {} : { summary }),
           ...(personaText === undefined ? {} : { personaText }),
+          profile: validated.profile ?? emptyCharacterProfile(),
           ...(homeLocationId === undefined ? {} : { homeLocationId }),
         });
         const revision = await canon.advanceRevision(storyWorldId, input.expectedRevision);
@@ -673,6 +893,9 @@ export function createV2CoreUseCases(
           currentSceneId: run.currentSceneId,
           stateValues: run.stateValues,
           choiceHistory: run.choiceHistory,
+          characterState: run.characterState ?? {},
+          relationshipRuntime: run.relationshipRuntime ?? {},
+          eventInstances: run.eventInstances ?? [],
           ...(input.label === undefined ? {} : { label: input.label }),
         });
         return toRuntimeSaveDto(save);
@@ -860,6 +1083,7 @@ async function buildSnapshot(canon: V2CanonRepository, storyWorldId: V2StoryWorl
     world: toWorldDto(world),
     locations: (await canon.listLocations(storyWorldId)).map(toLocationDto),
     characters: (await canon.listCharacters(storyWorldId)).map(toCharacterDto),
+    relationships: (await canon.listCharacterRelationships(storyWorldId)).map(toCharacterRelationshipDto),
     facts: (await canon.listFacts(storyWorldId)).map(toFactDto),
     rules: (await canon.listRules(storyWorldId)).map(toRuleDto),
     timelineEvents: (await canon.listTimelineEvents(storyWorldId)).map(toTimelineEventDto),
@@ -902,8 +1126,107 @@ function toCharacterDto(character: Awaited<ReturnType<V2CanonRepository["getChar
     name: character.name,
     ...(character.summary === undefined ? {} : { summary: character.summary }),
     ...(character.personaText === undefined ? {} : { personaText: character.personaText }),
+    profile: character.profile ?? emptyCharacterProfile(),
     ...(character.homeLocationId === undefined ? {} : { homeLocationId: character.homeLocationId as V2LocationId }),
     createdAt: character.createdAt ?? "1970-01-01T00:00:00.000Z",
+  };
+}
+
+function toDomainProfile(input: V2CharacterProfileInput): import("@living-network/domain/v2").V2CanonCharacterProfile {
+  const persona = input.persona ?? {};
+  return {
+    aliases: input.aliases ?? [],
+    tags: input.tags ?? [],
+    ...(input.identity === undefined || input.identity === null ? {} : { identity: input.identity }),
+    persona: {
+      traits: persona.traits ?? [],
+      behaviorPatterns: persona.behaviorPatterns ?? [],
+      values: persona.values ?? [],
+      taboos: persona.taboos ?? [],
+      ...(persona.speechStyle === undefined || persona.speechStyle === null ? {} : { speechStyle: persona.speechStyle }),
+      ...(persona.backgroundStory === undefined || persona.backgroundStory === null ? {} : { backgroundStory: persona.backgroundStory }),
+      ...(persona.advancedPrompt === undefined || persona.advancedPrompt === null ? {} : { advancedPrompt: persona.advancedPrompt }),
+    },
+  };
+}
+
+function emptyCharacterProfile(): import("@living-network/domain/v2").V2CanonCharacterProfile {
+  return { aliases: [], tags: [], persona: { traits: [], behaviorPatterns: [], values: [], taboos: [] } };
+}
+
+function toCharacterRelationshipDto(relationship: import("@living-network/domain/v2").V2CanonCharacterRelationship): V2CharacterRelationshipDto {
+  return {
+    relationshipId: relationship.relationshipId as V2CharacterRelationshipDto["relationshipId"],
+    storyWorldId: relationship.storyWorldId as V2CharacterRelationshipDto["storyWorldId"],
+    fromCharacterId: relationship.fromCharacterId as V2CharacterRelationshipDto["fromCharacterId"],
+    toCharacterId: relationship.toCharacterId as V2CharacterRelationshipDto["toCharacterId"],
+    type: relationship.type,
+    ...(relationship.customLabel === undefined ? {} : { customLabel: relationship.customLabel }),
+    ...(relationship.description === undefined ? {} : { description: relationship.description }),
+    strength: relationship.strength,
+    visibility: relationship.visibility,
+    ...(relationship.archivedAt === undefined ? {} : { archivedAt: relationship.archivedAt }),
+  };
+}
+
+function toCharacterStateDefinitionDto(definition: import("@living-network/domain/v2").V2CanonCharacterStateDefinition): V2CharacterStateDefinitionDto {
+  return {
+    stateDefinitionId: definition.stateDefinitionId as V2CharacterStateDefinitionDto["stateDefinitionId"],
+    storyWorldId: definition.storyWorldId as V2CharacterStateDefinitionDto["storyWorldId"],
+    characterId: definition.characterId as V2CharacterStateDefinitionDto["characterId"],
+    key: definition.key,
+    valueType: definition.valueType,
+    defaultValue: definition.defaultValue,
+    constraints: definition.constraints,
+    ...(definition.archivedAt === undefined ? {} : { archivedAt: definition.archivedAt }),
+  };
+}
+
+function toCharacterVisualVariantDto(variant: import("@living-network/domain/v2").V2CanonCharacterVisualVariant): V2CharacterVisualVariantDto {
+  return {
+    visualVariantId: variant.visualVariantId as V2CharacterVisualVariantDto["visualVariantId"],
+    storyWorldId: variant.storyWorldId as V2CharacterVisualVariantDto["storyWorldId"],
+    characterId: variant.characterId as V2CharacterVisualVariantDto["characterId"],
+    name: variant.name,
+    appearance: variant.appearance,
+    loras: variant.loras,
+    triggerWords: variant.triggerWords,
+    ...(variant.negativePrompt === undefined ? {} : { negativePrompt: variant.negativePrompt }),
+    ...(variant.workflowPreset === undefined ? {} : { workflowPreset: variant.workflowPreset }),
+    isDefault: variant.isDefault,
+    referenceAssetIds: variant.referenceAssetIds,
+    ...(variant.archivedAt === undefined ? {} : { archivedAt: variant.archivedAt }),
+  };
+}
+
+function toCharacterEventDefinitionDto(event: import("@living-network/domain/v2").V2CanonCharacterEventDefinition): V2CharacterEventDefinitionDto {
+  return {
+    eventDefinitionId: event.eventDefinitionId as V2CharacterEventDefinitionDto["eventDefinitionId"],
+    storyWorldId: event.storyWorldId as V2CharacterEventDefinitionDto["storyWorldId"],
+    name: event.name,
+    ...(event.description === undefined ? {} : { description: event.description }),
+    participantCharacterIds: event.participantCharacterIds as V2CharacterEventDefinitionDto["participantCharacterIds"],
+    initialState: event.initialState,
+    ...(event.archivedAt === undefined ? {} : { archivedAt: event.archivedAt }),
+  };
+}
+
+function mergeProfile(existing: import("@living-network/domain/v2").V2CanonCharacterProfile, input: V2CharacterProfileInput): import("@living-network/domain/v2").V2CanonCharacterProfile {
+  const next = toDomainProfile(input);
+  const personaInput = input.persona;
+  return {
+    aliases: input.aliases === undefined ? existing.aliases : next.aliases,
+    tags: input.tags === undefined ? existing.tags : next.tags,
+    ...(input.identity === undefined ? existing.identity === undefined ? {} : { identity: existing.identity } : input.identity === null ? {} : { identity: next.identity }),
+    persona: {
+      traits: personaInput?.traits === undefined ? existing.persona.traits : next.persona.traits,
+      behaviorPatterns: personaInput?.behaviorPatterns === undefined ? existing.persona.behaviorPatterns : next.persona.behaviorPatterns,
+      values: personaInput?.values === undefined ? existing.persona.values : next.persona.values,
+      taboos: personaInput?.taboos === undefined ? existing.persona.taboos : next.persona.taboos,
+      ...(personaInput?.speechStyle === undefined ? existing.persona.speechStyle === undefined ? {} : { speechStyle: existing.persona.speechStyle } : personaInput.speechStyle === null ? {} : { speechStyle: next.persona.speechStyle }),
+      ...(personaInput?.backgroundStory === undefined ? existing.persona.backgroundStory === undefined ? {} : { backgroundStory: existing.persona.backgroundStory } : personaInput.backgroundStory === null ? {} : { backgroundStory: next.persona.backgroundStory }),
+      ...(personaInput?.advancedPrompt === undefined ? existing.persona.advancedPrompt === undefined ? {} : { advancedPrompt: existing.persona.advancedPrompt } : personaInput.advancedPrompt === null ? {} : { advancedPrompt: next.persona.advancedPrompt }),
+    },
   };
 }
 
@@ -968,7 +1291,7 @@ function toChoiceDto(choice: Awaited<ReturnType<V2GraphStateRepository["getChoic
     ...(choice.targetSceneId === undefined ? {} : { targetSceneId: choice.targetSceneId as V2SceneDto["sceneId"] }),
     label: choice.label,
     gates: choice.gates,
-    consequences: choice.consequences,
+    consequences: choice.consequences as unknown as V2ChoiceDto["consequences"],
     createdAt: choice.createdAt ?? "1970-01-01T00:00:00.000Z",
   };
 }
@@ -1042,6 +1365,9 @@ function toRuntimeRunDto(run: Awaited<ReturnType<V2ReleaseRuntimeRepository["get
     currentSceneId: run.currentSceneId as V2SceneDto["sceneId"],
     stateValues: run.stateValues,
     choiceHistory: run.choiceHistory.map((choiceId) => choiceId as V2ChoiceDto["choiceId"]),
+    characterState: run.characterState ?? {},
+    relationshipRuntime: run.relationshipRuntime ?? {},
+    eventInstances: run.eventInstances ?? [],
     createdAt: run.createdAt ?? "1970-01-01T00:00:00.000Z",
     updatedAt: run.updatedAt ?? "1970-01-01T00:00:00.000Z",
   };
@@ -1080,6 +1406,9 @@ function toRuntimeSaveDto(save: V2RuntimeSaveRecord): V2RuntimeSaveDto {
     currentSceneId: save.currentSceneId as V2SceneDto["sceneId"],
     stateValues: save.stateValues,
     choiceHistory: save.choiceHistory.map((choiceId) => choiceId as V2ChoiceDto["choiceId"]),
+    characterState: save.characterState ?? {},
+    relationshipRuntime: save.relationshipRuntime ?? {},
+    eventInstances: save.eventInstances ?? [],
     ...(save.label === undefined ? {} : { label: save.label }),
     createdAt: save.createdAt ?? "1970-01-01T00:00:00.000Z",
   };

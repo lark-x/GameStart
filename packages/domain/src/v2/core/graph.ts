@@ -16,10 +16,37 @@ export interface V2GraphStateGate {
 }
 
 export interface V2GraphStateConsequence {
+  readonly kind?: "story";
   readonly stateKey: string;
   readonly operation: V2GraphStateConsequenceOperation;
   readonly value: V2GraphStateValue;
 }
+
+export interface V2GraphCharacterStateConsequence {
+  readonly kind: "character";
+  readonly characterId: string;
+  readonly stateKey: string;
+  readonly operation: V2GraphStateConsequenceOperation;
+  readonly value: V2GraphStateValue;
+}
+
+export interface V2GraphRelationshipConsequence {
+  readonly kind: "relationship";
+  readonly fromCharacterId: string;
+  readonly toCharacterId: string;
+  readonly operation: V2GraphStateConsequenceOperation;
+  readonly value: number;
+}
+
+export interface V2GraphEventConsequence {
+  readonly kind: "event";
+  readonly eventDefinitionId: string;
+  readonly operation: "create" | "transition";
+  readonly eventInstanceId?: string;
+  readonly state?: Record<string, V2GraphStateValue>;
+}
+
+export type V2GraphChoiceConsequence = V2GraphStateConsequence | V2GraphCharacterStateConsequence | V2GraphRelationshipConsequence | V2GraphEventConsequence;
 
 export interface V2GraphArc {
   readonly arcId: V2GraphArcId;
@@ -46,7 +73,7 @@ export interface V2GraphChoice {
   readonly targetSceneId?: V2GraphSceneId;
   readonly label: string;
   readonly gates: readonly V2GraphStateGate[];
-  readonly consequences: readonly V2GraphStateConsequence[];
+  readonly consequences: readonly V2GraphChoiceConsequence[];
   readonly createdAt?: string;
 }
 
@@ -108,7 +135,7 @@ export function createV2GraphChoice(input: {
   readonly targetSceneId?: V2GraphSceneId;
   readonly label: string;
   readonly gates?: readonly V2GraphStateGate[];
-  readonly consequences?: readonly V2GraphStateConsequence[];
+  readonly consequences?: readonly V2GraphChoiceConsequence[];
 }): V2GraphChoice {
   if (input.sourceScene.storyWorldId !== input.storyWorldId) {
     throw new V2DomainError("CROSS_WORLD_REFERENCE", "sourceSceneId must belong to the same story world");
@@ -225,15 +252,23 @@ function assertGate(input: V2GraphStateGate): V2GraphStateGate {
   };
 }
 
-function assertConsequence(input: V2GraphStateConsequence): V2GraphStateConsequence {
-  if (input.operation !== "set" && input.operation !== "increment") {
-    throw new V2DomainError("INVALID_INPUT", "consequence operation is not supported");
+function assertConsequence(input: V2GraphChoiceConsequence): V2GraphChoiceConsequence {
+  if (input.kind === "character") {
+    if (input.operation !== "set" && input.operation !== "increment") throw new V2DomainError("INVALID_INPUT", "consequence operation is not supported");
+    return { kind: "character", characterId: assertNonEmptyId(input.characterId, "characterId"), stateKey: assertStateKey(input.stateKey), operation: input.operation, value: assertStateValue(input.value, "consequence value") };
   }
-  return {
-    stateKey: assertStateKey(input.stateKey),
-    operation: input.operation,
-    value: assertStateValue(input.value, "consequence value"),
-  };
+  if (input.kind === "relationship") {
+    if (input.fromCharacterId === input.toCharacterId) throw new V2DomainError("INVALID_INPUT", "relationship consequence cannot target a self relationship");
+    if (input.operation !== "set" && input.operation !== "increment") throw new V2DomainError("INVALID_INPUT", "consequence operation is not supported");
+    if (!Number.isInteger(input.value) || input.value < -100 || input.value > 100) throw new V2DomainError("INVALID_INPUT", "relationship consequence value must be between -100 and 100");
+    return { kind: "relationship", fromCharacterId: assertNonEmptyId(input.fromCharacterId, "fromCharacterId"), toCharacterId: assertNonEmptyId(input.toCharacterId, "toCharacterId"), operation: input.operation, value: input.value };
+  }
+  if (input.kind === "event") {
+    if (input.operation !== "create" && input.operation !== "transition") throw new V2DomainError("INVALID_INPUT", "event operation is not supported");
+    return { kind: "event", eventDefinitionId: assertNonEmptyId(input.eventDefinitionId, "eventDefinitionId"), operation: input.operation, ...(input.eventInstanceId === undefined ? {} : { eventInstanceId: assertNonEmptyId(input.eventInstanceId, "eventInstanceId") }), ...(input.state === undefined ? {} : { state: Object.fromEntries(Object.entries(input.state).map(([key, value]) => [assertStateKey(key), assertStateValue(value, "event state value")])) }) };
+  }
+  if (input.operation !== "set" && input.operation !== "increment") throw new V2DomainError("INVALID_INPUT", "consequence operation is not supported");
+  return { ...(input.kind === "story" ? { kind: "story" as const } : {}), stateKey: assertStateKey(input.stateKey), operation: input.operation, value: assertStateValue(input.value, "consequence value") };
 }
 
 function assertStateKey(value: string): string {
