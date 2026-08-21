@@ -71,7 +71,7 @@ export function parseCreateLocationBody(body: unknown): V2CreateLocationRequest 
   return {
     locationId: requiredString(value.locationId, "locationId") as V2LocationId,
     name: requiredString(value.name, "name"),
-    ...(value.summary === undefined ? {} : { summary: requiredString(value.summary, "summary") }),
+    ...(value.summary === undefined ? {} : { summary: value.summary === null ? null : requiredString(value.summary, "summary") }),
     expectedRevision: requiredRevision(value.expectedRevision),
     idempotencyKey: requiredString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey,
   };
@@ -82,9 +82,9 @@ export function parseCreateCharacterBody(body: unknown): V2CreateCharacterReques
   return {
     characterId: requiredString(value.characterId, "characterId") as V2CharacterId,
     name: requiredString(value.name, "name"),
-    ...(value.summary === undefined ? {} : { summary: requiredString(value.summary, "summary") }),
-    ...(value.personaText === undefined ? {} : { personaText: requiredString(value.personaText, "personaText") }),
-    ...(value.homeLocationId === undefined ? {} : { homeLocationId: requiredString(value.homeLocationId, "homeLocationId") as V2LocationId }),
+    ...(value.summary === undefined ? {} : { summary: value.summary === null ? null : requiredString(value.summary, "summary") }),
+    ...(value.personaText === undefined ? {} : { personaText: value.personaText === null ? null : requiredString(value.personaText, "personaText") }),
+    ...(value.homeLocationId === undefined ? {} : { homeLocationId: value.homeLocationId === null ? null : requiredString(value.homeLocationId, "homeLocationId") as V2LocationId }),
     expectedRevision: requiredRevision(value.expectedRevision),
     idempotencyKey: requiredString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey,
   };
@@ -126,7 +126,7 @@ export function parseCreateTimelineEventBody(body: unknown): V2CreateTimelineEve
     timelineEventId: requiredString(value.timelineEventId, "timelineEventId"),
     localDate: requiredString(value.localDate, "localDate"),
     title: requiredString(value.title, "title"),
-    ...(value.summary === undefined ? {} : { summary: requiredString(value.summary, "summary") }),
+    ...(value.summary === undefined ? {} : { summary: value.summary === null ? null : requiredString(value.summary, "summary") }),
     expectedRevision: requiredRevision(value.expectedRevision),
     idempotencyKey: requiredString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey,
   };
@@ -184,17 +184,17 @@ export function parseCreateStateVariableBody(body: unknown): V2CreateStateVariab
 
 export function parseUpdateWorldBody(body: unknown): V2UpdateStoryWorldRequest {
   const value = requireRevisionedBody(body, ["name", "summary"]);
-  return { name: requiredString(value.name, "name"), ...(value.summary === undefined ? {} : { summary: requiredString(value.summary, "summary") }), expectedRevision: requiredRevision(value.expectedRevision), idempotencyKey: requiredString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey };
+  return { name: requiredString(value.name, "name"), ...(value.summary === undefined ? {} : { summary: value.summary === null ? null : requiredString(value.summary, "summary") }), expectedRevision: requiredRevision(value.expectedRevision), idempotencyKey: requiredString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey };
 }
 
 export function parseUpdateLocationBody(body: unknown): V2UpdateLocationRequest {
   const value = requireRevisionedBody(body, ["name", "summary"]);
-  return { name: requiredString(value.name, "name"), ...(value.summary === undefined ? {} : { summary: requiredString(value.summary, "summary") }), expectedRevision: requiredRevision(value.expectedRevision), idempotencyKey: requiredString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey };
+  return { name: requiredString(value.name, "name"), ...(value.summary === undefined ? {} : { summary: value.summary === null ? null : requiredString(value.summary, "summary") }), expectedRevision: requiredRevision(value.expectedRevision), idempotencyKey: requiredString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey };
 }
 
 export function parseUpdateCharacterBody(body: unknown): V2UpdateCharacterRequest {
   const value = requireRevisionedBody(body, ["name", "summary", "homeLocationId", "personaText"]);
-  return { name: requiredString(value.name, "name"), ...(value.summary === undefined ? {} : { summary: requiredString(value.summary, "summary") }), ...(value.personaText === undefined ? {} : { personaText: requiredString(value.personaText, "personaText") }), ...(value.homeLocationId === undefined ? {} : { homeLocationId: value.homeLocationId === null ? null : requiredString(value.homeLocationId, "homeLocationId") as V2LocationId }), expectedRevision: requiredRevision(value.expectedRevision), idempotencyKey: requiredString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey };
+  return { name: requiredString(value.name, "name"), ...(value.summary === undefined ? {} : { summary: value.summary === null ? null : requiredString(value.summary, "summary") }), ...(value.personaText === undefined ? {} : { personaText: value.personaText === null ? null : requiredString(value.personaText, "personaText") }), ...(value.homeLocationId === undefined ? {} : { homeLocationId: value.homeLocationId === null ? null : requiredString(value.homeLocationId, "homeLocationId") as V2LocationId }), expectedRevision: requiredRevision(value.expectedRevision), idempotencyKey: requiredString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey };
 }
 
 export function parseUpdateFactBody(body: unknown): V2UpdateFactRequest {
@@ -211,7 +211,7 @@ export function parseUpdateRuleBody(body: unknown): V2UpdateRuleRequest {
 
 export function parseUpdateTimelineEventBody(body: unknown): V2UpdateTimelineEventRequest {
   const value = requireRevisionedBody(body, ["localDate", "title", "summary"]);
-  return { localDate: requiredString(value.localDate, "localDate"), title: requiredString(value.title, "title"), ...(value.summary === undefined ? {} : { summary: requiredString(value.summary, "summary") }), expectedRevision: requiredRevision(value.expectedRevision), idempotencyKey: requiredString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey };
+  return { localDate: requiredString(value.localDate, "localDate"), title: requiredString(value.title, "title"), ...(value.summary === undefined ? {} : { summary: value.summary === null ? null : requiredString(value.summary, "summary") }), expectedRevision: requiredRevision(value.expectedRevision), idempotencyKey: requiredString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey };
 }
 
 export function parseUpdateArcBody(body: unknown): V2UpdateArcRequest {

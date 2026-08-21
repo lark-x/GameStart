@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { Activity, ArrowLeft, BookOpen, Copy, ImagePlus, MoreHorizontal, RefreshCw, Send, Smile, Sparkles, Square, Sticker, UserRound, X } from "@lucide/vue";
 
@@ -187,50 +187,99 @@ async function triggerStoryAnalyze(): Promise<void> {
 }
 
 let abortController: AbortController | undefined;
+let loadGeneration = 0;
 
-onMounted(async () => {
-  await loadChat();
-  await loadExtras();
-  if (
-    messages.value.length === 0 &&
-    featureState.value === "ready" &&
-    modelConfigured.value
-  ) {
+async function initConversation(): Promise<void> {
+  const generation = ++loadGeneration;
+  const id = conversationId.value as V2ConversationId;
+  abortController?.abort();
+  abortController = undefined;
+  // Reset conversation-scoped state
+  messages.value = [];
+  conversationTitle.value = "";
+  input.value = "";
+  pendingAttachments.value = [];
+  emojiOpen.value = false;
+  stickerOpen.value = false;
+  hasMore.value = false;
+  nextBeforeMessageId.value = undefined;
+  loadingOlder.value = false;
+  loadingOlderError.value = "";
+  isNearBottom.value = true;
+  showScrollHint.value = false;
+  showDiagnostics.value = false;
+  diagnostics.value = null;
+  loadingDiagnostics.value = false;
+  diagnosticsError.value = null;
+  analyzing.value = false;
+  moreMenuOpen.value = false;
+  errorMessage.value = "";
+  featureState.value = "idle";
+  featureError.value = null;
+  features.value = null;
+  context.value = null;
+  showCharacterPanel.value = false;
+  loadingContext.value = false;
+  contextError.value = null;
+  streaming.value = false;
+  sending.value = false;
+  imageUploading.value = false;
+
+  await loadChat(generation, id);
+  if (generation !== loadGeneration) return;
+  await loadExtras(generation, id);
+  if (generation !== loadGeneration) return;
+  const currentState = featureState.value as FeatureState;
+  const currentModelConfigured = isChatModelConfigured(currentState, features.value);
+  if (messages.value.length === 0 && currentState === "ready" && currentModelConfigured) {
     await generateOpening();
   }
+}
+
+onMounted(() => {
+  void initConversation();
+});
+
+watch(conversationId, (nextId, previousId) => {
+  if (nextId === previousId || nextId === undefined) return;
+  void initConversation();
 });
 
 onUnmounted(() => {
   abortController?.abort();
 });
 
-async function loadChat(): Promise<void> {
+async function loadChat(generation: number, id: V2ConversationId): Promise<void> {
   loading.value = true;
   errorMessage.value = "";
   try {
     const [conversation, history] = await Promise.all([
-      client.listConversationSummaries().then((items) => items.find((item) => item.conversationId === conversationId.value)),
-      client.listMessages(conversationId.value as V2ConversationId, { limit: 50 }),
+      client.listConversationSummaries().then((items) => items.find((item) => item.conversationId === id)),
+      client.listMessages(id, { limit: 50 }),
     ]);
+    if (generation !== loadGeneration) return;
     conversationTitle.value = conversation?.title ?? "故事对话";
     messages.value = history.messages;
     hasMore.value = history.hasMore;
     nextBeforeMessageId.value = history.nextBeforeMessageId;
     await nextTick();
+    if (generation !== loadGeneration) return;
     scrollToBottom("auto");
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : "加载对话失败";
+    if (generation === loadGeneration) {
+      errorMessage.value = error instanceof Error ? error.message : "加载对话失败";
+    }
   } finally {
-    loading.value = false;
+    if (generation === loadGeneration) loading.value = false;
   }
 }
 
-async function loadExtras(): Promise<void> {
-  const id = conversationId.value as V2ConversationId;
+async function loadExtras(generation: number, id: V2ConversationId): Promise<void> {
   const [nextFeatures, nextContext] = await Promise.allSettled([
     client.getConversationFeatures(id),
     client.getConversationContext(id),
   ]);
+  if (generation !== loadGeneration) return;
   if (nextFeatures.status === "fulfilled") {
     features.value = nextFeatures.value;
     featureState.value = "ready";
@@ -253,20 +302,28 @@ async function loadExtras(): Promise<void> {
 async function toggleCharacterPanel(): Promise<void> {
   showCharacterPanel.value = !showCharacterPanel.value;
   if (showCharacterPanel.value && context.value === null) {
+    const generation = loadGeneration;
+    const id = conversationId.value as V2ConversationId;
     loadingContext.value = true;
     contextError.value = null;
     try {
-      context.value = await client.getConversationContext(conversationId.value as V2ConversationId);
+      const nextContext = await client.getConversationContext(id);
+      if (generation !== loadGeneration) return;
+      context.value = nextContext;
     } catch (error) {
-      contextError.value = error instanceof Error ? error.message : "读取角色信息失败";
+      if (generation === loadGeneration) {
+        contextError.value = error instanceof Error ? error.message : "读取角色信息失败";
+      }
     } finally {
-      loadingContext.value = false;
+      if (generation === loadGeneration) loadingContext.value = false;
     }
   }
 }
 
 async function loadOlderMessages(): Promise<void> {
   if (!hasMore.value || loadingOlder.value || !nextBeforeMessageId.value) return;
+  const generation = loadGeneration;
+  const id = conversationId.value as V2ConversationId;
   loadingOlder.value = true;
   loadingOlderError.value = "";
   const container = messagesContainer.value;
@@ -274,10 +331,11 @@ async function loadOlderMessages(): Promise<void> {
   const oldScrollTop = container?.scrollTop ?? 0;
 
   try {
-    const page = await client.listMessages(conversationId.value as V2ConversationId, {
+    const page = await client.listMessages(id, {
       beforeMessageId: nextBeforeMessageId.value as V2MessageId,
       limit: 50,
     });
+    if (generation !== loadGeneration) return;
     messages.value = [...page.messages, ...messages.value];
     hasMore.value = page.hasMore;
     nextBeforeMessageId.value = page.nextBeforeMessageId;
@@ -288,9 +346,11 @@ async function loadOlderMessages(): Promise<void> {
       container.scrollTop = oldScrollTop + (newScrollHeight - oldScrollHeight);
     }
   } catch (error) {
-    loadingOlderError.value = error instanceof Error ? error.message : "加载更早消息失败";
+    if (generation === loadGeneration) {
+      loadingOlderError.value = error instanceof Error ? error.message : "加载更早消息失败";
+    }
   } finally {
-    loadingOlder.value = false;
+    if (generation === loadGeneration) loadingOlder.value = false;
   }
 }
 
@@ -302,19 +362,27 @@ async function toggleDiagnostics(): Promise<void> {
 }
 
 async function refreshDiagnostics(): Promise<void> {
+  const generation = loadGeneration;
+  const id = conversationId.value as V2ConversationId;
   loadingDiagnostics.value = true;
   diagnosticsError.value = null;
   try {
-    diagnostics.value = await client.getLatestDiagnostics(conversationId.value as V2ConversationId);
+    const nextDiagnostics = await client.getLatestDiagnostics(id);
+    if (generation !== loadGeneration) return;
+    diagnostics.value = nextDiagnostics;
   } catch (error) {
-    diagnosticsError.value = error instanceof Error ? error.message : "获取诊断信息失败";
+    if (generation === loadGeneration) {
+      diagnosticsError.value = error instanceof Error ? error.message : "获取诊断信息失败";
+    }
   } finally {
-    loadingDiagnostics.value = false;
+    if (generation === loadGeneration) loadingDiagnostics.value = false;
   }
 }
 
 async function generateOpening(): Promise<void> {
-  await startAssistantReply(`story-bootstrap:${conversationId.value}`);
+  const generation = loadGeneration;
+  const id = conversationId.value as V2ConversationId;
+  await startAssistantReply(`story-bootstrap:${id}`, generation, id);
 }
 
 async function sendMessage(): Promise<void> {
@@ -329,16 +397,19 @@ async function sendMessagePayload(params: {
   readonly attachmentIds: readonly string[];
   readonly clearComposer: boolean;
 }): Promise<void> {
+  const generation = loadGeneration;
+  const id = conversationId.value as V2ConversationId;
   const text = params.text;
   const attachmentIds = params.attachmentIds;
   sending.value = true;
   errorMessage.value = "";
   try {
-    const response = await client.sendMessage(conversationId.value as V2ConversationId, {
+    const response = await client.sendMessage(id, {
       ...(text ? { text } : {}),
       ...(attachmentIds.length ? { attachmentIds: attachmentIds as V2MediaId[] } : {}),
       idempotencyKey: `user:${Date.now()}:${randomUuid()}` as V2IdempotencyKey,
     });
+    if (generation !== loadGeneration) return;
     messages.value = [...messages.value, response.message];
     if (params.clearComposer) {
       input.value = "";
@@ -346,11 +417,13 @@ async function sendMessagePayload(params: {
     }
     await nextTick();
     scrollToBottom("smooth");
-    await startAssistantReply();
+    await startAssistantReply(undefined, generation, id);
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : "发送失败";
+    if (generation === loadGeneration) {
+      errorMessage.value = error instanceof Error ? error.message : "发送失败";
+    }
   } finally {
-    sending.value = false;
+    if (generation === loadGeneration) sending.value = false;
   }
 }
 
@@ -393,16 +466,22 @@ async function sendSticker(sticker: { readonly mediaId: string; readonly mediaRe
   await sendMessagePayload(buildStickerSendPayload(sticker.mediaId));
 }
 
-async function startAssistantReply(openingIdempotencyKey?: string): Promise<void> {
+async function startAssistantReply(
+  openingIdempotencyKey?: string,
+  expectedGeneration = loadGeneration,
+  expectedConversationId = conversationId.value as V2ConversationId,
+): Promise<void> {
+  if (expectedGeneration !== loadGeneration || expectedConversationId !== conversationId.value) return;
   if (streaming.value) return;
   streaming.value = true;
   errorMessage.value = "";
-  abortController = new AbortController();
+  const controller = new AbortController();
+  abortController = controller;
   const placeholderId = `assistant:${Date.now()}:${randomUuid()}`;
   const idempotencyKey = openingIdempotencyKey ?? `reply:${Date.now()}:${randomUuid()}`;
   const placeholder: V2ChatMessageDto = {
     messageId: placeholderId as V2ChatMessageDto["messageId"],
-    conversationId: conversationId.value as V2ConversationId,
+    conversationId: expectedConversationId,
     role: "assistant",
     text: "",
     attachments: [],
@@ -418,6 +497,7 @@ async function startAssistantReply(openingIdempotencyKey?: string): Promise<void
   let replaced = false;
 
   const handleEvent = (event: V2ChatStreamEvent): void => {
+    if (expectedGeneration !== loadGeneration || expectedConversationId !== conversationId.value) return;
     if (event.type === "delta" && event.content !== undefined) {
       content += event.content;
       updatePlaceholder(placeholder.messageId, { text: content, status: "pending" });
@@ -440,21 +520,24 @@ async function startAssistantReply(openingIdempotencyKey?: string): Promise<void
 
   try {
     await client.streamReply(
-      conversationId.value as V2ConversationId,
+      expectedConversationId,
       { idempotencyKey: placeholder.idempotencyKey },
       handleEvent,
-      abortController.signal,
+      controller.signal,
     );
   } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") {
-      errorMessage.value = "已停止生成";
-    } else {
-      errorMessage.value = error instanceof Error ? error.message : "生成失败";
+    if (expectedGeneration === loadGeneration && expectedConversationId === conversationId.value) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        errorMessage.value = "已停止生成";
+      } else {
+        errorMessage.value = error instanceof Error ? error.message : "生成失败";
+      }
+      updatePlaceholder(placeholder.messageId, { status: content ? "interrupted" : "failed" });
     }
-    updatePlaceholder(placeholder.messageId, { status: content ? "interrupted" : "failed" });
   } finally {
+    if (abortController === controller) abortController = undefined;
+    if (expectedGeneration !== loadGeneration || expectedConversationId !== conversationId.value) return;
     streaming.value = false;
-    abortController = undefined;
     if (!replaced && content.trim().length === 0) {
       messages.value = messages.value.filter((message) => message.messageId !== placeholder.messageId);
     }

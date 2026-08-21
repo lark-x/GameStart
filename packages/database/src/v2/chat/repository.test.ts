@@ -40,6 +40,8 @@ test("V2 chat SQLite repository persists conversations, messages, and memories",
 
     const memory = await unit.withChatTransaction(async ({ memories }) => memories.create(createV2Memory({
       memoryId: "memory:one",
+      scopeType: "conversation",
+      scopeId: "conversation:one",
       storyWorldId: "world:chat",
       conversationId: "conversation:one",
       kind: "profile",
@@ -109,7 +111,9 @@ test("V2 chat repository exposes conversation summaries and character-scoped mem
     await unit.withChatTransaction(async ({ memories }) => {
       await memories.create(createV2Memory({
         memoryId: "memory:summary",
-        storyWorldId: "world:summary",
+        scopeType: "character",
+      scopeId: "character:summary",
+      storyWorldId: "world:summary",
         characterId: "character:summary",
         kind: "profile",
         content: "花火记得用户的名字",
@@ -461,6 +465,8 @@ test("V2 memory fact stats and maintenance run queries support the operational d
 
     await memories.create(createV2Memory({
       memoryId: "memory:stats:1",
+      scopeType: "character",
+      scopeId: "character:a",
       storyWorldId: "world:stats",
       conversationId: "conversation:stats",
       characterId: "character:a",
@@ -472,6 +478,8 @@ test("V2 memory fact stats and maintenance run queries support the operational d
     }));
     await memories.create(createV2Memory({
       memoryId: "memory:stats:2",
+      scopeType: "character",
+      scopeId: "character:b",
       storyWorldId: "world:stats",
       conversationId: "conversation:stats",
       characterId: "character:b",
@@ -483,6 +491,8 @@ test("V2 memory fact stats and maintenance run queries support the operational d
     }));
     await memories.create(createV2Memory({
       memoryId: "memory:stats:3",
+      scopeType: "conversation",
+      scopeId: "conversation:stats",
       storyWorldId: "world:stats",
       conversationId: "conversation:stats",
       kind: "episodic",
@@ -493,6 +503,8 @@ test("V2 memory fact stats and maintenance run queries support the operational d
     }));
     await memories.create(createV2Memory({
       memoryId: "memory:stats:4",
+      scopeType: "conversation",
+      scopeId: "conversation:stats",
       storyWorldId: "world:stats",
       conversationId: "conversation:stats",
       kind: "episodic",
@@ -628,6 +640,56 @@ test("manual retry does not regrant unlimited executions and keeps maxAttempts b
       maintenanceJobs.retryFailed({ jobId: "job:retry:2", now: "2026-08-12T03:00:01.000Z" }));
     assert.equal(retried?.maxAttempts, 5, "maxAttempts must not regress when it is already sufficient");
     assert.equal(retried?.status, "pending");
+  } finally {
+    temp.db.close();
+    temp.cleanup();
+  }
+});
+
+
+test("V2 memory scoped retrieval honors the full scope matrix", async () => {
+  const temp = openV2TempSqliteConnection();
+  try {
+    applyV2Migrations(temp.db);
+    const unit = new V2SqliteChatUnitOfWork(temp.db);
+    await unit.withChatTransaction(async (repos) => {
+      await repos.canon.createWorld(createV2CanonWorld({ storyWorldId: "world:matrix", name: "M" }));
+      await repos.canon.createCharacter(createV2CanonCharacter({ characterId: "character:a", storyWorldId: "world:matrix", name: "A" }));
+      await repos.canon.createCharacter(createV2CanonCharacter({ characterId: "character:b", storyWorldId: "world:matrix", name: "B" }));
+      await repos.conversations.create(createV2ChatConversation({ conversationId: "conversation:a", storyWorldId: "world:matrix", primaryCharacterId: "character:a", title: "A" }));
+      await repos.conversations.create(createV2ChatConversation({ conversationId: "conversation:b", storyWorldId: "world:matrix", primaryCharacterId: "character:b", title: "B" }));
+      const nowIso = new Date().toISOString();
+      const seed = (id: string, scopeType: "user" | "world" | "character" | "conversation", scopeId: string, characterId?: string, conversationId?: string) => repos.memories.create(createV2Memory({
+        memoryId: id,
+        storyWorldId: "world:matrix" as never,
+        ...(conversationId === undefined ? {} : { conversationId: conversationId as never }),
+        ...(characterId === undefined ? {} : { characterId }),
+        scopeType,
+        scopeId,
+        kind: "profile",
+        content: "矩阵测试内容",
+        importance: 0.8,
+        confidence: 0.9,
+        sourceMessageIds: [],
+        status: "active",
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      }));
+      await seed("mem:user", "user", "user:local");
+      await seed("mem:world", "world", "world:matrix");
+      await seed("mem:char-a", "character", "character:a", "character:a", "conversation:a");
+      await seed("mem:char-b", "character", "character:b", "character:b", "conversation:b");
+      await seed("mem:conv-a", "conversation", "conversation:a", undefined, "conversation:a");
+      await seed("mem:conv-b", "conversation", "conversation:b", undefined, "conversation:b");
+    });
+    const forA = await unit.withChatTransaction(async (repos) => repos.memories.listActiveScoped({ storyWorldId: "world:matrix" as never, conversationId: "conversation:a" as never, characterId: "character:a", limit: 20 }));
+    const aIds = forA.map((m) => m.memoryId).sort();
+    assert.deepEqual(aIds, ["mem:char-a", "mem:conv-a", "mem:user", "mem:world"].sort());
+    const forB = await unit.withChatTransaction(async (repos) => repos.memories.listActiveScoped({ storyWorldId: "world:matrix" as never, conversationId: "conversation:b" as never, characterId: "character:b", limit: 20 }));
+    const bIds = forB.map((m) => m.memoryId).sort();
+    assert.deepEqual(bIds, ["mem:char-b", "mem:conv-b", "mem:user", "mem:world"].sort());
+    const aOnly = await unit.withChatTransaction(async (repos) => repos.memories.listActiveScoped({ storyWorldId: "world:matrix" as never, conversationId: "conversation:a" as never, characterId: "character:a", limit: 20 }));
+    assert.ok(aOnly.every((m) => !["mem:char-b", "mem:conv-b"].includes(m.memoryId)), "A must not see B scope memories");
   } finally {
     temp.db.close();
     temp.cleanup();

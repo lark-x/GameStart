@@ -1127,6 +1127,8 @@ test("V2MaintenanceDispatchPump consolidates a related preference and supersedes
         conversationId: convId,
         kind: "preference",
         content: "用户喜欢喝咖啡",
+        scopeType: "user",
+        scopeId: "user:local",
         importance: 0.8,
         confidence: 0.9,
         sourceMessageIds: [coffeeMsgId],

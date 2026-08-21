@@ -57,7 +57,10 @@ function locationNameById(id: string | undefined): string {
   return location?.name ?? "";
 }
 function openEditCharacter(char: { readonly characterId: string; readonly name: string; readonly role: string; readonly summary?: string; readonly personaText?: string; readonly homeLocationId?: string }): void {
-  openEditEntity("character", char.characterId, { name: char.name, summary: char.summary ?? char.role });
+  openEditEntity("character", char.characterId, {
+    name: char.name,
+    ...(char.summary === undefined ? {} : { summary: char.summary }),
+  });
   entityPersona.value = char.personaText ?? "";
   entityHomeLocationId.value = char.homeLocationId ?? "";
 }
@@ -101,8 +104,12 @@ async function submitEntity(): Promise<void> {
     if (entityKind.value === "character") {
       const characterInput = {
         name: entityName.value.trim(),
-        ...(entitySummary.value.trim() ? { summary: entitySummary.value.trim() } : {}),
-        ...(entityPersona.value.trim() ? { personaText: entityPersona.value.trim() } : {}),
+        ...(editingEntityId.value === null
+          ? (entitySummary.value.trim() ? { summary: entitySummary.value.trim() } : {})
+          : { summary: entitySummary.value.trim() || null }),
+        ...(editingEntityId.value === null
+          ? (entityPersona.value.trim() ? { personaText: entityPersona.value.trim() } : {})
+          : { personaText: entityPersona.value.trim() || null }),
         ...(entityHomeLocationId.value ? { homeLocationId: entityHomeLocationId.value as never } : {}),
         ...(editingEntityId.value !== null && !entityHomeLocationId.value ? { homeLocationId: null as never } : {}),
       };

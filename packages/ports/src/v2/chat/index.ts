@@ -72,6 +72,21 @@ export interface V2MemoryRepository {
   get(memoryId: V2MemoryId): Promise<V2Memory | undefined>;
   listByConversation(conversationId: V2ConversationId): Promise<readonly V2Memory[]>;
   listActiveByStoryWorld(storyWorldId: V2StoryWorldId): Promise<readonly V2Memory[]>;
+  searchActiveScoped(input: {
+    readonly storyWorldId: V2StoryWorldId;
+    readonly conversationId?: V2ConversationId;
+    readonly characterId?: string;
+    readonly userId?: string;
+    readonly query: string;
+    readonly limit?: number;
+  }): Promise<readonly V2Memory[]>;
+  listActiveScoped(input: {
+    readonly storyWorldId: V2StoryWorldId;
+    readonly conversationId?: V2ConversationId;
+    readonly characterId?: string;
+    readonly userId?: string;
+    readonly limit?: number;
+  }): Promise<readonly V2Memory[]>;
   listActiveByCharacter(input: {
     readonly storyWorldId: V2StoryWorldId;
     readonly characterId: string;

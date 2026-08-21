@@ -112,6 +112,8 @@ test("V2BuiltinStructuredEngine consumes facts into active memories and retrieve
     assert.equal(retrieved[0]?.text, "用户喜欢手冲咖啡");
     assert.equal(retrieved[0]?.engineId, "builtin_structured");
     assert.equal(retrieved[0]?.kind, "preference");
+    assert.equal(retrieved[0]?.scopeType, "user");
+    assert.equal(retrieved[0]?.scopeId, "user:local");
     assert.deepEqual(retrieved[0]?.sourceMessageIds, ["message:1"]);
 
     // Consuming the same assertion again is a no-op (idempotent).
@@ -202,6 +204,8 @@ test("V2BuiltinStructuredEngine isolates memories by character within the same w
       assertions: [assertion({
         assertionId: "fact:a-apple",
         text: "角色A喜欢苹果",
+        scopeType: "character",
+        scopeId: "character:one",
         subject: { entityType: "character", entityId: "character:one", label: "角色A" },
         kind: "preference",
         sourceMessageIds: ["message:1"],
@@ -219,6 +223,8 @@ test("V2BuiltinStructuredEngine isolates memories by character within the same w
         storyWorldId: "world:one" as V2StoryWorldId,
         conversationId: "conversation:two" as V2ConversationId,
         characterId: "character:two",
+        scopeType: "character",
+        scopeId: "character:two",
         kind: "preference",
         content: "角色B讨厌苹果",
         importance: 0.8,
@@ -238,6 +244,8 @@ test("V2BuiltinStructuredEngine isolates memories by character within the same w
     });
     assert.equal(forA.length, 1);
     assert.match(forA[0]?.text ?? "", /角色A喜欢苹果/);
+    assert.equal(forA[0]?.scopeType, "character");
+    assert.equal(forA[0]?.scopeId, "character:one");
 
     const forB = await engine.retrieve({
       storyWorldId: "world:one" as V2StoryWorldId,
@@ -248,15 +256,17 @@ test("V2BuiltinStructuredEngine isolates memories by character within the same w
     });
     assert.equal(forB.length, 1);
     assert.match(forB[0]?.text ?? "", /角色B讨厌苹果/);
+    assert.equal(forB[0]?.scopeType, "character");
+    assert.equal(forB[0]?.scopeId, "character:two");
 
-    // World-scope fallback without characterId still returns both.
+    // Without characterId, character-scoped memories are not visible.
     const worldWide = await engine.retrieve({
       storyWorldId: "world:one" as V2StoryWorldId,
       conversationId: "conversation:one" as V2ConversationId,
       query: "苹果",
       limit: 10,
     });
-    assert.equal(worldWide.length, 2);
+    assert.equal(worldWide.length, 0);
   } finally {
     db.close();
     cleanup();

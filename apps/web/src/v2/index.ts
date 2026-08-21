@@ -94,7 +94,7 @@ export const v2Routes: readonly RouteRecordRaw[] = [
             path: "automation",
             name: "v2-settings-automation",
             component: () => import("./views/V2AutomationView.vue"),
-            meta: { title: "触发器" },
+            meta: { title: "任务运行" },
           },
           {
             path: "appearance",
