@@ -189,7 +189,7 @@ export function createV2MockAdapter(): V2WorkspaceAdapter {
       } else if (input.kind === "rule") {
         worldRules.push({ ruleId: `rule:${suffix}`, text: input.input.text, severity: input.input.severity === "required" ? "hard" : "soft" });
       } else if (input.kind === "timeline") {
-        worldTimelineEvents.push({ timelineEventId: `timeline:${suffix}`, localDate: input.input.localDate, title: input.input.title, ...(input.input.summary === undefined ? {} : { summary: input.input.summary }) });
+        worldTimelineEvents.push({ timelineEventId: `timeline:${suffix}`, localDate: input.input.localDate, title: input.input.title, ...(input.input.summary === undefined || input.input.summary === null ? {} : { summary: input.input.summary }) });
       }
     },
     async updateCanonEntity(input: V2CanonUpdateInput & { readonly storyWorldId: string; readonly expectedRevision: number }): Promise<void> {
@@ -208,7 +208,7 @@ export function createV2MockAdapter(): V2WorkspaceAdapter {
         if (index !== -1) worldRules[index] = { ...worldRules[index]!, text: input.input.text, severity: input.input.severity === "required" ? "hard" : "soft" };
       } else if (input.kind === "timeline") {
         const index = worldTimelineEvents.findIndex((item) => item.timelineEventId === input.id);
-        if (index !== -1) worldTimelineEvents[index] = { ...worldTimelineEvents[index]!, localDate: input.input.localDate, title: input.input.title, ...(input.input.summary === undefined ? {} : { summary: input.input.summary }) };
+        if (index !== -1) worldTimelineEvents[index] = { ...worldTimelineEvents[index]!, localDate: input.input.localDate, title: input.input.title, ...(input.input.summary === undefined || input.input.summary === null ? {} : { summary: input.input.summary }) };
       }
     },
     async createGraphEntity(input: V2GraphCreateInput & { readonly storyWorldId: string; readonly expectedRevision: number }): Promise<void> {
@@ -216,7 +216,7 @@ export function createV2MockAdapter(): V2WorkspaceAdapter {
       graphCounter += 1;
       const suffix = `mock-${graphCounter}`;
       if (input.kind === "arc") {
-        sceneArcs.push({ arcId: `arc:${suffix}`, title: input.input.title, ...(input.input.summary === undefined ? {} : { summary: input.input.summary }) });
+        sceneArcs.push({ arcId: `arc:${suffix}`, title: input.input.title, ...(input.input.summary === undefined || input.input.summary === null ? {} : { summary: input.input.summary }) });
       } else if (input.kind === "scene") {
         sceneScenes.push({
           sceneId: `scene:${suffix}`,
@@ -246,7 +246,7 @@ export function createV2MockAdapter(): V2WorkspaceAdapter {
       bumpRevision();
       if (input.kind === "arc") {
         const index = sceneArcs.findIndex((item) => item.arcId === input.id);
-        if (index !== -1) sceneArcs[index] = { ...sceneArcs[index]!, title: input.input.title, ...(input.input.summary === undefined ? {} : { summary: input.input.summary }) };
+        if (index !== -1) sceneArcs[index] = { ...sceneArcs[index]!, title: input.input.title, ...(input.input.summary === undefined || input.input.summary === null ? {} : { summary: input.input.summary }) };
       } else if (input.kind === "scene") {
         const index = sceneScenes.findIndex((item) => item.sceneId === input.id);
         if (index !== -1) sceneScenes[index] = { ...sceneScenes[index]!, title: input.input.title, ...(input.input.body === undefined ? {} : { body: input.input.body }), ...(input.input.arcId === undefined ? {} : { arcId: input.input.arcId }), isEntry: input.input.isEntry };

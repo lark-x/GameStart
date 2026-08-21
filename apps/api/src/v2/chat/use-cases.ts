@@ -678,9 +678,10 @@ async function prepareReply(
     const query = currentUser?.text ?? "";
     const memoryContexts = memoryRuntime === undefined
       ? query.trim().length > 0
-        ? (await searchMemories(memories, conversation.storyWorldId as V2StoryWorldId, conversation.primaryCharacterId as V2CharacterId, query)).map(toV2MemoryContext)
-        : (await memories.listActiveByCharacter({
+        ? (await searchMemories(memories, conversation.storyWorldId as V2StoryWorldId, conversationId, conversation.primaryCharacterId as V2CharacterId, query)).map(toV2MemoryContext)
+        : (await memories.listActiveScoped({
             storyWorldId: conversation.storyWorldId as V2StoryWorldId,
+            conversationId,
             characterId: conversation.primaryCharacterId as V2CharacterId,
             limit: 10,
           })).map(toV2MemoryContext)
@@ -904,10 +905,11 @@ function stableAssistantMessageId(conversationId: V2ConversationId, idempotencyK
 async function searchMemories(
   memories: V2MemoryRepository,
   storyWorldId: V2StoryWorldId,
+  conversationId: V2ConversationId,
   characterId: V2CharacterId,
   query: string,
 ): Promise<readonly V2Memory[]> {
-  return memories.searchActiveByCharacter({ storyWorldId, characterId, query, limit: 10 });
+  return memories.searchActiveScoped({ storyWorldId, conversationId, characterId, query, limit: 10 });
 }
 
 async function requireConversation(
@@ -955,6 +957,8 @@ function toMemoryDto(memory: V2Memory): V2MemoryDto {
     storyWorldId: memory.storyWorldId as V2StoryWorldId,
     ...(memory.conversationId === undefined ? {} : { conversationId: memory.conversationId as V2ConversationId }),
     ...(memory.characterId === undefined ? {} : { characterId: memory.characterId as V2CharacterId }),
+    scopeType: memory.scopeType,
+    scopeId: memory.scopeId,
     kind: memory.kind,
     content: memory.content,
     importance: memory.importance,

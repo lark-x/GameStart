@@ -253,6 +253,8 @@ export interface V2MemoryDto {
   readonly storyWorldId: V2StoryWorldId;
   readonly conversationId?: V2ConversationId;
   readonly characterId?: V2CharacterId;
+  readonly scopeType: "user" | "world" | "character" | "conversation";
+  readonly scopeId: string;
   readonly kind: V2MemoryKind;
   readonly content: string;
   readonly importance: number;
@@ -345,6 +347,8 @@ export interface V2MemoryConsolidatePayload {
   readonly conversationId: V2ConversationId;
   readonly storyWorldId?: V2StoryWorldId;
   readonly characterId?: V2CharacterId;
+  readonly scopeType: "user" | "world" | "character" | "conversation";
+  readonly scopeId: string;
   readonly existingMemoryId: V2MemoryId;
   readonly candidate: V2MemoryConsolidateCandidate;
   readonly idempotencyKey: string;

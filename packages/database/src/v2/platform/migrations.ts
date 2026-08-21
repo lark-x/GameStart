@@ -18,6 +18,7 @@ import {
   v2ChatStoryAnalyzeCursorMigration,
   v2ChatStickersMigration,
   v2ChatTracesMigration,
+  v2MemoriesScopeMigration,
 } from "../chat/migrations.ts";
 
 export interface V2SqliteMigration {
@@ -218,6 +219,7 @@ export function getV2Migrations(): readonly V2SqliteMigration[] {
     v2ChatStoryAnalyzeCursorMigration,
     v2ChatMaintenanceDedupeKeyMigration,
     v2ChatStickersMigration,
+    v2MemoriesScopeMigration,
     v2FactLedgerMigration,
     v2HybridMemoryMigration,
     v2MemoryEngineRunsMigration,

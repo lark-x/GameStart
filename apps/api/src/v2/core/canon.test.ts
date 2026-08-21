@@ -945,3 +945,92 @@ test("V2 core API updates canon and graph records", async () => {
     cleanup();
   }
 });
+
+test("V2 core API preserves omitted optional canon fields and clears explicit nulls", async () => {
+  const { db, cleanup } = openV2TempSqliteConnection();
+  applyV2Migrations(db);
+  const app = createSqliteCoreApp(db);
+  await app.ready();
+  try {
+    const create = async (url: string, payload: Record<string, unknown>, expectedRevision: number): Promise<number> => {
+      const response = await app.inject({
+        method: "POST",
+        url,
+        payload: { ...payload, expectedRevision, idempotencyKey: `create-${url}` },
+      });
+      assert.equal(response.statusCode, 201, `${url}: ${response.body}`);
+      return response.json().revision;
+    };
+    const update = async (url: string, payload: Record<string, unknown>, expectedRevision: number): Promise<{ readonly revision: number; readonly item: Record<string, unknown> }> => {
+      const response = await app.inject({
+        method: "PATCH",
+        url,
+        payload: { ...payload, expectedRevision, idempotencyKey: `update-${url}-${expectedRevision}` },
+      });
+      assert.equal(response.statusCode, 200, `${url}: ${response.body}`);
+      return response.json() as { readonly revision: number; readonly item: Record<string, unknown> };
+    };
+
+    const world = await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds",
+      payload: { storyWorldId: "world_three_state", name: "Three State World", summary: "World summary", idempotencyKey: "create-world-three-state" },
+    });
+    assert.equal(world.statusCode, 201, world.body);
+    let revision = world.json().revision as number;
+    revision = await create("/api/v2/core/worlds/world_three_state/locations", {
+      locationId: "location_three_state",
+      name: "Location",
+      summary: "Location summary",
+    }, revision);
+    revision = await create("/api/v2/core/worlds/world_three_state/characters", {
+      characterId: "character_three_state",
+      name: "Character",
+      summary: "Character summary",
+      personaText: "Character persona",
+      homeLocationId: "location_three_state",
+    }, revision);
+    revision = await create("/api/v2/core/worlds/world_three_state/timeline-events", {
+      timelineEventId: "event_three_state",
+      localDate: "2026-08-20",
+      title: "Event",
+      summary: "Event summary",
+    }, revision);
+
+    const locationPreserved = await update("/api/v2/core/worlds/world_three_state/locations/location_three_state", { name: "Location renamed" }, revision);
+    assert.equal(locationPreserved.item.summary, "Location summary");
+    revision = locationPreserved.revision;
+    const characterPreserved = await update("/api/v2/core/worlds/world_three_state/characters/character_three_state", { name: "Character renamed" }, revision);
+    assert.equal(characterPreserved.item.summary, "Character summary");
+    assert.equal(characterPreserved.item.personaText, "Character persona");
+    assert.equal(characterPreserved.item.homeLocationId, "location_three_state");
+    revision = characterPreserved.revision;
+    const eventPreserved = await update("/api/v2/core/worlds/world_three_state/timeline-events/event_three_state", { localDate: "2026-08-21", title: "Event renamed" }, revision);
+    assert.equal(eventPreserved.item.summary, "Event summary");
+    revision = eventPreserved.revision;
+
+    const locationCleared = await update("/api/v2/core/worlds/world_three_state/locations/location_three_state", { name: "Location cleared", summary: null }, revision);
+    assert.equal(locationCleared.item.summary, undefined);
+    revision = locationCleared.revision;
+    const characterCleared = await update("/api/v2/core/worlds/world_three_state/characters/character_three_state", {
+      name: "Character cleared",
+      summary: null,
+      personaText: null,
+      homeLocationId: null,
+    }, revision);
+    assert.equal(characterCleared.item.summary, undefined);
+    assert.equal(characterCleared.item.personaText, undefined);
+    assert.equal(characterCleared.item.homeLocationId, undefined);
+    revision = characterCleared.revision;
+    const eventCleared = await update("/api/v2/core/worlds/world_three_state/timeline-events/event_three_state", {
+      localDate: "2026-08-22",
+      title: "Event cleared",
+      summary: null,
+    }, revision);
+    assert.equal(eventCleared.item.summary, undefined);
+  } finally {
+    await app.close();
+    db.close();
+    cleanup();
+  }
+});

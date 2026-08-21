@@ -309,6 +309,26 @@ export const v2ChatStickersMigration: V2SqliteMigration = {
   `),
 };
 
+
+
+
+export const v2MemoriesScopeMigration: V2SqliteMigration = {
+  id: "0390_v2_memories_scope",
+  up: (db) => {
+    const columns = db.prepare("PRAGMA table_info(v2_memories)").all() as unknown as readonly { readonly name: string }[];
+    const names = new Set(columns.map((column) => column.name));
+    if (!names.has("scope_type")) db.exec("ALTER TABLE v2_memories ADD COLUMN scope_type TEXT NOT NULL DEFAULT 'world';");
+    if (!names.has("scope_id")) db.exec("ALTER TABLE v2_memories ADD COLUMN scope_id TEXT NOT NULL DEFAULT '';");
+    // Legacy projection: recover the most likely scope from existing columns.
+    // Compatibility backfill only; it does not claim the original Fact scope.
+    db.exec("UPDATE v2_memories SET scope_type = 'character', scope_id = character_id WHERE character_id IS NOT NULL AND character_id <> '' AND (scope_type = 'world' OR scope_type = '');");
+    db.exec("UPDATE v2_memories SET scope_type = 'conversation', scope_id = conversation_id WHERE conversation_id IS NOT NULL AND conversation_id <> '' AND (scope_type = 'world' OR scope_type = '');");
+    db.exec("UPDATE v2_memories SET scope_id = story_world_id WHERE scope_id = '' OR scope_id IS NULL;");
+    db.exec("CREATE INDEX IF NOT EXISTS v2_memories_scope_idx ON v2_memories(story_world_id, scope_type, scope_id, status);");
+  },
+  down: (db) => db.exec("DROP INDEX IF EXISTS v2_memories_scope_idx;"),
+};
+
 export const v2ChatMigrations: readonly V2SqliteMigration[] = [
   v2ChatMemoryMigration,
   v2ChatCoreFinalizationMigration,
@@ -318,4 +338,5 @@ export const v2ChatMigrations: readonly V2SqliteMigration[] = [
   v2ChatStoryAnalyzeCursorMigration,
   v2ChatMaintenanceDedupeKeyMigration,
   v2ChatStickersMigration,
+  v2MemoriesScopeMigration,
 ];
