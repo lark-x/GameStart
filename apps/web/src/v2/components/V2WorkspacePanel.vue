@@ -59,6 +59,8 @@ const title = computed(() => {
       return "状态变量 (State Schema)";
     case "assets":
       return "正式素材库 (Formal Assets)";
+    case "data-flow":
+      return "数据流程 (Data Flow)";
     case "release":
       return "发布与导出 (Release & Export)";
     case "player":

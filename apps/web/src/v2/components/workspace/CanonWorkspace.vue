@@ -12,6 +12,7 @@ import Textarea from "../../../components/ui/Textarea.vue";
 import type { V2WorkspaceSnapshot } from "../../adapters";
 import { useV2WorkspaceStore } from "../../stores/workspace";
 import WorkspaceModuleIntro from "./WorkspaceModuleIntro.vue";
+import { getDataFlowNode, getUsageSummaryForGroup } from "./workspace-data-flow";
 
 const route = useRoute();
 const router = useRouter();
@@ -38,6 +39,22 @@ type CanonTab = "all" | "characters" | "locations" | "facts" | "rules" | "timeli
 const validTabs = new Set<CanonTab>(["all", "characters", "locations", "facts", "rules", "timeline"]);
 const activeTab = ref<CanonTab>(validTabs.has(route.query.tab as CanonTab) ? (route.query.tab as CanonTab) : "all");
 const searchQuery = ref("");
+const usageSummary = computed(() => {
+  const groups: Record<CanonTab, readonly string[]> = {
+    all: [],
+    characters: ["character_name", "character_persona", "character_summary"],
+    locations: ["location"],
+    facts: ["fact"],
+    rules: ["rule"],
+    timeline: ["timeline"],
+  };
+  const ids = groups[activeTab.value] ?? [];
+  if (ids.length === 0) return [];
+  const summary = getUsageSummaryForGroup(ids);
+  return Array.from(summary.entries())
+    .map(([consumerId, status]) => ({ consumerId, label: getDataFlowNode(consumerId)?.label ?? consumerId, status }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+});
 
 watch(() => route.query.tab, (tab) => {
   if (typeof tab === "string" && validTabs.has(tab as CanonTab)) {
@@ -295,6 +312,14 @@ function ruleSeverityLabel(severity: string): string {
         </button>
       </div>
 
+      <div v-if="usageSummary.length" class="canon-usage-summary" aria-label="当前数据用途">
+        <span class="canon-usage-label">当前用途</span>
+        <span v-for="item in usageSummary" :key="item.consumerId" class="canon-usage-item">
+          <Badge :tone="item.status === 'direct' ? 'success' : item.status === 'partial' ? 'info' : 'neutral'">{{ item.label }}</Badge>
+          <span class="canon-usage-status">{{ item.status === 'direct' ? '使用' : item.status === 'partial' ? '部分' : '间接' }}</span>
+        </span>
+      </div>
+
       <div class="search-box">
         <Input
           v-model="searchQuery"
@@ -539,6 +564,35 @@ function ruleSeverityLabel(severity: string): string {
   justify-content: space-between;
   align-items: center;
   gap: var(--space-3);
+}
+
+.canon-usage-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+}
+
+.canon-usage-label {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.canon-usage-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.canon-usage-status {
+  font-size: var(--text-xs);
+  color: var(--muted);
 }
 
 .filter-tabs {
