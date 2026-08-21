@@ -43,3 +43,24 @@
 - ComfyUI payload 只包含 prompt / negativePrompt / workflow / workflowVersion / seed，全部由用户在表单中手动填写；Canon 不自动注入。
 - Player Runtime 只消费 Release manifest 中的 graph 与 stateSchema；Canon 不直接参与运行时。
 - Release manifest 包含 canon、graph、stateSchema 和正式素材清单。
+
+## Context Assembly（上下文组装）
+
+- Chat：世界观、角色（名称/简介/人设）、事实、规则、记忆汇总为 Chat Context 后传给 Chat LLM；Location 仅随角色上下文部分携带；State 不进入。
+- Scene Generation：仅 prompt、facts、characters(id+name)、scenes(id+title) 汇总为 Generation Context；Persona/Summary/Location/Rule/Timeline/State/Scene Body/Choice 均为 unused。
+- ComfyUI：仅 prompt / negativePrompt / workflow / workflowVersion / seed 汇总为 ComfyUI Payload；Canon 不自动注入。
+
+## Review 边界
+
+- Scene Candidate → Scene Review → 正式场景图；Image Candidate → Asset Review → 正式素材。
+- 候选不直接进入正式数据；AI/ComfyUI 产出必须先审核。
+
+## Release → Player
+
+- Release Manifest → Player Runtime（方向不可逆）。
+- Player 只消费 Release manifest 中的 graph 与 stateSchema；Canon 不直接参与运行时。
+
+## 运行时输入（非配置数据）
+
+- 最近消息、当前用户消息、图片附件属于运行时输入，不写入 Canon，但会进入 Chat Context。
+- 角色 Home Location 属于 Canon 配置，随角色上下文进入 Chat（Partial），不进入 Scene Generation / ComfyUI。

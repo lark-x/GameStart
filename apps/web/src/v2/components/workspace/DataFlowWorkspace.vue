@@ -31,7 +31,7 @@ import {
   dataFlowFilters,
   getEdgesForFilter,
   getDataFlowNode,
-  getNodesForFilter,
+  getPipelineStages,
   type DataFlowFilterId,
 } from "./workspace-data-flow";
 
@@ -42,7 +42,7 @@ const activeFilter = ref<DataFlowFilterId>("all");
 const selectedNodeId = ref<string | null>(null);
 
 const activeFilterDef = computed(() => dataFlowFilters.find((f) => f.id === activeFilter.value) ?? dataFlowFilters[0]!);
-const visibleNodes = computed(() => getNodesForFilter(activeFilterDef.value));
+const pipelineStages = computed(() => getPipelineStages(activeFilterDef.value));
 const visibleEdges = computed(() => getEdgesForFilter(activeFilterDef.value));
 
 const selectedNode = computed(() => (selectedNodeId.value ? getDataFlowNode(selectedNodeId.value) : undefined));
@@ -52,6 +52,12 @@ const selectedNodeIncoming = computed(() =>
 const selectedNodeOutgoing = computed(() =>
   visibleEdges.value.filter((edge) => edge.from === selectedNodeId.value),
 );
+const selectedNodeUnused = computed(() => {
+  if (selectedNodeId.value === null) return [];
+  return visibleEdges.value.filter(
+    (edge) => edge.status === "unused" && (edge.from === selectedNodeId.value || edge.to === selectedNodeId.value),
+  );
+});
 
 function statusLabel(status: string): string {
   switch (status) {
@@ -158,16 +164,25 @@ function navigate(path: string): void {
 
     <!-- Flow Map -->
     <div class="flow-map" aria-label="数据流程图">
-      <template v-for="(node, index) in visibleNodes" :key="node.id">
-        <button type="button" class="flow-node" :class="'category-' + node.category" @click="openNode(node.id)">
-          <span class="flow-node-icon"><component :is="nodeIcon(node.id)" :size="16" aria-hidden="true" /></span>
-          <span class="flow-node-body">
-            <strong>{{ node.label }}</strong>
-            <small v-if="node.secondaryLabel">{{ node.secondaryLabel }}</small>
-          </span>
-          <Badge v-if="nodeCount(node.id) !== null" tone="neutral">{{ nodeCount(node.id) }}</Badge>
-        </button>
-        <div v-if="index < visibleNodes.length - 1" class="flow-arrow" aria-hidden="true">→</div>
+      <template v-for="(stage, stageIndex) in pipelineStages" :key="stageIndex">
+        <div class="flow-stage" :aria-label="'阶段 ' + (stageIndex + 1)">
+          <button
+            v-for="nodeId in stage"
+            :key="nodeId"
+            type="button"
+            class="flow-node"
+            :class="'category-' + (getDataFlowNode(nodeId)?.category ?? 'source')"
+            @click="openNode(nodeId)"
+          >
+            <span class="flow-node-icon"><component :is="nodeIcon(nodeId)" :size="16" aria-hidden="true" /></span>
+            <span class="flow-node-body">
+              <strong>{{ getDataFlowNode(nodeId)?.label ?? nodeId }}</strong>
+              <small v-if="getDataFlowNode(nodeId)?.secondaryLabel">{{ getDataFlowNode(nodeId)?.secondaryLabel }}</small>
+            </span>
+            <Badge v-if="nodeCount(nodeId) !== null" tone="neutral">{{ nodeCount(nodeId) }}</Badge>
+          </button>
+        </div>
+        <div v-if="stageIndex < pipelineStages.length - 1" class="flow-stage-arrow" aria-hidden="true">↓</div>
       </template>
     </div>
 
@@ -205,6 +220,16 @@ function navigate(path: string): void {
             <li v-for="edge in selectedNodeOutgoing" :key="edge.from + edge.to">
               {{ getDataFlowNode(edge.to)?.label ?? edge.to }}
               <Badge :tone="statusTone(edge.status)">{{ statusLabel(edge.status) }}</Badge>
+            </li>
+          </ul>
+        </section>
+
+        <section v-if="selectedNodeUnused.length">
+          <h4>当前未使用</h4>
+          <ul>
+            <li v-for="edge in selectedNodeUnused" :key="edge.from + edge.to">
+              {{ edge.from === selectedNodeId ? (getDataFlowNode(edge.to)?.label ?? edge.to) : (getDataFlowNode(edge.from)?.label ?? edge.from) }}
+              <Badge tone="warning">当前未使用</Badge>
             </li>
           </ul>
         </section>
@@ -257,13 +282,29 @@ function navigate(path: string): void {
 
 .flow-map {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-1);
   padding: var(--space-4);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--surface-soft);
+}
+
+.flow-stage {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.flow-stage-arrow {
+  color: var(--muted);
+  font-size: var(--text-lg);
+  line-height: 1;
+  padding: 2px 0;
+  user-select: none;
 }
 
 .flow-node {
@@ -285,6 +326,7 @@ function navigate(path: string): void {
 }
 
 .flow-node.category-source { border-left: 3px solid var(--primary); }
+.flow-node.category-context { border-left: 3px solid var(--info); }
 .flow-node.category-processor { border-left: 3px solid var(--warning); }
 .flow-node.category-output { border-left: 3px solid var(--success); }
 .flow-node.category-runtime { border-left: 3px solid var(--info); }
