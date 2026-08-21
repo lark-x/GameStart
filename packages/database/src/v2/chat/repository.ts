@@ -52,6 +52,8 @@ type ConversationSummaryRow = {
   story_world_id: string;
   primary_character_id: string;
   title: string | null;
+  created_at: string;
+  updated_at: string;
   last_message_at: string | null;
   character_name: string;
   world_name: string;
@@ -195,6 +197,8 @@ function mapConversationSummary(row: ConversationSummaryRow): V2ChatConversation
     storyWorldId: row.story_world_id,
     primaryCharacterId: row.primary_character_id,
     ...(row.title === null ? {} : { title: row.title }),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
     characterName: row.character_name,
     storyWorldName: row.world_name,
     ...(lastMessagePreview === undefined ? {} : { lastMessagePreview }),
@@ -399,7 +403,7 @@ export class V2SqliteChatConversationRepository implements V2ChatConversationRep
   public async listSummaries(): Promise<readonly V2ChatConversationSummary[]> {
     const rows = this.db.prepare(`
       SELECT
-        c.conversation_id, c.story_world_id, c.primary_character_id, c.title, c.last_message_at,
+        c.conversation_id, c.story_world_id, c.primary_character_id, c.title, c.created_at, c.updated_at, c.last_message_at,
         ch.name AS character_name,
         w.name AS world_name,
         m.text AS last_message_text,

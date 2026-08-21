@@ -17,7 +17,7 @@ export const v2Routes: readonly RouteRecordRaw[] = [
       { path: "start", name: "v2-start", component: () => import("./views/V2StartView.vue"), meta: { title: "即时故事", pageSize: "standard" } },
       {
         path: "chat/:conversationId",
-        name: "v2-chat",
+        name: "v2-chat-conversation",
         component: () => import("./views/V2ChatView.vue"),
         meta: { title: "故事对话", layout: "feature" },
       },

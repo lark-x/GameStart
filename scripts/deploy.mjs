@@ -92,12 +92,16 @@ async function runDeployment(args, dotEnv) {
   const explicitPort = args.port || (dotEnv.WEB_PORT ? parseInt(dotEnv.WEB_PORT, 10) : undefined);
   const lastState = loadDeployState(DEPLOY_STATE_FILE);
   const lastStatePort = lastState?.webPort;
+  const currentDeploymentPort = parseDockerPublishedPort(dockerClient.port("web", 80));
 
-  const portSelection = await selectWebPort({ explicitPort, lastStatePort });
+  const portSelection = await selectWebPort({ explicitPort, lastStatePort, currentDeploymentPort, host: hostBind });
   let currentWebPort = portSelection.port;
+  const portSource = portSelection.occupiedByCurrentDeployment
+    ? `${portSelection.source}, current deployment`
+    : portSelection.source;
 
   log(`      Mode: ${mode} (Host Bind: ${hostBind})`);
-  log(`      Web Port: ${currentWebPort} (${portSelection.source})`);
+  log(`      Web Port: ${currentWebPort} (${portSource})`);
 
   // ── Step 3: Build Images (Once) ────────────────────────────────────────
   log("\n[3/7] Building container images...");
@@ -110,7 +114,7 @@ async function runDeployment(args, dotEnv) {
 
   // ── Step 4: Start Containers (with port collision retry) ───────────────
   log(`\n[4/7] Starting containers...`);
-  const isAutoPort = portSelection.source !== "explicit";
+  const isAutoPort = portSelection.source === "auto";
   let attempt = 0;
 
   while (true) {

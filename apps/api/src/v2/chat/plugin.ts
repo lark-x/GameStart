@@ -200,7 +200,7 @@ export function createV2ChatPlugin(dependencies: V2ChatPluginDependencies): Fast
       return reply.status(201).send(result);
     });
 
-    app.get("/chat/conversations", async () => dependencies.useCases.listConversations());
+    app.get("/chat/conversations", async () => dependencies.useCases.listConversationSummaries());
     app.get("/chat/contacts", async () => dependencies.useCases.listContacts());
     app.post("/chat/conversations", async (request, reply) => {
       const result = await dependencies.useCases.createConversation(parseCreateConversationRequest(request.body));

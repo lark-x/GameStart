@@ -154,10 +154,10 @@ test("V2 chat repository persists stickers ordered by recent use", async () => {
     });
 
     const first = await unit.withChatTransaction(async ({ stickers }) =>
-      stickers.create(createV2ChatSticker({ stickerId: "sticker:one", mediaId: "media:sticker", mediaRef: "media://local/v2/chat/a.png", label: "开心" })));
+      stickers.create(createV2ChatSticker({ stickerId: "sticker:one", mediaId: "media:sticker", mediaRef: "media://local/v2/chat/a.png", label: "开心", createdAt: "2026-08-20T00:00:00.000Z" })));
     assert.equal(first.label, "开心");
     await unit.withChatTransaction(async ({ stickers }) =>
-      stickers.create(createV2ChatSticker({ stickerId: "sticker:two", mediaId: "media:sticker", mediaRef: "media://local/v2/chat/a.png", label: "加油" })));
+      stickers.create(createV2ChatSticker({ stickerId: "sticker:two", mediaId: "media:sticker", mediaRef: "media://local/v2/chat/a.png", label: "加油", createdAt: "2026-08-20T00:00:00.000Z" })));
 
     await unit.withChatTransaction(async ({ stickers }) => stickers.touchLastUsed({ stickerId: "sticker:one", lastUsedAt: "2026-08-21T00:00:00.000Z" }));
     const list = await unit.withChatTransaction(async ({ stickers }) => stickers.list());

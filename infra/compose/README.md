@@ -17,7 +17,15 @@ them directly because Nginx proxies `/api/v2/*` to `api:3003`.
 | Redis   |          6379 |    —      |
 | API     |          3003 |    —      |
 | Worker  |           n/a |    —      |
-| Web     |            80 | dynamic via `pnpm deploy` or configurable via `WEB_PORT` |
+| Web     |            80 | stable via `pnpm deploy`, configurable via `WEB_PORT` |
+
+`pnpm deploy` prefers a stable Web host port. It reuses an explicit
+`WEB_PORT`, then the last successful deployment port, then the currently
+running GameStart Web container port. If that stable port is owned by the
+current GameStart deployment, the script keeps the same port and lets
+Compose replace the old container in place. If another process owns the
+stable port, deployment fails with a clear message instead of silently moving
+to the next port.
 
 To expose Redis and API on the host for local debugging, use the dev overlay:
 
@@ -32,6 +40,21 @@ From the repository root, start Docker Desktop and run:
 
 ```bash
 pnpm deploy
+```
+
+By default the app binds to `127.0.0.1` for local-only access. For LAN access
+on the current run, use:
+
+```bash
+pnpm deploy -- --mode lan
+```
+
+To make plain `pnpm deploy` keep using LAN access and a fixed port on this
+machine, set these values in `.env`:
+
+```env
+WEB_PORT=18000
+WEB_HOST_BIND=0.0.0.0
 ```
 
 Check deployment status:

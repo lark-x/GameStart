@@ -47,6 +47,7 @@ import {
   type V2WorkspaceAdapter,
   type V2WorkspaceSnapshot,
 } from "./types.ts";
+import { randomUuid } from "../random.ts";
 
 export interface V2HttpAdapterOptions {
   readonly baseUrl: string;
@@ -91,7 +92,7 @@ function jsonRequest(method: string, body?: unknown): RequestInit {
 }
 
 function uniqueCommandKey(prefix: string): string {
-  return `${prefix}:${Date.now()}:${crypto.randomUUID()}`;
+  return `${prefix}:${Date.now()}:${randomUuid()}`;
 }
 
 function browserStorage(): Storage | undefined {
@@ -213,7 +214,7 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
   return {
     mode: "http",
     async bootstrapWorkspace(): Promise<void> {
-      const suffix = crypto.randomUUID();
+      const suffix = randomUuid();
       worldId = `world:${suffix}`;
       await post("/api/v2/core/worlds", {
         storyWorldId: worldId,
@@ -248,7 +249,7 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
     },
 
     async createStoryWorld(input: { readonly name: string; readonly summary?: string }): Promise<V2StoryWorldDto> {
-      const suffix = crypto.randomUUID();
+      const suffix = randomUuid();
       const created = await post<{ item: V2StoryWorldDto }>("/api/v2/core/worlds", {
         storyWorldId: `world:${suffix}`,
         name: input.name,
@@ -476,7 +477,7 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
       };
     },
     async createGraphEntity(input: V2GraphCreateInput & { readonly storyWorldId: string; readonly expectedRevision: number }): Promise<void> {
-      const suffix = crypto.randomUUID();
+      const suffix = randomUuid();
       const path = `/api/v2/core/worlds/${encodeURIComponent(input.storyWorldId)}`;
       const common = { expectedRevision: input.expectedRevision, idempotencyKey: uniqueCommandKey(`create-${input.kind}`) };
       if (input.kind === "arc") await post(`${path}/arcs`, { ...input.input, arcId: `arc:${suffix}`, ...common });
@@ -488,7 +489,7 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
       return toAssetJobSummary((await get<V2AssetGenerationJobApiResponse>(`/api/v2/generation/assets/jobs/${encodeURIComponent(jobId)}`)).job);
     },
     async createCanonEntity(input: V2CanonCreateInput & { readonly storyWorldId: string; readonly expectedRevision: number }): Promise<void> {
-      const suffix = crypto.randomUUID();
+      const suffix = randomUuid();
       const path = `/api/v2/core/worlds/${encodeURIComponent(input.storyWorldId)}`;
       const common = { expectedRevision: input.expectedRevision, idempotencyKey: uniqueCommandKey(`create-${input.kind}`) };
       if (input.kind === "location") await post(`${path}/locations`, { ...input.input, locationId: `location:${suffix}`, ...common });
@@ -568,7 +569,7 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
     },
     async startRun() {
       if (!worldId || !releaseId || !releaseVersion) throw new V2AdapterError({ code: "NOT_FOUND", message: "Create or load a release before starting a run." });
-      runId = `run:${Date.now()}:${crypto.randomUUID()}`;
+      runId = `run:${Date.now()}:${randomUuid()}`;
       const runtime = await post<V2RuntimeSceneDto>("/api/v2/core/runtime/runs", {
         runId,
         releaseId,
@@ -588,7 +589,7 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
     },
     async saveRun(label: string): Promise<V2SaveSummary> {
       if (!runId) throw new V2AdapterError({ code: "NOT_FOUND", message: "Start a run before saving." });
-      saveId = `save:${Date.now()}:${crypto.randomUUID()}`;
+      saveId = `save:${Date.now()}:${randomUuid()}`;
       saveLabel = label.trim() || "Local checkpoint";
       const save = await post<V2RuntimeSaveDto>(`/api/v2/core/runtime/runs/${encodeURIComponent(runId)}/saves`, {
         saveId,
@@ -599,7 +600,7 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
       return { saveId: save.saveId, label: saveLabel, runId: save.runId, releaseVersion: save.releaseVersion, currentSceneId: save.currentSceneId, savedAt: save.createdAt };
     },
     async restoreSave(savedId: string): Promise<V2PlayerRuntimeSummary> {
-      runId = `run:restored:${Date.now()}:${crypto.randomUUID()}`;
+      runId = `run:restored:${Date.now()}:${randomUuid()}`;
       const runtime = await post<V2RuntimeSceneDto>(`/api/v2/core/runtime/saves/${encodeURIComponent(savedId)}/load`, {
         runId,
         idempotencyKey: runId,
