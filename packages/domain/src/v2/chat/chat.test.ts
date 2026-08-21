@@ -72,6 +72,8 @@ test("chat domain creates media and memory with constraints", () => {
   const memory = createV2Memory({
     memoryId: "memory:one",
     storyWorldId: "world:one",
+    scopeType: "user",
+    scopeId: "user:local",
     kind: "preference",
     content: "用户不喜欢香菜",
     importance: 0.65,
@@ -82,6 +84,8 @@ test("chat domain creates media and memory with constraints", () => {
   assert.throws(() => createV2Memory({
     memoryId: "memory:two",
     storyWorldId: "world:one",
+    scopeType: "user",
+    scopeId: "user:local",
     kind: "preference",
     content: "bad",
     importance: 2,

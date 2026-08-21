@@ -196,7 +196,7 @@ export function createV2CoreUseCases(
     createLocation: (storyWorldId, input) => unitOfWork.withCanonTransaction(async ({ canon }) =>
       withIdempotency(canon, "createLocation", input.idempotencyKey, { storyWorldId, ...input }, async () => {
         const world = await requireWorld(canon, storyWorldId);
-        const item = await canon.createLocation(createV2CanonLocation({ storyWorldId, ...input }));
+        const item = await canon.createLocation(createV2CanonLocation({ storyWorldId, locationId: input.locationId, name: input.name, ...(input.summary === undefined || input.summary === null ? {} : { summary: input.summary }) }));
         const revision = await canon.advanceRevision(storyWorldId, input.expectedRevision);
         void world;
         return { item: toLocationDto(item), revision };
@@ -209,8 +209,8 @@ export function createV2CoreUseCases(
           storyWorldId,
           characterId: input.characterId,
           name: input.name,
-          ...(input.summary === undefined ? {} : { summary: input.summary }),
-          ...(input.personaText === undefined ? {} : { personaText: input.personaText }),
+          ...(input.summary === undefined || input.summary === null ? {} : { summary: input.summary }),
+          ...(input.personaText === undefined || input.personaText === null ? {} : { personaText: input.personaText }),
           ...(input.homeLocationId === undefined ? {} : {
             homeLocation: await requireLocation(canon, storyWorldId, input.homeLocationId as V2LocationId),
           }),
@@ -238,7 +238,7 @@ export function createV2CoreUseCases(
     createTimelineEvent: (storyWorldId, input) => unitOfWork.withCanonTransaction(async ({ canon }) =>
       withIdempotency(canon, "createTimelineEvent", input.idempotencyKey, { storyWorldId, ...input }, async () => {
         await requireWorld(canon, storyWorldId);
-        const item = await canon.createTimelineEvent(createV2CanonTimelineEvent({ storyWorldId, ...input }));
+        const item = await canon.createTimelineEvent(createV2CanonTimelineEvent({ storyWorldId, timelineEventId: input.timelineEventId, localDate: input.localDate, title: input.title, ...(input.summary === undefined || input.summary === null ? {} : { summary: input.summary }) }));
         const revision = await canon.advanceRevision(storyWorldId, input.expectedRevision);
         return { item: toTimelineEventDto(item), revision };
       }),
@@ -246,7 +246,7 @@ export function createV2CoreUseCases(
     updateWorld: (storyWorldId, input) => unitOfWork.withCanonTransaction(async ({ canon }) =>
       withIdempotency(canon, "updateWorld", input.idempotencyKey, { storyWorldId, ...input }, async () => {
         const existing = await requireWorld(canon, storyWorldId);
-        const validated = createV2CanonWorld({ storyWorldId, name: input.name, ...(input.summary === undefined ? {} : { summary: input.summary }) });
+        const validated = createV2CanonWorld({ storyWorldId, name: input.name, ...(input.summary === undefined || input.summary === null ? {} : { summary: input.summary }) });
         const item = await canon.updateWorld({ ...existing, name: validated.name, ...(input.summary === undefined ? {} : { summary: validated.summary }) });
         const revision = await canon.advanceRevision(storyWorldId, input.expectedRevision);
         return { item: toWorldDto(item), revision };
@@ -255,7 +255,7 @@ export function createV2CoreUseCases(
     updateLocation: (storyWorldId, locationId, input) => unitOfWork.withCanonTransaction(async ({ canon }) =>
       withIdempotency(canon, "updateLocation", input.idempotencyKey, { storyWorldId, locationId, ...input }, async () => {
         const existing = await requireLocation(canon, storyWorldId, locationId);
-        const item = await canon.updateLocation(createV2CanonLocation({ storyWorldId, locationId: existing.locationId, name: input.name, ...(input.summary === undefined ? {} : { summary: input.summary }) }));
+        const item = await canon.updateLocation(createV2CanonLocation({ storyWorldId, locationId: existing.locationId, name: input.name, ...(input.summary === undefined || input.summary === null ? {} : { summary: input.summary }) }));
         const revision = await canon.advanceRevision(storyWorldId, input.expectedRevision);
         return { item: toLocationDto(item), revision };
       }),
@@ -267,12 +267,12 @@ export function createV2CoreUseCases(
         const clearedHomeLocation = input.homeLocationId === null;
         const effectiveHomeLocationId = clearedHomeLocation ? undefined : homeLocationId;
         if (homeLocationId !== undefined) await requireLocation(canon, storyWorldId, homeLocationId);
-        const personaText = input.personaText ?? existing.personaText;
+        const personaText = input.personaText === undefined ? existing.personaText : (input.personaText === null ? undefined : input.personaText);
         const item = await canon.updateCharacter(createV2CanonCharacter({
           storyWorldId,
           characterId: existing.characterId,
           name: input.name,
-          ...(input.summary === undefined ? {} : { summary: input.summary }),
+          ...(input.summary === undefined || input.summary === null ? {} : { summary: input.summary }),
           ...(personaText === undefined ? {} : { personaText }),
           ...(effectiveHomeLocationId === undefined ? {} : { homeLocationId: effectiveHomeLocationId }),
         }));
@@ -299,7 +299,7 @@ export function createV2CoreUseCases(
     updateTimelineEvent: (storyWorldId, timelineEventId, input) => unitOfWork.withCanonTransaction(async ({ canon }) =>
       withIdempotency(canon, "updateTimelineEvent", input.idempotencyKey, { storyWorldId, timelineEventId, ...input }, async () => {
         const existing = await requireTimelineEvent(canon, storyWorldId, timelineEventId);
-        const item = await canon.updateTimelineEvent(createV2CanonTimelineEvent({ storyWorldId, timelineEventId: existing.timelineEventId, localDate: input.localDate, title: input.title, ...(input.summary === undefined ? {} : { summary: input.summary }) }));
+        const item = await canon.updateTimelineEvent(createV2CanonTimelineEvent({ storyWorldId, timelineEventId: existing.timelineEventId, localDate: input.localDate, title: input.title, ...(input.summary === undefined || input.summary === null ? {} : { summary: input.summary }) }));
         const revision = await canon.advanceRevision(storyWorldId, input.expectedRevision);
         return { item: toTimelineEventDto(item), revision };
       }),
@@ -367,7 +367,7 @@ export function createV2CoreUseCases(
     updateArc: (storyWorldId, arcId, input) => requireGraphState().withGraphStateTransaction(async ({ canon, graphState }) =>
       withIdempotency(canon, "updateArc", input.idempotencyKey, { storyWorldId, arcId, ...input }, async () => {
         const existing = await requireArc(graphState, storyWorldId, arcId);
-        const item = await graphState.updateArc(createV2GraphArc({ storyWorldId, arcId: existing.arcId, title: input.title, ...(input.summary === undefined ? {} : { summary: input.summary }) }));
+        const item = await graphState.updateArc(createV2GraphArc({ storyWorldId, arcId: existing.arcId, title: input.title, ...(input.summary === undefined || input.summary === null ? {} : { summary: input.summary }) }));
         const revision = await canon.advanceRevision(storyWorldId, input.expectedRevision);
         return { item: toArcDto(item), revision };
       }),

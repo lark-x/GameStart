@@ -105,27 +105,20 @@ export class V2BuiltinStructuredEngine implements V2MemoryEngine {
     return this.unitOfWork.withChatTransaction(async (repos) => {
       const query = input.query.trim();
       const rows = query.length === 0
-        ? input.characterId === undefined
-          ? await repos.memories.listActiveByStoryWorld(input.storyWorldId)
-          : await repos.memories.listActiveByCharacter({
-              storyWorldId: input.storyWorldId,
-              characterId: input.characterId,
-              limit: input.limit,
-            })
-        : await repos.memories.searchActive({
+        ? await repos.memories.listActiveScoped({
             storyWorldId: input.storyWorldId,
+            conversationId: input.conversationId,
+            ...(input.characterId === undefined ? {} : { characterId: input.characterId }),
+            limit: input.limit,
+          })
+        : await repos.memories.searchActiveScoped({
+            storyWorldId: input.storyWorldId,
+            conversationId: input.conversationId,
+            ...(input.characterId === undefined ? {} : { characterId: input.characterId }),
             query,
             limit: input.limit,
           });
-      const scopedRows = query.length > 0 && input.characterId !== undefined
-        ? await repos.memories.searchActiveByCharacter({
-            storyWorldId: input.storyWorldId,
-            characterId: input.characterId,
-            query,
-            limit: input.limit,
-          })
-        : rows;
-      const limited = scopedRows.slice(0, input.limit);
+      const limited = rows.slice(0, input.limit);
       return limited.map((memory, index) => this.toRetrievedMemory(memory, input, index));
     });
   }
@@ -186,6 +179,8 @@ export class V2BuiltinStructuredEngine implements V2MemoryEngine {
           conversationId: input.batch.conversationId as V2ConversationId,
           ...(storyWorldId ? { storyWorldId } : {}),
           ...(assertion.subject.entityType === "character" ? { characterId: assertion.subject.entityId as never } : {}),
+          scopeType: assertion.scopeType as V2MemoryConsolidatePayload["scopeType"],
+          scopeId: assertion.scopeId,
           existingMemoryId: similarMemory.memoryId as V2MemoryId,
           idempotencyKey,
           candidate: {
@@ -214,9 +209,9 @@ export class V2BuiltinStructuredEngine implements V2MemoryEngine {
         memoryId: randomUUID(),
         storyWorldId,
         conversationId: input.batch.conversationId,
-        ...(conversation?.primaryCharacterId === undefined
-          ? {}
-          : { characterId: conversation.primaryCharacterId }),
+        ...(assertion.scopeType === "character" ? { characterId: assertion.scopeId } : {}),
+        scopeType: assertion.scopeType,
+        scopeId: assertion.scopeId,
         engineId: this.id,
         sourceAssertionIds: [assertion.assertionId],
         slotKey,

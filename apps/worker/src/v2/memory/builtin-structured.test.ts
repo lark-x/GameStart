@@ -202,6 +202,8 @@ test("V2BuiltinStructuredEngine isolates memories by character within the same w
       assertions: [assertion({
         assertionId: "fact:a-apple",
         text: "角色A喜欢苹果",
+        scopeType: "character",
+        scopeId: "character:one",
         subject: { entityType: "character", entityId: "character:one", label: "角色A" },
         kind: "preference",
         sourceMessageIds: ["message:1"],
@@ -219,6 +221,8 @@ test("V2BuiltinStructuredEngine isolates memories by character within the same w
         storyWorldId: "world:one" as V2StoryWorldId,
         conversationId: "conversation:two" as V2ConversationId,
         characterId: "character:two",
+        scopeType: "character",
+        scopeId: "character:two",
         kind: "preference",
         content: "角色B讨厌苹果",
         importance: 0.8,
@@ -249,14 +253,14 @@ test("V2BuiltinStructuredEngine isolates memories by character within the same w
     assert.equal(forB.length, 1);
     assert.match(forB[0]?.text ?? "", /角色B讨厌苹果/);
 
-    // World-scope fallback without characterId still returns both.
+    // Without characterId, character-scoped memories are not visible.
     const worldWide = await engine.retrieve({
       storyWorldId: "world:one" as V2StoryWorldId,
       conversationId: "conversation:one" as V2ConversationId,
       query: "苹果",
       limit: 10,
     });
-    assert.equal(worldWide.length, 2);
+    assert.equal(worldWide.length, 0);
   } finally {
     db.close();
     cleanup();

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { Activity, ArrowLeft, BookOpen, Copy, ImagePlus, MoreHorizontal, RefreshCw, Send, Smile, Sparkles, Square, Sticker, UserRound, X } from "@lucide/vue";
 
@@ -187,17 +187,65 @@ async function triggerStoryAnalyze(): Promise<void> {
 }
 
 let abortController: AbortController | undefined;
+let loadGeneration = 0;
+let switching = false;
 
-onMounted(async () => {
+async function initConversation(): Promise<void> {
+  const generation = ++loadGeneration;
+  abortController?.abort();
+  abortController = undefined;
+  // Reset conversation-scoped state
+  messages.value = [];
+  conversationTitle.value = "";
+  input.value = "";
+  pendingAttachments.value = [];
+  emojiOpen.value = false;
+  stickerOpen.value = false;
+  hasMore.value = false;
+  nextBeforeMessageId.value = undefined;
+  loadingOlder.value = false;
+  loadingOlderError.value = "";
+  isNearBottom.value = true;
+  showScrollHint.value = false;
+  showDiagnostics.value = false;
+  diagnostics.value = null;
+  loadingDiagnostics.value = false;
+  diagnosticsError.value = null;
+  analyzing.value = false;
+  moreMenuOpen.value = false;
+  errorMessage.value = "";
+  featureState.value = "idle";
+  featureError.value = null;
+  features.value = null;
+  context.value = null;
+  showCharacterPanel.value = false;
+  loadingContext.value = false;
+  contextError.value = null;
+  streaming.value = false;
+  sending.value = false;
+  imageUploading.value = false;
+
   await loadChat();
   await loadExtras();
-  if (
-    messages.value.length === 0 &&
-    featureState.value === "ready" &&
-    modelConfigured.value
-  ) {
+  if (generation !== loadGeneration) return;
+  const currentState = featureState.value as FeatureState;
+  const currentModelConfigured = isChatModelConfigured(currentState, features.value);
+  if (messages.value.length === 0 && currentState === "ready" && currentModelConfigured) {
     await generateOpening();
   }
+}
+
+onMounted(() => {
+  void initConversation();
+});
+
+watch(conversationId, (nextId, previousId) => {
+  if (nextId === previousId || nextId === undefined) return;
+  if (switching) return;
+  switching = true;
+  void initConversation().finally(() => {
+    switching = false;
+  });
 });
 
 onUnmounted(() => {

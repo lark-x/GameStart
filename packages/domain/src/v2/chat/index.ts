@@ -5,6 +5,7 @@ export type V2ChatMessageRole = "user" | "assistant" | "system";
 export type V2ChatMessageStatus = "pending" | "completed" | "failed" | "interrupted";
 export type V2MemoryKind = "profile" | "preference" | "relationship" | "episodic" | "world_fact";
 export type V2MemoryStatus = "active" | "superseded" | "forgotten";
+export type V2MemoryScopeType = "user" | "world" | "character" | "conversation";
 
 export interface V2ChatConversation {
   readonly conversationId: string;
@@ -56,6 +57,8 @@ export interface V2Memory {
   readonly storyWorldId: string;
   readonly conversationId?: string;
   readonly characterId?: string;
+  readonly scopeType: V2MemoryScopeType;
+  readonly scopeId: string;
   readonly engineId?: string;
   readonly sourceAssertionIds?: readonly string[];
   readonly slotKey?: string;
@@ -208,6 +211,8 @@ export function createV2Memory(input: {
   readonly storyWorldId: string;
   readonly conversationId?: string;
   readonly characterId?: string;
+  readonly scopeType: V2MemoryScopeType;
+  readonly scopeId: string;
   readonly engineId?: string;
   readonly sourceAssertionIds?: readonly string[];
   readonly slotKey?: string;
@@ -245,6 +250,8 @@ export function createV2Memory(input: {
     storyWorldId: assertNonEmptyId(input.storyWorldId, "storyWorldId"),
     ...(input.conversationId === undefined ? {} : { conversationId: assertNonEmptyId(input.conversationId, "conversationId") }),
     ...(input.characterId === undefined ? {} : { characterId: assertNonEmptyId(input.characterId, "characterId") }),
+    scopeType: input.scopeType,
+    scopeId: assertNonEmptyId(input.scopeId, "scopeId"),
     ...(input.engineId === undefined ? {} : { engineId: input.engineId }),
     ...(input.sourceAssertionIds === undefined
       ? {}

@@ -456,6 +456,9 @@ export class V2MaintenanceDispatchPump {
     if (!existingMemory || existingMemory.status !== "active") {
       return;
     }
+    if (existingMemory.scopeType !== payload.scopeType || existingMemory.scopeId !== payload.scopeId) {
+      throw new Error("MEMORY_SCOPE_MISMATCH: consolidation candidate scope does not match existing memory scope");
+    }
 
     const prompt = `Compare this existing memory with a new memory candidate:
 Existing Memory: [${existingMemory.kind}] "${existingMemory.content}"
@@ -493,6 +496,8 @@ Output JSON with format:
           storyWorldId,
           conversationId: payload.conversationId,
           ...(payload.characterId ? { characterId: payload.characterId } : {}),
+          scopeType: payload.scopeType,
+          scopeId: payload.scopeId,
           kind: payload.candidate.kind,
           content: payload.candidate.content,
           importance: payload.candidate.importance,
@@ -516,6 +521,8 @@ Output JSON with format:
           storyWorldId,
           conversationId: payload.conversationId,
           ...(payload.characterId ? { characterId: payload.characterId } : {}),
+          scopeType: payload.scopeType,
+          scopeId: payload.scopeId,
           kind: payload.candidate.kind,
           content: payload.candidate.content,
           importance: payload.candidate.importance,
@@ -544,6 +551,8 @@ Output JSON with format:
           storyWorldId,
           conversationId: payload.conversationId,
           ...(payload.characterId ? { characterId: payload.characterId } : {}),
+          scopeType: payload.scopeType,
+          scopeId: payload.scopeId,
           kind: payload.candidate.kind,
           content: mergedText,
           importance: Math.max(existingMemory.importance, payload.candidate.importance),

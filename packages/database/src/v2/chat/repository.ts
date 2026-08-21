@@ -113,6 +113,8 @@ type MemoryRow = {
   created_at: string;
   updated_at: string;
   last_accessed_at: string | null;
+  scope_type: string;
+  scope_id: string;
 };
 
 type SummaryRow = {
@@ -266,6 +268,31 @@ function parseMessageIds(value: string): readonly string[] {
   return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
 }
 
+function memoryScopeClause(input: {
+  readonly storyWorldId: V2StoryWorldId;
+  readonly conversationId?: V2ConversationId;
+  readonly characterId?: string;
+  readonly userId?: string;
+}): { readonly sql: string; readonly params: readonly string[] } {
+  const clauses: string[] = [];
+  const params: string[] = [];
+  clauses.push("(scope_type = 'world' AND scope_id = ?)");
+  params.push(input.storyWorldId);
+  const userId = input.userId ?? 'user:local';
+  clauses.push("(scope_type = 'user' AND scope_id = ?)");
+  params.push(userId);
+  if (input.characterId !== undefined) {
+    clauses.push("(scope_type = 'character' AND scope_id = ?)");
+    params.push(input.characterId);
+  }
+  if (input.conversationId !== undefined) {
+    clauses.push("(scope_type = 'conversation' AND scope_id = ?)");
+    params.push(input.conversationId);
+  }
+  return { sql: clauses.join(' OR '), params };
+}
+
+
 function mapMemory(row: MemoryRow): V2Memory {
   return {
     memoryId: row.memory_id,
@@ -285,6 +312,8 @@ function mapMemory(row: MemoryRow): V2Memory {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     ...(row.last_accessed_at === null ? {} : { lastAccessedAt: row.last_accessed_at }),
+    scopeType: row.scope_type as V2Memory["scopeType"],
+    scopeId: row.scope_id,
   };
 }
 
@@ -623,8 +652,8 @@ export class V2SqliteMemoryRepository implements V2MemoryRepository {
       INSERT INTO v2_memories (
         memory_id, story_world_id, conversation_id, character_id, engine_id, source_assertion_ids_json, slot_key,
         kind, content, importance, confidence, source_message_ids_json, status, supersedes_memory_id,
-        created_at, updated_at, last_accessed_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        created_at, updated_at, last_accessed_at, scope_type, scope_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       input.memoryId,
       input.storyWorldId,
@@ -643,6 +672,8 @@ export class V2SqliteMemoryRepository implements V2MemoryRepository {
       input.createdAt ?? now,
       input.updatedAt ?? now,
       input.lastAccessedAt ?? null,
+      input.scopeType,
+      input.scopeId,
     );
     const created = await this.get(input.memoryId as V2MemoryId);
     if (created === undefined) throw new Error("V2 memory insert did not return a row");
@@ -705,6 +736,93 @@ export class V2SqliteMemoryRepository implements V2MemoryRepository {
       GROUP BY character_id
     `).all(storyWorldId) as { readonly characterId: string; readonly count: number }[];
     return new Map(rows.map((row) => [row.characterId, row.count]));
+  }
+
+
+  public async listActiveScoped(input: {
+    readonly storyWorldId: V2StoryWorldId;
+    readonly conversationId?: V2ConversationId;
+    readonly characterId?: string;
+    readonly userId?: string;
+    readonly limit?: number;
+  }): Promise<readonly V2Memory[]> {
+    const limit = Math.min(input.limit ?? 10, 20);
+    const scope = memoryScopeClause({
+      storyWorldId: input.storyWorldId,
+      ...(input.conversationId === undefined ? {} : { conversationId: input.conversationId }),
+      ...(input.characterId === undefined ? {} : { characterId: input.characterId }),
+      ...(input.userId === undefined ? {} : { userId: input.userId }),
+    });
+    const rows = this.db.prepare(`
+      SELECT * FROM v2_memories
+      WHERE story_world_id = ? AND status = 'active' AND (${scope.sql})
+        ORDER BY importance DESC, updated_at DESC
+        LIMIT ?
+      `).all(input.storyWorldId, ...scope.params, limit) as MemoryRow[];
+    return rows.map(mapMemory);
+  }
+
+  public async searchActiveScoped(input: {
+    readonly storyWorldId: V2StoryWorldId;
+    readonly conversationId?: V2ConversationId;
+    readonly characterId?: string;
+    readonly userId?: string;
+    readonly query: string;
+    readonly limit?: number;
+  }): Promise<readonly V2Memory[]> {
+    const limit = Math.min(input.limit ?? 10, 20);
+    const scope = memoryScopeClause({
+      storyWorldId: input.storyWorldId,
+      ...(input.conversationId === undefined ? {} : { conversationId: input.conversationId }),
+      ...(input.characterId === undefined ? {} : { characterId: input.characterId }),
+      ...(input.userId === undefined ? {} : { userId: input.userId }),
+    });
+    const rawTokens = input.query.trim().split(/\s+/).filter(Boolean);
+    const cjkWords = input.query.match(/[\u4e00-\u9fa5]{2,}|[a-zA-Z0-9]{2,}/g) ?? [];
+    const allTokens = Array.from(new Set([...rawTokens, ...cjkWords])).slice(0, 10);
+    if (allTokens.length === 0) {
+      const recentRows = this.db.prepare(`
+        SELECT * FROM v2_memories
+        WHERE story_world_id = ? AND status = 'active' AND (${scope.sql})
+        ORDER BY importance DESC, updated_at DESC
+        LIMIT ?
+      `).all(input.storyWorldId, ...scope.params, limit) as MemoryRow[];
+      return recentRows.map(mapMemory);
+    }
+    const match = allTokens.map((token) => `"${token.replace(/"/g, "")}"`).join(' OR ');
+    let rows: MemoryRow[];
+    try {
+      rows = this.db.prepare(`
+        SELECT m.*
+        FROM v2_memories m
+        JOIN v2_memories_fts f ON f.rowid = m.rowid AND f.memory_id = m.memory_id
+        WHERE m.story_world_id = ? AND m.status = 'active' AND (${scope.sql}) AND v2_memories_fts MATCH ?
+        ORDER BY bm25(v2_memories_fts), m.importance DESC, m.updated_at DESC
+        LIMIT ?
+      `).all(input.storyWorldId, ...scope.params, match, limit) as MemoryRow[];
+    } catch {
+      rows = [];
+    }
+    if (rows.length === 0) {
+      const likeClauses = allTokens.map(() => "content LIKE '%' || ? || '%'").join(' OR ');
+      rows = this.db.prepare(`
+        SELECT * FROM v2_memories
+        WHERE story_world_id = ? AND status = 'active' AND (${scope.sql})
+          AND (${likeClauses})
+        ORDER BY importance DESC, updated_at DESC
+        LIMIT ?
+      `).all(input.storyWorldId, ...scope.params, ...allTokens, limit) as MemoryRow[];
+    }
+    if (rows.length === 0) {
+      return this.listActiveScoped({
+        storyWorldId: input.storyWorldId,
+        ...(input.conversationId === undefined ? {} : { conversationId: input.conversationId }),
+        ...(input.characterId === undefined ? {} : { characterId: input.characterId }),
+        ...(input.userId === undefined ? {} : { userId: input.userId }),
+        limit,
+      });
+    }
+    return rows.map(mapMemory);
   }
 
   public async searchActive(input: {

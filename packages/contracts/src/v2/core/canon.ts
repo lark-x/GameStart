@@ -85,15 +85,15 @@ export interface V2RevisionedCommandRequest {
 export interface V2CreateLocationRequest extends V2RevisionedCommandRequest {
   readonly locationId: V2LocationId;
   readonly name: string;
-  readonly summary?: string;
+  readonly summary?: string | null;
 }
 
 export interface V2CreateCharacterRequest extends V2RevisionedCommandRequest {
   readonly characterId: V2CharacterId;
   readonly name: string;
-  readonly summary?: string;
+  readonly summary?: string | null;
   readonly homeLocationId?: V2LocationId | null;
-  readonly personaText?: string;
+  readonly personaText?: string | null;
 }
 
 export interface V2CreateFactRequest extends V2RevisionedCommandRequest {
@@ -112,7 +112,7 @@ export interface V2CreateTimelineEventRequest extends V2RevisionedCommandRequest
   readonly timelineEventId: string;
   readonly localDate: string;
   readonly title: string;
-  readonly summary?: string;
+  readonly summary?: string | null;
 }
 
 export interface V2CanonWriteResponse<T> {
@@ -121,19 +121,19 @@ export interface V2CanonWriteResponse<T> {
 }
 export interface V2UpdateStoryWorldRequest extends V2RevisionedCommandRequest {
   readonly name: string;
-  readonly summary?: string;
+  readonly summary?: string | null;
 }
 
 export interface V2UpdateLocationRequest extends V2RevisionedCommandRequest {
   readonly name: string;
-  readonly summary?: string;
+  readonly summary?: string | null;
 }
 
 export interface V2UpdateCharacterRequest extends V2RevisionedCommandRequest {
   readonly name: string;
-  readonly summary?: string;
+  readonly summary?: string | null;
   readonly homeLocationId?: V2LocationId | null;
-  readonly personaText?: string;
+  readonly personaText?: string | null;
 }
 
 export interface V2UpdateFactRequest extends V2RevisionedCommandRequest {
@@ -149,5 +149,5 @@ export interface V2UpdateRuleRequest extends V2RevisionedCommandRequest {
 export interface V2UpdateTimelineEventRequest extends V2RevisionedCommandRequest {
   readonly localDate: string;
   readonly title: string;
-  readonly summary?: string;
+  readonly summary?: string | null;
 }
