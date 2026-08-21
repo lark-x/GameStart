@@ -61,6 +61,7 @@ test("Memory evaluation harness compares structured and hybrid engines on identi
       cases: EVALUATION_CASES,
       traceDb: db,
       storeQueryText: true,
+      characterId: "character:alice",
     });
 
     assert.equal(reports.length, 2);

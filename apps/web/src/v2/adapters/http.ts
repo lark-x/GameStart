@@ -370,8 +370,20 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
           name: world.name,
           revision: world.revision,
           premise: world.summary ?? "",
-          characters: canon.characters.map((character) => ({ characterId: character.characterId, name: character.name, role: character.summary ?? "character" })),
-          locations: canon.locations.map((location) => ({ locationId: location.locationId, name: location.name, tags: [] })),
+          characters: canon.characters.map((character) => ({
+            characterId: character.characterId,
+            name: character.name,
+            role: character.summary ?? "character",
+            ...(character.summary === undefined ? {} : { summary: character.summary }),
+            ...(character.personaText === undefined ? {} : { personaText: character.personaText }),
+            ...(character.homeLocationId === undefined ? {} : { homeLocationId: character.homeLocationId }),
+          })),
+          locations: canon.locations.map((location) => ({
+            locationId: location.locationId,
+            name: location.name,
+            tags: [],
+            ...(location.summary === undefined ? {} : { summary: location.summary }),
+          })),
           facts: canon.facts.map((fact) => ({ factId: fact.factId, text: fact.text, visibility: fact.visibility === "creator_only" ? "creator" : "player" })),
           rules: canon.rules.map((rule) => ({ ruleId: rule.ruleId, text: rule.text, severity: rule.severity === "required" ? "hard" : "soft" })),
           timelineEvents: canon.timelineEvents.map((event) => ({

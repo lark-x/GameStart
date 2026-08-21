@@ -81,6 +81,13 @@ export interface V2MemoryRepository {
     readonly storyWorldId: V2StoryWorldId;
     readonly characterId: string;
   }): Promise<number>;
+  searchActiveByCharacter(input: {
+    readonly storyWorldId: V2StoryWorldId;
+    readonly characterId: string;
+    readonly query: string;
+    readonly limit?: number;
+  }): Promise<readonly V2Memory[]>;
+  countActiveGroupedByCharacter(storyWorldId: V2StoryWorldId): Promise<ReadonlyMap<string, number>>;
   searchActive(input: {
     readonly storyWorldId: V2StoryWorldId;
     readonly query: string;

@@ -92,7 +92,8 @@ export interface V2CreateCharacterRequest extends V2RevisionedCommandRequest {
   readonly characterId: V2CharacterId;
   readonly name: string;
   readonly summary?: string;
-  readonly homeLocationId?: V2LocationId;
+  readonly homeLocationId?: V2LocationId | null;
+  readonly personaText?: string;
 }
 
 export interface V2CreateFactRequest extends V2RevisionedCommandRequest {
@@ -131,7 +132,8 @@ export interface V2UpdateLocationRequest extends V2RevisionedCommandRequest {
 export interface V2UpdateCharacterRequest extends V2RevisionedCommandRequest {
   readonly name: string;
   readonly summary?: string;
-  readonly homeLocationId?: V2LocationId;
+  readonly homeLocationId?: V2LocationId | null;
+  readonly personaText?: string;
 }
 
 export interface V2UpdateFactRequest extends V2RevisionedCommandRequest {

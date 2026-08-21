@@ -81,7 +81,7 @@ async function startStory(): Promise<void> {
   <div class="v2-start-page">
     <PageHeader
       eyebrow="快速创建角色"
-      title="从人设创建角色"
+      title="创建角色并开始故事"
       description="粘贴一段角色人设，立即生成一个角色并开始聊天。平时建议直接从聊天首页选择已有角色。"
     >
       <template #actions>

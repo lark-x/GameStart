@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { ImagePlus } from "@lucide/vue";
 import type { V2ChatStickerDto } from "@living-network/contracts/v2";
 
 import Button from "../../../components/ui/Button.vue";
 import { createV2ChatClient } from "../client.ts";
+import { shouldLoadStickerLibrary } from "../../views/chat-view-model.ts";
 
 const props = defineProps<{
   open: boolean;
@@ -20,7 +21,8 @@ const baseUrl = environment.VITE_API_BASE || (typeof window === "undefined" ? "h
 const client = createV2ChatClient({ baseUrl });
 
 const stickers = ref<readonly V2ChatStickerDto[]>([]);
-const loading = ref(true);
+const loading = ref(false);
+const loaded = ref(false);
 const error = ref("");
 const importing = ref(false);
 const importInput = ref<HTMLInputElement | null>(null);
@@ -33,6 +35,7 @@ async function load(): Promise<void> {
   error.value = "";
   try {
     stickers.value = await client.listStickers();
+    loaded.value = true;
   } catch (err) {
     error.value = err instanceof Error ? err.message : "读取表情包失败";
   } finally {
@@ -67,9 +70,13 @@ function pick(sticker: V2ChatStickerDto): void {
   emit("select", sticker);
 }
 
-onMounted(() => {
-  if (props.open) void load();
-});
+watch(
+  () => props.open,
+  (open) => {
+    if (shouldLoadStickerLibrary(open, loaded.value)) void load();
+  },
+  { immediate: true },
+);
 </script>
 
 <template>
