@@ -49,6 +49,18 @@ const entityDate = ref("");
 const entityVisibility = ref<"creator_only" | "player_visible">("player_visible");
 const entitySeverity = ref<"guideline" | "required">("guideline");
 const entityError = ref<string | null>(null);
+const entityPersona = ref("");
+const entityHomeLocationId = ref("");
+const entityLocations = computed(() => props.snapshot?.world.locations ?? []);
+function locationNameById(id: string | undefined): string {
+  const location = entityLocations.value.find((item) => item.locationId === id);
+  return location?.name ?? "";
+}
+function openEditCharacter(char: { readonly characterId: string; readonly name: string; readonly role: string; readonly summary?: string; readonly personaText?: string; readonly homeLocationId?: string }): void {
+  openEditEntity("character", char.characterId, { name: char.name, summary: char.summary ?? char.role });
+  entityPersona.value = char.personaText ?? "";
+  entityHomeLocationId.value = char.homeLocationId ?? "";
+}
 
 function openEntityDrawer(kind: CanonEntityKind = "location"): void {
   editingEntityId.value = null;
@@ -60,6 +72,8 @@ function openEntityDrawer(kind: CanonEntityKind = "location"): void {
   entityVisibility.value = "player_visible";
   entitySeverity.value = "guideline";
   entityError.value = null;
+  entityPersona.value = "";
+  entityHomeLocationId.value = "";
   entityDrawerOpen.value = true;
 }
 
@@ -73,6 +87,8 @@ function openEditEntity(kind: CanonEntityKind, id: string, value: { name?: strin
   entitySeverity.value = value.severity ?? "guideline";
   entityDate.value = value.localDate ?? "";
   entityError.value = null;
+  entityPersona.value = "";
+  entityHomeLocationId.value = "";
   entityDrawerOpen.value = true;
 }
 async function submitEntity(): Promise<void> {
@@ -83,8 +99,14 @@ async function submitEntity(): Promise<void> {
       if (editingEntityId.value) await store.updateCanonEntity({ kind: "location", id: editingEntityId.value, input }); else await store.createCanonEntity({ kind: "location", input });
     }
     if (entityKind.value === "character") {
-      const input = { name: entityName.value.trim(), ...(entitySummary.value.trim() ? { summary: entitySummary.value.trim() } : {}) };
-      if (editingEntityId.value) await store.updateCanonEntity({ kind: "character", id: editingEntityId.value, input }); else await store.createCanonEntity({ kind: "character", input });
+      const characterInput = {
+        name: entityName.value.trim(),
+        ...(entitySummary.value.trim() ? { summary: entitySummary.value.trim() } : {}),
+        ...(entityPersona.value.trim() ? { personaText: entityPersona.value.trim() } : {}),
+        ...(entityHomeLocationId.value ? { homeLocationId: entityHomeLocationId.value as never } : {}),
+        ...(editingEntityId.value !== null && !entityHomeLocationId.value ? { homeLocationId: null as never } : {}),
+      };
+      if (editingEntityId.value) await store.updateCanonEntity({ kind: "character", id: editingEntityId.value, input: characterInput }); else await store.createCanonEntity({ kind: "character", input: characterInput });
     }
     if (entityKind.value === "fact") {
       const input = { text: entityText.value.trim(), visibility: entityVisibility.value };
@@ -142,7 +164,7 @@ const filteredLocations = computed(() => {
   if (!props.snapshot) return [];
   if (!searchQuery.value.trim()) return props.snapshot.world.locations;
   const q = searchQuery.value.toLowerCase();
-  return props.snapshot.world.locations.filter(l => l.name.toLowerCase().includes(q) || l.tags.some(t => t.toLowerCase().includes(q)));
+  return props.snapshot.world.locations.filter(l => l.name.toLowerCase().includes(q) || (l.summary ?? "").toLowerCase().includes(q));
 });
 
 const filteredFacts = computed(() => {
@@ -313,13 +335,15 @@ function ruleSeverityLabel(severity: string): string {
             <div class="avatar-placeholder">
               <User :size="18" />
             </div>
-            <div class="header-info">
-              <h4>{{ char.name }}</h4>
-              <span class="sub">{{ char.role || '\u89d2\u8272' }}</span>
-            </div>
-            <Badge tone="info">角色</Badge><Button variant="ghost" size="icon" aria-label="编辑角色" @click="openEditEntity('character', char.characterId, { name: char.name, summary: char.role })"><Pencil :size="15" aria-hidden="true" /></Button>
+          <div class="header-info">
+            <h4>{{ char.name }}</h4>
+            <span class="sub">{{ char.role || '\u89d2\u8272' }}</span>
           </div>
-          <p class="entity-summary">{{ char.role }}</p>
+          <Badge tone="info">角色</Badge><Button variant="ghost" size="icon" aria-label="编辑角色" @click="openEditCharacter(char)"><Pencil :size="15" aria-hidden="true" /></Button>
+          </div>
+          <p class="entity-summary">{{ char.summary ?? char.role }}</p>
+          <p v-if="char.personaText" class="entity-sub-summary">Persona：{{ char.personaText.slice(0, 120) }}{{ char.personaText.length > 120 ? '…' : '' }}</p>
+          <p v-if="locationNameById(char.homeLocationId)" class="entity-sub-summary">常驻：{{ locationNameById(char.homeLocationId) }}</p>
           
         </article>
       </template>
@@ -339,11 +363,9 @@ function ruleSeverityLabel(severity: string): string {
               <h4>{{ loc.name }}</h4>
               <span class="sub">场景地点</span>
             </div>
-            <Badge tone="neutral">地点</Badge><Button variant="ghost" size="icon" aria-label="编辑地点" @click="openEditEntity('location', loc.locationId, { name: loc.name, summary: loc.tags.join(', ') })"><Pencil :size="15" aria-hidden="true" /></Button>
+            <Badge tone="neutral">地点</Badge><Button variant="ghost" size="icon" aria-label="编辑地点" @click="openEditEntity('location', loc.locationId, { name: loc.name, ...(loc.summary === undefined ? {} : { summary: loc.summary }) })"><Pencil :size="15" aria-hidden="true" /></Button>
           </div>
-          <div v-if="loc.tags?.length" class="tag-list">
-            <span v-for="t in loc.tags" :key="t" class="tag">#{{ t }}</span>
-          </div>
+          <p v-if="loc.summary" class="entity-summary">{{ loc.summary }}</p>
         </article>
       </template>
 
@@ -423,6 +445,15 @@ function ruleSeverityLabel(severity: string): string {
         </Field>
         <Field v-if="entityKind === 'location' || entityKind === 'character' || entityKind === 'timeline'" for-id="v2-entity-summary" label="说明">
           <Textarea id="v2-entity-summary" v-model="entitySummary" :rows="4" placeholder="可选说明" />
+        </Field>
+        <Field v-if="entityKind === 'character'" for-id="v2-entity-persona" label="角色人设 Persona">
+          <Textarea id="v2-entity-persona" v-model="entityPersona" :rows="5" placeholder="角色的性格、说话方式、背景……" />
+        </Field>
+        <Field v-if="entityKind === 'character'" for-id="v2-entity-home-location" label="常驻地点">
+          <Select id="v2-entity-home-location" v-model="entityHomeLocationId" aria-label="常驻地点">
+            <option value="">无</option>
+            <option v-for="location in entityLocations" :key="location.locationId" :value="location.locationId">{{ location.name }}</option>
+          </Select>
         </Field>
         <Field v-if="entityKind === 'fact' || entityKind === 'rule'" for-id="v2-entity-text" :label="entityKind === 'fact' ? '事实内容' : '规则内容'" required>
           <Textarea id="v2-entity-text" v-model="entityText" :rows="5" required />

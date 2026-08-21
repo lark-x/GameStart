@@ -106,11 +106,13 @@ export class V2BuiltinHybridEngine implements V2MemoryEngine {
       ? await this.store.listRecent({
           storyWorldId: input.storyWorldId,
           conversationId: input.conversationId,
+          ...(input.characterId === undefined ? {} : { characterId: input.characterId }),
           limit: input.limit,
         })
       : await this.store.search({
           storyWorldId: input.storyWorldId,
           conversationId: input.conversationId,
+          ...(input.characterId === undefined ? {} : { characterId: input.characterId }),
           query: input.query,
           limit: input.limit,
         });

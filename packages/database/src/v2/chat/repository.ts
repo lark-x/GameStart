@@ -698,6 +698,15 @@ export class V2SqliteMemoryRepository implements V2MemoryRepository {
     return row.count;
   }
 
+  public async countActiveGroupedByCharacter(storyWorldId: V2StoryWorldId): Promise<ReadonlyMap<string, number>> {
+    const rows = this.db.prepare(`
+      SELECT character_id AS characterId, COUNT(*) AS count FROM v2_memories
+      WHERE story_world_id = ? AND status = 'active' AND character_id IS NOT NULL
+      GROUP BY character_id
+    `).all(storyWorldId) as { readonly characterId: string; readonly count: number }[];
+    return new Map(rows.map((row) => [row.characterId, row.count]));
+  }
+
   public async searchActive(input: {
     readonly storyWorldId: V2StoryWorldId;
     readonly query: string;
@@ -736,6 +745,57 @@ export class V2SqliteMemoryRepository implements V2MemoryRepository {
     }
     if (rows.length === 0) {
       return (await this.listActiveByStoryWorld(input.storyWorldId)).slice(0, limit);
+    }
+    return rows.map(mapMemory);
+  }
+
+  public async searchActiveByCharacter(input: {
+    readonly storyWorldId: V2StoryWorldId;
+    readonly characterId: string;
+    readonly query: string;
+    readonly limit?: number;
+  }): Promise<readonly V2Memory[]> {
+    const limit = Math.min(input.limit ?? 10, 20);
+    const rawTokens = input.query.trim().split(/\s+/).filter(Boolean);
+    const cjkWords = input.query.match(/[\u4e00-\u9fa5]{2,}|[a-zA-Z0-9]{2,}/g) ?? [];
+    const allTokens = Array.from(new Set([...rawTokens, ...cjkWords])).slice(0, 10);
+    if (allTokens.length === 0) {
+      return (await this.listActiveByCharacter({
+        storyWorldId: input.storyWorldId,
+        characterId: input.characterId,
+        limit,
+      })).slice(0, limit);
+    }
+    const match = allTokens.map((token) => `"${token.replace(/"/g, "")}"`).join(" OR ");
+    let rows: MemoryRow[];
+    try {
+      rows = this.db.prepare(`
+        SELECT m.*
+        FROM v2_memories m
+        JOIN v2_memories_fts f ON f.rowid = m.rowid AND f.memory_id = m.memory_id
+        WHERE m.story_world_id = ? AND m.character_id = ? AND m.status = 'active' AND v2_memories_fts MATCH ?
+        ORDER BY bm25(v2_memories_fts), m.importance DESC, m.updated_at DESC
+        LIMIT ?
+      `).all(input.storyWorldId, input.characterId, match, limit) as MemoryRow[];
+    } catch {
+      rows = [];
+    }
+    if (rows.length === 0) {
+      const likeClauses = allTokens.map(() => "content LIKE '%' || ? || '%'").join(" OR ");
+      rows = this.db.prepare(`
+        SELECT * FROM v2_memories
+        WHERE story_world_id = ? AND character_id = ? AND status = 'active'
+          AND (${likeClauses})
+        ORDER BY importance DESC, updated_at DESC
+        LIMIT ?
+      `).all(input.storyWorldId, input.characterId, ...allTokens, limit) as MemoryRow[];
+    }
+    if (rows.length === 0) {
+      return (await this.listActiveByCharacter({
+        storyWorldId: input.storyWorldId,
+        characterId: input.characterId,
+        limit,
+      })).slice(0, limit);
     }
     return rows.map(mapMemory);
   }

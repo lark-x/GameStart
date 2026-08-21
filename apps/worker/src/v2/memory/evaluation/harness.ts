@@ -34,6 +34,7 @@ export function runMemoryEvaluation(input: {
   readonly cases: readonly MemoryEvaluationCase[];
   readonly traceDb?: DatabaseSync;
   readonly storeQueryText?: boolean;
+  readonly characterId?: string;
 }): Promise<readonly MemoryEvaluationEngineReport[]> {
   return Promise.all(input.engines.map(async (engine) => {
     const results: MemoryEvaluationCaseResult[] = [];
@@ -42,6 +43,7 @@ export function runMemoryEvaluation(input: {
       const retrieved = await engine.retrieve({
         storyWorldId: testCase.storyWorldId as never,
         conversationId: testCase.conversationId as never,
+        ...(input.characterId === undefined ? {} : { characterId: input.characterId }),
         query: testCase.query,
         limit: 10,
       } as V2MemoryQuery);

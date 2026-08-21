@@ -445,13 +445,11 @@ async function listContacts(unitOfWork: V2ChatUnitOfWork): Promise<V2ChatContact
     const contacts: V2ChatContactDto[] = [];
     for (const world of worlds) {
       const characters = await canon.listCharacters(world.storyWorldId as V2StoryWorldId);
+      const memoryCounts = await memories.countActiveGroupedByCharacter(world.storyWorldId as V2StoryWorldId);
       for (const character of characters) {
         const latest = summaries.find((summary) =>
           summary.storyWorldId === character.storyWorldId && summary.primaryCharacterId === character.characterId);
-        const activeMemoryCount = await memories.countActiveByCharacter({
-          storyWorldId: character.storyWorldId as V2StoryWorldId,
-          characterId: character.characterId,
-        });
+        const activeMemoryCount = memoryCounts.get(character.characterId) ?? 0;
         contacts.push({
           characterId: character.characterId as V2CharacterId,
           storyWorldId: character.storyWorldId as V2StoryWorldId,
@@ -680,11 +678,16 @@ async function prepareReply(
     const query = currentUser?.text ?? "";
     const memoryContexts = memoryRuntime === undefined
       ? query.trim().length > 0
-        ? (await searchMemories(memories, conversation.storyWorldId as V2StoryWorldId, query)).map(toV2MemoryContext)
-        : (await memories.listActiveByStoryWorld(conversation.storyWorldId as V2StoryWorldId)).map(toV2MemoryContext)
+        ? (await searchMemories(memories, conversation.storyWorldId as V2StoryWorldId, conversation.primaryCharacterId as V2CharacterId, query)).map(toV2MemoryContext)
+        : (await memories.listActiveByCharacter({
+            storyWorldId: conversation.storyWorldId as V2StoryWorldId,
+            characterId: conversation.primaryCharacterId as V2CharacterId,
+            limit: 10,
+          })).map(toV2MemoryContext)
       : (await memoryRuntime.retrieve({
           storyWorldId: conversation.storyWorldId as V2StoryWorldId,
           conversationId,
+          characterId: conversation.primaryCharacterId as V2CharacterId,
           query,
           limit: 10,
         })).map((item) => ({
@@ -898,8 +901,13 @@ function stableAssistantMessageId(conversationId: V2ConversationId, idempotencyK
   return `message:assistant:${hash}` as V2MessageId;
 }
 
-async function searchMemories(memories: V2MemoryRepository, storyWorldId: V2StoryWorldId, query: string): Promise<readonly V2Memory[]> {
-  return memories.searchActive({ storyWorldId, query, limit: 10 });
+async function searchMemories(
+  memories: V2MemoryRepository,
+  storyWorldId: V2StoryWorldId,
+  characterId: V2CharacterId,
+  query: string,
+): Promise<readonly V2Memory[]> {
+  return memories.searchActiveByCharacter({ storyWorldId, characterId, query, limit: 10 });
 }
 
 async function requireConversation(

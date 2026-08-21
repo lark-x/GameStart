@@ -74,6 +74,8 @@
         "apps/web/src/v2/views/V2StartView.vue",
         "apps/web/src/v2/views/V2ChatHomeView.vue",
         "apps/web/src/v2/views/V2ChatView.vue",
+        "apps/web/src/v2/views/chat-view-model.ts",
+        "apps/web/src/v2/views/chat-view-model.test.ts",
         "packages/ai/src/prompt-engine/**",
         "packages/contracts/src/v2/chat/**",
         "packages/domain/src/v2/chat/**",

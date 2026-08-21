@@ -38,6 +38,7 @@ test("V2 core parsers accept the complete public request surface", () => {
   assert.deepEqual(parseCreateWorldBody({ storyWorldId: "world", name: "World", summary: "Summary", idempotencyKey: "world" }).name, "World");
   assert.equal(parseCreateLocationBody({ locationId: "location", name: "Station", summary: "Summary", ...revisioned }).locationId, "location");
   assert.equal(parseCreateCharacterBody({ characterId: "character", name: "Mira", summary: "Pilot", homeLocationId: "location", ...revisioned }).homeLocationId, "location");
+  assert.equal(parseCreateCharacterBody({ characterId: "character", name: "Mira", personaText: "爱笑", ...revisioned }).personaText, "爱笑");
   assert.equal(parseCreateFactBody({ factId: "fact", text: "Fact", visibility: "player_visible", ...revisioned }).visibility, "player_visible");
   assert.equal(parseCreateRuleBody({ ruleId: "rule", text: "Rule", severity: "required", ...revisioned }).severity, "required");
   assert.equal(parseCreateTimelineEventBody({ timelineEventId: "event", localDate: "2026-01-01", title: "Launch", summary: "Summary", ...revisioned }).localDate, "2026-01-01");
@@ -96,6 +97,8 @@ test("V2 core parsers accept update request bodies", () => {
   assert.equal(parseUpdateWorldBody({ name: "World", summary: "S", ...update }).name, "World");
   assert.equal(parseUpdateLocationBody({ name: "Station", summary: "S", ...update }).name, "Station");
   assert.equal(parseUpdateCharacterBody({ name: "Mira", summary: "Pilot", homeLocationId: "loc", ...update }).homeLocationId, "loc");
+  assert.equal(parseUpdateCharacterBody({ name: "Mira", personaText: "嘴硬心软", ...update }).personaText, "嘴硬心软");
+  assert.equal(parseUpdateCharacterBody({ name: "Mira", homeLocationId: null, ...update }).homeLocationId, null);
   assert.equal(parseUpdateFactBody({ text: "Fact", visibility: "creator_only", ...update }).visibility, "creator_only");
   assert.equal(parseUpdateRuleBody({ text: "Rule", severity: "guideline", ...update }).severity, "guideline");
   assert.equal(parseUpdateTimelineEventBody({ localDate: "2026-01-01", title: "Event", summary: "S", ...update }).title, "Event");

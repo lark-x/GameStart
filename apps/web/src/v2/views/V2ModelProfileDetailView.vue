@@ -160,8 +160,8 @@ async function save(): Promise<void> {
   error.value = null;
   try {
     const request = requestFromForm();
-    form.value.apiKey = "";
     const saved = await client.saveModelProfile(request);
+    form.value.apiKey = "";
     toast.success(`模型档案“${saved.name}”已保存。`);
     if (form.value.id === undefined || form.value.id !== saved.id) {
       await router.replace(`/v2/settings/models/${encodeURIComponent(saved.id)}`);
@@ -235,7 +235,6 @@ async function fetchModels(): Promise<void> {
   fetchModelError.value = null;
   try {
     const apiKey = form.value.apiKey.trim();
-    form.value.apiKey = "";
     const models = await client.discoverModels({
       protocol: form.value.protocol,
       baseUrl: form.value.baseUrl.trim(),
@@ -243,6 +242,7 @@ async function fetchModels(): Promise<void> {
       profileId: form.value.id || form.value.sourceProfileId,
     });
     discoveredModels.value = models;
+    form.value.apiKey = "";
     if (models.length === 0) fetchModelError.value = "未能从该地址获取到模型列表，你可以手动输入模型名称。";
   } catch (err) {
     fetchModelError.value = platformErrorMessage(err, "获取模型列表失败");

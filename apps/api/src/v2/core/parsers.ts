@@ -78,11 +78,12 @@ export function parseCreateLocationBody(body: unknown): V2CreateLocationRequest 
 }
 
 export function parseCreateCharacterBody(body: unknown): V2CreateCharacterRequest {
-  const value = requireRevisionedBody(body, ["characterId", "name", "summary", "homeLocationId"]);
+  const value = requireRevisionedBody(body, ["characterId", "name", "summary", "homeLocationId", "personaText"]);
   return {
     characterId: requiredString(value.characterId, "characterId") as V2CharacterId,
     name: requiredString(value.name, "name"),
     ...(value.summary === undefined ? {} : { summary: requiredString(value.summary, "summary") }),
+    ...(value.personaText === undefined ? {} : { personaText: requiredString(value.personaText, "personaText") }),
     ...(value.homeLocationId === undefined ? {} : { homeLocationId: requiredString(value.homeLocationId, "homeLocationId") as V2LocationId }),
     expectedRevision: requiredRevision(value.expectedRevision),
     idempotencyKey: requiredString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey,
@@ -192,8 +193,8 @@ export function parseUpdateLocationBody(body: unknown): V2UpdateLocationRequest 
 }
 
 export function parseUpdateCharacterBody(body: unknown): V2UpdateCharacterRequest {
-  const value = requireRevisionedBody(body, ["name", "summary", "homeLocationId"]);
-  return { name: requiredString(value.name, "name"), ...(value.summary === undefined ? {} : { summary: requiredString(value.summary, "summary") }), ...(value.homeLocationId === undefined ? {} : { homeLocationId: requiredString(value.homeLocationId, "homeLocationId") as V2LocationId }), expectedRevision: requiredRevision(value.expectedRevision), idempotencyKey: requiredString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey };
+  const value = requireRevisionedBody(body, ["name", "summary", "homeLocationId", "personaText"]);
+  return { name: requiredString(value.name, "name"), ...(value.summary === undefined ? {} : { summary: requiredString(value.summary, "summary") }), ...(value.personaText === undefined ? {} : { personaText: requiredString(value.personaText, "personaText") }), ...(value.homeLocationId === undefined ? {} : { homeLocationId: value.homeLocationId === null ? null : requiredString(value.homeLocationId, "homeLocationId") as V2LocationId }), expectedRevision: requiredRevision(value.expectedRevision), idempotencyKey: requiredString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey };
 }
 
 export function parseUpdateFactBody(body: unknown): V2UpdateFactRequest {

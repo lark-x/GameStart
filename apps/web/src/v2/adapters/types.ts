@@ -43,12 +43,16 @@ export interface V2CharacterSummary {
   readonly characterId: string;
   readonly name: string;
   readonly role: string;
+  readonly summary?: string;
+  readonly personaText?: string;
+  readonly homeLocationId?: string;
 }
 
 export interface V2LocationSummary {
   readonly locationId: string;
   readonly name: string;
   readonly tags: readonly string[];
+  readonly summary?: string;
 }
 
 export interface V2FactSummary {

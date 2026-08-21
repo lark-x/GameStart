@@ -19,6 +19,7 @@ import type {
 } from "@living-network/contracts/v2";
 import { createV2ChatClient, type V2ChatStreamEvent } from "../chat/client.ts";
 import { randomUuid } from "../random.ts";
+import { buildStickerSendPayload, isChatModelConfigured } from "./chat-view-model.ts";
 import ChatCharacterPanel from "../chat/components/ChatCharacterPanel.vue";
 import ChatConversationSidebar from "../chat/components/ChatConversationSidebar.vue";
 import ChatEmojiPicker from "../chat/components/ChatEmojiPicker.vue";
@@ -45,11 +46,14 @@ const messagesContainer = ref<HTMLElement | null>(null);
 
 // Character context + effective chat features
 const features = ref<V2ChatFeaturesDto | null>(null);
+type FeatureState = "idle" | "loading" | "ready" | "error";
+const featureState = ref<FeatureState>("idle");
+const featureError = ref<string | null>(null);
 const context = ref<V2ChatContextResponse | null>(null);
 const showCharacterPanel = ref(false);
 const loadingContext = ref(false);
 const contextError = ref<string | null>(null);
-const modelConfigured = computed(() => features.value?.modelConfigured !== false);
+const modelConfigured = computed(() => isChatModelConfigured(featureState.value, features.value));
 const imageEnabled = computed(() => features.value?.imageUpload === true);
 const modelSummary = computed(() => {
   const model = features.value?.model;
@@ -187,7 +191,11 @@ let abortController: AbortController | undefined;
 onMounted(async () => {
   await loadChat();
   await loadExtras();
-  if (messages.value.length === 0 && modelConfigured.value) {
+  if (
+    messages.value.length === 0 &&
+    featureState.value === "ready" &&
+    modelConfigured.value
+  ) {
     await generateOpening();
   }
 });
@@ -223,7 +231,16 @@ async function loadExtras(): Promise<void> {
     client.getConversationFeatures(id),
     client.getConversationContext(id),
   ]);
-  if (nextFeatures.status === "fulfilled") features.value = nextFeatures.value;
+  if (nextFeatures.status === "fulfilled") {
+    features.value = nextFeatures.value;
+    featureState.value = "ready";
+    featureError.value = null;
+  } else {
+    featureState.value = "error";
+    featureError.value = nextFeatures.reason instanceof Error
+      ? nextFeatures.reason.message
+      : "无法读取模型能力状态，请刷新后重试。";
+  }
   if (nextContext.status === "fulfilled") {
     context.value = nextContext.value;
     conversationTitle.value = nextContext.value.character.name || conversationTitle.value;
@@ -304,6 +321,16 @@ async function sendMessage(): Promise<void> {
   const text = input.value.trim();
   const attachmentIds = pendingAttachments.value.map((item) => item.mediaId);
   if ((!text && attachmentIds.length === 0) || sending.value || streaming.value) return;
+  await sendMessagePayload({ text, attachmentIds, clearComposer: true });
+}
+
+async function sendMessagePayload(params: {
+  readonly text: string;
+  readonly attachmentIds: readonly string[];
+  readonly clearComposer: boolean;
+}): Promise<void> {
+  const text = params.text;
+  const attachmentIds = params.attachmentIds;
   sending.value = true;
   errorMessage.value = "";
   try {
@@ -313,8 +340,10 @@ async function sendMessage(): Promise<void> {
       idempotencyKey: `user:${Date.now()}:${randomUuid()}` as V2IdempotencyKey,
     });
     messages.value = [...messages.value, response.message];
-    input.value = "";
-    pendingAttachments.value = [];
+    if (params.clearComposer) {
+      input.value = "";
+      pendingAttachments.value = [];
+    }
     await nextTick();
     scrollToBottom("smooth");
     await startAssistantReply();
@@ -361,8 +390,7 @@ function insertEmoji(emoji: string): void {
 
 async function sendSticker(sticker: { readonly mediaId: string; readonly mediaRef: string }): Promise<void> {
   stickerOpen.value = false;
-  pendingAttachments.value = [{ mediaId: sticker.mediaId, mediaRef: sticker.mediaRef, mimeType: "image/png" }];
-  await sendMessage();
+  await sendMessagePayload(buildStickerSendPayload(sticker.mediaId));
 }
 
 async function startAssistantReply(openingIdempotencyKey?: string): Promise<void> {
@@ -526,6 +554,9 @@ function openConversation(nextId: string): void {
     </header>
 
     <p v-if="errorMessage" class="v2-chat-error">{{ errorMessage }}</p>
+    <p v-if="featureState === 'error'" class="v2-chat-error" role="alert">
+      无法读取模型能力状态，请刷新后重试。{{ featureError ?? '' }}
+    </p>
     <p v-if="loading" class="v2-chat-status">正在加载对话…</p>
 
     <div
