@@ -35,7 +35,7 @@ import {
   getDataFlowNode,
   getNodesForFilter,
   type DataFlowFilterId,
-} from "../../flow-metadata/workspace-data-flow";
+} from "./workspace-data-flow";
 
 const props = defineProps<{ snapshot: V2WorkspaceSnapshot | null }>();
 
