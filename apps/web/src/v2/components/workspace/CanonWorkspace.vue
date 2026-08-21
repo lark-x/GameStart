@@ -1,16 +1,20 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { Plus, User, MapPin, BookOpen, ShieldAlert, Clock3, Pencil } from "@lucide/vue";
 import Badge from "../../../components/ui/Badge.vue";
 import Button from "../../../components/ui/Button.vue";
 import Field from "../../../components/ui/Field.vue";
 import Input from "../../../components/ui/Input.vue";
-import Modal from "../../../components/ui/Modal.vue";
 import Drawer from "../../../components/ui/Drawer.vue";
 import Select from "../../../components/ui/Select.vue";
 import Textarea from "../../../components/ui/Textarea.vue";
 import type { V2WorkspaceSnapshot } from "../../adapters";
 import { useV2WorkspaceStore } from "../../stores/workspace";
+import WorkspaceModuleIntro from "./WorkspaceModuleIntro.vue";
+
+const route = useRoute();
+const router = useRouter();
 
 const props = defineProps<{
   snapshot: V2WorkspaceSnapshot | null;
@@ -30,14 +34,21 @@ const emit = defineEmits<{
 
 const store = useV2WorkspaceStore();
 
-const activeTab = ref<"all" | "characters" | "locations" | "facts" | "rules" | "timeline">("all");
+type CanonTab = "all" | "characters" | "locations" | "facts" | "rules" | "timeline";
+const validTabs = new Set<CanonTab>(["all", "characters", "locations", "facts", "rules", "timeline"]);
+const activeTab = ref<CanonTab>(validTabs.has(route.query.tab as CanonTab) ? (route.query.tab as CanonTab) : "all");
 const searchQuery = ref("");
 
-const createDialogOpen = ref(false);
-const newStoryName = ref("");
-const newStoryPremise = ref("");
-const createError = ref<string | null>(null);
-const creatingStory = computed(() => store.creatingStory);
+watch(() => route.query.tab, (tab) => {
+  if (typeof tab === "string" && validTabs.has(tab as CanonTab)) {
+    activeTab.value = tab as CanonTab;
+  }
+});
+
+watch(activeTab, (tab) => {
+  void router.replace({ query: { ...route.query, tab } });
+});
+
 type CanonEntityKind = "location" | "character" | "fact" | "rule" | "timeline";
 const entityDrawerOpen = ref(false);
 const editingEntityId = ref<string | null>(null);
@@ -135,31 +146,6 @@ async function submitEntity(): Promise<void> {
 }
 
 
-function openCreateDialog(): void {
-  createError.value = null;
-  newStoryName.value = "";
-  newStoryPremise.value = "";
-  createDialogOpen.value = true;
-}
-
-async function submitCreateStory(): Promise<void> {
-  const name = newStoryName.value.trim();
-  if (!name) {
-    createError.value = "请填写故事名称。";
-    return;
-  }
-  createError.value = null;
-  try {
-    const input: { name: string; summary?: string } = { name };
-    const premise = newStoryPremise.value.trim();
-    if (premise) input.summary = premise;
-    await store.createStoryWorld(input);
-    createDialogOpen.value = false;
-  } catch {
-    createError.value = store.error;
-  }
-}
-
 const filteredCharacters = computed(() => {
   if (!props.snapshot) return [];
   if (!searchQuery.value.trim()) return props.snapshot.world.characters;
@@ -208,17 +194,14 @@ function ruleSeverityLabel(severity: string): string {
   <div class="canon-workspace">
     <div v-if="!snapshot && loading" class="canon-loading">正在加载工作区快照...</div>
 
-    <!-- 空库：还没有任何故事世界，从这里创建第一个故事 -->
-    <div v-else-if="!snapshot" class="canon-card canon-empty">
-      <div class="canon-empty-copy">
-        <h3>还没有故事世界</h3>
-        <p>从一个故事空间开始：填写名称与世界观前提，创建后即可在总览中编辑正典设定。</p>
-      </div>
-      <Button variant="primary" size="md" @click="openCreateDialog">
-        <Plus :size="16" aria-hidden="true" />
-        新建故事
-      </Button>
-    </div>
+    <!-- 空库：显示模块说明，引导用户先创建故事 -->
+    <WorkspaceModuleIntro
+      v-else-if="!snapshot"
+      title="世界设定"
+      description="这里用于定义故事中的基础事实和对象。这些内容属于一个具体故事，因此需要先创建故事。"
+      :examples="['角色', '地点', '世界事实', '世界规则', '时间线']"
+      :consumers="['Chat 对话上下文', '场景生成 Context（部分）', '剧情分析']"
+    />
 
     <template v-else>
       <!-- Top Configuration & Revision Controls -->
@@ -227,10 +210,6 @@ function ruleSeverityLabel(severity: string): string {
           <h3>正典修订与设定基线</h3>
           <div class="card-actions">
             <Badge tone="neutral">版本 v{{ snapshot.world.revision }}</Badge>
-            <Button variant="secondary" size="sm" @click="openCreateDialog">
-              <Plus :size="14" aria-hidden="true" />
-              新建故事
-            </Button>
           </div>
         </div>
 
@@ -481,27 +460,6 @@ function ruleSeverityLabel(severity: string): string {
         <Button variant="primary" size="md" :loading="loading" @click="submitEntity">保存数据</Button>
       </template>
     </Drawer>
-
-    <Modal
-      :open="createDialogOpen"
-      title="新建故事"
-      description="创建一个新的故事世界空间，之后可以在总览中继续编辑正典设定。"
-      @close="createDialogOpen = false"
-    >
-      <form class="create-story-form" @submit.prevent="submitCreateStory">
-        <Field for-id="v2-new-story-name" label="故事名称" required hint="例如：雾港回声">
-          <Input id="v2-new-story-name" v-model="newStoryName" placeholder="故事名称" autofocus />
-        </Field>
-        <Field for-id="v2-new-story-premise" label="故事前提 / 世界观背景" hint="一句话说明这个世界发生了什么；可留空稍后补充。">
-          <Textarea id="v2-new-story-premise" v-model="newStoryPremise" :rows="3" placeholder="可留空，稍后在故事总览中补充。" />
-        </Field>
-        <p v-if="createError" class="create-story-error" role="alert">{{ createError }}</p>
-      </form>
-      <template #footer>
-        <Button variant="secondary" size="md" :disabled="creatingStory" @click="createDialogOpen = false">取消</Button>
-        <Button variant="primary" size="md" :loading="creatingStory" @click="submitCreateStory">创建故事</Button>
-      </template>
-    </Modal>
   </div>
 </template>
 
@@ -543,27 +501,6 @@ function ruleSeverityLabel(severity: string): string {
   color: var(--muted);
   font-size: var(--text-sm);
   text-align: center;
-}
-
-.canon-empty {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-}
-
-.canon-empty-copy h3 {
-  margin: 0 0 var(--space-1);
-  color: var(--text-strong);
-  font-size: var(--text-lg);
-}
-
-.canon-empty-copy p {
-  margin: 0;
-  color: var(--muted);
-  font-size: var(--text-sm);
-  line-height: 1.6;
 }
 
 .create-story-form {

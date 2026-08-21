@@ -28,6 +28,7 @@ const areaAliases: Readonly<Record<string, string>> = {
 };
 
 const supportedAreas = new Set(["overview", "canon", "graph", "state", "assets", "release", "player"]);
+supportedAreas.add("data-flow");
 
 const currentArea = computed(() => {
   const resolved = areaAliases[requestedArea.value] ?? requestedArea.value;
@@ -42,6 +43,7 @@ const storyTabs: readonly ModuleTab[] = [
   { label: "世界设定", to: "/v2/workspace/world" },
   { label: "状态与逻辑", to: "/v2/workspace/state" },
   { label: "故事结构", to: "/v2/workspace/story" },
+  { label: "数据流程", to: "/v2/workspace/data-flow" },
 ];
 
 const creationTabs: readonly ModuleTab[] = [
@@ -65,7 +67,7 @@ const releaseTabs: readonly ModuleTab[] = [
 
 const activeTabs = computed<readonly ModuleTab[]>(() => {
   const area = requestedArea.value;
-  if (["project", "overview", "stories", "world", "canon", "state", "story", "graph"].includes(area)) {
+  if (["project", "overview", "stories", "world", "canon", "state", "story", "graph", "data-flow"].includes(area)) {
     return storyTabs;
   }
   if (area.startsWith("ai-scene-") || area === "ai" || area === "review") {

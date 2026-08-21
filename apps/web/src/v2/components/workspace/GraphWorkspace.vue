@@ -12,6 +12,7 @@ import type { V2ArcId, V2SceneId } from "@living-network/contracts/v2";
 import type { V2GraphCreateInput, V2WorkspaceSnapshot } from "../../adapters";
 import type { V2ArcSummary, V2ChoiceSummary } from "../../adapters/types";
 import { useV2WorkspaceStore } from "../../stores/workspace";
+import ModulePurposeCard from "./ModulePurposeCard.vue";
 
 const props = defineProps<{
   snapshot: V2WorkspaceSnapshot;
@@ -199,6 +200,15 @@ async function submitCreate(): Promise<void> {
 </script>
 
 <template>
+    <ModulePurposeCard
+      title="故事结构"
+      description="故事结构决定故事如何从一个场景推进到另一个场景。Arc 用于组织剧情，Scene 是正式剧情节点，Choice 从一个场景跳到另一个场景并读取或修改状态变量。"
+      :usages="[
+        { label: 'Player Runtime', status: 'direct' },
+        { label: 'Release', status: 'indirect' },
+        { label: 'Scene Generation', status: 'partial' },
+      ]"
+    />
     <div class="graph-authoring-toolbar">
       <div><strong>故事结构</strong><span>新增 Arc、场景和分支选项</span></div>
       <div class="graph-authoring-actions">

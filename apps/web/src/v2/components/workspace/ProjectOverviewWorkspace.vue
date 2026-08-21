@@ -57,8 +57,8 @@ function goTo(path: string): void {
     <section v-if="!snapshot" class="project-start">
       <div class="project-start-copy">
         <Badge tone="info">项目首页</Badge>
-        <h3>创建第一条故事数据</h3>
-        <p>填写故事名称和世界观前提后，会写入真实 API 与 SQLite，并进入世界设定继续创作。</p>
+        <h3>创建第一个故事</h3>
+        <p>先创建故事空间。角色、地点、剧情、状态变量和 AI 生成内容都会归属于这个故事。</p>
       </div>
 
       <form class="project-create-form" @submit.prevent="submitCreateStory">
@@ -130,6 +130,10 @@ function goTo(path: string): void {
       </section>
 
       <section class="project-next">
+        <Button variant="secondary" size="md" @click="goTo('/v2/workspace/data-flow')">
+          理解数据流
+          <ArrowRight :size="16" aria-hidden="true" />
+        </Button>
         <Button variant="secondary" size="md" @click="goTo('/v2/workspace/world')">
           世界设定
           <ArrowRight :size="16" aria-hidden="true" />

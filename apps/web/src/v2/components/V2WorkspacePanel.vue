@@ -12,6 +12,8 @@ import AssetsWorkspace from "./workspace/AssetsWorkspace.vue";
 import ReleaseWorkspace from "./workspace/ReleaseWorkspace.vue";
 import PlayerWorkspace from "./workspace/PlayerWorkspace.vue";
 import ProjectOverviewWorkspace from "./workspace/ProjectOverviewWorkspace.vue";
+import DataFlowWorkspace from "./workspace/DataFlowWorkspace.vue";
+import WorkspaceModuleIntro from "./workspace/WorkspaceModuleIntro.vue";
 
 const props = defineProps<{
   area: string;
@@ -106,6 +108,8 @@ const title = computed(() => {
       :loading="loading"
     />
 
+    <DataFlowWorkspace v-else-if="area === 'data-flow'" :snapshot="snapshot" />
+
     <template v-else-if="snapshot">
       <div class="v2-panel-content">
         <!-- 2. Graph Area -->
@@ -162,7 +166,41 @@ const title = computed(() => {
       </div>
     </template>
 
-    <ProjectOverviewWorkspace v-else :snapshot="null" :loading="loading" />
+    <template v-else>
+      <WorkspaceModuleIntro
+        v-if="area === 'state'"
+        title="状态与逻辑"
+        description="这里定义故事运行时会变化的数据。这些变量会被剧情选择条件读取、选择结果修改，并由 Player Runtime 保存和恢复。当前状态变量不会自动发送给场景生成模型。"
+        :examples="['好感度 = 20', '是否拿到钥匙 = 否', '当前阵营 = neutral']"
+        :consumers="['剧情选择条件', '选择结果修改', 'Player Runtime 保存和恢复']"
+        :notes="['当前状态变量不会自动发送给场景生成模型。']"
+      />
+      <WorkspaceModuleIntro
+        v-else-if="area === 'graph'"
+        title="故事结构"
+        description="这里定义故事如何推进。主要包含 Arc（剧情分组）、Scene（剧情场景）和 Choice（玩家选择和跳转）。Choice 可以读取状态变量，并在玩家选择后修改状态。需要先创建故事才能建立剧情结构。"
+        :prerequisites="['先创建一个故事空间']"
+      />
+      <WorkspaceModuleIntro
+        v-else-if="area === 'assets'"
+        title="正式素材库"
+        description="管理审核通过的正式图片素材，并使用 ComfyUI 生成新图片候选。素材随发布包导出。"
+        :prerequisites="['先创建一个故事空间']"
+      />
+      <WorkspaceModuleIntro
+        v-else-if="area === 'release'"
+        title="发布与导出"
+        description="将 Canon、故事结构和状态 Schema 打包为不可变发布清单，供 Player Runtime 使用。"
+        :prerequisites="['先创建一个故事空间']"
+      />
+      <WorkspaceModuleIntro
+        v-else-if="area === 'player'"
+        title="运行预览"
+        description="以玩家视角运行发布包中的故事：阅读场景、做出选择、查看状态变化。"
+        :prerequisites="['先创建并发布一个故事']"
+      />
+      <ProjectOverviewWorkspace v-else :snapshot="null" :loading="loading" />
+    </template>
   </section>
 </template>
 
