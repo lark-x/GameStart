@@ -30,9 +30,9 @@ export interface DataFlowFilter {
 export const dataFlowNodes: readonly DataFlowNode[] = [
   // ── Source：创作者配置的数据 ──
   { id: "world_summary", label: "故事前提", secondaryLabel: "StoryWorld Summary", category: "source", description: "故事名称和世界观背景，是所有创作数据的根。", managePath: "/v2/workspace/project" },
-  { id: "character_name", label: "角色名称", secondaryLabel: "Character Name", category: "source", description: "角色的名字，用于对话身份识别和场景生成上下文。", managePath: "/v2/workspace/world?tab=characters", selectable: true },
-  { id: "character_persona", label: "角色人设", secondaryLabel: "Persona", category: "source", description: "角色的性格、说话方式和背景，用于聊天回复和剧情分析。", managePath: "/v2/workspace/world?tab=characters", selectable: true },
-  { id: "character_summary", label: "角色简介", secondaryLabel: "Character Summary", category: "source", description: "角色的简要说明，用于聊天和剧情分析。", managePath: "/v2/workspace/world?tab=characters" },
+  { id: "character_name", label: "角色名称", secondaryLabel: "Character Name", category: "source", description: "角色的名字，用于对话身份识别和场景生成上下文。", managePath: "/v2/workspace/characters", selectable: true },
+  { id: "character_persona", label: "角色人设", secondaryLabel: "Persona", category: "source", description: "角色的性格、说话方式和背景，用于聊天回复和剧情分析。", managePath: "/v2/workspace/characters", selectable: true },
+  { id: "character_summary", label: "角色简介", secondaryLabel: "Character Summary", category: "source", description: "角色的简要说明，用于聊天和剧情分析。", managePath: "/v2/workspace/characters" },
   { id: "location", label: "地点", secondaryLabel: "Location", category: "source", description: "描述故事中的位置，可作为角色常驻地点。当前未进入 AI 生成链路。", managePath: "/v2/workspace/world?tab=locations", selectable: true },
   { id: "fact", label: "世界事实", secondaryLabel: "Fact", category: "source", description: "已经确认成立的世界信息，会直接进入场景生成上下文。", managePath: "/v2/workspace/world?tab=facts", selectable: true },
   { id: "rule", label: "世界规则", secondaryLabel: "Rule", category: "source", description: "世界中应遵守的约束（例如：死人不能复活）。当前只用于聊天上下文。", managePath: "/v2/workspace/world?tab=rules", selectable: true },

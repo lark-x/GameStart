@@ -2,6 +2,7 @@
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import Button from "../../components/ui/Button.vue";
+import ModuleTabs, { type ModuleTab } from "../components/layout/ModuleTabs.vue";
 import { useV2WorkspaceStore } from "../stores/workspace";
 
 const route = useRoute();
@@ -12,6 +13,14 @@ const characterId = computed(() => typeof route.params.characterId === "string" 
 const characters = computed(() => store.snapshot?.world.characters ?? []);
 const character = computed(() => characters.value.find((item) => item.characterId === characterId.value));
 const tabs = ["overview", "persona", "relationships", "visual", "memory", "state", "events", "usage"] as const;
+const storyTabs: readonly ModuleTab[] = [
+  { label: "总览", to: "/v2/workspace/project", exact: true },
+  { label: "世界设定", to: "/v2/workspace/world" },
+  { label: "角色中心", to: "/v2/workspace/characters" },
+  { label: "状态与逻辑", to: "/v2/workspace/state" },
+  { label: "故事结构", to: "/v2/workspace/story" },
+  { label: "数据流程", to: "/v2/workspace/data-flow" },
+];
 const traces = ref<readonly { task: string; contextHash: string; sources: readonly { path: string; reason: string; tokens: number }[]; omittedSources: readonly { path: string; reason: string; tokens: number }[] }[]>([]);
 const relationships = ref<readonly Record<string, unknown>[]>([]);
 const visualVariants = ref<readonly Record<string, unknown>[]>([]);
@@ -42,6 +51,7 @@ function participantCount(item: Record<string, unknown>): number { return Array.
 
 <template>
   <main class="character-center" aria-labelledby="character-center-title">
+    <ModuleTabs :tabs="storyTabs" aria-label="故事模块" />
     <header class="character-header">
       <div class="portrait" aria-hidden="true">{{ character?.name?.slice(0, 1) ?? "?" }}</div>
       <div>

@@ -41,6 +41,7 @@ const isUnknownArea = computed(() => !generationArea.value && currentArea.value 
 const storyTabs: readonly ModuleTab[] = [
   { label: "总览", to: "/v2/workspace/project", exact: true },
   { label: "世界设定", to: "/v2/workspace/world" },
+  { label: "角色中心", to: "/v2/workspace/characters" },
   { label: "状态与逻辑", to: "/v2/workspace/state" },
   { label: "故事结构", to: "/v2/workspace/story" },
   { label: "数据流程", to: "/v2/workspace/data-flow" },
@@ -67,7 +68,7 @@ const releaseTabs: readonly ModuleTab[] = [
 
 const activeTabs = computed<readonly ModuleTab[]>(() => {
   const area = requestedArea.value;
-  if (["project", "overview", "stories", "world", "canon", "state", "story", "graph", "data-flow"].includes(area)) {
+  if (["project", "overview", "stories", "world", "canon", "characters", "state", "story", "graph", "data-flow"].includes(area)) {
     return storyTabs;
   }
   if (area.startsWith("ai-scene-") || area === "ai" || area === "review") {

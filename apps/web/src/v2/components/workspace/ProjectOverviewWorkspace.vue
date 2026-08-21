@@ -138,6 +138,10 @@ function goTo(path: string): void {
           世界设定
           <ArrowRight :size="16" aria-hidden="true" />
         </Button>
+        <Button variant="secondary" size="md" @click="goTo('/v2/workspace/characters')">
+          角色中心
+          <ArrowRight :size="16" aria-hidden="true" />
+        </Button>
         <Button variant="secondary" size="md" @click="goTo('/v2/workspace/state')">
           状态与逻辑
           <ArrowRight :size="16" aria-hidden="true" />
