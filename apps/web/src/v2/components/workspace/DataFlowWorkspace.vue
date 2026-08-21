@@ -15,13 +15,11 @@ import {
   Route,
   Save,
   SendToBack,
-  Share2,
   ShieldAlert,
   Sparkles,
   Type,
   Users,
   Variable,
-  Workflow,
   Zap,
 } from "@lucide/vue";
 
@@ -70,15 +68,6 @@ function statusTone(status: string): "success" | "info" | "neutral" | "warning" 
     case "partial": return "info";
     case "indirect": return "neutral";
     default: return "warning";
-  }
-}
-
-function categoryLabel(category: string): string {
-  switch (category) {
-    case "source": return "配置数据";
-    case "processor": return "处理链";
-    case "output": return "产出物";
-    default: return "发布与运行";
   }
 }
 
