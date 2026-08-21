@@ -39,6 +39,7 @@ const primaryNavItems: readonly PrimaryNavItem[] = [
     matchPrefixes: [
       "/v2/workspace/project",
       "/v2/workspace/world",
+      "/v2/workspace/characters",
       "/v2/workspace/state",
       "/v2/workspace/story",
     ],
