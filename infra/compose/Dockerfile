@@ -14,6 +14,8 @@ USER node
 
 FROM app-runtime AS web-build
 
+USER root
+
 RUN pnpm --filter @living-network/web build
 
 FROM nginx:1.27.4-alpine AS web

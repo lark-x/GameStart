@@ -5,6 +5,10 @@ export const PORT_RANGE_START = 18000;
 export const PORT_RANGE_END = 18999;
 export const MAX_PORT_RETRIES = 5;
 
+function isValidPortNumber(port) {
+  return port !== undefined && !isNaN(port) && port >= 1 && port <= 65535;
+}
+
 /**
  * Check whether a TCP port is available on the specified host.
  */
@@ -40,27 +44,39 @@ export async function findFreePort(start = PORT_RANGE_START, end = PORT_RANGE_EN
 export async function selectWebPort({
   explicitPort = undefined,
   lastStatePort = undefined,
+  currentDeploymentPort = undefined,
   start = PORT_RANGE_START,
   end = PORT_RANGE_END,
+  host = "127.0.0.1",
   isAvailable = isPortAvailable,
   findFree = findFreePort,
 } = {}) {
-  if (explicitPort !== undefined && !isNaN(explicitPort)) {
-    const available = await isAvailable(explicitPort);
-    if (!available) {
-      throw new DeploymentError(`Port ${explicitPort} is already in use. Free it or choose another port.`);
+  const activePort = isValidPortNumber(currentDeploymentPort) ? currentDeploymentPort : undefined;
+  const isCurrentDeploymentPort = (port) => activePort !== undefined && port === activePort;
+
+  if (isValidPortNumber(explicitPort)) {
+    const available = await isAvailable(explicitPort, host);
+    if (available || isCurrentDeploymentPort(explicitPort)) {
+      return { port: explicitPort, source: "explicit", occupiedByCurrentDeployment: !available };
     }
-    return { port: explicitPort, source: "explicit" };
+    throw new DeploymentError(`Port ${explicitPort} is already in use by another process. Free it or choose another port.`);
   }
 
-  if (lastStatePort !== undefined && !isNaN(lastStatePort)) {
-    const available = await isAvailable(lastStatePort);
-    if (available) {
-      return { port: lastStatePort, source: "reused" };
+  if (isValidPortNumber(lastStatePort)) {
+    const available = await isAvailable(lastStatePort, host);
+    if (available || isCurrentDeploymentPort(lastStatePort)) {
+      return { port: lastStatePort, source: "reused", occupiedByCurrentDeployment: !available };
     }
+    throw new DeploymentError(
+      `Last deployment port ${lastStatePort} is already in use by another process. Stop that process or run pnpm deploy -- --port <port>.`,
+    );
   }
 
-  const freePort = await findFree(start, end);
+  if (activePort !== undefined) {
+    return { port: activePort, source: "current", occupiedByCurrentDeployment: true };
+  }
+
+  const freePort = await findFree(start, end, host);
   if (!freePort) {
     throw new DeploymentError(`No free port found in range ${start}-${end}.`);
   }

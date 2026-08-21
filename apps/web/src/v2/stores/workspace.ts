@@ -12,6 +12,7 @@ import type { V2StoryWorldDto } from "@living-network/contracts/v2";
 
 import { useNotificationStore } from "./notification.ts";
 import { createV2HttpAdapter, createV2MockAdapter, V2AdapterError } from "../adapters/index.ts";
+import { randomUuid } from "../random.ts";
 import type {
   V2CandidateReviewAction,
   V2WorkspaceAdapter,
@@ -501,7 +502,7 @@ export const useV2WorkspaceStore = defineStore("v2-workspace", () => {
         baseCanonRevision: snapshot.value.world.revision as V2Revision,
         prompt: generationPrompt.value,
         preparedContext: prepared.context,
-        idempotencyKey: `generation:${crypto.randomUUID()}` as V2IdempotencyKey,
+        idempotencyKey: `generation:${randomUuid()}` as V2IdempotencyKey,
       });
       const terminalMessage =
         response.job.status === "queued"

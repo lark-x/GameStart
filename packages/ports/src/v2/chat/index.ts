@@ -23,6 +23,8 @@ export interface V2ChatConversationSummary {
   readonly storyWorldId: string;
   readonly primaryCharacterId: string;
   readonly title?: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
   readonly characterName: string;
   readonly storyWorldName: string;
   readonly lastMessagePreview?: string;
