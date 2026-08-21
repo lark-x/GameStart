@@ -14,6 +14,7 @@ import {
   createV2ChatMessage,
   createV2FactAssertion,
   createV2FactAssertionBatch,
+  createV2Memory,
 } from "@living-network/domain/v2";
 import type { V2ConversationId, V2MessageId, V2StoryWorldId } from "@living-network/contracts/v2";
 
@@ -172,6 +173,90 @@ test("V2BuiltinStructuredEngine rebuild replays a fact batch", async () => {
     // Rebuild is a no-op placeholder in this phase; consume still works after it.
     const result = await engine.consume({ batch: batch(), assertions: [assertion()] });
     assert.equal(result.mutated, true);
+  } finally {
+    db.close();
+    cleanup();
+  }
+});
+
+test("V2BuiltinStructuredEngine isolates memories by character within the same world", async () => {
+  const { db, uow, engine, cleanup } = await setup();
+  try {
+    await uow.withChatTransaction(async (repos) => {
+      await repos.canon.createCharacter(createV2CanonCharacter({
+        characterId: "character:two",
+        storyWorldId: "world:one",
+        name: "Nova",
+      }));
+      await repos.conversations.create(createV2ChatConversation({
+        conversationId: "conversation:two",
+        storyWorldId: "world:one",
+        primaryCharacterId: "character:two",
+        title: "Conv Two",
+      }));
+    });
+
+    // Character A (conversation:one) likes apples.
+    await engine.consume({
+      batch: batch(),
+      assertions: [assertion({
+        assertionId: "fact:a-apple",
+        text: "角色A喜欢苹果",
+        subject: { entityType: "character", entityId: "character:one", label: "角色A" },
+        kind: "preference",
+        sourceMessageIds: ["message:1"],
+      })],
+    });
+
+   // Character B (conversation:two) hates apples.
+    // Injected directly through the repository: the engine may otherwise route
+    // the second consume through consolidation, which does not synchronously
+    // persist a new row. This test focuses on retrieval isolation, so we seed
+    // the character-scoped row explicitly.
+    await uow.withChatTransaction(async (repos) => {
+      await repos.memories.create(createV2Memory({
+        memoryId: "memory:b-apple",
+        storyWorldId: "world:one" as V2StoryWorldId,
+        conversationId: "conversation:two" as V2ConversationId,
+        characterId: "character:two",
+        kind: "preference",
+        content: "角色B讨厌苹果",
+        importance: 0.8,
+        confidence: 0.9,
+        sourceMessageIds: ["message:2" as V2MessageId],
+        createdAt: now,
+        updatedAt: now,
+      }));
+    });
+
+    const forA = await engine.retrieve({
+      storyWorldId: "world:one" as V2StoryWorldId,
+      conversationId: "conversation:one" as V2ConversationId,
+      characterId: "character:one",
+      query: "苹果",
+      limit: 5,
+    });
+    assert.equal(forA.length, 1);
+    assert.match(forA[0]?.text ?? "", /角色A喜欢苹果/);
+
+    const forB = await engine.retrieve({
+      storyWorldId: "world:one" as V2StoryWorldId,
+      conversationId: "conversation:two" as V2ConversationId,
+      characterId: "character:two",
+      query: "苹果",
+      limit: 5,
+    });
+    assert.equal(forB.length, 1);
+    assert.match(forB[0]?.text ?? "", /角色B讨厌苹果/);
+
+    // World-scope fallback without characterId still returns both.
+    const worldWide = await engine.retrieve({
+      storyWorldId: "world:one" as V2StoryWorldId,
+      conversationId: "conversation:one" as V2ConversationId,
+      query: "苹果",
+      limit: 10,
+    });
+    assert.equal(worldWide.length, 2);
   } finally {
     db.close();
     cleanup();

@@ -1,10 +1,14 @@
 import type {
+  V2CharacterId,
+  V2CreateChatStickerRequest,
   V2CreateInstantStoryRequest,
+  V2CreateConversationRequest,
   V2GenerateChatReplyRequest,
   V2IdempotencyKey,
   V2MediaId,
   V2MessageId,
   V2SendChatMessageRequest,
+  V2StoryWorldId,
 } from "@living-network/contracts/v2";
 
 import { V2HttpError } from "../core/errors.ts";
@@ -42,6 +46,23 @@ export function parseCreateInstantStoryRequest(value: unknown): V2CreateInstantS
     persona: nonEmptyString(value.persona, "persona"),
     ...(displayName === undefined ? {} : { displayName }),
     idempotencyKey: nonEmptyString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey,
+  };
+}
+
+export function parseCreateConversationRequest(value: unknown): V2CreateConversationRequest {
+  if (!isRecord(value)) throw new V2HttpError(422, "VALIDATION_FAILED", "request body must be an object");
+  return {
+    storyWorldId: nonEmptyString(value.storyWorldId, "storyWorldId") as V2StoryWorldId,
+    characterId: nonEmptyString(value.characterId, "characterId") as V2CharacterId,
+    idempotencyKey: nonEmptyString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey,
+  };
+}
+
+export function parseCreateStickerRequest(value: unknown): V2CreateChatStickerRequest {
+  if (!isRecord(value)) throw new V2HttpError(422, "VALIDATION_FAILED", "request body must be an object");
+  return {
+    mediaId: nonEmptyString(value.mediaId, "mediaId") as V2MediaId,
+    label: nonEmptyString(value.label, "label"),
   };
 }
 

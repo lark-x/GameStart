@@ -1,14 +1,23 @@
 import type {
   V2AppearanceSettingsDto,
+  V2CapabilityToggleRequest,
   V2DiscoverModelsRequest,
   V2ExternalConnectionCheckDto,
   V2ImageServiceSettingsDto,
+  V2JobDetailDto,
+  V2JobListDto,
+  V2JobOverviewDto,
+  V2JobQuery,
+  V2MemoryDiagnosticsDto,
+  V2MemoryOverviewDto,
   V2ModelBindingDto,
+  V2RetryJobResponse,
   V2ModelCallLogDto,
   V2ModelCallLogPage,
   V2ModelCallLogQuery,
   V2ModelProfileDto,
   V2PlatformCapabilities,
+  V2RuntimeCapability,
   V2SaveAppearanceSettingsRequest,
   V2SaveImageServiceSettingsRequest,
   V2SaveModelProfileRequest,
@@ -127,6 +136,9 @@ export function createV2PlatformClient(options: V2PlatformClientOptions): V2Plat
     async getCapabilities(): Promise<V2PlatformCapabilities> {
       return get<V2PlatformCapabilities>("/capabilities");
     },
+    async updateCapability(capability: V2RuntimeCapability, input: V2CapabilityToggleRequest): Promise<V2PlatformCapabilities> {
+      return send<V2PlatformCapabilities>("PATCH", `/capabilities/${encodeURIComponent(capability)}`, input);
+    },
     async queryModelCallLogs(query: V2ModelCallLogQuery = {}): Promise<V2ModelCallLogPage> {
       const params = new URLSearchParams();
       for (const [key, value] of Object.entries(query)) {
@@ -146,6 +158,29 @@ export function createV2PlatformClient(options: V2PlatformClientOptions): V2Plat
     async getReady(): Promise<V2RuntimeReady> {
       return readJson<V2RuntimeReady>(await fetcher(`${baseUrl}/api/v2/ready`, request("GET")));
     },
+    async getMemoryOverview(): Promise<V2MemoryOverviewDto> {
+      return readJson<V2MemoryOverviewDto>(await fetcher(`${baseUrl}/api/v2/memory/overview`, request("GET")));
+    },
+    async getMemoryDiagnostics(): Promise<V2MemoryDiagnosticsDto> {
+      return readJson<V2MemoryDiagnosticsDto>(await fetcher(`${baseUrl}/api/v2/memory/diagnostics`, request("GET")));
+    },
+    async listJobs(query: V2JobQuery = {}): Promise<V2JobListDto> {
+      const params = new URLSearchParams();
+      if (query.status !== undefined) params.set("status", query.status);
+      if (query.type !== undefined) params.set("type", query.type);
+      if (query.limit !== undefined) params.set("limit", String(query.limit));
+      if (query.cursor !== undefined) params.set("cursor", query.cursor);
+      return readJson<V2JobListDto>(await fetcher(`${baseUrl}/api/v2/jobs${params.size === 0 ? "" : `?${params.toString()}`}`, request("GET")));
+    },
+    async getJobOverview(): Promise<V2JobOverviewDto> {
+      return readJson<V2JobOverviewDto>(await fetcher(`${baseUrl}/api/v2/jobs/overview`, request("GET")));
+    },
+    async getJob(jobId: string): Promise<V2JobDetailDto> {
+      return readJson<V2JobDetailDto>(await fetcher(`${baseUrl}/api/v2/jobs/${encodeURIComponent(jobId)}`, request("GET")));
+    },
+    async retryJob(jobId: string): Promise<V2RetryJobResponse> {
+      return readJson<V2RetryJobResponse>(await fetcher(`${baseUrl}/api/v2/jobs/${encodeURIComponent(jobId)}/retry`, request("POST")));
+    },
   };
 }
 
@@ -163,9 +198,16 @@ export interface V2PlatformClient {
   getAppearanceSettings(): Promise<V2AppearanceSettingsDto>;
   saveAppearanceSettings(input: V2SaveAppearanceSettingsRequest): Promise<V2AppearanceSettingsDto>;
   getCapabilities(): Promise<V2PlatformCapabilities>;
+  updateCapability(capability: V2RuntimeCapability, input: V2CapabilityToggleRequest): Promise<V2PlatformCapabilities>;
   queryModelCallLogs(query?: V2ModelCallLogQuery): Promise<V2ModelCallLogPage>;
   getModelCallLog(id: string): Promise<V2ModelCallLogDto>;
   deleteModelCallLogs(before: string): Promise<number>;
   getHealth(): Promise<V2RuntimeHealth>;
   getReady(): Promise<V2RuntimeReady>;
+  getMemoryOverview(): Promise<V2MemoryOverviewDto>;
+  getMemoryDiagnostics(): Promise<V2MemoryDiagnosticsDto>;
+  listJobs(query?: V2JobQuery): Promise<V2JobListDto>;
+  getJobOverview(): Promise<V2JobOverviewDto>;
+  getJob(jobId: string): Promise<V2JobDetailDto>;
+  retryJob(jobId: string): Promise<V2RetryJobResponse>;
 }

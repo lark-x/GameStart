@@ -210,8 +210,9 @@ export function createV2CoreUseCases(
           characterId: input.characterId,
           name: input.name,
           ...(input.summary === undefined ? {} : { summary: input.summary }),
+          ...(input.personaText === undefined ? {} : { personaText: input.personaText }),
           ...(input.homeLocationId === undefined ? {} : {
-            homeLocation: await requireLocation(canon, storyWorldId, input.homeLocationId),
+            homeLocation: await requireLocation(canon, storyWorldId, input.homeLocationId as V2LocationId),
           }),
         }));
         const revision = await canon.advanceRevision(storyWorldId, input.expectedRevision);
@@ -263,8 +264,18 @@ export function createV2CoreUseCases(
       withIdempotency(canon, "updateCharacter", input.idempotencyKey, { storyWorldId, characterId, ...input }, async () => {
         const existing = await requireCharacter(canon, storyWorldId, characterId);
         const homeLocationId = input.homeLocationId ?? existing.homeLocationId;
+        const clearedHomeLocation = input.homeLocationId === null;
+        const effectiveHomeLocationId = clearedHomeLocation ? undefined : homeLocationId;
         if (homeLocationId !== undefined) await requireLocation(canon, storyWorldId, homeLocationId);
-        const item = await canon.updateCharacter(createV2CanonCharacter({ storyWorldId, characterId: existing.characterId, name: input.name, ...(input.summary === undefined ? {} : { summary: input.summary }), ...(homeLocationId === undefined ? {} : { homeLocationId }) }));
+        const personaText = input.personaText ?? existing.personaText;
+        const item = await canon.updateCharacter(createV2CanonCharacter({
+          storyWorldId,
+          characterId: existing.characterId,
+          name: input.name,
+          ...(input.summary === undefined ? {} : { summary: input.summary }),
+          ...(personaText === undefined ? {} : { personaText }),
+          ...(effectiveHomeLocationId === undefined ? {} : { homeLocationId: effectiveHomeLocationId }),
+        }));
         const revision = await canon.advanceRevision(storyWorldId, input.expectedRevision);
         return { item: toCharacterDto(item), revision };
       }),

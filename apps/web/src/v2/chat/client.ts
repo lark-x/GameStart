@@ -1,10 +1,18 @@
 import type {
+  V2ChatContactsResponse,
+  V2ChatContextResponse,
+  V2ChatFeaturesDto,
   V2ChatDiagnosticsResponse,
+  V2ChatStickerDto,
+  V2ChatStickerListResponse,
+  V2ChatConversationSummaryListResponse,
   V2ChatMediaDto,
   V2ChatMessageDto,
   V2ChatMessagePageResponse,
   V2ConversationId,
-  V2ConversationListResponse,
+  V2CreateConversationRequest,
+  V2CreateConversationResponse,
+  V2CreateChatStickerRequest,
   V2CreateInstantStoryRequest,
   V2CreateInstantStoryResponse,
   V2ErrorEnvelope,
@@ -13,6 +21,8 @@ import type {
   V2SendChatMessageResponse,
   V2TriggerStoryAnalyzeResponse,
 } from "@living-network/contracts/v2";
+
+import { randomUuid } from "../random.ts";
 
 export interface V2ChatClientOptions {
   readonly baseUrl: string;
@@ -122,8 +132,29 @@ export function createV2ChatClient(options: V2ChatClientOptions): V2ChatClient {
     async createInstantStory(input: V2CreateInstantStoryRequest): Promise<V2CreateInstantStoryResponse> {
       return readJson<V2CreateInstantStoryResponse>(await fetcher(`${base}/instant-stories`, request("POST", input)));
     },
-    async listConversations(): Promise<V2ConversationListResponse["conversations"]> {
-      return (await readJson<V2ConversationListResponse>(await fetcher(`${base}/chat/conversations`, request("GET")))).conversations;
+    async listConversationSummaries(): Promise<V2ChatConversationSummaryListResponse["conversations"]> {
+      return (await readJson<V2ChatConversationSummaryListResponse>(await fetcher(base + "/chat/conversations", request("GET")))).conversations;
+    },
+    async listContacts(): Promise<V2ChatContactsResponse["contacts"]> {
+      return (await readJson<V2ChatContactsResponse>(await fetcher(base + "/chat/contacts", request("GET")))).contacts;
+    },
+    async createConversation(input: V2CreateConversationRequest): Promise<V2CreateConversationResponse> {
+      return readJson<V2CreateConversationResponse>(await fetcher(base + "/chat/conversations", request("POST", input)));
+    },
+    async getConversationContext(conversationId: V2ConversationId): Promise<V2ChatContextResponse> {
+      return readJson<V2ChatContextResponse>(await fetcher(base + "/chat/conversations/" + encodeURIComponent(conversationId) + "/context", request("GET")));
+    },
+    async getConversationFeatures(conversationId: V2ConversationId): Promise<V2ChatFeaturesDto> {
+      return readJson<V2ChatFeaturesDto>(await fetcher(base + "/chat/conversations/" + encodeURIComponent(conversationId) + "/features", request("GET")));
+    },
+    async listStickers(): Promise<readonly V2ChatStickerDto[]> {
+      return (await readJson<V2ChatStickerListResponse>(await fetcher(base + "/chat/stickers", request("GET")))).stickers;
+    },
+    async createSticker(input: V2CreateChatStickerRequest): Promise<V2ChatStickerDto> {
+      return (await readJson<{ readonly sticker: V2ChatStickerDto }>(await fetcher(base + "/chat/stickers", request("POST", input)))).sticker;
+    },
+    async touchStickerLastUsed(stickerId: string): Promise<void> {
+      await readJson<{ readonly ok: true }>(await fetcher(base + "/chat/stickers/" + encodeURIComponent(stickerId) + "/use", request("POST")));
     },
     async listMessages(
       conversationId: V2ConversationId,
@@ -163,7 +194,7 @@ export function createV2ChatClient(options: V2ChatClientOptions): V2ChatClient {
       conversationId: V2ConversationId,
       input?: { readonly idempotencyKey?: string },
     ): Promise<V2TriggerStoryAnalyzeResponse> {
-      const idempotencyKey = input?.idempotencyKey ?? `analyze:${Date.now()}:${crypto.randomUUID()}`;
+      const idempotencyKey = input?.idempotencyKey ?? `analyze:${Date.now()}:${randomUuid()}`;
       return readJson<V2TriggerStoryAnalyzeResponse>(
         await fetcher(`${base}/chat/conversations/${encodeURIComponent(conversationId)}/analyze`, request("POST", { idempotencyKey })),
       );
@@ -187,7 +218,14 @@ export function createV2ChatClient(options: V2ChatClientOptions): V2ChatClient {
 
 export interface V2ChatClient {
   createInstantStory(input: V2CreateInstantStoryRequest): Promise<V2CreateInstantStoryResponse>;
-  listConversations(): Promise<V2ConversationListResponse["conversations"]>;
+  listConversationSummaries(): Promise<V2ChatConversationSummaryListResponse["conversations"]>;
+  listContacts(): Promise<V2ChatContactsResponse["contacts"]>;
+  createConversation(input: V2CreateConversationRequest): Promise<V2CreateConversationResponse>;
+  getConversationContext(conversationId: V2ConversationId): Promise<V2ChatContextResponse>;
+  getConversationFeatures(conversationId: V2ConversationId): Promise<V2ChatFeaturesDto>;
+  listStickers(): Promise<readonly V2ChatStickerDto[]>;
+  createSticker(input: V2CreateChatStickerRequest): Promise<V2ChatStickerDto>;
+  touchStickerLastUsed(stickerId: string): Promise<void>;
   listMessages(
     conversationId: V2ConversationId,
     query?: { readonly beforeMessageId?: V2MessageId; readonly limit?: number },

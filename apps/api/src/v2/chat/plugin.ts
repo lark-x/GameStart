@@ -6,6 +6,7 @@ import path from "node:path";
 import type { ChatDelta, ChatProvider } from "@living-network/ai/v2";
 import type { FastifyPluginAsync, FastifyReply } from "fastify";
 import type {
+  V2ChatFeaturesDto,
   V2ChatMediaDto,
   V2ConversationId,
   V2MediaId,
@@ -15,6 +16,8 @@ import type {
 import { V2HttpError, toV2HttpError } from "../core/errors.ts";
 import { createV2ChatMediaResolver, type V2ChatMediaResolver } from "./media-resolver.ts";
 import {
+  parseCreateConversationRequest,
+  parseCreateStickerRequest,
   parseCreateInstantStoryRequest,
   parseGenerateChatReplyRequest,
   parseSendChatMessageRequest,
@@ -40,6 +43,7 @@ export interface V2ResolvedChatModel {
   readonly provider: ChatProvider;
   readonly model: string;
   readonly profileId?: string;
+  readonly profileName?: string;
   readonly temperature: number;
   readonly maxTokens: number;
   readonly contextWindow?: number;
@@ -196,10 +200,65 @@ export function createV2ChatPlugin(dependencies: V2ChatPluginDependencies): Fast
       return reply.status(201).send(result);
     });
 
-    app.get("/chat/conversations", async () => dependencies.useCases.listConversations());
+    app.get("/chat/conversations", async () => dependencies.useCases.listConversationSummaries());
+    app.get("/chat/contacts", async () => dependencies.useCases.listContacts());
+    app.post("/chat/conversations", async (request, reply) => {
+      const result = await dependencies.useCases.createConversation(parseCreateConversationRequest(request.body));
+      return reply.status(201).send(result);
+    });
+    app.get("/chat/stickers", async () => dependencies.useCases.listStickers());
+    app.post("/chat/stickers", async (request, reply) => {
+      const result = await dependencies.useCases.createSticker(parseCreateStickerRequest(request.body));
+      return reply.status(201).send({ sticker: result });
+    });
+    app.post("/chat/stickers/:stickerId/use", async (request) => {
+      const stickerId = routeId(request.params, "stickerId");
+      await dependencies.useCases.touchStickerLastUsed(stickerId);
+      return { ok: true };
+    });
     app.get("/chat/conversations/:conversationId", async (request) => {
       const conversationId = routeId(request.params, "conversationId") as V2ConversationId;
       return dependencies.useCases.getConversation(conversationId);
+    });
+    app.get("/chat/conversations/:conversationId/context", async (request) => {
+      const conversationId = routeId(request.params, "conversationId") as V2ConversationId;
+      return dependencies.useCases.getConversationContext(conversationId);
+    });
+    app.get("/chat/conversations/:conversationId/features", async (request) => {
+      const conversationId = routeId(request.params, "conversationId") as V2ConversationId;
+      await dependencies.useCases.getConversation(conversationId);
+      let resolved: V2ResolvedChatModel;
+      try {
+        resolved = await dependencies.resolveModel();
+      } catch {
+        return {
+          modelConfigured: false,
+          text: false,
+          emoji: false,
+          imageUpload: false,
+          imageUnderstanding: false,
+          stickers: false,
+          streaming: false,
+          storyAnalyze: dependencies.useCases.triggerStoryAnalyze !== undefined,
+        } satisfies V2ChatFeaturesDto;
+      }
+      const hasImage = resolved.inputModalities.includes("image");
+      return {
+        modelConfigured: true,
+        text: true,
+        emoji: true,
+        imageUpload: hasImage,
+        imageUnderstanding: hasImage,
+        stickers: hasImage,
+        streaming: true,
+        storyAnalyze: dependencies.useCases.triggerStoryAnalyze !== undefined,
+        model: {
+          profileId: resolved.profileId ?? "environment",
+          profileName: resolved.profileName ?? resolved.model,
+          model: resolved.model,
+          inputModalities: resolved.inputModalities,
+        },
+      } satisfies V2ChatFeaturesDto;
     });
     app.get("/chat/conversations/:conversationId/messages", async (request) => {
       const conversationId = routeId(request.params, "conversationId") as V2ConversationId;

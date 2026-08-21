@@ -14,8 +14,11 @@ import {
   V2SqliteCanonUnitOfWork,
   V2SqliteCanonSnapshotReader,
   V2SqliteCandidateReviewUnitOfWork,
+  V2SqliteChatMaintenanceJobRepository,
   V2SqliteChatUnitOfWork,
   V2SqliteGenerationJobRepository,
+  V2SqliteMemoryRepository,
+  V2SqliteFactRepository,
   V2SqliteGraphStateUnitOfWork,
   V2SqlitePlatformRepository,
   V2SqliteReleaseRuntimeUnitOfWork,
@@ -23,9 +26,10 @@ import {
 import type { V2CapabilitiesResponse } from "@living-network/contracts/v2";
 
 import { createV2AssetsPlugin } from "../assets/index.ts";
-import { createV2ChatPlugin, type V2ResolvedChatModel } from "../chat/index.ts";
+import { createV2ChatPlugin, createV2JobsPlugin, type V2ResolvedChatModel } from "../chat/index.ts";
 import { createV2ChatUseCases } from "../chat/use-cases.ts";
 import { createV2ApiMemoryRuntime } from "../memory-runtime/index.ts";
+import { createV2MemoryPlugin } from "../memory-runtime/plugin.ts";
 import { createV2GenerationPlugin } from "../generation/index.ts";
 import { createV2CoreUseCases } from "../core/use-cases.ts";
 import { createV2FastifyApp } from "./app.ts";
@@ -83,6 +87,7 @@ class V2ResolvingChatModelResolver {
           }),
           model: profile.model,
           profileId: profile.id,
+          profileName: profile.name,
           temperature: profile.temperature,
           maxTokens: profile.maxTokens,
           ...(profile.contextWindow === undefined ? {} : { contextWindow: profile.contextWindow }),
@@ -141,8 +146,17 @@ export function createV2ApiRuntime(options: {
     new V2SqliteCandidateReviewUnitOfWork(db),
     new V2SqliteReleaseRuntimeUnitOfWork(db),
   );
+  const memoryRuntime = createV2ApiMemoryRuntime(db);
+  const maintenanceJobRepository = new V2SqliteChatMaintenanceJobRepository(db);
+  const memoryPlugin = createV2MemoryPlugin({
+    memoryRepository: new V2SqliteMemoryRepository(db),
+    maintenanceJobRepository,
+    memoryRuntime,
+    factRepository: new V2SqliteFactRepository(db),
+  });
+  const jobsPlugin = createV2JobsPlugin({ maintenanceJobRepository });
   const chatUseCases = createV2ChatUseCases(new V2SqliteChatUnitOfWork(db), {
-    memoryRuntime: createV2ApiMemoryRuntime(db),
+    memoryRuntime,
   });
   const resolver = options.chatProvider === undefined
     ? new V2ResolvingChatModelResolver({
@@ -173,6 +187,8 @@ export function createV2ApiRuntime(options: {
     ...(options.mediaRoot === undefined ? {} : { mediaRoot: options.mediaRoot }),
     ...(options.capabilities === undefined ? {} : { capabilities: options.capabilities }),
     capabilitiesProvider: () => getV2PlatformCapabilities(platformDependencies),
+    memoryPlugin,
+    jobsPlugin,
     platformPlugin: createV2PlatformPlugin(platformDependencies),
     ready: () => {
       db.prepare("SELECT 1").get();

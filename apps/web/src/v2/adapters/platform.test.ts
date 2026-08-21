@@ -23,6 +23,7 @@ test("V2 platform client maps configuration endpoints and handles empty deletes"
       if (url.endsWith("/appearance") && method === "GET") return Response.json({ settings: { themeId: "dawn" } });
       if (url.endsWith("/appearance") && method === "PUT") return Response.json({ settings: { themeId: "ocean" } });
       if (url.endsWith("/capabilities") && method === "GET") return Response.json({ sceneGeneration: { enabled: true, configured: true, source: "profile" }, assetGeneration: { enabled: false, configured: false, source: "none" } });
+      if (url.endsWith("/capabilities/scene_generation") && method === "PATCH") return Response.json({ sceneGeneration: { enabled: false, configured: true, source: "profile" }, assetGeneration: { enabled: false, configured: false, source: "none" } });
       if (url.includes("/model-profiles/discover-models") && method === "POST") return Response.json({ models: ["model-a", "model-b"] });
       if (url.includes("/model-profiles/profile%3Aone/test") && method === "POST") return Response.json({ success: true, preview: "OK" });
       if (url.includes("/model-call-logs?") && method === "GET") return Response.json({ items: [], nextCursor: "next" });
@@ -45,6 +46,7 @@ test("V2 platform client maps configuration endpoints and handles empty deletes"
   assert.equal((await client.getAppearanceSettings()).themeId, "dawn");
   assert.equal((await client.saveAppearanceSettings({ themeId: "ocean" })).themeId, "ocean");
   assert.equal((await client.getCapabilities()).sceneGeneration.configured, true);
+  assert.equal((await client.updateCapability("scene_generation", { enabled: false })).sceneGeneration.enabled, false);
   assert.equal((await client.queryModelCallLogs({ query: "corr:one", limit: 10 })).nextCursor, "next");
   assert.equal((await client.getModelCallLog("log")).id, "log");
   assert.equal(await client.deleteModelCallLogs("2026-01-01T00:00:00.000Z"), 1);
@@ -62,4 +64,63 @@ test("V2 platform client exposes structured API errors", async () => {
     () => client.listModelProfiles(),
     (error: unknown) => error instanceof V2PlatformClientError && error.code === "VALIDATION_FAILED" && error.status === 422,
   );
+});
+
+test("V2 platform client maps memory overview and job runtime endpoints", async () => {
+  const calls: Array<{ readonly url: string; readonly method: string }> = [];
+  const client = createV2PlatformClient({
+    baseUrl: "http://localhost/",
+    fetchImpl: async (input, init) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      calls.push({ url, method });
+      if (url.endsWith("/memory/overview") && method === "GET") {
+        return Response.json({ facts: { total: 3, relatedCharacterCount: 2, averageImportance: 0.5, averageConfidence: 0.6, typeDistribution: [] }, extraction: {}, consolidation: {}, engines: [], recentFailures: [] });
+      }
+      if (url.endsWith("/memory/diagnostics") && method === "GET") {
+        return Response.json({ window: "24h", extraction: { completed: 2, failed: 1, successRate: 2 / 3 }, consolidation: { completed: 1, failed: 0 }, facts: { batchCount: 4, assertionCount: 8 }, engineConsume: { completed: 2, failed: 0 }, currentFailedJobs: 1 });
+      }
+      if (url.endsWith("/api/v2/jobs/overview") && method === "GET") {
+        return Response.json({ pending: 1, claimed: 2, running: 3, completed: 4, failed: 5 });
+      }
+      if (url.includes("/api/v2/jobs") && !url.includes("/retry") && !url.includes("/jobs/job%3A1")) {
+        return Response.json({ items: [], nextCursor: "next-cursor" });
+      }
+      if (url.endsWith("/api/v2/jobs/job%3A1")) {
+        return Response.json({ jobId: "job:1", jobType: "memory_extract", status: "failed", createdAt: "a", updatedAt: "b", attempts: 1, maxAttempts: 3, payloadSummary: { conversationId: "c1" } });
+      }
+      if (url.endsWith("/api/v2/jobs/job%3A1/retry")) {
+        return Response.json({ jobId: "job:1", status: "pending" });
+      }
+      throw new Error(`Unhandled ${method} ${url}`);
+    },
+  });
+
+  const overview = await client.getMemoryOverview();
+  assert.equal(overview.facts.total, 3);
+  assert.equal(overview.facts.relatedCharacterCount, 2);
+
+  const diagnostics = await client.getMemoryDiagnostics();
+  assert.equal(diagnostics.window, "24h");
+  assert.equal(diagnostics.facts.assertionCount, 8);
+  assert.equal(diagnostics.currentFailedJobs, 1);
+
+  const page = await client.listJobs({ status: "failed", type: "memory_extract", limit: 50 });
+  assert.equal(page.nextCursor, "next-cursor");
+
+  const jobOverview = await client.getJobOverview();
+  assert.equal(jobOverview.running, 3);
+  assert.equal(jobOverview.failed, 5);
+
+  const detail = await client.getJob("job:1");
+  assert.equal(detail.payloadSummary.conversationId, "c1");
+
+  const retried = await client.retryJob("job:1");
+  assert.equal(retried.status, "pending");
+
+  // Verify query params are encoded and cursor is forwarded.
+  const cursorPage = await client.listJobs({ cursor: "cur" });
+  assert.equal(cursorPage.nextCursor, "next-cursor");
+  assert.ok(calls.some((c) => c.url.includes("cursor=cur")));
+  assert.ok(calls.some((c) => c.url.includes("status=failed")));
 });

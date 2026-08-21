@@ -40,6 +40,11 @@ export interface V2FactRepository {
   // Engine consumption offsets: each engine tracks its own progress through batches.
   getEngineOffset(engineId: string, scopeKey: string): Promise<string | undefined>;
   setEngineOffset(engineId: string, scopeKey: string, lastBatchId: string): Promise<void>;
+
+  // Count distinct characters actually referenced as fact subjects.
+  countDistinctCharacterSubjects(): Promise<number>;
+  countFactBatches(): Promise<number>;
+  countFactAssertions(): Promise<number>;
 }
 
 export interface V2FactWorldSummary {

@@ -8,11 +8,13 @@ RUN corepack enable \
   && pnpm install --frozen-lockfile --prod=false \
   && mkdir -p /app/data/media /app/data/sqlite \
   && chown -R node:node /app \
-  && chmod -R 777 /app/data
+  && chmod -R 770 /app/data
 
 USER node
 
 FROM app-runtime AS web-build
+
+USER root
 
 RUN pnpm --filter @living-network/web build
 

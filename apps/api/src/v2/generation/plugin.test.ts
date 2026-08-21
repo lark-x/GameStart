@@ -919,16 +919,16 @@ test("V2 asset API reports validation, missing record, and missing dependency er
   }
 });
 
-test("V2 generation API returns explicit capability-unavailable responses", async () => {
+test("V2 generation API blocks disabled capabilities with CAPABILITY_DISABLED", async () => {
   const { app } = createAppWithCapabilities({ sceneGenerationEnabled: false, assetGenerationEnabled: false });
   await app.ready();
   try {
     const scene = await app.inject({ method: "POST", url: "/api/v2/generation/jobs/scene", payload: { storyWorldId: "world", baseCanonRevision: 1, idempotencyKey: "scene", prompt: "prompt" } });
-    assert.equal(scene.statusCode, 503);
-    assert.equal(scene.json().error.code, "CAPABILITY_UNAVAILABLE");
+    assert.equal(scene.statusCode, 409);
+    assert.equal(scene.json().error.code, "CAPABILITY_DISABLED");
     const asset = await app.inject({ method: "POST", url: "/api/v2/generation/assets/jobs", payload: { storyWorldId: "world", idempotencyKey: "asset", prompt: "prompt", workflowVersion: "v1", workflow: {} } });
-    assert.equal(asset.statusCode, 503);
-    assert.equal(asset.json().error.code, "CAPABILITY_UNAVAILABLE");
+    assert.equal(asset.statusCode, 409);
+    assert.equal(asset.json().error.code, "CAPABILITY_DISABLED");
   } finally {
     await app.close();
   }
@@ -976,6 +976,7 @@ test("V2 generation API rechecks live platform capability configuration", async 
   try {
     const unavailable = await app.inject({ method: "POST", url: "/api/v2/generation/jobs/scene", payload: { storyWorldId: "world", baseCanonRevision: 1, idempotencyKey: "live-scene", prompt: "scene" } });
     assert.equal(unavailable.statusCode, 503);
+    assert.equal(unavailable.json().error.code, "MODEL_NOT_BOUND");
     configured = true;
     const scene = await app.inject({ method: "POST", url: "/api/v2/generation/jobs/scene", payload: { storyWorldId: "world_generation", baseCanonRevision: 7, idempotencyKey: "live-scene", prompt: "scene" } });
     assert.equal(scene.statusCode, 201);

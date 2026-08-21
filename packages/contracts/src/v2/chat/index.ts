@@ -3,6 +3,7 @@ import type {
   V2ConversationId,
   V2IdempotencyKey,
   V2IsoDateTime,
+  V2LocationId,
   V2MaintenanceJobId,
   V2MediaId,
   V2MemoryId,
@@ -24,6 +25,32 @@ export interface V2ChatConversationDto {
   readonly createdAt: V2IsoDateTime;
   readonly updatedAt: V2IsoDateTime;
   readonly lastMessageAt?: V2IsoDateTime;
+}
+
+export interface V2ChatConversationSummaryDto {
+  readonly conversationId: V2ConversationId;
+  readonly storyWorldId: V2StoryWorldId;
+  readonly primaryCharacterId: V2CharacterId;
+  readonly title?: string;
+  readonly createdAt: V2IsoDateTime;
+  readonly updatedAt: V2IsoDateTime;
+  readonly characterName: string;
+  readonly storyWorldName: string;
+  readonly lastMessagePreview?: string;
+  readonly lastMessageAt?: V2IsoDateTime;
+  readonly lastMessageStatus?: V2ChatMessageStatus;
+}
+
+export interface V2ChatContactDto {
+  readonly characterId: V2CharacterId;
+  readonly storyWorldId: V2StoryWorldId;
+  readonly characterName: string;
+  readonly characterSummary?: string;
+  readonly storyWorldName: string;
+  readonly latestConversationId?: V2ConversationId;
+  readonly latestMessagePreview?: string;
+  readonly latestMessageAt?: V2IsoDateTime;
+  readonly activeMemoryCount: number;
 }
 
 export interface V2ChatMessageAttachment {
@@ -82,6 +109,79 @@ export interface V2CreateInstantStoryResponse {
 
 export interface V2ConversationListResponse {
   readonly conversations: readonly V2ChatConversationDto[];
+}
+
+export interface V2ChatConversationSummaryListResponse {
+  readonly conversations: readonly V2ChatConversationSummaryDto[];
+}
+
+export interface V2ChatContactsResponse {
+  readonly contacts: readonly V2ChatContactDto[];
+}
+
+export interface V2CreateConversationRequest {
+  readonly storyWorldId: V2StoryWorldId;
+  readonly characterId: V2CharacterId;
+  readonly idempotencyKey: V2IdempotencyKey;
+}
+
+export interface V2CreateConversationResponse {
+  readonly conversation: V2ChatConversationSummaryDto;
+}
+
+export interface V2ChatContextResponse {
+  readonly conversation: V2ChatConversationSummaryDto;
+  readonly character: {
+    readonly characterId: V2CharacterId;
+    readonly name: string;
+    readonly summary?: string;
+    readonly personaText?: string;
+    readonly homeLocationId?: V2LocationId;
+  };
+  readonly world: {
+    readonly storyWorldId: V2StoryWorldId;
+    readonly name: string;
+    readonly summary?: string;
+  };
+  readonly memory: {
+    readonly activeCount: number;
+    readonly recent: readonly V2MemoryDto[];
+  };
+}
+
+export interface V2ChatFeaturesDto {
+  readonly modelConfigured: boolean;
+  readonly text: boolean;
+  readonly emoji: boolean;
+  readonly imageUpload: boolean;
+  readonly imageUnderstanding: boolean;
+  readonly stickers: boolean;
+  readonly streaming: boolean;
+  readonly storyAnalyze: boolean;
+  readonly model?: {
+    readonly profileId: string;
+    readonly profileName: string;
+    readonly model: string;
+    readonly inputModalities: readonly string[];
+  };
+}
+
+export interface V2ChatStickerDto {
+  readonly stickerId: string;
+  readonly mediaId: V2MediaId;
+  readonly mediaRef: string;
+  readonly label: string;
+  readonly createdAt: V2IsoDateTime;
+  readonly lastUsedAt?: V2IsoDateTime;
+}
+
+export interface V2CreateChatStickerRequest {
+  readonly mediaId: V2MediaId;
+  readonly label: string;
+}
+
+export interface V2ChatStickerListResponse {
+  readonly stickers: readonly V2ChatStickerDto[];
 }
 
 export interface V2ChatMessageListResponse {
@@ -328,4 +428,105 @@ export interface V2TriggerStoryAnalyzeRequest {
 export interface V2TriggerStoryAnalyzeResponse {
   readonly jobId: string;
   readonly conversationId: V2ConversationId;
+}
+
+export interface V2MemoryFactStatsDto {
+  readonly total: number;
+  readonly relatedCharacterCount: number;
+  readonly averageImportance: number;
+  readonly averageConfidence: number;
+  readonly typeDistribution: readonly { readonly kind: V2MemoryKind; readonly count: number }[];
+}
+
+export interface V2MemoryRunSummaryDto {
+  readonly jobId: string;
+  readonly status: V2MaintenanceJobStatus;
+  readonly startedAt?: V2IsoDateTime;
+  // NOTE: there is no dedicated completed_at column; this is the terminal
+  // job's updated_at (only meaningful for completed/failed jobs).
+  readonly updatedAt?: V2IsoDateTime;
+  readonly error?: string;
+}
+
+export interface V2MemoryOverviewDto {
+  readonly facts: V2MemoryFactStatsDto;
+  readonly extraction: {
+    readonly latest?: V2MemoryRunSummaryDto;
+    readonly latestFailure?: V2MemoryRunSummaryDto;
+  };
+  readonly consolidation: {
+    readonly latest?: V2MemoryRunSummaryDto;
+    readonly latestFailure?: V2MemoryRunSummaryDto;
+  };
+  readonly engines: readonly { readonly id: string; readonly mode: "primary" | "shadow" }[];
+  readonly recentFailures: readonly V2MemoryRunSummaryDto[];
+}
+
+export interface V2MemoryDiagnosticsDto {
+  readonly window: "24h";
+  readonly extraction: {
+    readonly completed: number;
+    readonly failed: number;
+    readonly successRate: number | null;
+  };
+  readonly consolidation: {
+    readonly completed: number;
+    readonly failed: number;
+  };
+  readonly facts: {
+    readonly batchCount: number;
+    readonly assertionCount: number;
+  };
+  readonly engineConsume: {
+    readonly completed: number;
+    readonly failed: number;
+  };
+  readonly currentFailedJobs: number;
+}
+
+export interface V2JobPayloadSummaryDto {
+  readonly conversationId?: string;
+  readonly characterId?: string;
+  readonly sourceMessageCount?: number;
+}
+
+export interface V2JobSummaryDto {
+  readonly jobId: string;
+  readonly jobType: V2MaintenanceJobType;
+  readonly status: V2MaintenanceJobStatus;
+  readonly createdAt: V2IsoDateTime;
+  readonly updatedAt: V2IsoDateTime;
+  readonly attempts: number;
+  readonly maxAttempts: number;
+  readonly lastError?: string;
+}
+
+export interface V2JobDetailDto extends V2JobSummaryDto {
+  readonly startedAt?: V2IsoDateTime;
+  readonly payloadSummary: V2JobPayloadSummaryDto;
+}
+
+export interface V2JobQuery {
+  readonly status?: V2MaintenanceJobStatus;
+  readonly type?: V2MaintenanceJobType;
+  readonly limit?: number;
+  readonly cursor?: string;
+}
+
+export interface V2JobListDto {
+  readonly items: readonly V2JobSummaryDto[];
+  readonly nextCursor?: string;
+}
+
+export interface V2JobOverviewDto {
+  readonly pending: number;
+  readonly claimed: number;
+  readonly running: number;
+  readonly completed: number;
+  readonly failed: number;
+}
+
+export interface V2RetryJobResponse {
+  readonly jobId: string;
+  readonly status: V2MaintenanceJobStatus;
 }

@@ -51,7 +51,7 @@ const settingsNavGroups: readonly SettingsNavGroup[] = [
     items: [
       { to: "/v2/settings/runtime", label: "Runtime", icon: Terminal },
       { to: "/v2/settings/logs", label: "调用日志", icon: ScrollText },
-      { to: "/v2/settings/automation", label: "触发器", icon: Radio, experimental: true },
+      { to: "/v2/settings/automation", label: "任务运行", icon: Radio, experimental: true },
     ],
   },
   {

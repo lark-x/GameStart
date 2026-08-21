@@ -27,12 +27,14 @@ export interface V2HybridMemoryRepository {
   search(input: {
     readonly storyWorldId: V2StoryWorldId;
     readonly conversationId?: V2ConversationId;
+    readonly characterId?: string;
     readonly query: string;
     readonly limit: number;
   }): Promise<readonly V2HybridMemoryRow[]>;
   listRecent(input: {
     readonly storyWorldId: V2StoryWorldId;
     readonly conversationId?: V2ConversationId;
+    readonly characterId?: string;
     readonly limit: number;
   }): Promise<readonly V2HybridMemoryRow[]>;
   clear(input: { readonly conversationId?: V2ConversationId; readonly storyWorldId?: V2StoryWorldId }): Promise<void>;
@@ -56,6 +58,27 @@ type HybridRow = {
   observed_at: string;
   created_at: string;
 };
+
+function buildHybridScopeClause(input: {
+  readonly storyWorldId: V2StoryWorldId;
+  readonly conversationId?: V2ConversationId;
+  readonly characterId?: string;
+}): { readonly sql: string; readonly params: readonly string[] } {
+  const clauses: string[] = [];
+  const params: string[] = [];
+  clauses.push("(scope_type = 'world' AND scope_id = ?)");
+  params.push(input.storyWorldId);
+  clauses.push("(scope_type = 'user')");
+  if (input.characterId !== undefined) {
+    clauses.push("(scope_type = 'character' AND scope_id = ?)");
+    params.push(input.characterId);
+  }
+  if (input.conversationId !== undefined) {
+    clauses.push("(scope_type = 'conversation' AND scope_id = ?)");
+    params.push(input.conversationId);
+  }
+  return { sql: clauses.join(" OR "), params };
+}
 
 function mapHybridRow(row: HybridRow): V2HybridMemoryRow {
   return {
@@ -120,6 +143,7 @@ export class V2SqliteHybridMemoryRepository implements V2HybridMemoryRepository 
   public async search(input: {
     readonly storyWorldId: V2StoryWorldId;
     readonly conversationId?: V2ConversationId;
+    readonly characterId?: string;
     readonly query: string;
     readonly limit: number;
   }): Promise<readonly V2HybridMemoryRow[]> {
@@ -127,8 +151,13 @@ export class V2SqliteHybridMemoryRepository implements V2HybridMemoryRepository 
     const rawTokens = input.query.trim().split(/\s+/).filter(Boolean);
     const cjkWords = input.query.match(/[\u4e00-\u9fa5]{2,}|[a-zA-Z0-9]{2,}/g) ?? [];
     const allTokens = Array.from(new Set([...rawTokens, ...cjkWords])).slice(0, 10);
-    const conversationClause = input.conversationId === undefined ? "" : " AND m.conversation_id = ?";
-    const conversationParams = input.conversationId === undefined ? [] : [input.conversationId];
+    const scope = buildHybridScopeClause({
+      storyWorldId: input.storyWorldId,
+      ...(input.conversationId === undefined ? {} : { conversationId: input.conversationId }),
+      ...(input.characterId === undefined ? {} : { characterId: input.characterId }),
+    });
+    const scopeSql = scope.sql;
+    const scopeParams = scope.params;
 
     if (allTokens.length > 0) {
       const match = allTokens.map((token) => `"${token.replace(/"/g, "")}"`).join(" OR ");
@@ -137,10 +166,10 @@ export class V2SqliteHybridMemoryRepository implements V2HybridMemoryRepository 
         rows = this.db.prepare(`
           SELECT m.* FROM v2_hybrid_memories m
           JOIN v2_hybrid_memories_fts f ON f.rowid = m.rowid AND f.memory_id = m.memory_id
-          WHERE m.story_world_id = ?${conversationClause} AND v2_hybrid_memories_fts MATCH ?
+          WHERE m.story_world_id = ? AND (${scopeSql}) AND v2_hybrid_memories_fts MATCH ?
           ORDER BY bm25(v2_hybrid_memories_fts), m.importance DESC, m.observed_at DESC
           LIMIT ?
-        `).all(input.storyWorldId, ...conversationParams, match, limit) as HybridRow[];
+        `).all(input.storyWorldId, ...scopeParams, match, limit) as HybridRow[];
       } catch {
         // Fall through to LIKE-based retrieval if FTS fails.
       }
@@ -158,10 +187,10 @@ export class V2SqliteHybridMemoryRepository implements V2HybridMemoryRepository 
         });
         rows = this.db.prepare(`
           SELECT m.* FROM v2_hybrid_memories m
-          WHERE m.story_world_id = ?${conversationClause} AND (${likeClauses})
+          WHERE m.story_world_id = ? AND (${scopeSql}) AND (${likeClauses})
           ORDER BY m.importance DESC, m.observed_at DESC
           LIMIT ?
-        `).all(input.storyWorldId, ...conversationParams, ...likeParams, limit) as HybridRow[];
+        `).all(input.storyWorldId, ...scopeParams, ...likeParams, limit) as HybridRow[];
       }
       return rows.map(mapHybridRow);
     }
@@ -169,29 +198,28 @@ export class V2SqliteHybridMemoryRepository implements V2HybridMemoryRepository 
       storyWorldId: input.storyWorldId,
       limit,
       ...(input.conversationId === undefined ? {} : { conversationId: input.conversationId }),
+      ...(input.characterId === undefined ? {} : { characterId: input.characterId }),
     });
   }
 
   public async listRecent(input: {
     readonly storyWorldId: V2StoryWorldId;
     readonly conversationId?: V2ConversationId;
+    readonly characterId?: string;
     readonly limit: number;
   }): Promise<readonly V2HybridMemoryRow[]> {
     const limit = Math.min(Math.max(1, input.limit), 50);
-    if (input.conversationId !== undefined) {
-      return (this.db.prepare(`
-        SELECT * FROM v2_hybrid_memories
-        WHERE story_world_id = ? AND conversation_id = ?
-        ORDER BY observed_at DESC, memory_id DESC
-        LIMIT ?
-      `).all(input.storyWorldId, input.conversationId, limit) as HybridRow[]).map(mapHybridRow);
-    }
+    const scope = buildHybridScopeClause({
+      storyWorldId: input.storyWorldId,
+      ...(input.conversationId === undefined ? {} : { conversationId: input.conversationId }),
+      ...(input.characterId === undefined ? {} : { characterId: input.characterId }),
+    });
     return (this.db.prepare(`
       SELECT * FROM v2_hybrid_memories
-      WHERE story_world_id = ?
+      WHERE story_world_id = ? AND (${scope.sql})
       ORDER BY observed_at DESC, memory_id DESC
       LIMIT ?
-    `).all(input.storyWorldId, limit) as HybridRow[]).map(mapHybridRow);
+    `).all(input.storyWorldId, ...scope.params, limit) as HybridRow[]).map(mapHybridRow);
   }
 
   public async clear(input: { readonly conversationId?: V2ConversationId; readonly storyWorldId?: V2StoryWorldId }): Promise<void> {

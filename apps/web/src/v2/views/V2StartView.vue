@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 import { MessageSquare, Sparkles } from "@lucide/vue";
-import type { V2ChatConversationDto, V2IdempotencyKey } from "@living-network/contracts/v2";
+import type { V2ChatConversationSummaryDto, V2IdempotencyKey } from "@living-network/contracts/v2";
 
 import Button from "../../components/ui/Button.vue";
 import Input from "../../components/ui/Input.vue";
@@ -10,6 +10,7 @@ import Textarea from "../../components/ui/Textarea.vue";
 import PageHeader from "../../components/layout/PageHeader.vue";
 import EmptyState from "../../components/ui/EmptyState.vue";
 import { createV2ChatClient } from "../chat/client.ts";
+import { randomUuid } from "../random.ts";
 
 const router = useRouter();
 const environment = import.meta.env as Record<string, string | undefined>;
@@ -20,7 +21,7 @@ const persona = ref("");
 const displayName = ref("");
 const loading = ref(false);
 const errorMessage = ref("");
-const recentConversations = ref<readonly V2ChatConversationDto[]>([]);
+const recentConversations = ref<readonly V2ChatConversationSummaryDto[]>([]);
 const loadingRecent = ref(false);
 const recentError = ref("");
 
@@ -44,7 +45,7 @@ onMounted(async () => {
 async function loadRecentStories(): Promise<void> {
   loadingRecent.value = true;
   try {
-    const list = await client.listConversations();
+    const list = await client.listConversationSummaries();
     recentConversations.value = list;
   } catch (error) {
     recentError.value = error instanceof Error ? error.message : "加载最近故事失败";
@@ -65,7 +66,7 @@ async function startStory(): Promise<void> {
     const result = await client.createInstantStory({
       persona: personaText,
       ...(displayName.value.trim() ? { displayName: displayName.value.trim() } : {}),
-      idempotencyKey: `instant:${Date.now()}:${crypto.randomUUID()}` as V2IdempotencyKey,
+      idempotencyKey: `instant:${Date.now()}:${randomUuid()}` as V2IdempotencyKey,
     });
     await router.push(`/v2/chat/${encodeURIComponent(result.conversation.conversationId)}`);
   } catch (error) {
@@ -79,10 +80,16 @@ async function startStory(): Promise<void> {
 <template>
   <div class="v2-start-page">
     <PageHeader
-      eyebrow="即时故事"
-      title="创建新的故事"
-      description="只需要描述你想遇到的角色，马上就能开始聊天。世界会随着故事自然生长。"
-    />
+      eyebrow="快速创建角色"
+      title="创建角色并开始故事"
+      description="粘贴一段角色人设，立即生成一个角色并开始聊天。平时建议直接从聊天首页选择已有角色。"
+    >
+      <template #actions>
+        <RouterLink to="/v2/chat" class="v2-start-back">
+          <Button variant="secondary" size="md">返回聊天</Button>
+        </RouterLink>
+      </template>
+    </PageHeader>
 
     <div class="v2-start-layout">
       <section class="v2-start-card">
@@ -163,6 +170,10 @@ async function startStory(): Promise<void> {
 .v2-start-page {
   display: grid;
   gap: var(--space-5);
+}
+
+.v2-start-back {
+  text-decoration: none;
 }
 
 .v2-start-layout {

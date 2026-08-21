@@ -288,6 +288,27 @@ export const v2ChatMaintenanceDedupeKeyMigration: V2SqliteMigration = {
   },
 };
 
+export const v2ChatStickersMigration: V2SqliteMigration = {
+  id: "0380_v2_chat_stickers",
+  up: (db) => db.exec(`
+    CREATE TABLE v2_chat_stickers (
+      sticker_id TEXT PRIMARY KEY,
+      media_id TEXT NOT NULL,
+      media_ref TEXT NOT NULL,
+      label TEXT NOT NULL CHECK (length(trim(label)) > 0),
+      created_at TEXT NOT NULL,
+      last_used_at TEXT
+    );
+
+    CREATE INDEX v2_chat_stickers_last_used_idx
+      ON v2_chat_stickers(last_used_at DESC, sticker_id DESC);
+  `),
+  down: (db) => db.exec(`
+    DROP INDEX IF EXISTS v2_chat_stickers_last_used_idx;
+    DROP TABLE IF EXISTS v2_chat_stickers;
+  `),
+};
+
 export const v2ChatMigrations: readonly V2SqliteMigration[] = [
   v2ChatMemoryMigration,
   v2ChatCoreFinalizationMigration,
@@ -296,4 +317,5 @@ export const v2ChatMigrations: readonly V2SqliteMigration[] = [
   v2ChatTracesMigration,
   v2ChatStoryAnalyzeCursorMigration,
   v2ChatMaintenanceDedupeKeyMigration,
+  v2ChatStickersMigration,
 ];

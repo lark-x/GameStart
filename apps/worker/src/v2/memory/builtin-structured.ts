@@ -105,13 +105,27 @@ export class V2BuiltinStructuredEngine implements V2MemoryEngine {
     return this.unitOfWork.withChatTransaction(async (repos) => {
       const query = input.query.trim();
       const rows = query.length === 0
-        ? await repos.memories.listActiveByStoryWorld(input.storyWorldId)
+        ? input.characterId === undefined
+          ? await repos.memories.listActiveByStoryWorld(input.storyWorldId)
+          : await repos.memories.listActiveByCharacter({
+              storyWorldId: input.storyWorldId,
+              characterId: input.characterId,
+              limit: input.limit,
+            })
         : await repos.memories.searchActive({
             storyWorldId: input.storyWorldId,
             query,
             limit: input.limit,
           });
-      const limited = rows.slice(0, input.limit);
+      const scopedRows = query.length > 0 && input.characterId !== undefined
+        ? await repos.memories.searchActiveByCharacter({
+            storyWorldId: input.storyWorldId,
+            characterId: input.characterId,
+            query,
+            limit: input.limit,
+          })
+        : rows;
+      const limited = scopedRows.slice(0, input.limit);
       return limited.map((memory, index) => this.toRetrievedMemory(memory, input, index));
     });
   }

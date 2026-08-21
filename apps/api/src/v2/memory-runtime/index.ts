@@ -20,13 +20,27 @@ export function createV2ApiMemoryRuntime(db: DatabaseSync): V2MemoryRuntime {
     async retrieve(input: V2MemoryQuery): Promise<readonly V2RetrievedMemory[]> {
       const query = input.query.trim();
       const rows = query.length === 0
-        ? await memories.listActiveByStoryWorld(input.storyWorldId)
+        ? input.characterId === undefined
+          ? await memories.listActiveByStoryWorld(input.storyWorldId)
+          : await memories.listActiveByCharacter({
+              storyWorldId: input.storyWorldId,
+              characterId: input.characterId,
+              limit: input.limit,
+            })
         : await memories.searchActive({
             storyWorldId: input.storyWorldId,
             query,
             limit: input.limit,
           });
-      return rows.slice(0, input.limit).map((memory, index) => toRetrievedMemory(memory, input, index));
+      const scopedRows = query.length > 0 && input.characterId !== undefined
+        ? await memories.searchActiveByCharacter({
+            storyWorldId: input.storyWorldId,
+            characterId: input.characterId,
+            query,
+            limit: input.limit,
+          })
+        : rows;
+      return scopedRows.slice(0, input.limit).map((memory, index) => toRetrievedMemory(memory, input, index));
     },
     async consumeForAllEngines(_input: V2MemoryEngineConsumeInput): Promise<readonly V2MemoryConsumeResult[]> {
       // Consumption happens in the worker; the API runtime only serves retrieval.

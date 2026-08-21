@@ -16,6 +16,7 @@ import {
   v2ChatMaintenanceDedupeKeyMigration,
   v2ChatMemoryMigration,
   v2ChatStoryAnalyzeCursorMigration,
+  v2ChatStickersMigration,
   v2ChatTracesMigration,
 } from "../chat/migrations.ts";
 
@@ -190,6 +191,17 @@ export const v2PlatformMigrations: V2MigrationRegistry = {
         `);
       },
     },
+    {
+      id: "0204_v2_capability_settings",
+      up: (db) => db.exec(`
+        CREATE TABLE v2_capability_settings (
+          capability TEXT PRIMARY KEY CHECK (capability IN ('scene_generation', 'asset_generation')),
+          enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+          updated_at TEXT NOT NULL
+        );
+      `),
+      down: (db) => db.exec(`DROP TABLE v2_capability_settings;`),
+    },
   ],
 };
 
@@ -205,6 +217,7 @@ export function getV2Migrations(): readonly V2SqliteMigration[] {
     v2ChatTracesMigration,
     v2ChatStoryAnalyzeCursorMigration,
     v2ChatMaintenanceDedupeKeyMigration,
+    v2ChatStickersMigration,
     v2FactLedgerMigration,
     v2HybridMemoryMigration,
     v2MemoryEngineRunsMigration,

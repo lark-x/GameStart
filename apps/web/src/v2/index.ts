@@ -8,10 +8,16 @@ export const v2Routes: readonly RouteRecordRaw[] = [
     meta: { v2Shell: true },
     children: [
       { path: "", redirect: "/v2/workspace/project" },
+      {
+        path: "chat",
+        name: "v2-chat",
+        component: () => import("./views/V2ChatHomeView.vue"),
+        meta: { title: "聊天", pageSize: "wide" },
+      },
       { path: "start", name: "v2-start", component: () => import("./views/V2StartView.vue"), meta: { title: "即时故事", pageSize: "standard" } },
       {
         path: "chat/:conversationId",
-        name: "v2-chat",
+        name: "v2-chat-conversation",
         component: () => import("./views/V2ChatView.vue"),
         meta: { title: "故事对话", layout: "feature" },
       },
@@ -41,6 +47,18 @@ export const v2Routes: readonly RouteRecordRaw[] = [
             name: "v2-settings-models",
             component: () => import("./views/V2ModelSettingsView.vue"),
             meta: { title: "模型" },
+          },
+          {
+            path: "models/new",
+            name: "v2-settings-models-new",
+            component: () => import("./views/V2ModelProfileDetailView.vue"),
+            meta: { title: "新建模型" },
+          },
+          {
+            path: "models/:profileId",
+            name: "v2-settings-models-detail",
+            component: () => import("./views/V2ModelProfileDetailView.vue"),
+            meta: { title: "模型档案" },
           },
           {
             path: "memory",

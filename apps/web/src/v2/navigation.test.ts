@@ -14,6 +14,7 @@ test("V2 routes structure correctly configures entry points and redirects", () =
   // Core navigation routes
   assert.ok(paths.has(""), "Default redirect exists");
   assert.ok(paths.has("start"), "Start view exists");
+  assert.ok(paths.has("chat"), "Chat home view exists");
   assert.ok(paths.has("chat/:conversationId"), "Chat view exists");
   assert.ok(paths.has("workspace/:area"), "Workspace area view exists");
 
@@ -28,6 +29,8 @@ test("V2 routes structure correctly configures entry points and redirects", () =
   // Canonical settings child routes
   assert.ok(settingsPaths.has(""), "Settings overview exists");
   assert.ok(settingsPaths.has("models"), "Settings models exists");
+  assert.ok(settingsPaths.has("models/new"), "Settings new model exists");
+  assert.ok(settingsPaths.has("models/:profileId"), "Settings model detail exists");
   assert.ok(settingsPaths.has("memory"), "Settings memory exists");
   assert.ok(settingsPaths.has("prompt"), "Settings prompt exists");
   assert.ok(settingsPaths.has("comfyui"), "Settings comfyui exists");

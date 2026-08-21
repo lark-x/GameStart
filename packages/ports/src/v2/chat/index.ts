@@ -10,6 +10,7 @@ import type {
   V2ChatMaintenanceJob,
   V2ChatMedia,
   V2ChatMessage,
+  V2ChatSticker,
   V2ChatTrace,
   V2ChatTraceStatus,
   V2ConversationSummary,
@@ -17,10 +18,25 @@ import type {
 } from "@living-network/domain/v2";
 import type { V2CanonRepository, V2CandidateReviewRepository } from "../core/index.ts";
 
+export interface V2ChatConversationSummary {
+  readonly conversationId: string;
+  readonly storyWorldId: string;
+  readonly primaryCharacterId: string;
+  readonly title?: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  readonly characterName: string;
+  readonly storyWorldName: string;
+  readonly lastMessagePreview?: string;
+  readonly lastMessageAt?: string;
+  readonly lastMessageStatus?: V2ChatMessage["status"];
+}
+
 export interface V2ChatConversationRepository {
   create(input: V2ChatConversation): Promise<V2ChatConversation>;
   get(conversationId: V2ConversationId): Promise<V2ChatConversation | undefined>;
   list(): Promise<readonly V2ChatConversation[]>;
+  listSummaries(): Promise<readonly V2ChatConversationSummary[]>;
   touchLastMessage(input: {
     readonly conversationId: V2ConversationId;
     readonly lastMessageAt: string;
@@ -45,11 +61,33 @@ export interface V2ChatMediaRepository {
   listByIds(mediaIds: readonly V2MediaId[]): Promise<readonly V2ChatMedia[]>;
 }
 
+export interface V2ChatStickerRepository {
+  create(input: V2ChatSticker): Promise<V2ChatSticker>;
+  list(): Promise<readonly V2ChatSticker[]>;
+  touchLastUsed(input: { readonly stickerId: string; readonly lastUsedAt: string }): Promise<void>;
+}
+
 export interface V2MemoryRepository {
   create(input: V2Memory): Promise<V2Memory>;
   get(memoryId: V2MemoryId): Promise<V2Memory | undefined>;
   listByConversation(conversationId: V2ConversationId): Promise<readonly V2Memory[]>;
   listActiveByStoryWorld(storyWorldId: V2StoryWorldId): Promise<readonly V2Memory[]>;
+  listActiveByCharacter(input: {
+    readonly storyWorldId: V2StoryWorldId;
+    readonly characterId: string;
+    readonly limit?: number;
+  }): Promise<readonly V2Memory[]>;
+  countActiveByCharacter(input: {
+    readonly storyWorldId: V2StoryWorldId;
+    readonly characterId: string;
+  }): Promise<number>;
+  searchActiveByCharacter(input: {
+    readonly storyWorldId: V2StoryWorldId;
+    readonly characterId: string;
+    readonly query: string;
+    readonly limit?: number;
+  }): Promise<readonly V2Memory[]>;
+  countActiveGroupedByCharacter(storyWorldId: V2StoryWorldId): Promise<ReadonlyMap<string, number>>;
   searchActive(input: {
     readonly storyWorldId: V2StoryWorldId;
     readonly query: string;
@@ -120,6 +158,7 @@ export interface V2ChatMaintenanceJobRepository {
     readonly isTerminal: boolean;
     readonly now: string;
   }): Promise<boolean>;
+  retryFailed(input: { readonly jobId: string; readonly now: string }): V2ChatMaintenanceJob | undefined;
 }
 
 export interface V2ChatUnitOfWork {
@@ -129,6 +168,7 @@ export interface V2ChatUnitOfWork {
     readonly conversations: V2ChatConversationRepository;
     readonly messages: V2ChatMessageRepository;
     readonly media: V2ChatMediaRepository;
+    readonly stickers: V2ChatStickerRepository;
     readonly memories: V2MemoryRepository;
     readonly summaries: V2ConversationSummaryRepository;
     readonly traces: V2ChatTraceRepository;

@@ -9,7 +9,15 @@ import {
   toV2MemoryContext,
 } from "@living-network/ai/prompt-engine";
 import type {
+  V2ChatContactDto,
+  V2ChatContactsResponse,
   V2ChatConversationDto,
+  V2ChatConversationSummaryDto,
+  V2ChatConversationSummaryListResponse,
+  V2ChatContextResponse,
+  V2ChatStickerDto,
+  V2ChatStickerListResponse,
+  V2CreateChatStickerRequest,
   V2ChatTraceDto,
   V2ChatDiagnosticsResponse,
   V2ChatMediaDto,
@@ -20,15 +28,19 @@ import type {
   V2ConversationListResponse,
   V2ConversationSummaryPayload,
   V2ChatMessageListResponse,
+  V2CreateConversationRequest,
+  V2CreateConversationResponse,
   V2CreateInstantStoryRequest,
   V2CreateInstantStoryResponse,
   V2GenerateChatReplyRequest,
   V2IdempotencyKey,
   V2IsoDateTime,
+  V2LocationId,
   V2MaintenanceJobId,
   V2MediaId,
   V2MemoryExtractPayload,
   V2MemoryId,
+  V2MemoryDto,
   V2MessageId,
   V2SendChatMessageRequest,
   V2SendChatMessageResponse,
@@ -44,6 +56,7 @@ import {
   createV2ChatMaintenanceJob,
   createV2ChatMedia,
   createV2ChatMessage,
+  createV2ChatSticker,
   createV2ChatTrace,
   type V2CanonCharacter,
   type V2CanonWorld,
@@ -54,6 +67,7 @@ import {
   type V2Memory,
 } from "@living-network/domain/v2";
 import type {
+  V2ChatConversationSummary,
   V2MemoryRuntime,
   V2ChatUnitOfWork,
   V2MemoryRepository,
@@ -81,6 +95,13 @@ export interface V2PreparedChatReply {
 export interface V2ChatUseCases {
   createInstantStory(input: V2CreateInstantStoryRequest): Promise<V2CreateInstantStoryResponse>;
   listConversations(): Promise<V2ConversationListResponse>;
+  listConversationSummaries(): Promise<V2ChatConversationSummaryListResponse>;
+  listContacts(): Promise<V2ChatContactsResponse>;
+  createConversation(input: V2CreateConversationRequest): Promise<V2CreateConversationResponse>;
+  getConversationContext(conversationId: V2ConversationId): Promise<V2ChatContextResponse>;
+  listStickers(): Promise<V2ChatStickerListResponse>;
+  createSticker(input: V2CreateChatStickerRequest): Promise<V2ChatStickerDto>;
+  touchStickerLastUsed(stickerId: string): Promise<void>;
   getConversation(conversationId: V2ConversationId): Promise<V2ChatConversationDto>;
   listMessages(
     conversationId: V2ConversationId,
@@ -211,6 +232,15 @@ export function createV2ChatUseCases(
     listConversations: async () => unitOfWork.withChatTransaction(async ({ conversations }) => ({
       conversations: (await conversations.list()).map(toConversationDto),
     })),
+    listConversationSummaries: async () => unitOfWork.withChatTransaction(async ({ conversations }) => ({
+      conversations: (await conversations.listSummaries()).map(toConversationSummaryDto),
+    })),
+    listContacts: () => listContacts(unitOfWork),
+    createConversation: (input) => createConversation(unitOfWork, input),
+    getConversationContext: (conversationId) => getConversationContext(unitOfWork, conversationId),
+    listStickers: () => listStickers(unitOfWork),
+    createSticker: (input) => createSticker(unitOfWork, input),
+    touchStickerLastUsed: (stickerId) => touchStickerLastUsed(unitOfWork, stickerId),
     getConversation: async (conversationId) => unitOfWork.withChatTransaction(async ({ conversations }) => {
       const conversation = await requireConversation(conversations, conversationId);
       return toConversationDto(conversation);
@@ -385,6 +415,171 @@ async function createInstantStory(
   });
 }
 
+function stableConversationId(storyWorldId: V2StoryWorldId, characterId: V2CharacterId): V2ConversationId {
+  const hash = createHash("sha256").update(`${storyWorldId}\n${characterId}`).digest("hex").slice(0, 24);
+  return `conversation:direct:${hash}` as V2ConversationId;
+}
+
+function conversationSummaryDto(
+  conversation: V2ChatConversation,
+  characterName: string,
+  storyWorldName: string,
+): V2ChatConversationSummaryDto {
+  return {
+    conversationId: conversation.conversationId as V2ConversationId,
+    storyWorldId: conversation.storyWorldId as V2StoryWorldId,
+    primaryCharacterId: conversation.primaryCharacterId as V2CharacterId,
+    ...(conversation.title === undefined ? {} : { title: conversation.title }),
+    createdAt: (conversation.createdAt ?? "1970-01-01T00:00:00.000Z") as V2IsoDateTime,
+    updatedAt: (conversation.updatedAt ?? "1970-01-01T00:00:00.000Z") as V2IsoDateTime,
+    characterName,
+    storyWorldName,
+    ...(conversation.lastMessageAt === undefined ? {} : { lastMessageAt: conversation.lastMessageAt as V2IsoDateTime }),
+  };
+}
+
+async function listContacts(unitOfWork: V2ChatUnitOfWork): Promise<V2ChatContactsResponse> {
+  return unitOfWork.withChatTransaction(async ({ canon, conversations, memories }) => {
+    const worlds = await canon.listWorlds();
+    const summaries = await conversations.listSummaries();
+    const contacts: V2ChatContactDto[] = [];
+    for (const world of worlds) {
+      const characters = await canon.listCharacters(world.storyWorldId as V2StoryWorldId);
+      const memoryCounts = await memories.countActiveGroupedByCharacter(world.storyWorldId as V2StoryWorldId);
+      for (const character of characters) {
+        const latest = summaries.find((summary) =>
+          summary.storyWorldId === character.storyWorldId && summary.primaryCharacterId === character.characterId);
+        const activeMemoryCount = memoryCounts.get(character.characterId) ?? 0;
+        contacts.push({
+          characterId: character.characterId as V2CharacterId,
+          storyWorldId: character.storyWorldId as V2StoryWorldId,
+          characterName: character.name,
+          ...(character.summary === undefined ? {} : { characterSummary: character.summary }),
+          storyWorldName: world.name,
+          ...(latest?.conversationId === undefined ? {} : { latestConversationId: latest.conversationId as V2ConversationId }),
+          ...(latest?.lastMessagePreview === undefined ? {} : { latestMessagePreview: latest.lastMessagePreview }),
+          ...(latest?.lastMessageAt === undefined ? {} : { latestMessageAt: latest.lastMessageAt as V2IsoDateTime }),
+          activeMemoryCount,
+        });
+      }
+    }
+    contacts.sort((a, b) => {
+      const aTime = a.latestMessageAt === undefined ? 0 : Date.parse(a.latestMessageAt);
+      const bTime = b.latestMessageAt === undefined ? 0 : Date.parse(b.latestMessageAt);
+      if (aTime !== bTime) return bTime - aTime;
+      return a.characterName.localeCompare(b.characterName);
+    });
+    return { contacts };
+  });
+}
+
+async function createConversation(
+  unitOfWork: V2ChatUnitOfWork,
+  input: V2CreateConversationRequest,
+): Promise<V2CreateConversationResponse> {
+  return unitOfWork.withChatTransaction(async ({ canon, conversations }) => {
+    const world = await canon.getWorld(input.storyWorldId);
+    if (world === undefined) throw new V2HttpError(404, "NOT_FOUND", "Story world not found");
+    const character = await canon.getCharacter({ storyWorldId: input.storyWorldId, characterId: input.characterId });
+    if (character === undefined) throw new V2HttpError(404, "NOT_FOUND", "Character not found");
+    const conversationId = stableConversationId(input.storyWorldId, input.characterId);
+    const existing = await conversations.get(conversationId);
+    if (existing !== undefined) {
+      return { conversation: conversationSummaryDto(existing, character.name, world.name) };
+    }
+    const conversation = await conversations.create(createV2ChatConversation({
+      conversationId,
+      storyWorldId: input.storyWorldId,
+      primaryCharacterId: input.characterId,
+      title: character.name,
+    }));
+    return { conversation: conversationSummaryDto(conversation, character.name, world.name) };
+  });
+}
+
+async function getConversationContext(
+  unitOfWork: V2ChatUnitOfWork,
+  conversationId: V2ConversationId,
+): Promise<V2ChatContextResponse> {
+  return unitOfWork.withChatTransaction(async ({ canon, conversations, memories }) => {
+    const conversation = await requireConversation(conversations, conversationId);
+    const storyWorldId = conversation.storyWorldId as V2StoryWorldId;
+    const character = await canon.getCharacter({ storyWorldId, characterId: conversation.primaryCharacterId as V2CharacterId });
+    const world = await canon.getWorld(storyWorldId);
+    const recent = await memories.listActiveByCharacter({ storyWorldId, characterId: conversation.primaryCharacterId, limit: 8 });
+    const activeCount = await memories.countActiveByCharacter({ storyWorldId, characterId: conversation.primaryCharacterId });
+    const summary = (await conversations.listSummaries()).find((item) => item.conversationId === conversationId);
+    return {
+      conversation: summary === undefined
+        ? conversationSummaryDto(conversation, character?.name ?? "角色已不存在", world?.name ?? "世界已不存在")
+        : toConversationSummaryDto(summary),
+      character: character === undefined
+        ? { characterId: conversation.primaryCharacterId as V2CharacterId, name: "角色已不存在" }
+        : {
+            characterId: character.characterId as V2CharacterId,
+            name: character.name,
+            ...(character.summary === undefined ? {} : { summary: character.summary }),
+            ...(character.personaText === undefined ? {} : { personaText: character.personaText }),
+            ...(character.homeLocationId === undefined ? {} : { homeLocationId: character.homeLocationId as V2LocationId }),
+          },
+      world: world === undefined
+        ? { storyWorldId, name: "世界已不存在" }
+        : {
+            storyWorldId: world.storyWorldId as V2StoryWorldId,
+            name: world.name,
+            ...(world.summary === undefined ? {} : { summary: world.summary }),
+          },
+      memory: {
+        activeCount,
+        recent: recent.map(toMemoryDto),
+      },
+    };
+  });
+}
+
+async function listStickers(unitOfWork: V2ChatUnitOfWork): Promise<V2ChatStickerListResponse> {
+  return unitOfWork.withChatTransaction(async ({ stickers }) => ({
+    stickers: (await stickers.list()).map((sticker) => ({
+      stickerId: sticker.stickerId,
+      mediaId: sticker.mediaId as V2MediaId,
+      mediaRef: sticker.mediaRef,
+      label: sticker.label,
+      createdAt: (sticker.createdAt ?? "1970-01-01T00:00:00.000Z") as V2IsoDateTime,
+      ...(sticker.lastUsedAt === undefined ? {} : { lastUsedAt: sticker.lastUsedAt as V2IsoDateTime }),
+    })),
+  }));
+}
+
+async function createSticker(
+  unitOfWork: V2ChatUnitOfWork,
+  input: V2CreateChatStickerRequest,
+): Promise<V2ChatStickerDto> {
+  return unitOfWork.withChatTransaction(async ({ stickers, media }) => {
+    const mediaItem = await media.get(input.mediaId);
+    if (mediaItem === undefined) throw new V2HttpError(404, "NOT_FOUND", "Media not found");
+    const sticker = await stickers.create(createV2ChatSticker({
+      stickerId: `sticker:${randomUUID()}`,
+      mediaId: mediaItem.mediaId,
+      mediaRef: mediaItem.mediaRef,
+      label: input.label,
+    }));
+    return {
+      stickerId: sticker.stickerId,
+      mediaId: sticker.mediaId as V2MediaId,
+      mediaRef: sticker.mediaRef,
+      label: sticker.label,
+      createdAt: (sticker.createdAt ?? "1970-01-01T00:00:00.000Z") as V2IsoDateTime,
+      ...(sticker.lastUsedAt === undefined ? {} : { lastUsedAt: sticker.lastUsedAt as V2IsoDateTime }),
+    };
+  });
+}
+
+async function touchStickerLastUsed(unitOfWork: V2ChatUnitOfWork, stickerId: string): Promise<void> {
+  await unitOfWork.withChatTransaction(async ({ stickers }) => {
+    await stickers.touchLastUsed({ stickerId, lastUsedAt: new Date().toISOString() });
+  });
+}
+
 async function sendMessage(
   unitOfWork: V2ChatUnitOfWork,
   conversationId: V2ConversationId,
@@ -483,11 +678,16 @@ async function prepareReply(
     const query = currentUser?.text ?? "";
     const memoryContexts = memoryRuntime === undefined
       ? query.trim().length > 0
-        ? (await searchMemories(memories, conversation.storyWorldId as V2StoryWorldId, query)).map(toV2MemoryContext)
-        : (await memories.listActiveByStoryWorld(conversation.storyWorldId as V2StoryWorldId)).map(toV2MemoryContext)
+        ? (await searchMemories(memories, conversation.storyWorldId as V2StoryWorldId, conversation.primaryCharacterId as V2CharacterId, query)).map(toV2MemoryContext)
+        : (await memories.listActiveByCharacter({
+            storyWorldId: conversation.storyWorldId as V2StoryWorldId,
+            characterId: conversation.primaryCharacterId as V2CharacterId,
+            limit: 10,
+          })).map(toV2MemoryContext)
       : (await memoryRuntime.retrieve({
           storyWorldId: conversation.storyWorldId as V2StoryWorldId,
           conversationId,
+          characterId: conversation.primaryCharacterId as V2CharacterId,
           query,
           limit: 10,
         })).map((item) => ({
@@ -701,8 +901,13 @@ function stableAssistantMessageId(conversationId: V2ConversationId, idempotencyK
   return `message:assistant:${hash}` as V2MessageId;
 }
 
-async function searchMemories(memories: V2MemoryRepository, storyWorldId: V2StoryWorldId, query: string): Promise<readonly V2Memory[]> {
-  return memories.searchActive({ storyWorldId, query, limit: 10 });
+async function searchMemories(
+  memories: V2MemoryRepository,
+  storyWorldId: V2StoryWorldId,
+  characterId: V2CharacterId,
+  query: string,
+): Promise<readonly V2Memory[]> {
+  return memories.searchActiveByCharacter({ storyWorldId, characterId, query, limit: 10 });
 }
 
 async function requireConversation(
@@ -725,6 +930,41 @@ function toConversationDto(conversation: V2ChatConversation): V2ChatConversation
     createdAt: (conversation.createdAt ?? "1970-01-01T00:00:00.000Z") as V2IsoDateTime,
     updatedAt: (conversation.updatedAt ?? "1970-01-01T00:00:00.000Z") as V2IsoDateTime,
     ...(conversation.lastMessageAt === undefined ? {} : { lastMessageAt: conversation.lastMessageAt as V2IsoDateTime }),
+  };
+}
+
+function toConversationSummaryDto(summary: V2ChatConversationSummary): V2ChatConversationSummaryDto {
+  return {
+    conversationId: summary.conversationId as V2ConversationId,
+    storyWorldId: summary.storyWorldId as V2StoryWorldId,
+    primaryCharacterId: summary.primaryCharacterId as V2CharacterId,
+    ...(summary.title === undefined ? {} : { title: summary.title }),
+    createdAt: (summary.createdAt ?? "1970-01-01T00:00:00.000Z") as V2IsoDateTime,
+    updatedAt: (summary.updatedAt ?? "1970-01-01T00:00:00.000Z") as V2IsoDateTime,
+    characterName: summary.characterName,
+    storyWorldName: summary.storyWorldName,
+    ...(summary.lastMessagePreview === undefined ? {} : { lastMessagePreview: summary.lastMessagePreview }),
+    ...(summary.lastMessageAt === undefined ? {} : { lastMessageAt: summary.lastMessageAt as V2IsoDateTime }),
+    ...(summary.lastMessageStatus === undefined ? {} : { lastMessageStatus: summary.lastMessageStatus }),
+  };
+}
+
+function toMemoryDto(memory: V2Memory): V2MemoryDto {
+  return {
+    memoryId: memory.memoryId as V2MemoryId,
+    storyWorldId: memory.storyWorldId as V2StoryWorldId,
+    ...(memory.conversationId === undefined ? {} : { conversationId: memory.conversationId as V2ConversationId }),
+    ...(memory.characterId === undefined ? {} : { characterId: memory.characterId as V2CharacterId }),
+    kind: memory.kind,
+    content: memory.content,
+    importance: memory.importance,
+    confidence: memory.confidence,
+    sourceMessageIds: memory.sourceMessageIds as V2MessageId[],
+    status: memory.status,
+    ...(memory.supersedesMemoryId === undefined ? {} : { supersedesMemoryId: memory.supersedesMemoryId as V2MemoryId }),
+    createdAt: (memory.createdAt ?? "1970-01-01T00:00:00.000Z") as V2IsoDateTime,
+    updatedAt: (memory.updatedAt ?? "1970-01-01T00:00:00.000Z") as V2IsoDateTime,
+    ...(memory.lastAccessedAt === undefined ? {} : { lastAccessedAt: memory.lastAccessedAt as V2IsoDateTime }),
   };
 }
 

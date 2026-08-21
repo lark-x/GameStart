@@ -302,4 +302,25 @@ export class V2SqliteFactRepository implements V2FactRepository {
         updated_at = excluded.updated_at
     `).run(engineId, scopeKey, lastBatchId, new Date().toISOString());
   }
+
+  public async countDistinctCharacterSubjects(): Promise<number> {
+    const row = this.db.prepare(`
+      SELECT COUNT(DISTINCT subject_entity_id) AS count
+      FROM v2_fact_assertions
+      WHERE subject_entity_type = 'character'
+        AND subject_entity_id IS NOT NULL
+        AND subject_entity_id <> ''
+    `).get() as { readonly count: number };
+    return row.count;
+  }
+
+  public async countFactBatches(): Promise<number> {
+    const row = this.db.prepare("SELECT COUNT(*) AS count FROM v2_fact_batches").get() as { readonly count: number };
+    return row.count;
+  }
+
+  public async countFactAssertions(): Promise<number> {
+    const row = this.db.prepare("SELECT COUNT(*) AS count FROM v2_fact_assertions").get() as { readonly count: number };
+    return row.count;
+  }
 }

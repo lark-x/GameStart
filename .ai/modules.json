@@ -72,7 +72,10 @@
         "apps/api/src/v2/chat/**",
         "apps/web/src/v2/chat/**",
         "apps/web/src/v2/views/V2StartView.vue",
+        "apps/web/src/v2/views/V2ChatHomeView.vue",
         "apps/web/src/v2/views/V2ChatView.vue",
+        "apps/web/src/v2/views/chat-view-model.ts",
+        "apps/web/src/v2/views/chat-view-model.test.ts",
         "packages/ai/src/prompt-engine/**",
         "packages/contracts/src/v2/chat/**",
         "packages/domain/src/v2/chat/**",
@@ -201,8 +204,13 @@
         "apps/web/src/v2/fixtures/**",
         "apps/web/src/v2/index.ts",
         "apps/web/src/v2/navigation.test.ts",
+        "apps/web/src/v2/random.ts",
+        "apps/web/src/v2/random.test.ts",
         "apps/web/src/v2/stores/**",
         "apps/web/src/v2/views/V2ModelSettingsView.vue",
+        "apps/web/src/v2/views/V2ModelProfileDetailView.vue",
+        "apps/web/src/v2/views/models-view-model.ts",
+        "apps/web/src/v2/views/models-view-model.test.ts",
         "apps/web/src/v2/views/V2WorkspaceAreaView.vue",
         "apps/worker/src/v2/index.ts",
         "apps/worker/src/v2/runtime.test.ts",
@@ -241,6 +249,7 @@
         "apps/web/src/v2/views/V2ModelLogsView.vue",
         "apps/web/src/v2/views/V2AutomationView.vue",
         "apps/web/src/v2/views/V2MemorySettingsView.vue",
+        "apps/web/src/v2/views/runtime-view-model*.ts",
         "apps/web/src/v2/views/V2PromptSettingsView.vue"
       ]
     }
