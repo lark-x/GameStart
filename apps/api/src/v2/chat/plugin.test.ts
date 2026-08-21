@@ -184,6 +184,96 @@ test("V2 chat API creates an instant story, sends a message, and streams a persi
   }
 });
 
+test("V2 chat API restricts memory promotion target kind to profile patches", async () => {
+  const temp = openV2TempSqliteConnection();
+  temp.db.close();
+  const runtime = createV2ApiRuntime({ sqlitePath: temp.path, chatProvider: new FakeChatProvider() });
+  try {
+    const response = await runtime.app.inject({
+      method: "POST",
+      url: "/api/v2/chat/memories/missing/promote",
+      payload: {
+        candidateId: "candidate:memory",
+        targetKind: "relationship_upsert",
+        expectedRevision: 1,
+        idempotencyKey: "promote-memory-rel",
+      },
+    });
+    assert.equal(response.statusCode, 400);
+    assert.match(response.body, /profile_patch/);
+  } finally {
+    await runtime.close();
+    temp.cleanup();
+  }
+});
+
+test("V2 proactive chat scheduling enforces daily limits and quiet hours", async () => {
+  const temp = openV2TempSqliteConnection();
+  temp.db.close();
+  const runtime = createV2ApiRuntime({ sqlitePath: temp.path, chatProvider: new FakeChatProvider() });
+  try {
+    const created = await runtime.app.inject({
+      method: "POST",
+      url: "/api/v2/instant-stories",
+      payload: { persona: "主动角色", displayName: "主动角色", idempotencyKey: "instant-proactive-policy" },
+    });
+    assert.equal(created.statusCode, 201, created.body);
+    const instant = created.json() as V2CreateInstantStoryResponse;
+    const snapshot = await runtime.app.inject({ method: "GET", url: `/api/v2/core/worlds/${instant.storyWorld.storyWorldId}/canon` });
+    const revision = snapshot.json().world.revision as number;
+    const policyUrl = `/api/v2/core/worlds/${instant.storyWorld.storyWorldId}/characters/${instant.character.characterId}/proactive-policy`;
+    const enabled = await runtime.app.inject({
+      method: "PATCH",
+      url: policyUrl,
+      payload: { enabled: true, cooldownMinutes: 0, dailyLimit: 1, quietStart: "00:00", quietEnd: "00:00", expectedRevision: revision, idempotencyKey: "enable-proactive-policy" },
+    });
+    assert.equal(enabled.statusCode, 200, enabled.body);
+
+    const first = await runtime.app.inject({
+      method: "POST",
+      url: `/api/v2/chat/conversations/${instant.conversation.conversationId}/proactive`,
+      payload: { text: "第一条", timeBucket: "2026-08-22T10", idempotencyKey: "proactive-first" },
+    });
+    assert.equal(first.statusCode, 200, first.body);
+    const second = await runtime.app.inject({
+      method: "POST",
+      url: `/api/v2/chat/conversations/${instant.conversation.conversationId}/proactive`,
+      payload: { text: "第二条", timeBucket: "2026-08-22T11", idempotencyKey: "proactive-second" },
+    });
+    assert.equal(second.statusCode, 409);
+    assert.match(second.body, /daily limit/);
+
+    const quiet = quietWindowAroundNow(new Date());
+    const quietPolicy = await runtime.app.inject({
+      method: "PATCH",
+      url: policyUrl,
+      payload: { enabled: true, cooldownMinutes: 0, dailyLimit: 3, quietStart: quiet.start, quietEnd: quiet.end, expectedRevision: revision, idempotencyKey: "quiet-proactive-policy" },
+    });
+    assert.equal(quietPolicy.statusCode, 200, quietPolicy.body);
+    const blockedQuiet = await runtime.app.inject({
+      method: "POST",
+      url: `/api/v2/chat/conversations/${instant.conversation.conversationId}/proactive`,
+      payload: { text: "静默时段", timeBucket: "2026-08-22T12", idempotencyKey: "proactive-quiet" },
+    });
+    assert.equal(blockedQuiet.statusCode, 409);
+    assert.match(blockedQuiet.body, /quiet hours/);
+  } finally {
+    await runtime.close();
+    temp.cleanup();
+  }
+});
+
+function quietWindowAroundNow(now: Date): { readonly start: string; readonly end: string } {
+  const minute = now.getUTCHours() * 60 + now.getUTCMinutes();
+  return { start: formatUtcMinute((minute + 1439) % 1440), end: formatUtcMinute((minute + 1) % 1440) };
+}
+
+function formatUtcMinute(value: number): string {
+  const hour = Math.floor(value / 60);
+  const minute = value % 60;
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
 test("V2 chat media upload stores a pure sha256 hash and serves identical bytes", async () => {
   const temp = openV2TempSqliteConnection();
   const mediaRoot = mkdtempSync(path.join(tmpdir(), "v2-chat-media-"));
@@ -675,7 +765,7 @@ test("V2 chat features reflect multimodal modality and missing chat binding", as
   }
 });
 
-test("V2 chat prompt carries Canon persona text into the provider request", async () => {
+test("V2 chat prompt prefers structured persona while preserving legacy fallback", async () => {
   const temp = openV2TempSqliteConnection();
   const mediaRoot = mkdtempSync(path.join(tmpdir(), "v2-chat-media-"));
   temp.db.close();
@@ -688,7 +778,21 @@ test("V2 chat prompt carries Canon persona text into the provider request", asyn
         url: "/api/v2/instant-stories",
         payload: { persona: "花火最爱吃桂花糕，嘴硬心软。", displayName: "花火", idempotencyKey: "persona-prompt" },
       });
-      const convId = (created.json() as V2CreateInstantStoryResponse).conversation.conversationId;
+      const instant = created.json() as V2CreateInstantStoryResponse;
+      const convId = instant.conversation.conversationId;
+      const snapshot = await runtime.app.inject({ method: "GET", url: `/api/v2/core/worlds/${instant.storyWorld.storyWorldId}/canon` });
+      const revision = snapshot.json().world.revision as number;
+      const updated = await runtime.app.inject({
+        method: "PATCH",
+        url: `/api/v2/core/worlds/${instant.storyWorld.storyWorldId}/characters/${instant.character.characterId}`,
+        payload: {
+          name: "花火",
+          profile: { persona: { traits: ["毒舌"], speechStyle: "讽刺" } },
+          expectedRevision: revision,
+          idempotencyKey: "persona-structured-update",
+        },
+      });
+      assert.equal(updated.statusCode, 200, updated.body);
       await runtime.app.inject({
         method: "POST",
         url: `/api/v2/chat/conversations/${convId}/messages`,
@@ -701,6 +805,8 @@ test("V2 chat prompt carries Canon persona text into the provider request", asyn
       });
       const serialized = JSON.stringify(provider.capturedRequest?.messages ?? []);
       assert.match(serialized, /花火最爱吃桂花糕/);
+      assert.match(serialized, /毒舌/);
+      assert.match(serialized, /讽刺/);
     } finally {
       await runtime.close();
     }

@@ -24,6 +24,7 @@ import type {
   V2ChatMessageDto,
   V2ChatMessagePageResponse,
   V2CharacterId,
+  V2CharacterProactivePolicyDto,
   V2ConversationId,
   V2ConversationListResponse,
   V2ConversationSummaryPayload,
@@ -204,8 +205,9 @@ function toTraceDto(trace: V2ChatTrace): V2ChatTraceDto {
 
 export function createV2ChatUseCases(
   unitOfWork: V2ChatUnitOfWork,
-  options: { readonly memoryRuntime?: V2MemoryRuntime } = {},
+  options: { readonly memoryRuntime?: V2MemoryRuntime; readonly now?: () => Date } = {},
 ): V2ChatUseCases {
+  const now = options.now ?? (() => new Date());
   return {
     recordTrace: (input) => unitOfWork.withChatTransaction(async ({ traces }) => {
       await traces.create(createV2ChatTrace({
@@ -339,7 +341,7 @@ export function createV2ChatUseCases(
       return canon.createCharacterCandidate({
         candidateId: input.candidateId as never,
         storyWorldId: memory.storyWorldId as V2StoryWorldId,
-        kind: input.targetKind ?? "profile_patch",
+        kind: "profile_patch",
         targetScope: targetCharacterId,
         baseRevision: input.expectedRevision,
         status: "pending",
@@ -352,11 +354,21 @@ export function createV2ChatUseCases(
       if (!input.text.trim()) throw new V2HttpError(400, "VALIDATION_FAILED", "text is required");
       const policy = await canon.getCharacterProactivePolicy(conversation.storyWorldId as V2StoryWorldId, conversation.primaryCharacterId as V2CharacterId);
       if (!policy?.enabled) throw new V2HttpError(409, "VALIDATION_FAILED", "proactive policy is disabled");
+      const requestedAt = now();
+      enforceProactivePolicy(policy, requestedAt);
       const dedupeKey = `proactive:${conversation.primaryCharacterId}:${conversationId}:${input.timeBucket}`;
       const existing = await maintenanceJobs.findJobByDedupeKey("proactive_message", dedupeKey);
       if (existing) return { jobId: existing.jobId as V2MaintenanceJobId, conversationId };
+      const dailyCount = await maintenanceJobs.countJobsByDedupePrefixSince({
+        jobType: "proactive_message",
+        dedupePrefix: `proactive:${conversation.primaryCharacterId}:`,
+        since: startOfUtcDay(requestedAt).toISOString(),
+      });
+      if (dailyCount >= policy.dailyLimit) throw new V2HttpError(409, "VALIDATION_FAILED", "proactive daily limit has been reached");
       const jobId = `job:maint:${randomUUID()}` as V2MaintenanceJobId;
-      await maintenanceJobs.enqueue(createV2ChatMaintenanceJob({ jobId, conversationId, jobType: "proactive_message", status: "pending", payload: { jobType: "proactive_message", conversationId, storyWorldId: conversation.storyWorldId as V2StoryWorldId, characterId: conversation.primaryCharacterId as V2CharacterId, text: input.text, idempotencyKey: input.idempotencyKey, timeBucket: input.timeBucket }, dedupeKey, attempts: 0, maxAttempts: 3, availableAt: new Date().toISOString() }));
+      const requestedAtIso = requestedAt.toISOString();
+      await maintenanceJobs.enqueue(createV2ChatMaintenanceJob({ jobId, conversationId, jobType: "proactive_message", status: "pending", payload: { jobType: "proactive_message", conversationId, storyWorldId: conversation.storyWorldId as V2StoryWorldId, characterId: conversation.primaryCharacterId as V2CharacterId, text: input.text, idempotencyKey: input.idempotencyKey, timeBucket: input.timeBucket }, dedupeKey, attempts: 0, maxAttempts: 3, availableAt: requestedAtIso }));
+      await canon.updateCharacterProactivePolicy({ ...policy, lastExecutedAt: requestedAtIso });
       return { jobId, conversationId };
     }),
   };
@@ -749,7 +761,7 @@ async function prepareReply(
       ...(character === undefined ? {} : {
         persona: {
           name: character.name,
-          personaText: character.personaText ?? formatStructuredPersona(character),
+          personaText: formatPersonaForChat(character),
         },
       }),
       ...(world === undefined ? {} : {
@@ -824,6 +836,41 @@ function formatStructuredPersona(character: V2CanonCharacter): string {
     persona.backgroundStory ? `背景：${persona.backgroundStory}` : "",
     persona.advancedPrompt ? `补充提示：${persona.advancedPrompt}` : "",
   ].filter(Boolean).join("\n");
+}
+
+function formatPersonaForChat(character: V2CanonCharacter): string {
+  const structured = formatStructuredPersona(character);
+  return structured.length > 0 ? structured : character.personaText ?? "";
+}
+
+function enforceProactivePolicy(policy: V2CharacterProactivePolicyDto, now: Date): void {
+  if (policy.dailyLimit <= 0) throw new V2HttpError(409, "VALIDATION_FAILED", "proactive daily limit has been reached");
+  if (isWithinQuietHours(now, policy.quietStart, policy.quietEnd)) throw new V2HttpError(409, "VALIDATION_FAILED", "proactive quiet hours are active");
+  if (policy.lastExecutedAt !== undefined) {
+    const lastExecutedAt = new Date(policy.lastExecutedAt);
+    if (!Number.isNaN(lastExecutedAt.getTime())) {
+      const nextAllowedAt = lastExecutedAt.getTime() + policy.cooldownMinutes * 60_000;
+      if (now.getTime() < nextAllowedAt) throw new V2HttpError(409, "VALIDATION_FAILED", "proactive cooldown is active");
+    }
+  }
+}
+
+function isWithinQuietHours(now: Date, quietStart: string, quietEnd: string): boolean {
+  const start = parseHourMinute(quietStart, "quietStart");
+  const end = parseHourMinute(quietEnd, "quietEnd");
+  if (start === end) return false;
+  const current = now.getUTCHours() * 60 + now.getUTCMinutes();
+  return start < end ? current >= start && current < end : current >= start || current < end;
+}
+
+function parseHourMinute(value: string, field: string): number {
+  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(value);
+  if (!match) throw new V2HttpError(409, "VALIDATION_FAILED", `${field} must be HH:MM`);
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
+function startOfUtcDay(value: Date): Date {
+  return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate(), 0, 0, 0, 0));
 }
 
 async function saveReply(

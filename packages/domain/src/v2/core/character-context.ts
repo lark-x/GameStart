@@ -68,13 +68,17 @@ export function buildV2CharacterContext(source: V2CharacterContextSource): V2Cha
   const relationships = selectedRelationships.filter((relationship) => include(`relationships.${relationship.relationshipId}`, relationship, "selected_character_relationship", relationship.relationshipId));
   const includedFacts = facts.filter((fact) => include(`facts.${fact.id}`, fact.text, "world_fact", fact.id));
   const includedMemories = memories.filter((memory) => include(`memories.${memory.id}`, memory.text, "relevance", memory.id));
-  if (source.conversationSummary !== undefined) include("conversation.summary", source.conversationSummary, "conversation_summary");
-  (source.recentMessages ?? []).slice(-24).forEach((message, index) => include(`conversation.messages.${index}`, message, "recent_message"));
-  if (source.currentInput !== undefined) include("runtime.currentInput", source.currentInput, "current_input");
+  const conversationSummary = source.conversationSummary !== undefined && include("conversation.summary", source.conversationSummary, "conversation_summary")
+    ? source.conversationSummary
+    : undefined;
+  const recentMessages = (source.recentMessages ?? []).slice(-24).filter((message, index) => include(`conversation.messages.${index}`, message, "recent_message"));
+  const currentInput = source.currentInput !== undefined && include("runtime.currentInput", source.currentInput, "current_input")
+    ? source.currentInput
+    : undefined;
   const snapshot = {
     stable: { world: { storyWorldId: source.world.storyWorldId, name: source.world.name, ...(source.world.summary === undefined ? {} : { summary: source.world.summary }) }, characters, relationships, facts: includedFacts },
-    dynamic: { memories: includedMemories, ...(source.conversationSummary === undefined ? {} : { conversationSummary: source.conversationSummary }), recentMessages: (source.recentMessages ?? []).slice(-24) },
-    runtime: { task: source.task, ...(source.currentInput === undefined ? {} : { currentInput: source.currentInput }) },
+    dynamic: { memories: includedMemories, ...(conversationSummary === undefined ? {} : { conversationSummary }), recentMessages },
+    runtime: { task: source.task, ...(currentInput === undefined ? {} : { currentInput }) },
     sources,
     omittedSources,
     baseCanonRevision: source.world.revision,

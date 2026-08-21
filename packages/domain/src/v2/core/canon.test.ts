@@ -84,3 +84,25 @@ test("character profile and context builder remain scoped and deterministic", ()
   assert.deepEqual(context.stable.characters.map((character) => character.characterId), ["a"]);
   assert.equal(context.contextHash, buildV2CharacterContext(input).contextHash);
 });
+
+test("character context builder omits dynamic fields from snapshot when budget excludes them", () => {
+  const world = createV2CanonWorld({ storyWorldId: "world_budget", name: "World" });
+  const character = createV2CanonCharacter({ storyWorldId: "world_budget", characterId: "char_budget", name: "A" });
+  const context = buildV2CharacterContext({
+    world,
+    characters: [character],
+    relationships: [],
+    task: "chat",
+    primaryCharacterId: "char_budget",
+    tokenBudget: 1,
+    conversationSummary: "this summary should not fit",
+    recentMessages: ["this message should not fit"],
+    currentInput: "this input should not fit",
+  });
+  assert.equal(context.dynamic.conversationSummary, undefined);
+  assert.deepEqual(context.dynamic.recentMessages, []);
+  assert.equal(context.runtime.currentInput, undefined);
+  assert.ok(context.omittedSources.some((source) => source.path === "conversation.summary"));
+  assert.ok(context.omittedSources.some((source) => source.path === "conversation.messages.0"));
+  assert.ok(context.omittedSources.some((source) => source.path === "runtime.currentInput"));
+});

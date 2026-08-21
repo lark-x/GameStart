@@ -171,6 +171,10 @@ function mapMaintenanceJob(row: MaintenanceJobRow): V2ChatMaintenanceJob {
   };
 }
 
+function escapeSqlLike(value: string): string {
+  return value.replace(/[\\%_]/g, (match) => `\\${match}`);
+}
+
 function mapConversation(row: ConversationRow): V2ChatConversation {
   return {
     conversationId: row.conversation_id,
@@ -1366,6 +1370,21 @@ export class V2SqliteChatMaintenanceJobRepository implements V2ChatMaintenanceJo
       LIMIT 1
     `).get(jobType, dedupeKey) as MaintenanceJobRow | undefined;
     return row === undefined ? undefined : mapMaintenanceJob(row);
+  }
+
+  public async countJobsByDedupePrefixSince(input: {
+    readonly jobType: string;
+    readonly dedupePrefix: string;
+    readonly since: string;
+  }): Promise<number> {
+    const row = this.db.prepare(`
+      SELECT COUNT(*) AS count
+      FROM v2_chat_maintenance_jobs
+      WHERE job_type = ?
+        AND dedupe_key LIKE ? ESCAPE '\\'
+        AND created_at >= ?
+    `).get(input.jobType, `${escapeSqlLike(input.dedupePrefix)}%`, input.since) as { readonly count: number } | undefined;
+    return row?.count ?? 0;
   }
 
   public async isLeaseOwner(input: {

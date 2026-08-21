@@ -93,11 +93,11 @@ export const v2CorePlugin: FastifyPluginAsync<V2CorePluginOptions> = async (app,
   });
   app.get("/worlds/:storyWorldId/character-context-traces", async (request) => {
     const { storyWorldId } = getWorldParams(request.params);
-    return useCases.listCharacterContextTraces(storyWorldId);
+    return { traces: await useCases.listCharacterContextTraces(storyWorldId) };
   });
   app.get("/worlds/:storyWorldId/characters/:characterId/state-definitions", async (request) => {
     const { storyWorldId } = getWorldParams(request.params);
-    return useCases.listCharacterStateDefinitions(storyWorldId, getRouteParam(request.params, "characterId") as never);
+    return { definitions: await useCases.listCharacterStateDefinitions(storyWorldId, getRouteParam(request.params, "characterId") as never) };
   });
   app.post("/worlds/:storyWorldId/characters/:characterId/state-definitions", async (request, reply) => {
     const { storyWorldId } = getWorldParams(request.params);
@@ -112,7 +112,7 @@ export const v2CorePlugin: FastifyPluginAsync<V2CorePluginOptions> = async (app,
   });
   app.get("/worlds/:storyWorldId/characters/:characterId/visual-variants", async (request) => {
     const { storyWorldId } = getWorldParams(request.params);
-    return useCases.listCharacterVisualVariants(storyWorldId, getRouteParam(request.params, "characterId") as never);
+    return { variants: await useCases.listCharacterVisualVariants(storyWorldId, getRouteParam(request.params, "characterId") as never) };
   });
   app.post("/worlds/:storyWorldId/characters/:characterId/visual-variants", async (request, reply) => {
     const { storyWorldId } = getWorldParams(request.params);
@@ -123,7 +123,7 @@ export const v2CorePlugin: FastifyPluginAsync<V2CorePluginOptions> = async (app,
   });
   app.get("/worlds/:storyWorldId/characters/:characterId/events", async (request) => {
     const { storyWorldId } = getWorldParams(request.params);
-    return useCases.listCharacterEventDefinitions(storyWorldId);
+    return { events: await useCases.listCharacterEventDefinitions(storyWorldId, getRouteParam(request.params, "characterId") as never) };
   });
   app.post("/worlds/:storyWorldId/characters/:characterId/events", async (request, reply) => {
     const { storyWorldId } = getWorldParams(request.params);
@@ -140,7 +140,7 @@ export const v2CorePlugin: FastifyPluginAsync<V2CorePluginOptions> = async (app,
   });
   app.get("/worlds/:storyWorldId/characters/:characterId/relationships", async (request) => {
     const { storyWorldId } = getWorldParams(request.params);
-    return useCases.listCharacterRelationships(storyWorldId, getRouteParam(request.params, "characterId") as never);
+    return { relationships: await useCases.listCharacterRelationships(storyWorldId, getRouteParam(request.params, "characterId") as never) };
   });
   app.post("/worlds/:storyWorldId/characters/:characterId/relationships", async (request, reply) => {
     const { storyWorldId } = getWorldParams(request.params);

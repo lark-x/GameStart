@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import Button from "../../components/ui/Button.vue";
 import { useV2WorkspaceStore } from "../stores/workspace";
@@ -8,18 +8,24 @@ const route = useRoute();
 const router = useRouter();
 const store = useV2WorkspaceStore();
 const activeTab = ref("overview");
-const character = computed(() => store.snapshot?.world.characters.find((item) => item.characterId === route.params.characterId));
+const characterId = computed(() => typeof route.params.characterId === "string" ? route.params.characterId : undefined);
+const characters = computed(() => store.snapshot?.world.characters ?? []);
+const character = computed(() => characters.value.find((item) => item.characterId === characterId.value));
 const tabs = ["overview", "persona", "relationships", "visual", "memory", "state", "events", "usage"] as const;
 const traces = ref<readonly { task: string; contextHash: string; sources: readonly { path: string; reason: string; tokens: number }[]; omittedSources: readonly { path: string; reason: string; tokens: number }[] }[]>([]);
 const relationships = ref<readonly Record<string, unknown>[]>([]);
 const visualVariants = ref<readonly Record<string, unknown>[]>([]);
 const stateDefinitions = ref<readonly Record<string, unknown>[]>([]);
 const events = ref<readonly Record<string, unknown>[]>([]);
-onMounted(async () => {
-  const worldId = store.snapshot?.world.storyWorldId;
-  if (!worldId) return;
+watch([() => store.snapshot?.world.storyWorldId, characterId], async ([worldId, currentCharacterId]) => {
+  traces.value = [];
+  relationships.value = [];
+  visualVariants.value = [];
+  stateDefinitions.value = [];
+  events.value = [];
+  if (!worldId || !currentCharacterId) return;
   try {
-    const base = `/api/v2/worlds/${encodeURIComponent(worldId)}/characters/${encodeURIComponent(String(route.params.characterId))}`;
+    const base = `/api/v2/worlds/${encodeURIComponent(worldId)}/characters/${encodeURIComponent(currentCharacterId)}`;
     const [response, relationshipResponse, visualResponse, stateResponse, eventResponse] = await Promise.all([
       fetch(`/api/v2/worlds/${encodeURIComponent(worldId)}/character-context-traces`), fetch(`${base}/relationships`), fetch(`${base}/visual-variants`), fetch(`${base}/state-definitions`), fetch(`${base}/events`),
     ]);
@@ -29,7 +35,7 @@ onMounted(async () => {
     if (stateResponse.ok) stateDefinitions.value = (await stateResponse.json() as { definitions?: readonly Record<string, unknown>[] }).definitions ?? [];
     if (eventResponse.ok) events.value = (await eventResponse.json() as { events?: readonly Record<string, unknown>[] }).events ?? [];
   } catch { /* usage remains available when the API is offline */ }
-});
+}, { immediate: true });
 const relevantTraces = computed(() => traces.value.filter((trace) => trace.sources.some((source) => source.path.includes("character"))));
 function participantCount(item: Record<string, unknown>): number { return Array.isArray(item.participantCharacterIds) ? item.participantCharacterIds.length : 0; }
 </script>
@@ -40,7 +46,7 @@ function participantCount(item: Record<string, unknown>): number { return Array.
       <div class="portrait" aria-hidden="true">{{ character?.name?.slice(0, 1) ?? "?" }}</div>
       <div>
         <p class="eyebrow">角色中心</p>
-        <h1 id="character-center-title">{{ character?.name ?? "未找到角色" }}</h1>
+        <h1 id="character-center-title">{{ characterId ? character?.name ?? "未找到角色" : "角色中心" }}</h1>
         <p class="muted">{{ character?.summary ?? "结构化人格、关系、视觉与运行态的统一入口" }}</p>
       </div>
       <div class="actions">
@@ -53,7 +59,17 @@ function participantCount(item: Record<string, unknown>): number { return Array.
       <button v-for="tab in tabs" :key="tab" :class="{ active: activeTab === tab }" type="button" @click="activeTab = tab">{{ tab }}</button>
     </nav>
     <section class="panel">
-      <template v-if="character">
+      <template v-if="!characterId">
+        <h2>角色列表</h2>
+        <p v-if="characters.length === 0">暂无角色。</p>
+        <ul v-else class="character-list">
+          <li v-for="item in characters" :key="item.characterId">
+            <RouterLink :to="`/v2/workspace/characters/${item.characterId}`">{{ item.name }}</RouterLink>
+            <span>{{ item.summary || "暂无简介" }}</span>
+          </li>
+        </ul>
+      </template>
+      <template v-else-if="character">
         <h2>{{ activeTab }}</h2>
         <p v-if="activeTab === 'overview'">{{ character.summary || "暂无简介" }}</p>
         <dl v-else-if="activeTab === 'persona'"><dt>身份</dt><dd>{{ character.profile?.identity || "暂无" }}</dd><dt>别名 / 标签</dt><dd>{{ [...(character.profile?.aliases ?? []), ...(character.profile?.tags ?? [])].join("、") || "暂无" }}</dd><dt>特质</dt><dd>{{ character.profile?.persona.traits.join("、") || "暂无" }}</dd><dt>说话风格</dt><dd>{{ character.profile?.persona.speechStyle || character.personaText || "暂无" }}</dd></dl>
@@ -85,4 +101,8 @@ h1 { margin: 0; }
 .tabs button.active { color: var(--color-accent-strong); border-bottom: 2px solid var(--color-accent-strong); }
 .panel { margin-top: var(--space-5); padding: var(--space-5); border: 1px solid var(--color-border); border-radius: 16px; background: var(--color-surface); min-height: 220px; }
 dt { font-weight: 600; } dd { white-space: pre-wrap; color: var(--color-text-secondary); }
+.character-list { display: grid; gap: var(--space-2); padding: 0; list-style: none; }
+.character-list li { display: grid; gap: var(--space-1); padding: var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+.character-list a { color: var(--color-accent-strong); font-weight: 600; }
+.character-list span { color: var(--color-text-secondary); }
 </style>

@@ -134,8 +134,11 @@ export const v2CharacterVisualMigration: V2SqliteMigration = {
       asset_id TEXT NOT NULL,
       PRIMARY KEY (visual_variant_id, asset_id)
     );
+    CREATE UNIQUE INDEX v2_character_visual_default_unique
+      ON v2_character_visual_variants(story_world_id, character_id)
+      WHERE is_default = 1 AND archived_at IS NULL;
   `),
-  down: (db) => db.exec(`DROP TABLE IF EXISTS v2_character_reference_assets; DROP TABLE IF EXISTS v2_character_visual_variants;`),
+  down: (db) => db.exec(`DROP INDEX IF EXISTS v2_character_visual_default_unique; DROP TABLE IF EXISTS v2_character_reference_assets; DROP TABLE IF EXISTS v2_character_visual_variants;`),
 };
 
 export const v2CharacterEventsCandidatesMigration: V2SqliteMigration = {
@@ -172,7 +175,8 @@ export const v2CharacterEventsCandidatesMigration: V2SqliteMigration = {
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
       reviewed_at TEXT,
       reviewer TEXT,
-      review_reason TEXT
+      review_reason TEXT,
+      UNIQUE (story_world_id, candidate_id)
     );
     CREATE TABLE v2_character_candidate_review_audits (
       audit_id INTEGER PRIMARY KEY AUTOINCREMENT,

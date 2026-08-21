@@ -140,7 +140,7 @@ export interface V2CoreUseCases {
   updateCharacterStateDefinition(storyWorldId: V2StoryWorldId, stateDefinitionId: string, input: V2UpdateCharacterStateDefinitionRequest): Promise<V2CanonWriteResponse<V2CharacterStateDefinitionDto>>;
   listCharacterVisualVariants(storyWorldId: V2StoryWorldId, characterId: V2CharacterDto["characterId"]): Promise<readonly V2CharacterVisualVariantDto[]>;
   upsertCharacterVisualVariant(storyWorldId: V2StoryWorldId, input: V2UpsertCharacterVisualVariantRequest): Promise<V2CanonWriteResponse<V2CharacterVisualVariantDto>>;
-  listCharacterEventDefinitions(storyWorldId: V2StoryWorldId): Promise<readonly V2CharacterEventDefinitionDto[]>;
+  listCharacterEventDefinitions(storyWorldId: V2StoryWorldId, characterId?: V2CharacterDto["characterId"]): Promise<readonly V2CharacterEventDefinitionDto[]>;
   upsertCharacterEventDefinition(storyWorldId: V2StoryWorldId, input: V2UpsertCharacterEventDefinitionRequest): Promise<V2CanonWriteResponse<V2CharacterEventDefinitionDto>>;
   getCharacterProactivePolicy(storyWorldId: V2StoryWorldId, characterId: V2CharacterDto["characterId"]): Promise<V2CharacterProactivePolicyDto>;
   updateCharacterProactivePolicy(storyWorldId: V2StoryWorldId, characterId: V2CharacterDto["characterId"], input: V2UpdateCharacterProactivePolicyRequest): Promise<V2CharacterProactivePolicyDto>;
@@ -320,7 +320,11 @@ export function createV2CoreUseCases(
         return { item: toCharacterVisualVariantDto(item), revision };
       }),
     ),
-    listCharacterEventDefinitions: (storyWorldId) => unitOfWork.withCanonTransaction(async ({ canon }) => (await canon.listCharacterEventDefinitions(storyWorldId)).map(toCharacterEventDefinitionDto)),
+    listCharacterEventDefinitions: (storyWorldId, characterId) => unitOfWork.withCanonTransaction(async ({ canon }) =>
+      (await canon.listCharacterEventDefinitions(storyWorldId))
+        .filter((event) => characterId === undefined || event.participantCharacterIds.includes(characterId))
+        .map(toCharacterEventDefinitionDto),
+    ),
     upsertCharacterEventDefinition: (storyWorldId, input) => unitOfWork.withCanonTransaction(async ({ canon }) => withIdempotency(canon, "upsertCharacterEventDefinition", input.idempotencyKey, { storyWorldId, ...input }, async () => {
       await requireWorld(canon, storyWorldId);
       for (const characterId of input.participantCharacterIds) await requireCharacter(canon, storyWorldId, characterId);
@@ -353,12 +357,17 @@ export function createV2CoreUseCases(
       const current = (await canon.getCharacterProactivePolicy(storyWorldId, characterId)) ?? { storyWorldId, characterId, enabled: false, cooldownMinutes: 360, dailyLimit: 3, quietStart: "23:00", quietEnd: "08:00" };
       if (input.cooldownMinutes !== undefined && (!Number.isInteger(input.cooldownMinutes) || input.cooldownMinutes < 0)) throw new V2HttpError(400, "VALIDATION_FAILED", "cooldownMinutes must be non-negative");
       if (input.dailyLimit !== undefined && (!Number.isInteger(input.dailyLimit) || input.dailyLimit < 0)) throw new V2HttpError(400, "VALIDATION_FAILED", "dailyLimit must be non-negative");
+      if (input.quietStart !== undefined) requireHourMinute(input.quietStart, "quietStart");
+      if (input.quietEnd !== undefined) requireHourMinute(input.quietEnd, "quietEnd");
       return canon.updateCharacterProactivePolicy({ ...current, enabled: input.enabled, cooldownMinutes: input.cooldownMinutes ?? current.cooldownMinutes, dailyLimit: input.dailyLimit ?? current.dailyLimit, quietStart: input.quietStart ?? current.quietStart, quietEnd: input.quietEnd ?? current.quietEnd });
     }),
     listCharacterCandidates: (storyWorldId, status) => unitOfWork.withCanonTransaction(({ canon }) => canon.listCharacterCandidates(storyWorldId, status)),
     createCharacterCandidate: (storyWorldId, input) => unitOfWork.withCanonTransaction(async ({ canon }) =>
       withIdempotency(canon, "createCharacterCandidate", input.idempotencyKey, { storyWorldId, ...input }, async () => {
         await requireWorld(canon, storyWorldId);
+        if (!isImplementedCharacterCandidateKind(input.kind)) {
+          throw new V2HttpError(422, "VALIDATION_FAILED", `${input.kind} candidates are not supported by this review flow yet`);
+        }
         const candidate = await canon.createCharacterCandidate({ candidateId: input.candidateId, storyWorldId, kind: input.kind, targetScope: input.targetScope, baseRevision: input.expectedRevision, status: "pending", payload: input.payload, provenance: input.provenance, ...(input.contextHash === undefined ? {} : { contextHash: input.contextHash }) });
         return candidate;
       }),
@@ -374,12 +383,8 @@ export function createV2CoreUseCases(
         if (!candidate) throw new V2HttpError(404, "NOT_FOUND", "Character candidate not found");
         if (candidate.baseRevision !== input.expectedRevision) throw new V2HttpError(409, "STALE_REVISION", "Character candidate revision is stale");
         const status = input.action === "approve" ? "approved" : input.action === "reject" ? "rejected" : "changes_requested";
-        if (status === "approved" && (candidate.kind === "profile_patch" || candidate.kind === "memory_promotion")) {
-          const payload = candidate.payload as { readonly characterId?: string; readonly profile?: V2CharacterProfileInput };
-          if (!payload.characterId || !payload.profile) throw new V2HttpError(422, "VALIDATION_FAILED", "profile_patch candidate payload is invalid");
-          const existing = await requireCharacter(canon, storyWorldId, payload.characterId as never);
-          const profile = mergeProfile(existing.profile ?? emptyCharacterProfile(), payload.profile);
-          await canon.updateCharacter({ ...existing, profile });
+        if (status === "approved") {
+          await applyCharacterCandidate(canon, storyWorldId, candidate);
         }
         const reviewed = await canon.reviewCharacterCandidate({ storyWorldId, candidateId, status, reviewer: input.reviewer, ...(input.reason === undefined ? {} : { reason: input.reason }) });
         if (status === "approved") await canon.advanceRevision(storyWorldId, input.expectedRevision);
@@ -1209,6 +1214,137 @@ function toCharacterEventDefinitionDto(event: import("@living-network/domain/v2"
     initialState: event.initialState,
     ...(event.archivedAt === undefined ? {} : { archivedAt: event.archivedAt }),
   };
+}
+
+type ImplementedCharacterCandidateKind = "profile_patch" | "memory_promotion" | "relationship_upsert" | "visual_variant_upsert" | "event_definition_upsert";
+
+function isImplementedCharacterCandidateKind(kind: V2CharacterCandidateDto["kind"]): kind is ImplementedCharacterCandidateKind {
+  return kind === "profile_patch" || kind === "memory_promotion" || kind === "relationship_upsert" || kind === "visual_variant_upsert" || kind === "event_definition_upsert";
+}
+
+async function applyCharacterCandidate(canon: V2CanonRepository, storyWorldId: V2StoryWorldId, candidate: V2CharacterCandidateDto): Promise<void> {
+  if (!isImplementedCharacterCandidateKind(candidate.kind)) {
+    throw new V2HttpError(422, "VALIDATION_FAILED", `${candidate.kind} candidates are not supported by this review flow yet`);
+  }
+  if (candidate.kind === "profile_patch" || candidate.kind === "memory_promotion") {
+    const payload = requireRecord(candidate.payload, "payload");
+    const characterId = requirePayloadString(payload.characterId, "payload.characterId") as V2CharacterDto["characterId"];
+    const profile = payload.profile as V2CharacterProfileInput | undefined;
+    if (profile === undefined || typeof profile !== "object" || profile === null || Array.isArray(profile)) throw new V2HttpError(422, "VALIDATION_FAILED", "profile_patch candidate payload is invalid");
+    const existing = await requireCharacter(canon, storyWorldId, characterId);
+    await canon.updateCharacter({ ...existing, profile: mergeProfile(existing.profile ?? emptyCharacterProfile(), profile) });
+    return;
+  }
+  if (candidate.kind === "relationship_upsert") {
+    const payload = normalizeCandidatePayload(candidate.payload, "relationship");
+    await requireCharacter(canon, storyWorldId, requirePayloadString(payload.fromCharacterId, "payload.fromCharacterId") as never);
+    await requireCharacter(canon, storyWorldId, requirePayloadString(payload.toCharacterId, "payload.toCharacterId") as never);
+    await canon.upsertCharacterRelationship(createV2CanonCharacterRelationship({
+      relationshipId: requirePayloadString(payload.relationshipId, "payload.relationshipId") as never,
+      storyWorldId,
+      fromCharacterId: requirePayloadString(payload.fromCharacterId, "payload.fromCharacterId") as never,
+      toCharacterId: requirePayloadString(payload.toCharacterId, "payload.toCharacterId") as never,
+      type: requirePayloadString(payload.type, "payload.type") as V2UpsertCharacterRelationshipRequest["type"],
+      ...(payload.customLabel === undefined || payload.customLabel === null ? {} : { customLabel: requirePayloadString(payload.customLabel, "payload.customLabel") }),
+      ...(payload.description === undefined || payload.description === null ? {} : { description: requirePayloadString(payload.description, "payload.description") }),
+      strength: requirePayloadInteger(payload.strength, "payload.strength"),
+      visibility: requirePayloadString(payload.visibility, "payload.visibility") as V2UpsertCharacterRelationshipRequest["visibility"],
+    }));
+    return;
+  }
+  if (candidate.kind === "visual_variant_upsert") {
+    const payload = normalizeCandidatePayload(candidate.payload, "visualVariant");
+    const characterId = requirePayloadString(payload.characterId, "payload.characterId") as V2CharacterDto["characterId"];
+    await requireCharacter(canon, storyWorldId, characterId);
+    await canon.upsertCharacterVisualVariant(createV2CanonCharacterVisualVariant({
+      visualVariantId: requirePayloadString(payload.visualVariantId, "payload.visualVariantId") as never,
+      storyWorldId,
+      characterId,
+      name: requirePayloadString(payload.name, "payload.name"),
+      appearance: optionalStringRecord(payload.appearance, "payload.appearance"),
+      loras: optionalLoras(payload.loras, "payload.loras"),
+      triggerWords: optionalStringList(payload.triggerWords, "payload.triggerWords"),
+      ...(payload.negativePrompt === undefined || payload.negativePrompt === null ? {} : { negativePrompt: requirePayloadString(payload.negativePrompt, "payload.negativePrompt") }),
+      ...(payload.workflowPreset === undefined || payload.workflowPreset === null ? {} : { workflowPreset: requirePayloadString(payload.workflowPreset, "payload.workflowPreset") }),
+      isDefault: payload.isDefault === undefined ? false : requirePayloadBoolean(payload.isDefault, "payload.isDefault"),
+      referenceAssetIds: optionalStringList(payload.referenceAssetIds, "payload.referenceAssetIds"),
+    }));
+    return;
+  }
+  const payload = normalizeCandidatePayload(candidate.payload, "eventDefinition");
+  const participantCharacterIds = optionalStringList(payload.participantCharacterIds, "payload.participantCharacterIds");
+  for (const characterId of participantCharacterIds) await requireCharacter(canon, storyWorldId, characterId as never);
+  await canon.upsertCharacterEventDefinition(createV2CanonCharacterEventDefinition({
+    eventDefinitionId: requirePayloadString(payload.eventDefinitionId, "payload.eventDefinitionId") as never,
+    storyWorldId,
+    name: requirePayloadString(payload.name, "payload.name"),
+    ...(payload.description === undefined || payload.description === null ? {} : { description: requirePayloadString(payload.description, "payload.description") }),
+    participantCharacterIds: participantCharacterIds as V2CharacterEventDefinitionDto["participantCharacterIds"],
+    initialState: optionalScalarRecord(payload.initialState, "payload.initialState"),
+  }));
+}
+
+function normalizeCandidatePayload(payload: unknown, nestedKey: string): Record<string, unknown> {
+  const record = requireRecord(payload, "payload");
+  const nested = record[nestedKey];
+  return nested === undefined ? record : requireRecord(nested, `payload.${nestedKey}`);
+}
+
+function requireRecord(value: unknown, field: string): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) throw new V2HttpError(422, "VALIDATION_FAILED", `${field} must be an object`);
+  return value as Record<string, unknown>;
+}
+
+function requirePayloadString(value: unknown, field: string): string {
+  if (typeof value !== "string" || value.trim().length === 0) throw new V2HttpError(422, "VALIDATION_FAILED", `${field} must be a non-empty string`);
+  return value.trim();
+}
+
+function requirePayloadInteger(value: unknown, field: string): number {
+  if (typeof value !== "number" || !Number.isInteger(value)) throw new V2HttpError(422, "VALIDATION_FAILED", `${field} must be an integer`);
+  return value;
+}
+
+function requirePayloadBoolean(value: unknown, field: string): boolean {
+  if (typeof value !== "boolean") throw new V2HttpError(422, "VALIDATION_FAILED", `${field} must be a boolean`);
+  return value;
+}
+
+function optionalStringList(value: unknown, field: string): readonly string[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw new V2HttpError(422, "VALIDATION_FAILED", `${field} must be an array`);
+  return value.map((item, index) => requirePayloadString(item, `${field}.${index}`));
+}
+
+function optionalStringRecord(value: unknown, field: string): Readonly<Record<string, string>> {
+  if (value === undefined) return {};
+  const record = requireRecord(value, field);
+  return Object.fromEntries(Object.entries(record).map(([key, item]) => [key, requirePayloadString(item, `${field}.${key}`)]));
+}
+
+function optionalScalarRecord(value: unknown, field: string): Readonly<Record<string, string | number | boolean>> {
+  if (value === undefined) return {};
+  const record = requireRecord(value, field);
+  for (const [key, item] of Object.entries(record)) {
+    if (typeof item !== "string" && typeof item !== "number" && typeof item !== "boolean") throw new V2HttpError(422, "VALIDATION_FAILED", `${field}.${key} must be a scalar`);
+  }
+  return record as Readonly<Record<string, string | number | boolean>>;
+}
+
+function optionalLoras(value: unknown, field: string): readonly { readonly name: string; readonly weight: number }[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw new V2HttpError(422, "VALIDATION_FAILED", `${field} must be an array`);
+  return value.map((item, index) => {
+    const record = requireRecord(item, `${field}.${index}`);
+    return {
+      name: requirePayloadString(record.name, `${field}.${index}.name`),
+      weight: typeof record.weight === "number" ? record.weight : requirePayloadInteger(record.weight, `${field}.${index}.weight`),
+    };
+  });
+}
+
+function requireHourMinute(value: string, field: string): void {
+  if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(value)) throw new V2HttpError(400, "VALIDATION_FAILED", `${field} must be HH:MM`);
 }
 
 function mergeProfile(existing: import("@living-network/domain/v2").V2CanonCharacterProfile, input: V2CharacterProfileInput): import("@living-network/domain/v2").V2CanonCharacterProfile {

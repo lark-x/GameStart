@@ -1034,3 +1034,166 @@ test("V2 core API preserves omitted optional canon fields and clears explicit nu
     cleanup();
   }
 });
+
+test("V2 character center endpoints return view contracts and filter events by character", async () => {
+  const { db, cleanup } = openV2TempSqliteConnection();
+  applyV2Migrations(db);
+  const app = createSqliteCoreApp(db);
+  await app.ready();
+  try {
+    const post = async (url: string, payload: Record<string, unknown>, expectedRevision: number): Promise<number> => {
+      const response = await app.inject({ method: "POST", url, payload: { ...payload, expectedRevision, idempotencyKey: `post-${url}-${expectedRevision}` } });
+      assert.equal(response.statusCode, 201, response.body);
+      return response.json().revision as number;
+    };
+    const world = await app.inject({ method: "POST", url: "/api/v2/core/worlds", payload: { storyWorldId: "world_character_center", name: "World", idempotencyKey: "world-character-center" } });
+    let revision = world.json().revision as number;
+    revision = await post("/api/v2/core/worlds/world_character_center/characters", { characterId: "char_a", name: "A" }, revision);
+    revision = await post("/api/v2/core/worlds/world_character_center/characters", { characterId: "char_b", name: "B" }, revision);
+    revision = await post("/api/v2/core/worlds/world_character_center/characters/char_a/relationships", {
+      relationshipId: "rel_a_b",
+      toCharacterId: "char_b",
+      type: "friend",
+      strength: 20,
+      visibility: "player_visible",
+    }, revision);
+    revision = await post("/api/v2/core/worlds/world_character_center/characters/char_a/visual-variants", {
+      visualVariantId: "variant_a",
+      name: "Default",
+      isDefault: true,
+    }, revision);
+    revision = await post("/api/v2/core/worlds/world_character_center/characters/char_a/state-definitions", {
+      stateDefinitionId: "state_a",
+      key: "Mood",
+      valueType: "string",
+      defaultValue: "calm",
+    }, revision);
+    revision = await post("/api/v2/core/worlds/world_character_center/characters/char_a/events", {
+      eventDefinitionId: "event_a",
+      name: "A Event",
+      participantCharacterIds: ["char_a"],
+    }, revision);
+    await post("/api/v2/core/worlds/world_character_center/characters/char_b/events", {
+      eventDefinitionId: "event_b",
+      name: "B Event",
+      participantCharacterIds: ["char_b"],
+    }, revision);
+
+    const relationships = await app.inject({ method: "GET", url: "/api/v2/core/worlds/world_character_center/characters/char_a/relationships" });
+    assert.equal(relationships.statusCode, 200);
+    assert.equal(relationships.json().relationships[0].relationshipId, "rel_a_b");
+    const variants = await app.inject({ method: "GET", url: "/api/v2/core/worlds/world_character_center/characters/char_a/visual-variants" });
+    assert.equal(variants.json().variants[0].visualVariantId, "variant_a");
+    const definitions = await app.inject({ method: "GET", url: "/api/v2/core/worlds/world_character_center/characters/char_a/state-definitions" });
+    assert.equal(definitions.json().definitions[0].stateDefinitionId, "state_a");
+    const events = await app.inject({ method: "GET", url: "/api/v2/core/worlds/world_character_center/characters/char_a/events" });
+    assert.deepEqual(events.json().events.map((event: { eventDefinitionId: string }) => event.eventDefinitionId), ["event_a"]);
+    const traces = await app.inject({ method: "GET", url: "/api/v2/core/worlds/world_character_center/character-context-traces" });
+    assert.deepEqual(traces.json(), { traces: [] });
+  } finally {
+    await app.close();
+    db.close();
+    cleanup();
+  }
+});
+
+test("V2 character candidates apply supported canon changes and reject unsupported runtime kinds", async () => {
+  const { db, cleanup } = openV2TempSqliteConnection();
+  applyV2Migrations(db);
+  const app = createSqliteCoreApp(db);
+  await app.ready();
+  try {
+    const post = async (url: string, payload: Record<string, unknown>, expectedRevision: number): Promise<number> => {
+      const response = await app.inject({ method: "POST", url, payload: { ...payload, expectedRevision, idempotencyKey: `post-${url}-${expectedRevision}` } });
+      assert.equal(response.statusCode, 201, response.body);
+      return response.json().revision as number;
+    };
+    const world = await app.inject({ method: "POST", url: "/api/v2/core/worlds", payload: { storyWorldId: "world_candidate_apply", name: "World", idempotencyKey: "world-candidate-apply" } });
+    let revision = world.json().revision as number;
+    revision = await post("/api/v2/core/worlds/world_candidate_apply/characters", { characterId: "char_a", name: "A" }, revision);
+    revision = await post("/api/v2/core/worlds/world_candidate_apply/characters", { characterId: "char_b", name: "B" }, revision);
+
+    const candidate = await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds/world_candidate_apply/candidates/characters",
+      payload: {
+        candidateId: "candidate_rel",
+        kind: "relationship_upsert",
+        targetScope: "char_a",
+        payload: { relationshipId: "rel_candidate", fromCharacterId: "char_a", toCharacterId: "char_b", type: "rival", strength: -30, visibility: "creator_only" },
+        provenance: { test: true },
+        expectedRevision: revision,
+        idempotencyKey: "candidate-rel",
+      },
+    });
+    assert.equal(candidate.statusCode, 201, candidate.body);
+    const review = await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds/world_candidate_apply/candidates/characters/candidate_rel/review",
+      payload: { action: "approve", reviewer: "test", expectedRevision: revision, idempotencyKey: "review-rel" },
+    });
+    assert.equal(review.statusCode, 200, review.body);
+    revision += 1;
+    const relationships = await app.inject({ method: "GET", url: "/api/v2/core/worlds/world_candidate_apply/characters/char_a/relationships" });
+    assert.equal(relationships.json().relationships[0].relationshipId, "rel_candidate");
+
+    const visualCandidate = await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds/world_candidate_apply/candidates/characters",
+      payload: {
+        candidateId: "candidate_visual",
+        kind: "visual_variant_upsert",
+        targetScope: "char_a",
+        payload: { visualVariantId: "variant_candidate", characterId: "char_a", name: "Night", appearance: { hair: "silver" }, triggerWords: ["silver hair"], loras: [{ name: "mira", weight: 0.8 }], isDefault: true },
+        provenance: { test: true },
+        expectedRevision: revision,
+        idempotencyKey: "candidate-visual",
+      },
+    });
+    assert.equal(visualCandidate.statusCode, 201, visualCandidate.body);
+    const visualReview = await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds/world_candidate_apply/candidates/characters/candidate_visual/review",
+      payload: { action: "approve", reviewer: "test", expectedRevision: revision, idempotencyKey: "review-visual" },
+    });
+    assert.equal(visualReview.statusCode, 200, visualReview.body);
+    revision += 1;
+    const variants = await app.inject({ method: "GET", url: "/api/v2/core/worlds/world_candidate_apply/characters/char_a/visual-variants" });
+    assert.equal(variants.json().variants[0].visualVariantId, "variant_candidate");
+
+    const eventCandidate = await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds/world_candidate_apply/candidates/characters",
+      payload: {
+        candidateId: "candidate_event",
+        kind: "event_definition_upsert",
+        targetScope: "char_a",
+        payload: { eventDefinitionId: "event_candidate", name: "Duel", participantCharacterIds: ["char_a", "char_b"], initialState: { phase: "open" } },
+        provenance: { test: true },
+        expectedRevision: revision,
+        idempotencyKey: "candidate-event",
+      },
+    });
+    assert.equal(eventCandidate.statusCode, 201, eventCandidate.body);
+    const eventReview = await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds/world_candidate_apply/candidates/characters/candidate_event/review",
+      payload: { action: "approve", reviewer: "test", expectedRevision: revision, idempotencyKey: "review-event" },
+    });
+    assert.equal(eventReview.statusCode, 200, eventReview.body);
+    revision += 1;
+    const events = await app.inject({ method: "GET", url: "/api/v2/core/worlds/world_candidate_apply/characters/char_a/events" });
+    assert.equal(events.json().events[0].eventDefinitionId, "event_candidate");
+
+    const unsupported = await app.inject({
+      method: "POST",
+      url: "/api/v2/core/worlds/world_candidate_apply/candidates/characters",
+      payload: { candidateId: "candidate_state", kind: "state_delta", targetScope: "conversation:x", payload: {}, provenance: {}, expectedRevision: revision, idempotencyKey: "candidate-state" },
+    });
+    assert.equal(unsupported.statusCode, 422);
+  } finally {
+    await app.close();
+    db.close();
+    cleanup();
+  }
+});
