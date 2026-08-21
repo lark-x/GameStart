@@ -29,6 +29,7 @@ import {
   v2WebFixtureWorld,
 } from "../fixtures/mock-data.ts";
 import { V2AdapterError } from "./types.ts";
+import { randomUuid } from "../random.ts";
 import type {
   V2ApprovedAssetSummary,
   V2ArcSummary,
@@ -378,7 +379,7 @@ export function createV2MockAdapter(): V2WorkspaceAdapter {
     },
     async uploadManualAsset(input: { readonly file: File; readonly title: string }) {
       const asset = {
-        assetId: `asset:manual:${crypto.randomUUID()}`,
+        assetId: `asset:manual:${randomUuid()}`,
         title: input.title.trim() || input.file.name,
         kind: "scene_background" as const,
         mediaRef: "media://local/v2/assets/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png",

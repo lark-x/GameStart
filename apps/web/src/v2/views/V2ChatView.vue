@@ -18,6 +18,7 @@ import type {
   V2MessageId,
 } from "@living-network/contracts/v2";
 import { createV2ChatClient, type V2ChatStreamEvent } from "../chat/client.ts";
+import { randomUuid } from "../random.ts";
 import ChatCharacterPanel from "../chat/components/ChatCharacterPanel.vue";
 import ChatConversationSidebar from "../chat/components/ChatConversationSidebar.vue";
 import ChatEmojiPicker from "../chat/components/ChatEmojiPicker.vue";
@@ -200,7 +201,7 @@ async function loadChat(): Promise<void> {
   errorMessage.value = "";
   try {
     const [conversation, history] = await Promise.all([
-      client.listConversations().then((items) => items.find((item) => item.conversationId === conversationId.value)),
+      client.listConversationSummaries().then((items) => items.find((item) => item.conversationId === conversationId.value)),
       client.listMessages(conversationId.value as V2ConversationId, { limit: 50 }),
     ]);
     conversationTitle.value = conversation?.title ?? "故事对话";
@@ -309,7 +310,7 @@ async function sendMessage(): Promise<void> {
     const response = await client.sendMessage(conversationId.value as V2ConversationId, {
       ...(text ? { text } : {}),
       ...(attachmentIds.length ? { attachmentIds: attachmentIds as V2MediaId[] } : {}),
-      idempotencyKey: `user:${Date.now()}:${crypto.randomUUID()}` as V2IdempotencyKey,
+      idempotencyKey: `user:${Date.now()}:${randomUuid()}` as V2IdempotencyKey,
     });
     messages.value = [...messages.value, response.message];
     input.value = "";
@@ -369,8 +370,8 @@ async function startAssistantReply(openingIdempotencyKey?: string): Promise<void
   streaming.value = true;
   errorMessage.value = "";
   abortController = new AbortController();
-  const placeholderId = `assistant:${Date.now()}:${crypto.randomUUID()}`;
-  const idempotencyKey = openingIdempotencyKey ?? `reply:${Date.now()}:${crypto.randomUUID()}`;
+  const placeholderId = `assistant:${Date.now()}:${randomUuid()}`;
+  const idempotencyKey = openingIdempotencyKey ?? `reply:${Date.now()}:${randomUuid()}`;
   const placeholder: V2ChatMessageDto = {
     messageId: placeholderId as V2ChatMessageDto["messageId"],
     conversationId: conversationId.value as V2ConversationId,

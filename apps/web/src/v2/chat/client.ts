@@ -10,7 +10,6 @@ import type {
   V2ChatMessageDto,
   V2ChatMessagePageResponse,
   V2ConversationId,
-  V2ConversationListResponse,
   V2CreateConversationRequest,
   V2CreateConversationResponse,
   V2CreateChatStickerRequest,
@@ -22,6 +21,8 @@ import type {
   V2SendChatMessageResponse,
   V2TriggerStoryAnalyzeResponse,
 } from "@living-network/contracts/v2";
+
+import { randomUuid } from "../random.ts";
 
 export interface V2ChatClientOptions {
   readonly baseUrl: string;
@@ -131,9 +132,6 @@ export function createV2ChatClient(options: V2ChatClientOptions): V2ChatClient {
     async createInstantStory(input: V2CreateInstantStoryRequest): Promise<V2CreateInstantStoryResponse> {
       return readJson<V2CreateInstantStoryResponse>(await fetcher(`${base}/instant-stories`, request("POST", input)));
     },
-    async listConversations(): Promise<V2ConversationListResponse["conversations"]> {
-      return (await readJson<V2ConversationListResponse>(await fetcher(`${base}/chat/conversations`, request("GET")))).conversations;
-    },
     async listConversationSummaries(): Promise<V2ChatConversationSummaryListResponse["conversations"]> {
       return (await readJson<V2ChatConversationSummaryListResponse>(await fetcher(base + "/chat/conversations", request("GET")))).conversations;
     },
@@ -196,7 +194,7 @@ export function createV2ChatClient(options: V2ChatClientOptions): V2ChatClient {
       conversationId: V2ConversationId,
       input?: { readonly idempotencyKey?: string },
     ): Promise<V2TriggerStoryAnalyzeResponse> {
-      const idempotencyKey = input?.idempotencyKey ?? `analyze:${Date.now()}:${crypto.randomUUID()}`;
+      const idempotencyKey = input?.idempotencyKey ?? `analyze:${Date.now()}:${randomUuid()}`;
       return readJson<V2TriggerStoryAnalyzeResponse>(
         await fetcher(`${base}/chat/conversations/${encodeURIComponent(conversationId)}/analyze`, request("POST", { idempotencyKey })),
       );
@@ -220,7 +218,6 @@ export function createV2ChatClient(options: V2ChatClientOptions): V2ChatClient {
 
 export interface V2ChatClient {
   createInstantStory(input: V2CreateInstantStoryRequest): Promise<V2CreateInstantStoryResponse>;
-  listConversations(): Promise<V2ConversationListResponse["conversations"]>;
   listConversationSummaries(): Promise<V2ChatConversationSummaryListResponse["conversations"]>;
   listContacts(): Promise<V2ChatContactsResponse["contacts"]>;
   createConversation(input: V2CreateConversationRequest): Promise<V2CreateConversationResponse>;
