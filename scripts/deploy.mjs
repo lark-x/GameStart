@@ -56,16 +56,19 @@ async function main() {
     return;
   }
 
-  ensureDotEnv(ENV_FILE, ENV_EXAMPLE_FILE);
-  const generatedSecret = ensureSecretKey(ENV_FILE);
-  const dotEnv = loadDotEnv(ENV_FILE);
-  if (generatedSecret) {
-    log("      ✓ Generated INTEGRATION_SECRET_KEY");
-    log("      ✓ Saved to .env (kept stable on future deploys)");
-  }
   const releaseLock = acquireDeployLock(DEPLOY_LOCK_FILE);
 
   try {
+    // Initialize shared configuration only after taking the lock. Otherwise
+    // two first-time deploys can generate different encryption keys and one
+    // process can launch containers with a key the other has just replaced.
+    ensureDotEnv(ENV_FILE, ENV_EXAMPLE_FILE);
+    const generatedSecret = ensureSecretKey(ENV_FILE);
+    const dotEnv = loadDotEnv(ENV_FILE);
+    if (generatedSecret) {
+      log("      ✓ Generated INTEGRATION_SECRET_KEY");
+      log("      ✓ Saved to .env (kept stable on future deploys)");
+    }
     await runDeployment(args, dotEnv);
   } finally {
     releaseLock();
@@ -92,16 +95,12 @@ async function runDeployment(args, dotEnv) {
   const explicitPort = args.port || (dotEnv.WEB_PORT ? parseInt(dotEnv.WEB_PORT, 10) : undefined);
   const lastState = loadDeployState(DEPLOY_STATE_FILE);
   const lastStatePort = lastState?.webPort;
-  const currentDeploymentPort = parseDockerPublishedPort(dockerClient.port("web", 80));
 
-  const portSelection = await selectWebPort({ explicitPort, lastStatePort, currentDeploymentPort, host: hostBind });
+  const portSelection = await selectWebPort({ explicitPort, lastStatePort });
   let currentWebPort = portSelection.port;
-  const portSource = portSelection.occupiedByCurrentDeployment
-    ? `${portSelection.source}, current deployment`
-    : portSelection.source;
 
   log(`      Mode: ${mode} (Host Bind: ${hostBind})`);
-  log(`      Web Port: ${currentWebPort} (${portSource})`);
+  log(`      Web Port: ${currentWebPort} (${portSelection.source})`);
 
   // ── Step 3: Build Images (Once) ────────────────────────────────────────
   log("\n[3/7] Building container images...");
@@ -114,7 +113,7 @@ async function runDeployment(args, dotEnv) {
 
   // ── Step 4: Start Containers (with port collision retry) ───────────────
   log(`\n[4/7] Starting containers...`);
-  const isAutoPort = portSelection.source === "auto";
+  const isAutoPort = portSelection.source !== "explicit";
   let attempt = 0;
 
   while (true) {
