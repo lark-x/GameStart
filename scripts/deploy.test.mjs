@@ -178,10 +178,50 @@ test("selectWebPort handles explicit, reused, and auto ports", async () => {
   assert.equal(r2.port, 18042);
   assert.equal(r2.source, "reused");
 
-  // 4. Auto scan
-  const r3 = await selectWebPort({ lastStatePort: 18000, isAvailable: fakeIsAvailable, findFree: fakeFindFree });
+  // 4. Stable previous ports fail loudly when another process owns them
+  await assert.rejects(
+    async () => selectWebPort({ lastStatePort: 18000, isAvailable: fakeIsAvailable, findFree: fakeFindFree }),
+    DeploymentError,
+  );
+
+  // 5. Auto scan when no previous deployment exists
+  const r3 = await selectWebPort({ isAvailable: fakeIsAvailable, findFree: fakeFindFree });
   assert.equal(r3.port, 18002);
   assert.equal(r3.source, "auto");
+});
+
+test("selectWebPort reuses the current GameStart deployment port even while the old web container is listening", async () => {
+  const fakeIsAvailable = async (port) => port !== 18000;
+  const fakeFindFree = async () => 18001;
+
+  const explicit = await selectWebPort({
+    explicitPort: 18000,
+    currentDeploymentPort: 18000,
+    isAvailable: fakeIsAvailable,
+    findFree: fakeFindFree,
+  });
+  assert.equal(explicit.port, 18000);
+  assert.equal(explicit.source, "explicit");
+  assert.equal(explicit.occupiedByCurrentDeployment, true);
+
+  const reused = await selectWebPort({
+    lastStatePort: 18000,
+    currentDeploymentPort: 18000,
+    isAvailable: fakeIsAvailable,
+    findFree: fakeFindFree,
+  });
+  assert.equal(reused.port, 18000);
+  assert.equal(reused.source, "reused");
+  assert.equal(reused.occupiedByCurrentDeployment, true);
+
+  const current = await selectWebPort({
+    currentDeploymentPort: 18000,
+    isAvailable: fakeIsAvailable,
+    findFree: fakeFindFree,
+  });
+  assert.equal(current.port, 18000);
+  assert.equal(current.source, "current");
+  assert.equal(current.occupiedByCurrentDeployment, true);
 });
 
 test("parseDockerPublishedPort extracts host port number", () => {
@@ -385,6 +425,13 @@ test("ensureDotEnv copies .env.example when .env is missing", () => {
   // Second run does nothing
   const skipped = ensureDotEnv(targetEnv, exampleFile);
   assert.equal(skipped, false);
+});
+
+test("compose Dockerfile keeps application data writable without world-writable permissions", () => {
+  const dockerfile = readFileSync(resolve(import.meta.dirname, "..", "infra", "compose", "Dockerfile"), "utf8");
+  assert.match(dockerfile, /chown -R node:node \/app/);
+  assert.match(dockerfile, /chmod -R 770 \/app\/data/);
+  assert.doesNotMatch(dockerfile, /chmod -R 777 \/app\/data/);
 });
 
 // ---------------------------------------------------------------------------
