@@ -266,8 +266,8 @@ onUnmounted(() => {
 .v2-sidebar {
   display: flex;
   flex-direction: column;
-  flex: 0 0 224px;
-  width: 224px;
+  flex: 0 0 232px;
+  width: 232px;
   min-width: 0;
   padding: var(--space-4) var(--space-3);
   border-right: 1px solid var(--border);
@@ -316,12 +316,13 @@ onUnmounted(() => {
 .v2-brand-mark {
   display: grid;
   flex: 0 0 auto;
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   place-items: center;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: var(--primary);
   color: var(--on-primary);
+  box-shadow: var(--shadow-sm);
 }
 
 .v2-story-switcher {
@@ -343,7 +344,8 @@ onUnmounted(() => {
   color: var(--text-strong);
   cursor: pointer;
   text-align: left;
-  transition: border-color var(--motion-fast), background var(--motion-fast);
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--motion-fast), background var(--motion-fast), transform var(--motion-fast);
 }
 
 .v2-story-switcher-btn:hover {
@@ -360,7 +362,7 @@ onUnmounted(() => {
 .v2-story-switcher-label {
   font-size: 11px;
   color: var(--muted);
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .v2-story-switcher-name {
@@ -394,14 +396,21 @@ onUnmounted(() => {
   padding: var(--space-2);
   display: grid;
   gap: var(--space-2);
+  animation: popoverFade 0.16s ease-out;
+}
+
+@keyframes popoverFade {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .v2-story-popover-head {
   padding: var(--space-1) var(--space-2);
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--muted);
   text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .v2-story-popover-list {
@@ -415,7 +424,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-2);
+  padding: var(--space-2);
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -442,7 +451,7 @@ onUnmounted(() => {
   height: 6px;
   border-radius: var(--radius-full);
   background: currentColor;
-  opacity: 0.6;
+  opacity: 0.7;
 }
 
 .v2-story-popover-title {
@@ -480,24 +489,26 @@ onUnmounted(() => {
 }
 
 .v2-nav {
-  display: grid;
-  gap: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
   overflow: auto;
   min-height: 0;
 }
 
 .v2-nav-link {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  min-height: 38px;
+  min-height: 40px;
   padding: 0 var(--space-3);
   border-radius: var(--radius-md);
   color: var(--muted);
   font-size: var(--text-sm);
   font-weight: 600;
   text-decoration: none;
-  transition: background var(--motion-fast), color var(--motion-fast);
+  transition: background var(--motion-fast), color var(--motion-fast), transform var(--motion-fast);
 }
 
 .v2-nav-link:hover {
@@ -519,20 +530,25 @@ onUnmounted(() => {
   padding: var(--space-3) var(--space-2) 0;
   color: var(--muted);
   font-size: var(--text-xs);
+  font-weight: 500;
+  border-top: 1px solid var(--border);
 }
 
 .v2-runtime-dot {
-  width: 7px;
-  height: 7px;
+  width: 8px;
+  height: 8px;
   border-radius: var(--radius-full);
+  flex-shrink: 0;
 }
 
 .v2-runtime-dot-ok {
   background: var(--success);
+  box-shadow: 0 0 6px var(--success);
 }
 
 .v2-runtime-dot-error {
   background: var(--danger);
+  box-shadow: 0 0 6px var(--danger);
 }
 
 .v2-app-content {
@@ -549,7 +565,7 @@ onUnmounted(() => {
 .v2-route-content {
   width: 100%;
   min-width: 0;
-  padding: var(--space-6);
+  padding: var(--space-6) clamp(16px, 4vw, 48px) var(--space-8);
   margin-inline: auto;
 }
 

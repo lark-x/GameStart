@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { Plus, Search } from "@lucide/vue";
+import { MessageSquare, Plus, Search } from "@lucide/vue";
 import { RouterLink } from "vue-router";
 import type { V2ChatConversationSummaryDto } from "@living-network/contracts/v2";
 
@@ -55,17 +55,32 @@ onMounted(() => {
 <template>
   <div class="chat-sidebar">
     <div class="chat-sidebar-head">
-      <span class="chat-sidebar-title">会话</span>
+      <div class="chat-sidebar-title-group">
+        <MessageSquare :size="16" class="chat-sidebar-icon" aria-hidden="true" />
+        <span class="chat-sidebar-title">会话</span>
+      </div>
       <RouterLink to="/v2/chat" class="chat-sidebar-new">
-        <Button variant="ghost" size="icon" aria-label="返回聊天首页"><Plus :size="16" aria-hidden="true" /></Button>
+        <Button variant="ghost" size="icon" aria-label="返回聊天首页">
+          <Plus :size="16" aria-hidden="true" />
+        </Button>
       </RouterLink>
     </div>
+
     <div class="chat-sidebar-search">
-      <Search :size="14" aria-hidden="true" />
-      <Input v-model="search" placeholder="搜索角色..." aria-label="搜索角色" />
+      <Search :size="14" class="chat-sidebar-search-icon" aria-hidden="true" />
+      <Input
+        v-model="search"
+        placeholder="搜索角色..."
+        aria-label="搜索角色"
+        class="chat-sidebar-search-input"
+      />
     </div>
+
     <p v-if="error" class="chat-sidebar-error" role="alert">{{ error }}</p>
-    <div v-else-if="loading" class="chat-sidebar-status">正在读取...</div>
+    <div v-else-if="loading" class="chat-sidebar-status">正在读取会话…</div>
+    <div v-else-if="filtered.length === 0" class="chat-sidebar-empty">
+      <span>{{ search ? "未找到匹配会话" : "暂无历史会话" }}</span>
+    </div>
     <div v-else class="chat-sidebar-list">
       <button
         v-for="conversation in filtered"
@@ -87,23 +102,35 @@ onMounted(() => {
 
 <style scoped>
 .chat-sidebar {
-  display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr);
-  gap: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
   height: 100%;
   min-height: 0;
+  padding: var(--space-3);
 }
 
 .chat-sidebar-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-2);
+  padding: 0 var(--space-1);
+}
+
+.chat-sidebar-title-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.chat-sidebar-icon {
+  color: var(--primary);
 }
 
 .chat-sidebar-title {
   color: var(--text-strong);
   font-weight: 700;
+  font-size: var(--text-md);
 }
 
 .chat-sidebar-new {
@@ -111,72 +138,101 @@ onMounted(() => {
 }
 
 .chat-sidebar-search {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--surface-soft);
+}
+
+.chat-sidebar-search-icon {
+  position: absolute;
+  left: 10px;
   color: var(--muted);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.chat-sidebar-search-input {
+  width: 100%;
+  padding-left: 32px !important;
+  font-size: var(--text-sm);
+  background: var(--surface-soft);
+  border-radius: var(--radius-md);
 }
 
 .chat-sidebar-error,
-.chat-sidebar-status {
+.chat-sidebar-status,
+.chat-sidebar-empty {
   color: var(--muted);
-  font-size: var(--text-sm);
-  padding: var(--space-2);
+  font-size: var(--text-xs);
+  padding: var(--space-4) var(--space-2);
+  text-align: center;
 }
 
 .chat-sidebar-error {
   color: var(--danger);
+  background: var(--danger-soft);
+  border-radius: var(--radius-sm);
 }
 
 .chat-sidebar-list {
-  display: grid;
-  gap: var(--space-1);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
 }
 
 .chat-sidebar-item {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  display: flex;
   align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2);
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
   border: 1px solid transparent;
   border-radius: var(--radius-md);
   background: transparent;
   color: var(--text);
   cursor: pointer;
   text-align: left;
+  transition: background var(--motion-fast), border-color var(--motion-fast);
 }
 
-.chat-sidebar-item:hover,
-.chat-sidebar-item.active {
+.chat-sidebar-item:hover {
   background: var(--surface-soft);
 }
 
 .chat-sidebar-item.active {
+  background: var(--primary-soft);
   border-color: var(--primary);
+  color: var(--primary);
 }
 
 .chat-sidebar-avatar {
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 999px;
-  background: var(--primary-soft);
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
   color: var(--primary);
-  font-weight: 800;
+  font-weight: 700;
+  font-size: var(--text-sm);
+  flex-shrink: 0;
+}
+
+.chat-sidebar-item.active .chat-sidebar-avatar {
+  background: var(--primary);
+  color: var(--on-primary);
+  border-color: transparent;
 }
 
 .chat-sidebar-main {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 2px;
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .chat-sidebar-name {
@@ -189,6 +245,10 @@ onMounted(() => {
   font-weight: 700;
 }
 
+.chat-sidebar-item.active .chat-sidebar-name {
+  color: var(--primary);
+}
+
 .chat-sidebar-preview {
   min-width: 0;
   overflow: hidden;
@@ -196,5 +256,6 @@ onMounted(() => {
   white-space: nowrap;
   color: var(--muted);
   font-size: var(--text-xs);
+  line-height: 1.3;
 }
 </style>

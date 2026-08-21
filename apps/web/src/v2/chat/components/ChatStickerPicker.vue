@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { ImagePlus } from "@lucide/vue";
 import type { V2ChatStickerDto } from "@living-network/contracts/v2";
 
@@ -70,6 +70,20 @@ function pick(sticker: V2ChatStickerDto): void {
   emit("select", sticker);
 }
 
+function onKeyDown(event: KeyboardEvent): void {
+  if (props.open && event.key === "Escape") {
+    emit("close");
+  }
+}
+
+onMounted(() => {
+  document.addEventListener("keydown", onKeyDown);
+});
+
+onUnmounted(() => {
+  document.removeEventListener("keydown", onKeyDown);
+});
+
 watch(
   () => props.open,
   (open) => {
@@ -80,57 +94,63 @@ watch(
 </script>
 
 <template>
-  <Teleport to="body">
-    <div v-if="props.open" class="chat-sticker-backdrop" @click.self="emit('close')">
-      <div class="chat-sticker-picker" role="dialog" aria-label="选择表情包">
-        <div class="chat-sticker-head">
-          <span>表情包</span>
-          <div class="chat-sticker-import">
-            <input
-              v-model="importLabel"
-              class="chat-sticker-label"
-              placeholder="名称（可选）"
-              aria-label="表情包名称"
-            />
-            <input ref="importInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" class="chat-sticker-file" aria-hidden="true" tabindex="-1" @change="onImportSelected" />
-            <Button variant="secondary" size="sm" :loading="importing" @click="importInput?.click()">
-              <ImagePlus :size="14" aria-hidden="true" />
-              导入
-            </Button>
-          </div>
-        </div>
-        <p v-if="error" class="chat-sticker-error" role="alert">{{ error }}</p>
-        <p v-else-if="loading" class="chat-sticker-status">正在读取...</p>
-        <div v-else-if="visibleStickers.length === 0" class="chat-sticker-empty">还没有表情包，导入一张本地图片开始。</div>
-        <div v-else class="chat-sticker-grid">
-          <button
-            v-for="sticker in visibleStickers"
-            :key="sticker.stickerId"
-            type="button"
-            class="chat-sticker-item"
-            :title="sticker.label"
-            @click="pick(sticker)"
-          >
-            <img :src="client.mediaUrl(sticker.mediaRef)" :alt="sticker.label" loading="lazy" />
-          </button>
+  <div v-if="props.open" class="chat-sticker-popover-wrapper">
+    <div class="chat-sticker-backdrop" aria-hidden="true" @click="emit('close')" />
+    <div class="chat-sticker-picker" role="dialog" aria-label="选择表情包">
+      <div class="chat-sticker-head">
+        <span>表情包</span>
+        <div class="chat-sticker-import">
+          <input
+            v-model="importLabel"
+            class="chat-sticker-label"
+            placeholder="名称（可选）"
+            aria-label="表情包名称"
+          />
+          <input ref="importInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" class="chat-sticker-file" aria-hidden="true" tabindex="-1" @change="onImportSelected" />
+          <Button variant="secondary" size="sm" :loading="importing" @click="importInput?.click()">
+            <ImagePlus :size="14" aria-hidden="true" />
+            导入
+          </Button>
         </div>
       </div>
+      <p v-if="error" class="chat-sticker-error" role="alert">{{ error }}</p>
+      <p v-else-if="loading" class="chat-sticker-status">正在读取...</p>
+      <div v-else-if="visibleStickers.length === 0" class="chat-sticker-empty">还没有表情包，导入一张本地图片开始。</div>
+      <div v-else class="chat-sticker-grid">
+        <button
+          v-for="sticker in visibleStickers"
+          :key="sticker.stickerId"
+          type="button"
+          class="chat-sticker-item"
+          :title="sticker.label"
+          @click="pick(sticker)"
+        >
+          <img :src="client.mediaUrl(sticker.mediaRef)" :alt="sticker.label" loading="lazy" />
+        </button>
+      </div>
     </div>
-  </Teleport>
+  </div>
 </template>
 
 <style scoped>
+.chat-sticker-popover-wrapper {
+  position: absolute;
+  bottom: calc(100% + var(--space-2));
+  left: 0;
+  z-index: 35;
+}
+
 .chat-sticker-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 45;
+  z-index: 34;
+  background: transparent;
 }
 
 .chat-sticker-picker {
-  position: absolute;
-  bottom: 120px;
-  left: 16px;
-  width: min(360px, calc(100vw - 32px));
+  position: relative;
+  z-index: 35;
+  width: 350px;
   max-height: 360px;
   overflow-y: auto;
   padding: var(--space-3);
@@ -138,6 +158,19 @@ watch(
   border-radius: var(--radius-lg);
   background: var(--surface);
   box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(12px);
+  animation: popoverFade 0.16s ease-out;
+}
+
+@keyframes popoverFade {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .chat-sticker-head {
@@ -148,6 +181,7 @@ watch(
   padding-bottom: var(--space-2);
   border-bottom: 1px solid var(--border);
   color: var(--text-strong);
+  font-size: var(--text-sm);
   font-weight: 700;
 }
 
@@ -158,13 +192,18 @@ watch(
 }
 
 .chat-sticker-label {
-  width: 110px;
+  width: 100px;
   padding: 4px 8px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface-soft);
   color: var(--text);
   font-size: var(--text-xs);
+}
+
+.chat-sticker-label:focus {
+  outline: none;
+  border-color: var(--primary);
 }
 
 .chat-sticker-file {
@@ -181,6 +220,7 @@ watch(
   padding: var(--space-3) 0;
   color: var(--muted);
   font-size: var(--text-sm);
+  text-align: center;
 }
 
 .chat-sticker-error {
@@ -202,16 +242,38 @@ watch(
   border-radius: var(--radius-md);
   background: var(--surface-soft);
   cursor: pointer;
+  transition: border-color var(--motion-fast), transform var(--motion-fast);
 }
 
 .chat-sticker-item:hover {
   border-color: var(--primary);
+  transform: scale(1.05);
 }
 
 .chat-sticker-item img {
   max-width: 100%;
-  max-height: 72px;
+  max-height: 64px;
   object-fit: contain;
   border-radius: var(--radius-sm);
+}
+
+@media (max-width: 640px) {
+  .chat-sticker-popover-wrapper {
+    position: fixed;
+    inset: auto 0 0 0;
+    width: 100%;
+    z-index: 50;
+  }
+
+  .chat-sticker-backdrop {
+    background: rgb(0 0 0 / 28%);
+  }
+
+  .chat-sticker-picker {
+    width: 100%;
+    max-height: 50vh;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    border-bottom: none;
+  }
 }
 </style>

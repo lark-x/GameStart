@@ -61,6 +61,10 @@ const modelSummary = computed(() => {
   return `${model.profileName ?? model.model} · ${model.inputModalities.includes("image") ? "文本 · 图片" : "文本"}`;
 });
 
+function avatarInitial(name: string): string {
+  return [...name.trim()][0] ?? "?";
+}
+
 // Multimodal composer state
 interface PendingAttachment {
   readonly mediaId: string;
@@ -136,6 +140,12 @@ function onDocumentKeyDown(event: KeyboardEvent): void {
     }
     if (moreMenuOpen.value) {
       moreMenuOpen.value = false;
+    }
+    if (emojiOpen.value) {
+      emojiOpen.value = false;
+    }
+    if (stickerOpen.value) {
+      stickerOpen.value = false;
     }
   }
 }
@@ -569,210 +579,252 @@ function openConversation(nextId: string): void {
     <aside class="v2-chat-conversations" aria-label="会话列表">
       <ChatConversationSidebar :active-conversation-id="conversationId" @select="openConversation" />
     </aside>
+
     <section class="v2-chat-main">
-    <header class="v2-chat-header">
-      <Button variant="ghost" size="icon" aria-label="返回聊天" @click="router.push('/v2/chat')">
-        <ArrowLeft :size="18" aria-hidden="true" />
-      </Button>
-      <div class="v2-chat-title">
-        <h2>{{ conversationTitle }}</h2>
-        <small v-if="modelSummary" class="v2-chat-model">{{ modelSummary }}</small>
-      </div>
-      <div class="v2-chat-header-actions">
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="角色信息"
-          :aria-expanded="showCharacterPanel"
-          @click="toggleCharacterPanel"
-        >
-          <UserRound :size="18" aria-hidden="true" />
+      <header class="v2-chat-header">
+        <Button variant="ghost" size="icon" aria-label="返回聊天" @click="router.push('/v2/chat')">
+          <ArrowLeft :size="18" aria-hidden="true" />
         </Button>
-        <Button
-          v-if="streaming"
-          variant="secondary"
-          size="sm"
-          @click="stopGeneration"
-        >
-          <Square :size="14" aria-hidden="true" />
-          停止
-        </Button>
-        <div class="v2-chat-more" ref="moreMenuRef">
+        <div class="v2-chat-title">
+          <h2>{{ conversationTitle }}</h2>
+          <small v-if="modelSummary" class="v2-chat-model">{{ modelSummary }}</small>
+        </div>
+        <div class="v2-chat-header-actions">
           <Button
             variant="ghost"
             size="icon"
-            aria-label="更多操作"
-            aria-haspopup="menu"
-            :aria-expanded="moreMenuOpen"
-            @click="moreMenuOpen = !moreMenuOpen"
+            aria-label="角色信息"
+            :aria-expanded="showCharacterPanel"
+            @click="toggleCharacterPanel"
           >
-            <MoreHorizontal :size="18" aria-hidden="true" />
+            <UserRound :size="18" aria-hidden="true" />
           </Button>
-          <div v-if="moreMenuOpen" class="v2-chat-more-menu" role="menu">
-            <button
-              type="button"
-              role="menuitem"
-              class="v2-chat-more-item"
-              :disabled="messages.length === 0 || streaming || analyzing"
-              @click="triggerStoryAnalyze"
+          <Button
+            v-if="streaming"
+            variant="secondary"
+            size="sm"
+            @click="stopGeneration"
+          >
+            <Square :size="14" aria-hidden="true" />
+            停止
+          </Button>
+          <div ref="moreMenuRef" class="v2-chat-more">
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="更多操作"
+              aria-haspopup="menu"
+              :aria-expanded="moreMenuOpen"
+              @click="moreMenuOpen = !moreMenuOpen"
             >
-              <Sparkles :size="15" aria-hidden="true" />
-              提炼剧情
-            </button>
-            <button type="button" role="menuitem" class="v2-chat-more-item" @click="toggleDiagnostics">
-              <Activity :size="15" aria-hidden="true" />
-              上下文诊断
-            </button>
-            <button type="button" role="menuitem" class="v2-chat-more-item" @click="router.push('/v2/workspace/ai-scene-request')">
-              <BookOpen :size="15" aria-hidden="true" />
-              创作工作区
-            </button>
-            <button type="button" role="menuitem" class="v2-chat-more-item" @click="copyConversationId">
-              <Copy :size="15" aria-hidden="true" />
-              复制会话 ID
-            </button>
+              <MoreHorizontal :size="18" aria-hidden="true" />
+            </Button>
+            <div v-if="moreMenuOpen" class="v2-chat-more-menu" role="menu">
+              <button
+                type="button"
+                role="menuitem"
+                class="v2-chat-more-item"
+                :disabled="messages.length === 0 || streaming || analyzing"
+                @click="triggerStoryAnalyze"
+              >
+                <Sparkles :size="15" aria-hidden="true" />
+                提炼剧情
+              </button>
+              <button type="button" role="menuitem" class="v2-chat-more-item" @click="toggleDiagnostics">
+                <Activity :size="15" aria-hidden="true" />
+                上下文诊断
+              </button>
+              <button type="button" role="menuitem" class="v2-chat-more-item" @click="router.push('/v2/workspace/ai-scene-request')">
+                <BookOpen :size="15" aria-hidden="true" />
+                创作工作区
+              </button>
+              <button type="button" role="menuitem" class="v2-chat-more-item" @click="copyConversationId">
+                <Copy :size="15" aria-hidden="true" />
+                复制会话 ID
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-    </header>
+      </header>
 
-    <p v-if="errorMessage" class="v2-chat-error">{{ errorMessage }}</p>
-    <p v-if="featureState === 'error'" class="v2-chat-error" role="alert">
-      无法读取模型能力状态，请刷新后重试。{{ featureError ?? '' }}
-    </p>
-    <p v-if="loading" class="v2-chat-status">正在加载对话…</p>
-
-    <div
-      ref="messagesContainer"
-      class="v2-chat-messages"
-      aria-live="polite"
-      @scroll="handleScroll"
-    >
-      <div v-if="loadingOlder" class="v2-chat-pagination-status">正在加载更早的历史记录…</div>
-      <div v-else-if="loadingOlderError" class="v2-chat-pagination-status v2-chat-pagination-error">
-        加载更早消息失败
-        <Button variant="ghost" size="sm" @click="loadOlderMessages">重试</Button>
-      </div>
-      <div v-else-if="!hasMore && messages.length >= 50" class="v2-chat-pagination-status">已加载全部历史记录</div>
-
-      <article
-        v-for="message in messages"
-        :key="message.messageId"
-        class="v2-chat-message"
-        :class="{ 'v2-chat-message-user': isUser(message), 'v2-chat-message-assistant': !isUser(message) }"
-      >
-        <div class="v2-chat-bubble">
-          <template v-if="message.text">{{ message.text }}</template>
-          <template v-else-if="message.status === 'pending'">…</template>
-          <template v-else>（空消息）</template>
-          <div v-if="message.attachments.length" class="v2-chat-images">
-            <img
-              v-for="attachment in message.attachments"
-              :key="attachment.attachmentId"
-              :src="client.mediaUrl(attachment.mediaRef)"
-              :alt="'聊天图片'"
-              class="v2-chat-image"
-              loading="lazy"
-              @error="(event) => (event.target as HTMLImageElement).style.display = 'none'"
-              @click="openImagePreview(client.mediaUrl(attachment.mediaRef))"
-            />
-          </div>
-        </div>
-        <small
-          v-if="messageStatusLabel(message)"
-          class="v2-chat-meta"
-          :class="{ 'v2-chat-meta-error': message.status === 'failed' }"
-        >
-          {{ messageStatusLabel(message) }}
-        </small>
-      </article>
-
-      <button v-if="showScrollHint" type="button" class="v2-chat-scroll-hint" @click="jumpToLatest">
-        ↓ 查看新消息
-      </button>
-    </div>
-
-    <form class="v2-chat-composer" @submit.prevent="sendMessage()">
-      <p v-if="!modelConfigured" class="v2-chat-composer-notice">
-        尚未配置聊天模型。
-        <RouterLink to="/v2/settings/models">前往模型与能力</RouterLink>
+      <p v-if="errorMessage" class="v2-chat-error">{{ errorMessage }}</p>
+      <p v-if="featureState === 'error'" class="v2-chat-error" role="alert">
+        无法读取模型能力状态，请刷新后重试。{{ featureError ?? '' }}
       </p>
-      <div v-if="pendingAttachments.length" class="v2-chat-attachment-preview" aria-label="待发送图片">
-        <div v-for="(attachment, index) in pendingAttachments" :key="attachment.mediaId" class="v2-chat-attachment-chip">
-          <img :src="client.mediaUrl(attachment.mediaRef)" :alt="'待发送图片 ' + (index + 1)" />
-          <button type="button" :aria-label="'移除图片 ' + (index + 1)" @click="removePendingAttachment(index)">×</button>
+      <p v-if="loading" class="v2-chat-status">正在加载对话…</p>
+
+      <div
+        ref="messagesContainer"
+        class="v2-chat-messages"
+        aria-live="polite"
+        @scroll="handleScroll"
+      >
+        <div v-if="loadingOlder" class="v2-chat-pagination-status">正在加载更早的历史记录…</div>
+        <div v-else-if="loadingOlderError" class="v2-chat-pagination-status v2-chat-pagination-error">
+          加载更早消息失败
+          <Button variant="ghost" size="sm" @click="loadOlderMessages">重试</Button>
         </div>
+        <div v-else-if="!hasMore && messages.length >= 50" class="v2-chat-pagination-status">已加载全部历史记录</div>
+
+        <article
+          v-for="message in messages"
+          :key="message.messageId"
+          class="v2-chat-message-row"
+          :class="{ 'v2-chat-message-user': isUser(message), 'v2-chat-message-assistant': !isUser(message) }"
+        >
+          <div v-if="!isUser(message)" class="v2-chat-avatar v2-chat-avatar-assistant" aria-hidden="true">
+            {{ avatarInitial(conversationTitle) }}
+          </div>
+
+          <div class="v2-chat-message-content">
+            <div class="v2-chat-bubble" :class="{ 'v2-chat-bubble-pending': message.status === 'pending' && !message.text }">
+              <template v-if="message.text">
+                <div class="v2-chat-text">{{ message.text }}</div>
+              </template>
+              <div v-else-if="message.status === 'pending'" class="v2-chat-typing" aria-label="正在生成回复">
+                <span class="v2-chat-typing-dot" />
+                <span class="v2-chat-typing-dot" />
+                <span class="v2-chat-typing-dot" />
+              </div>
+              <template v-else>（空消息）</template>
+
+              <div v-if="message.attachments.length" class="v2-chat-images">
+                <div
+                  v-for="attachment in message.attachments"
+                  :key="attachment.attachmentId"
+                  class="v2-chat-image-card"
+                >
+                  <img
+                    :src="client.mediaUrl(attachment.mediaRef)"
+                    :alt="'聊天图片'"
+                    class="v2-chat-image"
+                    loading="lazy"
+                    @error="(event) => (event.target as HTMLImageElement).style.display = 'none'"
+                    @click="openImagePreview(client.mediaUrl(attachment.mediaRef))"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div
+              v-if="messageStatusLabel(message)"
+              class="v2-chat-status-pill"
+              :class="{
+                'v2-chat-status-error': message.status === 'failed',
+                'v2-chat-status-interrupted': message.status === 'interrupted',
+                'v2-chat-status-pending': message.status === 'pending'
+              }"
+            >
+              <span class="v2-chat-status-dot" />
+              <span>{{ messageStatusLabel(message) }}</span>
+            </div>
+          </div>
+
+          <div v-if="isUser(message)" class="v2-chat-avatar v2-chat-avatar-user" aria-hidden="true">
+            我
+          </div>
+        </article>
+
+        <button v-if="showScrollHint" type="button" class="v2-chat-scroll-hint" @click="jumpToLatest">
+          ↓ 查看新消息
+        </button>
       </div>
-      <input
-        ref="fileInput"
-        type="file"
-        accept="image/png,image/jpeg,image/webp,image/gif"
-        multiple
-        class="v2-chat-file-input"
-        aria-hidden="true"
-        tabindex="-1"
-        @change="onImageSelected"
-      />
-      <Button
-        variant="ghost"
-        size="icon"
-        type="button"
-        aria-label="表情"
-        :aria-expanded="emojiOpen"
-        @click="emojiOpen = !emojiOpen"
-      >
-        <Smile :size="18" aria-hidden="true" />
-      </Button>
-      <Button
-        v-if="imageEnabled"
-        variant="ghost"
-        size="icon"
-        type="button"
-        :loading="imageUploading"
-        :disabled="sending || streaming || loading || imageUploading"
-        aria-label="发送图片"
-        @click="pickImage"
-      >
-        <ImagePlus :size="18" aria-hidden="true" />
-      </Button>
-      <Button
-        v-if="imageEnabled"
-        variant="ghost"
-        size="icon"
-        type="button"
-        aria-label="表情包"
-        :aria-expanded="stickerOpen"
-        @click="stickerOpen = !stickerOpen"
-      >
-        <Sticker :size="18" aria-hidden="true" />
-      </Button>
-      <Textarea
-        v-model="input"
-        variant="composer"
-        auto-grow
-        :rows="1"
-        placeholder="输入消息……"
-        :disabled="sending || streaming || loading || !modelConfigured"
-        aria-label="输入消息"
-      />
-      <Button
-        variant="primary"
-        size="md"
-        type="submit"
-        :loading="sending"
-        :disabled="!canSend"
-      >
-        <Send :size="16" aria-hidden="true" />
-        发送
-      </Button>
-    </form>
+
+      <div class="v2-chat-composer-wrap">
+        <ChatEmojiPicker :open="emojiOpen" @select="insertEmoji" @close="emojiOpen = false" />
+        <ChatStickerPicker :open="stickerOpen" @select="sendSticker" @close="stickerOpen = false" />
+
+        <form class="v2-chat-composer" @submit.prevent="sendMessage()">
+          <p v-if="!modelConfigured" class="v2-chat-composer-notice">
+            尚未配置聊天模型。
+            <RouterLink to="/v2/settings/models">前往模型与能力</RouterLink>
+          </p>
+
+          <div v-if="pendingAttachments.length" class="v2-chat-attachment-preview" aria-label="待发送图片">
+            <div v-for="(attachment, index) in pendingAttachments" :key="attachment.mediaId" class="v2-chat-attachment-chip">
+              <img :src="client.mediaUrl(attachment.mediaRef)" :alt="'待发送图片 ' + (index + 1)" />
+              <button type="button" :aria-label="'移除图片 ' + (index + 1)" @click="removePendingAttachment(index)">×</button>
+            </div>
+          </div>
+
+          <input
+            ref="fileInput"
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            multiple
+            class="v2-chat-file-input"
+            aria-hidden="true"
+            tabindex="-1"
+            @change="onImageSelected"
+          />
+
+          <div class="v2-chat-composer-row">
+            <div class="v2-chat-composer-actions">
+              <Button
+                variant="ghost"
+                size="icon"
+                type="button"
+                aria-label="表情"
+                :aria-expanded="emojiOpen"
+                @click="emojiOpen = !emojiOpen; stickerOpen = false"
+              >
+                <Smile :size="18" aria-hidden="true" />
+              </Button>
+              <Button
+                v-if="imageEnabled"
+                variant="ghost"
+                size="icon"
+                type="button"
+                :loading="imageUploading"
+                :disabled="sending || streaming || loading || imageUploading"
+                aria-label="发送图片"
+                @click="pickImage"
+              >
+                <ImagePlus :size="18" aria-hidden="true" />
+              </Button>
+              <Button
+                v-if="imageEnabled"
+                variant="ghost"
+                size="icon"
+                type="button"
+                aria-label="表情包"
+                :aria-expanded="stickerOpen"
+                @click="stickerOpen = !stickerOpen; emojiOpen = false"
+              >
+                <Sticker :size="18" aria-hidden="true" />
+              </Button>
+            </div>
+
+            <Textarea
+              v-model="input"
+              variant="composer"
+              auto-grow
+              :rows="1"
+              placeholder="输入消息……"
+              :disabled="sending || streaming || loading || !modelConfigured"
+              aria-label="输入消息"
+              @keydown.enter.exact.prevent="sendMessage()"
+            />
+
+            <Button
+              variant="primary"
+              size="md"
+              type="submit"
+              class="v2-chat-send-btn"
+              :loading="sending"
+              :disabled="!canSend"
+            >
+              <Send :size="16" aria-hidden="true" />
+              <span>发送</span>
+            </Button>
+          </div>
+        </form>
+      </div>
     </section>
+
     <aside class="v2-chat-context" aria-label="角色信息">
       <ChatCharacterPanel :context="context" :loading="loadingContext" :error="contextError" />
     </aside>
-
-    <ChatEmojiPicker :open="emojiOpen" @select="insertEmoji" @close="emojiOpen = false" />
-    <ChatStickerPicker :open="stickerOpen" @select="sendSticker" @close="stickerOpen = false" />
 
     <div v-if="showDiagnostics" class="v2-chat-drawer-backdrop" @click="showDiagnostics = false" />
     <aside v-if="showDiagnostics" class="v2-chat-drawer" role="dialog" aria-modal="true" aria-label="上下文诊断面板">
@@ -849,19 +901,19 @@ function openConversation(nextId: string): void {
 <style scoped>
 .v2-chat-page {
   display: grid;
-  grid-template-columns: 260px minmax(520px, 1fr) 300px;
+  grid-template-columns: 280px minmax(0, 1fr) 300px;
   grid-template-areas: "sidebar main context";
   gap: 0;
   height: 100%;
   min-height: 0;
   position: relative;
+  background: var(--surface-soft);
 }
 
 .v2-chat-conversations {
   grid-area: sidebar;
   min-width: 0;
   min-height: 0;
-  padding: var(--space-2);
   border-right: 1px solid var(--border);
   background: var(--surface);
 }
@@ -872,6 +924,7 @@ function openConversation(nextId: string): void {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  background: var(--background);
 }
 
 .v2-chat-context {
@@ -886,7 +939,7 @@ function openConversation(nextId: string): void {
 
 @media (max-width: 1199px) {
   .v2-chat-page {
-    grid-template-columns: 240px minmax(0, 1fr);
+    grid-template-columns: 260px minmax(0, 1fr);
     grid-template-areas: "sidebar main";
   }
 
@@ -911,8 +964,11 @@ function openConversation(nextId: string): void {
   align-items: center;
   flex: 0 0 auto;
   gap: var(--space-3);
-  padding-bottom: var(--space-3);
+  padding: var(--space-3) var(--space-5);
   border-bottom: 1px solid var(--border);
+  background: var(--surface-glass);
+  backdrop-filter: blur(12px);
+  z-index: 10;
 }
 
 .v2-chat-title {
@@ -922,17 +978,19 @@ function openConversation(nextId: string): void {
 
 .v2-chat-title h2 {
   margin: 0;
-  font-size: var(--text-base);
-  color: var(--text);
-}
-
-.v2-chat-title p {
-  margin: 0;
-  font-size: var(--text-xs);
-  color: var(--muted);
+  font-size: var(--text-md);
+  font-weight: 700;
+  color: var(--text-strong);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.v2-chat-model {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--text-xs);
+  color: var(--muted);
 }
 
 .v2-chat-header-actions {
@@ -984,12 +1042,374 @@ function openConversation(nextId: string): void {
   cursor: default;
 }
 
-.v2-chat-diagnostics-card {
+.v2-chat-error {
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: var(--text-sm);
+  border-bottom: 1px solid var(--border);
+}
+
+.v2-chat-status {
+  margin: 0;
+  padding: var(--space-4);
+  color: var(--muted);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+.v2-chat-messages {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4) clamp(16px, 4vw, 36px);
+}
+
+.v2-chat-pagination-status {
+  text-align: center;
+  font-size: var(--text-xs);
+  color: var(--muted);
+  padding: var(--space-1) 0;
+}
+
+.v2-chat-pagination-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  color: var(--danger);
+}
+
+.v2-chat-message-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  max-width: 100%;
+}
+
+.v2-chat-message-user {
+  flex-direction: row-reverse;
+}
+
+.v2-chat-message-assistant {
+  flex-direction: row;
+}
+
+.v2-chat-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  display: grid;
+  place-items: center;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.v2-chat-avatar-assistant {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  color: var(--primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.v2-chat-avatar-user {
+  background: var(--primary-soft);
+  color: var(--primary);
+  border: 1px solid var(--border);
+}
+
+.v2-chat-message-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: min(780px, 82%);
+  min-width: 0;
+}
+
+.v2-chat-message-user .v2-chat-message-content {
+  align-items: flex-end;
+}
+
+.v2-chat-message-assistant .v2-chat-message-content {
+  align-items: flex-start;
+}
+
+.v2-chat-bubble {
   padding: var(--space-3) var(--space-4);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  border-radius: var(--radius-lg);
+  font-size: var(--text-base);
+  line-height: 1.7;
+  color: var(--text);
+  word-break: break-word;
+}
+
+.v2-chat-message-assistant .v2-chat-bubble {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  border-top-left-radius: var(--radius-xs);
+}
+
+.v2-chat-message-user .v2-chat-bubble {
+  background: var(--primary);
+  color: var(--on-primary);
+  box-shadow: var(--shadow-sm);
+  border-top-right-radius: var(--radius-xs);
+}
+
+.v2-chat-bubble-pending {
+  min-width: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.v2-chat-text {
+  white-space: pre-wrap;
+}
+
+.v2-chat-typing {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 6px;
+}
+
+.v2-chat-typing-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--primary);
+  opacity: 0.5;
+  animation: typingPulse 1.2s infinite ease-in-out;
+}
+
+.v2-chat-typing-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.v2-chat-typing-dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes typingPulse {
+  0%, 80%, 100% {
+    transform: scale(0.6);
+    opacity: 0.3;
+  }
+  40% {
+    transform: scale(1.1);
+    opacity: 1;
+  }
+}
+
+.v2-chat-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.v2-chat-image-card {
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+}
+
+.v2-chat-image {
+  max-width: 200px;
+  max-height: 200px;
+  object-fit: cover;
+  cursor: zoom-in;
+  display: block;
+}
+
+.v2-chat-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+}
+
+.v2-chat-status-error {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-color: var(--danger);
+}
+
+.v2-chat-status-interrupted {
+  color: var(--warning);
+  background: var(--warning-soft);
+  border-color: var(--warning);
+}
+
+.v2-chat-status-pending {
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.v2-chat-status-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-full);
+  background: currentColor;
+}
+
+.v2-chat-scroll-hint {
+  position: sticky;
+  bottom: var(--space-3);
+  align-self: center;
+  z-index: 5;
+  min-height: 36px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  color: var(--primary);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: var(--shadow-md);
+}
+
+.v2-chat-composer-wrap {
+  position: relative;
+  flex: 0 0 auto;
+  padding: var(--space-3) clamp(16px, 4vw, 36px) var(--space-4);
+  background: var(--surface-glass);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid var(--border);
+}
+
+.v2-chat-composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+.v2-chat-composer-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.v2-chat-composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.v2-chat-composer .ui-textarea-composer {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.v2-chat-send-btn {
+  flex-shrink: 0;
+}
+
+.v2-chat-composer-notice {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: var(--text-sm);
+}
+
+.v2-chat-composer-notice a {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.v2-chat-attachment-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding-bottom: var(--space-1);
+}
+
+.v2-chat-attachment-chip {
+  position: relative;
+  width: 56px;
+  height: 56px;
+}
+
+.v2-chat-attachment-chip img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+}
+
+.v2-chat-attachment-chip button {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+}
+
+.v2-chat-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.v2-chat-drawer-backdrop {
+  position: fixed;
+  z-index: 40;
+  inset: 0;
+  background: rgb(0 0 0 / 28%);
+}
+
+.v2-chat-drawer {
+  position: fixed;
+  z-index: 41;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(420px, 92vw);
+  padding: var(--space-5);
+  overflow-y: auto;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  display: grid;
+  gap: var(--space-4);
+  align-content: start;
 }
 
 .v2-chat-diagnostics-header {
@@ -1062,232 +1482,27 @@ function openConversation(nextId: string): void {
   color: var(--text);
 }
 
-.v2-chat-error {
-  margin: 0;
-  color: var(--danger);
-  font-size: var(--text-sm);
-}
-
-.v2-chat-status {
-  margin: 0;
-  color: var(--muted);
-  font-size: var(--text-sm);
-}
-
-.v2-chat-messages {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-2);
-}
-
-.v2-chat-error,
-.v2-chat-status,
-.v2-chat-success-banner {
-  flex: 0 0 auto;
-}
-
-.v2-chat-pagination-status {
-  text-align: center;
-  font-size: var(--text-xs);
-  color: var(--muted);
-  padding: var(--space-1) 0;
-}
-
-.v2-chat-pagination-error {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  color: var(--danger);
-}
-
-.v2-chat-scroll-hint {
-  position: sticky;
-  bottom: var(--space-3);
-  align-self: center;
-  z-index: 5;
-  min-height: 36px;
-  padding: 0 var(--space-4);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-full);
-  background: var(--surface);
-  color: var(--primary);
-  font-size: var(--text-sm);
-  font-weight: 700;
-  cursor: pointer;
-  box-shadow: var(--shadow-sm);
-}
-
-.v2-chat-message {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.v2-chat-message-user {
-  align-items: flex-end;
-}
-
-.v2-chat-message-assistant {
-  align-items: flex-start;
-}
-
-.v2-chat-bubble {
-  max-width: min(760px, 88%);
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  color: var(--text);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.v2-chat-message-user .v2-chat-bubble {
-  max-width: min(680px, 80%);
-  background: var(--primary);
-  color: var(--on-primary);
-  border-color: transparent;
-}
-
-.v2-chat-images {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
-}
-
-.v2-chat-image {
-  cursor: zoom-in;
-}
-
-.v2-chat-image {
-  max-width: 180px;
-  max-height: 180px;
-  border-radius: var(--radius-md);
-  object-fit: cover;
-}
-
-.v2-chat-meta {
-  font-size: var(--text-xs);
-  color: var(--muted);
-}
-
-.v2-chat-meta-error {
-  color: var(--danger);
-}
-
-.v2-chat-composer {
-  display: flex;
-  flex: 0 0 auto;
-  gap: var(--space-2);
-  align-items: flex-end;
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--border);
-}
-
-.v2-chat-composer-notice {
-  margin: 0;
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-md);
-  background: var(--warning-soft);
-  color: var(--warning);
-  font-size: var(--text-sm);
-}
-
-.v2-chat-composer-notice a {
-  color: var(--primary);
-  font-weight: 600;
-}
-
-.v2-chat-attachment-preview {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.v2-chat-attachment-chip {
-  position: relative;
-  width: 64px;
-  height: 64px;
-}
-
-.v2-chat-attachment-chip img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border);
-}
-
-.v2-chat-attachment-chip button {
-  position: absolute;
-  top: -6px;
-  right: -6px;
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--text);
-  cursor: pointer;
-}
-
-.v2-chat-composer .ui-textarea-composer {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.v2-chat-file-input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
-.v2-chat-drawer-backdrop {
-  position: fixed;
-  z-index: 40;
-  inset: 0;
-  background: rgb(0 0 0 / 28%);
-}
-
-.v2-chat-drawer {
-  position: fixed;
-  z-index: 41;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: min(420px, 92vw);
-  padding: var(--space-5);
-  overflow-y: auto;
-  background: var(--surface);
-  border-left: 1px solid var(--border);
-  box-shadow: var(--shadow-lg);
-  display: grid;
-  gap: var(--space-4);
-  align-content: start;
-}
-
-.v2-chat-model {
-  display: block;
-  margin-top: 2px;
-  font-size: var(--text-xs);
-  color: var(--muted);
-}
-
 @media (max-width: 640px) {
+  .v2-chat-header {
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .v2-chat-messages {
+    padding: var(--space-3) var(--space-2);
+  }
+
+  .v2-chat-message-content {
+    max-width: 88%;
+  }
+
+  .v2-chat-composer-wrap {
+    padding: var(--space-2) var(--space-2) var(--space-3);
+  }
+
+  .v2-chat-composer-row {
+    gap: var(--space-1);
+  }
+
   .v2-chat-drawer {
     top: auto;
     right: 0;
@@ -1298,17 +1513,6 @@ function openConversation(nextId: string): void {
     border-left: 0;
     border-top: 1px solid var(--border);
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-  }
-}
-
-@media (max-width: 640px) {
-  .v2-chat-bubble,
-  .v2-chat-message-user .v2-chat-bubble {
-    max-width: 94%;
-  }
-
-  .v2-chat-composer {
-    gap: var(--space-1);
   }
 }
 </style>
