@@ -21,6 +21,9 @@ export interface V2RuntimeSaveRecord {
   readonly currentSceneId: string;
   readonly stateValues: Record<string, string | number | boolean>;
   readonly choiceHistory: readonly string[];
+  readonly characterState?: Record<string, Record<string, string | number | boolean>>;
+  readonly relationshipRuntime?: Record<string, number>;
+  readonly eventInstances?: readonly { readonly eventInstanceId: string; readonly eventDefinitionId: string; readonly state: Record<string, string | number | boolean> }[];
   readonly label?: string;
   readonly createdAt?: string;
 }

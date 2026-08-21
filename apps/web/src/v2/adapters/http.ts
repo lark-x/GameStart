@@ -377,6 +377,7 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
             ...(character.summary === undefined ? {} : { summary: character.summary }),
             ...(character.personaText === undefined ? {} : { personaText: character.personaText }),
             ...(character.homeLocationId === undefined ? {} : { homeLocationId: character.homeLocationId }),
+            ...(character.profile === undefined ? {} : { profile: character.profile }),
           })),
           locations: canon.locations.map((location) => ({
             locationId: location.locationId,
@@ -412,7 +413,7 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
             ...(choice.targetSceneId === undefined ? {} : { targetSceneId: choice.targetSceneId }),
             label: choice.label,
             gates: (choice.gates ?? []).map((gate) => ({ stateKey: gate.stateKey, operator: gate.operator, value: gate.value })),
-            consequences: (choice.consequences ?? []).map((consequence) => ({ stateKey: consequence.stateKey, operation: consequence.operation, value: consequence.value })),
+            consequences: (choice.consequences ?? []).map((consequence) => ({ ...consequence })),
           })),
           diagnostics: validation.diagnostics.map((diagnostic) => ({
             code: diagnostic.code,

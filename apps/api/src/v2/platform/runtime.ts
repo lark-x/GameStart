@@ -11,6 +11,7 @@ import {
   applyV2Migrations,
   openV2SqliteConnection,
   V2SqliteAssetGenerationRepository,
+  V2SqliteCanonRepository,
   V2SqliteCanonUnitOfWork,
   V2SqliteCanonSnapshotReader,
   V2SqliteCandidateReviewUnitOfWork,
@@ -196,6 +197,7 @@ export function createV2ApiRuntime(options: {
     },
     generationPlugin: createV2GenerationPlugin({
       canonSnapshots: new V2SqliteCanonSnapshotReader(db),
+      characterVisuals: new V2SqliteCanonRepository(db),
       jobs,
       assetJobs: assets,
       assetCandidates: assets,

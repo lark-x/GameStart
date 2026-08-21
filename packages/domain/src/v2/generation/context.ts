@@ -20,6 +20,7 @@ export interface V2GenerationContextSourceSnapshot {
   readonly characters: readonly {
     readonly characterId: string;
     readonly name: string;
+    readonly profile?: unknown;
   }[];
   readonly scenes: readonly {
     readonly sceneId: string;
@@ -46,6 +47,7 @@ export interface V2GenerationContextSnapshot {
   readonly characters: readonly {
     readonly characterId: string;
     readonly name: string;
+    readonly profile?: unknown;
   }[];
   readonly scenes: readonly {
     readonly sceneId: string;
@@ -101,6 +103,7 @@ export function buildV2GenerationContextSnapshot(
     characters: input.snapshot.characters.map((character) => ({
       characterId: character.characterId,
       name: character.name,
+      ...(character.profile === undefined ? {} : { profile: character.profile }),
     })),
     scenes: input.snapshot.scenes.map((scene) => ({
       sceneId: scene.sceneId,

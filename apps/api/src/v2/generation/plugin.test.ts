@@ -41,7 +41,7 @@ import type {
   V2ApprovedAssetRef,
 } from "@living-network/ports/v2";
 import { createV2FastifyApp } from "../platform/index.ts";
-import { createV2GenerationPlugin } from "./plugin.ts";
+import { createV2GenerationPlugin, type CharacterVisualProfileReaderPort } from "./plugin.ts";
 
 const now = "2026-08-12T01:00:00.000Z" as V2IsoDateTime;
 
@@ -60,6 +60,26 @@ class FakeCanonSnapshots implements CanonSnapshotReaderPort {
       characters: [{ characterId: "char_mira" as V2CharacterId, name: "Mira" }],
       scenes: [{ sceneId: "scene_intro", title: "Intro" }],
     };
+  }
+}
+
+class FakeCharacterVisuals implements CharacterVisualProfileReaderPort {
+  public async getCharacter() {
+    return { name: "米拉", summary: "夜行侦察员" };
+  }
+
+  public async listCharacterVisualVariants() {
+    return [{
+      visualVariantId: "variant:night",
+      name: "夜行",
+      appearance: { hair: "银色短发", outfit: "黑色风衣" },
+      loras: [{ name: "mira-night", weight: 0.75 }],
+      triggerWords: ["silver hair", "black coat"],
+      negativePrompt: "低质, 水印",
+      workflowPreset: "night-workflow",
+      isDefault: true,
+      referenceAssetIds: ["asset:ref"],
+    }];
   }
 }
 
@@ -501,6 +521,7 @@ function createApp() {
   const app = createV2FastifyApp({
     generationPlugin: createV2GenerationPlugin({
       canonSnapshots,
+      characterVisuals: new FakeCharacterVisuals(),
       jobs,
       assetJobs: assets,
       assetCandidates: assets,
@@ -710,6 +731,48 @@ test("V2 asset API prepares the final ComfyUI payload for preview", async () => 
     assert.equal(prepared.comfyUiPayload.extra_data.prompt, "Generate bridge key art.");
     assert.equal(prepared.comfyUiPayload.extra_data.negative_prompt, "low quality");
     assert.equal(prepared.comfyUiPayload.extra_data.seed, 42);
+  } finally {
+    await app.close();
+  }
+});
+
+test("V2 asset API renders character image prompt fields in deterministic order", async () => {
+  const { app } = createApp();
+  await app.ready();
+  try {
+    const response = await app.inject({ method: "POST", url: "/api/v2/generation/assets/prepare", payload: {
+      storyWorldId: "world_generation", idempotencyKey: "idem-character-preview", prompt: "雨夜灯光", workflowVersion: "workflow-v1", workflow: { "1": { class_type: "KSampler" } }, mode: "character", characterId: "character:mira", visualVariantId: "variant:night", scene: "码头", location: "北港", emotion: "警觉", negativePrompt: "低质, 低质, 模糊",
+    } });
+    assert.equal(response.statusCode, 200);
+    const prepared = response.json() as V2PrepareAssetGenerationApiResponse;
+    assert.match(prepared.request.prompt, /^平台画风预设：night-workflow\n角色：米拉\n角色简介：夜行侦察员\n视觉变体：夜行\n外观：hair: 银色短发；outfit: 黑色风衣\n触发词：silver hair，black coat\nLoRA：mira-night:0.75\n正式参考素材：asset:ref\n场景：码头\n地点：北港\n情绪动作：警觉\n用户追加：雨夜灯光$/);
+    assert.equal(prepared.request.workflowVersion, "night-workflow");
+    assert.equal(prepared.request.visualVariantId, "variant:night");
+    assert.equal(prepared.request.negativePrompt, "低质, 水印, 模糊");
+  } finally { await app.close(); }
+});
+
+test("V2 asset API reports a business code when character visual profiles are unavailable", async () => {
+  const canonSnapshots = new FakeCanonSnapshots();
+  const jobs = new FakeGenerationJobs();
+  const assets = new FakeAssetStore();
+  const app = createV2FastifyApp({
+    generationPlugin: createV2GenerationPlugin({
+      canonSnapshots,
+      jobs,
+      assetJobs: assets,
+      assetCandidates: assets,
+      assetReviews: assets,
+      capabilities: { sceneGenerationEnabled: true, assetGenerationEnabled: true },
+    }),
+  });
+  await app.ready();
+  try {
+    const response = await app.inject({ method: "POST", url: "/api/v2/generation/assets/prepare", payload: {
+      storyWorldId: "world_generation", idempotencyKey: "idem-character-missing-visuals", prompt: "雨夜灯光", workflowVersion: "workflow-v1", workflow: { "1": { class_type: "KSampler" } }, mode: "character", characterId: "character:mira",
+    } });
+    assert.equal(response.statusCode, 422);
+    assert.equal(response.json().error.code, "VISUAL_PROFILE_UNAVAILABLE");
   } finally {
     await app.close();
   }

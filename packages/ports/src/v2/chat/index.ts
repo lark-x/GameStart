@@ -144,6 +144,11 @@ export interface V2ChatMaintenanceJobRepository {
   getStoryAnalyzeCursor(conversationId: V2ConversationId): Promise<V2MessageId | undefined>;
   setStoryAnalyzeCursor(conversationId: V2ConversationId, messageId: V2MessageId): Promise<void>;
   findJobByDedupeKey(jobType: string, dedupeKey: string): Promise<V2ChatMaintenanceJob | undefined>;
+  countJobsByDedupePrefixSince(input: {
+    readonly jobType: string;
+    readonly dedupePrefix: string;
+    readonly since: string;
+  }): Promise<number>;
   isLeaseOwner(input: {
     readonly jobId: string;
     readonly workerId: string;

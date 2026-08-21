@@ -327,10 +327,28 @@ export const v2RuntimeSaveLabelMigration: V2SqliteMigration = {
   },
 };
 
+export const v2RuntimeCharacterSnapshotMigration: V2SqliteMigration = {
+  id: "0560_v2_runtime_character_snapshots",
+  up: (db) => {
+    for (const table of ["v2_runtime_runs", "v2_runtime_saves"] as const) {
+      const columns = db.prepare(`PRAGMA table_info(${table})`).all() as readonly Record<string, unknown>[];
+      const names = new Set(columns.map((column) => column.name));
+      if (!names.has("character_state_json")) db.exec(`ALTER TABLE ${table} ADD COLUMN character_state_json TEXT NOT NULL DEFAULT '{}'`);
+      if (!names.has("relationship_runtime_json")) db.exec(`ALTER TABLE ${table} ADD COLUMN relationship_runtime_json TEXT NOT NULL DEFAULT '{}'`);
+      if (!names.has("event_instances_json")) db.exec(`ALTER TABLE ${table} ADD COLUMN event_instances_json TEXT NOT NULL DEFAULT '[]'`);
+    }
+  },
+  down: (db) => {
+    // SQLite versions used by the app support DROP COLUMN; preserve the old runtime data while removing only additive fields.
+    db.exec("ALTER TABLE v2_runtime_saves DROP COLUMN event_instances_json; ALTER TABLE v2_runtime_saves DROP COLUMN relationship_runtime_json; ALTER TABLE v2_runtime_saves DROP COLUMN character_state_json; ALTER TABLE v2_runtime_runs DROP COLUMN event_instances_json; ALTER TABLE v2_runtime_runs DROP COLUMN relationship_runtime_json; ALTER TABLE v2_runtime_runs DROP COLUMN character_state_json;");
+  },
+};
+
 export const v2CoreCanonMigrations = [
   v2CoreCanonMigration,
   v2CoreGraphStateMigration,
   v2CoreCandidateReviewMigration,
   v2CoreReleaseRuntimeMigration,
   v2RuntimeSaveLabelMigration,
+  v2RuntimeCharacterSnapshotMigration,
 ] as const;

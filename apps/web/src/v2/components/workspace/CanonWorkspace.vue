@@ -347,7 +347,7 @@ function ruleSeverityLabel(severity: string): string {
               <User :size="18" />
             </div>
           <div class="header-info">
-            <h4>{{ char.name }}</h4>
+            <h4><button class="character-link" type="button" @click="router.push(`/v2/workspace/characters/${char.characterId}`)">{{ char.name }}</button></h4>
             <span class="sub">{{ char.role || '\u89d2\u8272' }}</span>
           </div>
           <Badge tone="info">角色</Badge><Button variant="ghost" size="icon" aria-label="编辑角色" @click="openEditCharacter(char)"><Pencil :size="15" aria-hidden="true" /></Button>
@@ -679,6 +679,9 @@ function ruleSeverityLabel(severity: string): string {
   font-weight: 700;
   color: var(--text-strong);
 }
+
+.character-link { border: 0; padding: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; text-align: left; }
+.character-link:hover { color: var(--primary); text-decoration: underline; }
 
 .header-info .sub {
   font-size: var(--text-xs);

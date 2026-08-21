@@ -71,6 +71,7 @@ export interface V2ChatMessageDto {
   readonly text?: string;
   readonly attachments: readonly V2ChatMessageAttachment[];
   readonly status: V2ChatMessageStatus;
+  readonly source?: "user" | "assistant" | "proactive";
   readonly createdAt: V2IsoDateTime;
   readonly idempotencyKey: V2IdempotencyKey;
   readonly replyToMessageId?: V2MessageId;
@@ -267,6 +268,14 @@ export interface V2MemoryDto {
   readonly lastAccessedAt?: V2IsoDateTime;
 }
 
+export interface V2PromoteMemoryRequest {
+  readonly candidateId: string;
+  readonly targetCharacterId?: V2CharacterId;
+  readonly targetKind?: "profile_patch" | "relationship_upsert" | "event_definition_upsert";
+  readonly expectedRevision: import("../shared/index.ts").V2Revision;
+  readonly idempotencyKey: V2IdempotencyKey;
+}
+
 export interface V2ConversationSummaryDto {
   readonly conversationId: V2ConversationId;
   readonly summary: string;
@@ -303,7 +312,8 @@ export type V2MaintenanceJobType =
   | "conversation_summary"
   | "memory_consolidate"
   | "story_analyze"
-  | "memory_engine_consume";
+  | "memory_engine_consume"
+  | "proactive_message";
 
 export type V2MaintenanceJobStatus = "pending" | "claimed" | "running" | "completed" | "failed";
 
@@ -360,6 +370,15 @@ export interface V2MemoryEngineConsumePayload {
   readonly batchId: string;
 }
 
+export interface V2ProactiveMessagePayload {
+  readonly conversationId: V2ConversationId;
+  readonly storyWorldId: V2StoryWorldId;
+  readonly characterId: V2CharacterId;
+  readonly text: string;
+  readonly idempotencyKey: string;
+  readonly timeBucket: string;
+}
+
 export interface V2StoryAnalyzePayload {
   readonly conversationId: V2ConversationId;
   readonly storyWorldId?: V2StoryWorldId;
@@ -375,7 +394,8 @@ export type V2MaintenanceJobPayload =
   | ({ readonly jobType: "conversation_summary" } & V2ConversationSummaryPayload)
   | ({ readonly jobType: "memory_consolidate" } & V2MemoryConsolidatePayload)
   | ({ readonly jobType: "story_analyze" } & V2StoryAnalyzePayload)
-  | ({ readonly jobType: "memory_engine_consume" } & V2MemoryEngineConsumePayload);
+  | ({ readonly jobType: "memory_engine_consume" } & V2MemoryEngineConsumePayload)
+  | ({ readonly jobType: "proactive_message" } & V2ProactiveMessagePayload);
 
 export interface V2ChatMaintenanceJobDto {
   readonly jobId: string;

@@ -10,6 +10,7 @@ import type {
   V2ApprovedAssetListApiResponse,
   V2AssetGenerationJobApiResponse,
   V2AssetGenerationJobListApiResponse,
+  V2AssetGenerationPreparedRequest,
   V2CreateAssetGenerationJobApiRequest,
   V2CreateAssetGenerationJobApiResponse,
   V2CreateSceneGenerationJobApiRequest,
@@ -45,6 +46,7 @@ export const v2GenerationPlugin: FastifyPluginAsync = async () => {
 
 export interface V2GenerationPluginDependencies {
   readonly canonSnapshots: CanonSnapshotReaderPort;
+  readonly characterVisuals?: CharacterVisualProfileReaderPort;
   readonly jobs: V2GenerationJobRepository;
   readonly assetJobs?: V2AssetGenerationJobRepository;
   readonly assetCandidates?: V2AssetCandidateRepository;
@@ -59,6 +61,28 @@ export interface V2GenerationPluginDependencies {
     readonly sceneGeneration: { readonly enabled: boolean; readonly configured: boolean };
     readonly assetGeneration: { readonly enabled: boolean; readonly configured: boolean };
   }>;
+}
+
+export interface CharacterVisualProfileReaderPort {
+  getCharacter(input: { readonly storyWorldId: V2StoryWorldId; readonly characterId: V2PrepareAssetGenerationApiRequest["characterId"] & {} }): Promise<CharacterVisualProfileCharacter | undefined>;
+  listCharacterVisualVariants(storyWorldId: V2StoryWorldId, characterId: V2PrepareAssetGenerationApiRequest["characterId"] & {}): Promise<readonly CharacterVisualVariant[]>;
+}
+
+export interface CharacterVisualProfileCharacter {
+  readonly name: string;
+  readonly summary?: string;
+}
+
+export interface CharacterVisualVariant {
+  readonly visualVariantId: string;
+  readonly name: string;
+  readonly appearance: Readonly<Record<string, string>>;
+  readonly loras: readonly { readonly name: string; readonly weight: number }[];
+  readonly triggerWords: readonly string[];
+  readonly negativePrompt?: string;
+  readonly workflowPreset?: string;
+  readonly isDefault: boolean;
+  readonly referenceAssetIds: readonly string[];
 }
 
 type JsonRecord = Record<string, unknown>;
@@ -105,7 +129,21 @@ function parseContextPreviewRequest(value: unknown): V2GenerationContextPreviewA
     baseCanonRevision: revision(value.baseCanonRevision),
     prompt: nonEmptyString(value.prompt, "prompt"),
     ...(tokenBudget === undefined ? {} : { tokenBudget }),
-  };
+    ...(value.characterIds === undefined ? {} : { characterIds: parseStringArray(value.characterIds, "characterIds") as V2GenerationContextPreviewApiRequest["characterIds"] }),
+    ...(value.locationId === undefined ? {} : { locationId: nonEmptyString(value.locationId, "locationId") as never }),
+    ...(value.conversationId === undefined ? {} : { conversationId: nonEmptyString(value.conversationId, "conversationId") as never }),
+    ...(value.runId === undefined ? {} : { runId: nonEmptyString(value.runId, "runId") as never }),
+  } as unknown as V2GenerationContextPreviewApiRequest;
+}
+
+function parseStringArray(value: unknown, field: string): readonly string[] {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || item.trim().length === 0)) throw new TypeError(`${field} must be an array of non-empty strings`);
+  return value;
+}
+
+function buildGenerationContext(input: V2GenerationContextPreviewApiRequest, snapshot: Parameters<typeof buildV2GenerationContextSnapshot>[0]["snapshot"], requestedAt: V2IsoDateTime, defaultTokenBudget: number): V2GenerationContextSnapshot {
+  const filtered = input.characterIds === undefined ? snapshot : { ...snapshot, characters: snapshot.characters.filter((character) => input.characterIds?.includes(character.characterId as never)) };
+  return buildV2GenerationContextSnapshot({ snapshot: filtered, prompt: input.prompt, requestedAt, tokenBudget: input.tokenBudget ?? defaultTokenBudget }) as V2GenerationContextSnapshot;
 }
 
 function parseCreateJobRequest(value: unknown): V2CreateSceneGenerationJobApiRequest {
@@ -130,22 +168,40 @@ function parseCreateJobRequest(value: unknown): V2CreateSceneGenerationJobApiReq
 
 function workflowRecord(value: unknown): Record<string, unknown> {
   if (!isRecord(value)) throw new TypeError("workflow must be an object");
+  validateLoraWeights(value);
   return value;
+}
+
+function validateLoraWeights(value: unknown, path = "workflow"): void {
+  if (Array.isArray(value)) { value.forEach((item, index) => validateLoraWeights(item, `${path}[${index}]`)); return; }
+  if (!isRecord(value)) return;
+  for (const [key, item] of Object.entries(value)) {
+    if (/lora.*(weight|strength)|(weight|strength).*lora/i.test(key) && typeof item === "number" && (item < 0 || item > 2)) throw new TypeError(`${path}.${key} must be between 0 and 2`);
+    validateLoraWeights(item, `${path}.${key}`);
+  }
+}
+
+function normalizeNegativePrompt(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  const parts = nonEmptyString(value, "negativePrompt").split(/[,，\n]/).map((part) => part.trim()).filter(Boolean);
+  return [...new Set(parts)].join(", ");
 }
 
 function parseCreateAssetJobRequest(value: unknown): V2CreateAssetGenerationJobApiRequest {
   if (!isRecord(value)) throw new TypeError("request body must be an object");
   const seed = optionalNonNegativeInteger(value.seed, "seed");
   const maxAttempts = optionalPositiveInteger(value.maxAttempts, "maxAttempts");
+  const negativePrompt = value.negativePrompt === undefined ? undefined : normalizeNegativePrompt(value.negativePrompt);
   return {
     storyWorldId: nonEmptyString(value.storyWorldId, "storyWorldId") as V2StoryWorldId,
     idempotencyKey: nonEmptyString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey,
     prompt: nonEmptyString(value.prompt, "prompt"),
     workflowVersion: nonEmptyString(value.workflowVersion, "workflowVersion"),
     workflow: workflowRecord(value.workflow),
-    ...(value.negativePrompt === undefined ? {} : { negativePrompt: nonEmptyString(value.negativePrompt, "negativePrompt") }),
+    ...(negativePrompt === undefined ? {} : { negativePrompt }),
     ...(seed === undefined ? {} : { seed }),
     ...(maxAttempts === undefined ? {} : { maxAttempts }),
+    ...parseCharacterImageFields(value),
   };
 }
 
@@ -160,7 +216,87 @@ function parsePrepareAssetRequest(value: unknown): V2PrepareAssetGenerationApiRe
     workflow: workflowRecord(value.workflow),
     ...(value.negativePrompt === undefined ? {} : { negativePrompt: nonEmptyString(value.negativePrompt, "negativePrompt") }),
     ...(seed === undefined ? {} : { seed }),
+    ...parseCharacterImageFields(value),
   };
+}
+
+function parseCharacterImageFields(value: JsonRecord): Pick<V2PrepareAssetGenerationApiRequest, "mode" | "characterId" | "visualVariantId" | "scene" | "location" | "emotion"> {
+  const mode = value.mode === undefined ? undefined : value.mode === "manual" || value.mode === "character" ? value.mode : undefined;
+  if (value.mode !== undefined && mode === undefined) throw new TypeError("mode must be manual or character");
+  if (mode === "character" && typeof value.characterId !== "string") throw new TypeError("characterId is required for character image mode");
+  return {
+    ...(mode === undefined ? {} : { mode }),
+    ...(value.characterId === undefined ? {} : { characterId: String(value.characterId) as never }),
+    ...(value.visualVariantId === undefined ? {} : { visualVariantId: nonEmptyString(value.visualVariantId, "visualVariantId") }),
+    ...(value.scene === undefined ? {} : { scene: nonEmptyString(value.scene, "scene") }),
+    ...(value.location === undefined ? {} : { location: nonEmptyString(value.location, "location") }),
+    ...(value.emotion === undefined ? {} : { emotion: nonEmptyString(value.emotion, "emotion") }),
+  };
+}
+
+async function prepareAssetRequest(
+  dependencies: V2GenerationPluginDependencies,
+  input: V2CreateAssetGenerationJobApiRequest | V2PrepareAssetGenerationApiRequest,
+): Promise<V2AssetGenerationPreparedRequest> {
+  if (input.mode !== "character") {
+    const negativePrompt = input.negativePrompt === undefined ? undefined : normalizeNegativePrompt(input.negativePrompt);
+    return {
+      idempotencyKey: input.idempotencyKey,
+      prompt: input.prompt,
+      workflowVersion: input.workflowVersion,
+      workflow: input.workflow,
+      ...(negativePrompt === undefined ? {} : { negativePrompt }),
+      ...(input.seed === undefined ? {} : { seed: input.seed }),
+      ...(input.mode === undefined ? {} : { mode: input.mode }),
+    };
+  }
+  if (dependencies.characterVisuals === undefined) throw new V2GenerationBusinessError(422, "VISUAL_PROFILE_UNAVAILABLE", "character visual profiles are not available");
+  if (input.characterId === undefined) throw new V2GenerationBusinessError(422, "VALIDATION_FAILED", "characterId is required for character image mode");
+  const character = await dependencies.characterVisuals.getCharacter({ storyWorldId: input.storyWorldId, characterId: input.characterId });
+  if (character === undefined) throw new V2GenerationBusinessError(422, "VALIDATION_FAILED", "characterId does not reference a character in this world");
+  const variants = await dependencies.characterVisuals.listCharacterVisualVariants(input.storyWorldId, input.characterId);
+  const variant = input.visualVariantId === undefined
+    ? variants.find((item) => item.isDefault) ?? variants[0]
+    : variants.find((item) => item.visualVariantId === input.visualVariantId);
+  if (variant === undefined) throw new V2GenerationBusinessError(422, "VISUAL_PROFILE_REQUIRED", "character image mode requires a visual variant");
+  return {
+    idempotencyKey: input.idempotencyKey,
+    prompt: renderCharacterAssetPrompt(input, character, variant),
+    workflowVersion: variant.workflowPreset ?? input.workflowVersion,
+    workflow: input.workflow,
+    ...mergeNegativePrompts(variant.negativePrompt, input.negativePrompt),
+    ...(input.seed === undefined ? {} : { seed: input.seed }),
+    mode: "character",
+    characterId: input.characterId,
+    visualVariantId: variant.visualVariantId,
+    ...(input.scene === undefined ? {} : { scene: input.scene }),
+    ...(input.location === undefined ? {} : { location: input.location }),
+    ...(input.emotion === undefined ? {} : { emotion: input.emotion }),
+  };
+}
+
+function renderCharacterAssetPrompt(input: Pick<V2AssetGenerationPreparedRequest, "prompt" | "scene" | "location" | "emotion">, character: CharacterVisualProfileCharacter, variant: CharacterVisualVariant): string {
+  const appearance = Object.entries(variant.appearance).map(([key, value]) => `${key}: ${value}`).join("；");
+  const loras = variant.loras.map((lora) => `${lora.name}:${lora.weight}`).join("，");
+  return [
+    `平台画风预设：${variant.workflowPreset ?? "默认"}`,
+    `角色：${character.name}`,
+    character.summary === undefined ? "" : `角色简介：${character.summary}`,
+    `视觉变体：${variant.name}`,
+    appearance.length === 0 ? "" : `外观：${appearance}`,
+    variant.triggerWords.length === 0 ? "" : `触发词：${variant.triggerWords.join("，")}`,
+    loras.length === 0 ? "" : `LoRA：${loras}`,
+    variant.referenceAssetIds.length === 0 ? "" : `正式参考素材：${variant.referenceAssetIds.join("，")}`,
+    input.scene === undefined ? "" : `场景：${input.scene}`,
+    input.location === undefined ? "" : `地点：${input.location}`,
+    input.emotion === undefined ? "" : `情绪动作：${input.emotion}`,
+    `用户追加：${input.prompt}`,
+  ].filter(Boolean).join("\n");
+}
+
+function mergeNegativePrompts(...values: readonly (string | undefined)[]): Pick<V2AssetGenerationPreparedRequest, "negativePrompt"> {
+  const merged = values.flatMap((value) => value === undefined ? [] : value.split(/[,，\n]/).map((part) => part.trim()).filter(Boolean));
+  return merged.length === 0 ? {} : { negativePrompt: [...new Set(merged)].join(", ") };
 }
 
 function stableSceneJobId(input: V2CreateSceneGenerationJobApiRequest): V2JobId {
@@ -216,16 +352,29 @@ function parseCancelReason(value: unknown): string | undefined {
 }
 
 function errorStatus(error: unknown): number {
+  if (error instanceof V2GenerationBusinessError) return error.statusCode;
   if (error instanceof TypeError || (error instanceof Error && error.name === "V2DomainError")) return 422;
   return 500;
 }
 
-function errorPayload(error: unknown): { readonly error: { readonly message: string } } {
+function errorPayload(error: unknown): { readonly error: { readonly code?: string; readonly message: string } } {
   return {
     error: {
+      ...(error instanceof V2GenerationBusinessError ? { code: error.code } : {}),
       message: error instanceof Error ? error.message : String(error),
     },
   };
+}
+
+class V2GenerationBusinessError extends Error {
+  public readonly statusCode: number;
+  public readonly code: string;
+
+  public constructor(statusCode: number, code: string, message: string) {
+    super(message);
+    this.statusCode = statusCode;
+    this.code = code;
+  }
 }
 
 async function replyWithError(reply: FastifyReply, error: unknown): Promise<never> {
@@ -279,12 +428,7 @@ export function createV2GenerationPlugin(
           storyWorldId: input.storyWorldId,
           revision: input.baseCanonRevision,
         });
-        const context = buildV2GenerationContextSnapshot({
-          snapshot,
-          prompt: input.prompt,
-          requestedAt: now().toISOString(),
-          tokenBudget: input.tokenBudget ?? defaultTokenBudget,
-        }) as V2GenerationContextSnapshot;
+        const context = buildGenerationContext(input, snapshot, now().toISOString() as V2IsoDateTime, defaultTokenBudget);
         return { context } satisfies V2GenerationContextPreviewApiResponse;
       } catch (error) {
         return replyWithError(reply, error);
@@ -298,12 +442,7 @@ export function createV2GenerationPlugin(
           storyWorldId: input.storyWorldId,
           revision: input.baseCanonRevision,
         });
-        const context = buildV2GenerationContextSnapshot({
-          snapshot,
-          prompt: input.prompt,
-          requestedAt: now().toISOString(),
-          tokenBudget: input.tokenBudget ?? defaultTokenBudget,
-        }) as V2GenerationContextSnapshot;
+        const context = buildGenerationContext(input, snapshot, now().toISOString() as V2IsoDateTime, defaultTokenBudget);
         const providerRequest = buildV2SceneGenerationProviderRequest({ context });
         if (providerRequest.responseFormat !== "json_object") throw new TypeError("scene generation prepare must request JSON output");
         const messages = providerRequest.messages.map((message) => {
@@ -406,16 +545,17 @@ export function createV2GenerationPlugin(
         if (dependencies.assetJobs === undefined) return replyMissingCapability(reply, "asset generation repository");
         const input = parseCreateAssetJobRequest(request.body);
         const createdAt = now().toISOString() as V2IsoDateTime;
+        const prepared = await prepareAssetRequest(dependencies, input);
         const result = await dependencies.assetJobs.createAssetJob({
           jobId: stableAssetJobId(input),
           storyWorldId: input.storyWorldId,
           idempotencyKey: input.idempotencyKey,
-          prompt: input.prompt,
-          workflowVersion: input.workflowVersion,
-          workflow: input.workflow,
+          prompt: prepared.prompt,
+          workflowVersion: prepared.workflowVersion,
+          workflow: prepared.workflow,
           createdAt,
-          ...(input.negativePrompt === undefined ? {} : { negativePrompt: input.negativePrompt }),
-          ...(input.seed === undefined ? {} : { seed: input.seed }),
+          ...(prepared.negativePrompt === undefined ? {} : { negativePrompt: prepared.negativePrompt }),
+          ...(prepared.seed === undefined ? {} : { seed: prepared.seed }),
           ...(input.maxAttempts === undefined ? {} : { maxAttempts: input.maxAttempts }),
         });
         return reply.code(result.inserted ? 201 : 200).send(result satisfies V2CreateAssetGenerationJobApiResponse);
@@ -428,14 +568,7 @@ export function createV2GenerationPlugin(
       try {
         const input = parsePrepareAssetRequest(request.body);
         const jobId = stableAssetJobId(input);
-        const prepared = {
-          idempotencyKey: input.idempotencyKey,
-          prompt: input.prompt,
-          workflowVersion: input.workflowVersion,
-          workflow: input.workflow,
-          ...(input.negativePrompt === undefined ? {} : { negativePrompt: input.negativePrompt }),
-          ...(input.seed === undefined ? {} : { seed: input.seed }),
-        };
+        const prepared = await prepareAssetRequest(dependencies, input);
         return {
           jobId,
           request: prepared,

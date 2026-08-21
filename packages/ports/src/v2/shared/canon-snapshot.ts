@@ -21,6 +21,7 @@ export interface V2CanonSnapshotFact {
 export interface V2CanonSnapshotCharacter {
   readonly characterId: V2CharacterId;
   readonly name: string;
+  readonly profile?: unknown;
 }
 
 export interface V2CanonSnapshotScene {

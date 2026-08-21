@@ -57,7 +57,7 @@ export function buildV2ReleasePreflight(input: {
     }
     const consequencePreview = previewV2TypedStateDelta({
       schema: input.stateSchema,
-      deltas: choice.consequences.map((consequence) => ({
+      deltas: choice.consequences.filter(isStoryConsequence).map((consequence) => ({
         stateKey: consequence.stateKey,
         operation: consequence.operation,
         value: consequence.value,
@@ -83,6 +83,10 @@ export function buildV2ReleasePreflight(input: {
     valid: diagnostics.every((diagnostic) => diagnostic.severity !== "error"),
     diagnostics,
   };
+}
+
+function isStoryConsequence(consequence: V2GraphChoice["consequences"][number]): consequence is Extract<V2GraphChoice["consequences"][number], { readonly stateKey: string; readonly operation: "set" | "increment" }> {
+  return consequence.kind === undefined || consequence.kind === "story";
 }
 
 export function createV2ReleaseManifest(input: {

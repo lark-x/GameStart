@@ -14,6 +14,7 @@ import type {
   V2SceneGenerationPrepareApiResponse,
   V2StoryWorldDto,
 } from "@living-network/contracts/v2";
+import type { V2CharacterProfileDto } from "@living-network/contracts/v2";
 import type { V2CreateArcRequest, V2CreateChoiceRequest, V2CreateSceneRequest, V2CreateStateVariableRequest } from "@living-network/contracts/v2";
 import type { V2UpdateArcRequest, V2UpdateCharacterRequest, V2UpdateChoiceRequest, V2UpdateFactRequest, V2UpdateLocationRequest, V2UpdateRuleRequest, V2UpdateSceneRequest, V2UpdateStateVariableRequest, V2UpdateTimelineEventRequest } from "@living-network/contracts/v2";
 import type { V2CreateCharacterRequest, V2CreateFactRequest, V2CreateLocationRequest, V2CreateRuleRequest, V2CreateTimelineEventRequest } from "@living-network/contracts/v2";
@@ -46,6 +47,7 @@ export interface V2CharacterSummary {
   readonly summary?: string;
   readonly personaText?: string;
   readonly homeLocationId?: string;
+  readonly profile?: V2CharacterProfileDto;
 }
 
 export interface V2LocationSummary {
@@ -108,9 +110,14 @@ export interface V2StateGateSummary {
 }
 
 export interface V2StateConsequenceSummary {
-  readonly stateKey: string;
-  readonly operation: "set" | "increment";
-  readonly value: boolean | number | string;
+  readonly kind?: "story" | "character" | "relationship" | "event";
+  readonly stateKey?: string;
+  readonly operation: string;
+  readonly value?: boolean | number | string;
+  readonly characterId?: string;
+  readonly fromCharacterId?: string;
+  readonly toCharacterId?: string;
+  readonly eventDefinitionId?: string;
 }
 
 export interface V2GraphDiagnostic {

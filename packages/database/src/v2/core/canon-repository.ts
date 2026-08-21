@@ -10,6 +10,10 @@ import type {
   V2FactVisibility,
   V2IdempotencyKey,
   V2LocationId,
+  V2CharacterContextTraceId,
+  V2CharacterCandidateDto,
+  V2CharacterCandidateStatus,
+  V2CharacterProactivePolicyDto,
   V2Revision,
   V2RuleSeverity,
   V2SceneCandidatePayload,
@@ -19,6 +23,11 @@ import type {
 } from "@living-network/contracts/v2";
 import type {
   V2CanonCharacter,
+  V2CanonCharacterProfile,
+  V2CanonCharacterRelationship,
+  V2CanonCharacterStateDefinition,
+  V2CanonCharacterVisualVariant,
+  V2CanonCharacterEventDefinition,
   V2CanonFact,
   V2CanonLocation,
   V2CanonRule,
@@ -196,6 +205,7 @@ export class V2SqliteCanonSnapshotReader implements CanonSnapshotReaderPort {
       characters: (await canon.listCharacters(input.storyWorldId)).map((character) => ({
         characterId: character.characterId as V2CharacterId,
         name: character.name,
+        ...(character.profile === undefined ? {} : { profile: character.profile }),
       })),
       scenes: (await graph.listScenes(input.storyWorldId)).map((scene) => ({
         sceneId: scene.sceneId,
@@ -263,13 +273,13 @@ export class V2SqliteCanonRepository implements V2CanonRepository {
     readonly storyWorldId: V2StoryWorldId;
     readonly characterId: V2CharacterId;
   }): Promise<V2CanonCharacter | undefined> {
-    const row = this.db.prepare("SELECT * FROM v2_characters WHERE story_world_id = ? AND character_id = ?")
+    const row = this.db.prepare("SELECT c.*, p.aliases_json, p.identity, p.tags_json, p.persona_json FROM v2_characters c LEFT JOIN v2_character_profiles p ON p.story_world_id = c.story_world_id AND p.character_id = c.character_id WHERE c.story_world_id = ? AND c.character_id = ?")
       .get(input.storyWorldId, input.characterId);
     return row === undefined ? undefined : mapCharacter(row);
   }
 
   public async listCharacters(storyWorldId: V2StoryWorldId): Promise<readonly V2CanonCharacter[]> {
-    return this.db.prepare("SELECT * FROM v2_characters WHERE story_world_id = ? ORDER BY created_at, character_id")
+    return this.db.prepare("SELECT c.*, p.aliases_json, p.identity, p.tags_json, p.persona_json FROM v2_characters c LEFT JOIN v2_character_profiles p ON p.story_world_id = c.story_world_id AND p.character_id = c.character_id WHERE c.story_world_id = ? ORDER BY c.created_at, c.character_id")
       .all(storyWorldId)
       .map(mapCharacter);
   }
@@ -279,6 +289,8 @@ export class V2SqliteCanonRepository implements V2CanonRepository {
       INSERT INTO v2_characters (character_id, story_world_id, name, summary, persona_text, home_location_id)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(input.characterId, input.storyWorldId, input.name, input.summary ?? null, input.personaText ?? null, input.homeLocationId ?? null);
+    this.db.prepare(`INSERT INTO v2_character_profiles (story_world_id, character_id, aliases_json, identity, tags_json, persona_json) VALUES (?, ?, ?, ?, ?, ?)`)
+      .run(input.storyWorldId, input.characterId, JSON.stringify(input.profile?.aliases ?? []), input.profile?.identity ?? null, JSON.stringify(input.profile?.tags ?? []), JSON.stringify(input.profile?.persona ?? {}));
     const created = await this.getCharacter({
       storyWorldId: input.storyWorldId as V2StoryWorldId,
       characterId: input.characterId as V2CharacterId,
@@ -361,7 +373,156 @@ export class V2SqliteCanonRepository implements V2CanonRepository {
   public async updateCharacter(input: V2CanonCharacter): Promise<V2CanonCharacter> {
     const result = this.db.prepare("UPDATE v2_characters SET name = ?, summary = ?, persona_text = ?, home_location_id = ? WHERE story_world_id = ? AND character_id = ?").run(input.name, input.summary ?? null, input.personaText ?? null, input.homeLocationId ?? null, input.storyWorldId, input.characterId);
     if (result.changes !== 1) throw new Error("V2 character update did not find a row");
+    this.db.prepare(`UPDATE v2_character_profiles SET aliases_json = ?, identity = ?, tags_json = ?, persona_json = ? WHERE story_world_id = ? AND character_id = ?`)
+      .run(JSON.stringify(input.profile?.aliases ?? []), input.profile?.identity ?? null, JSON.stringify(input.profile?.tags ?? []), JSON.stringify(input.profile?.persona ?? {}), input.storyWorldId, input.characterId);
     return (await this.getCharacter({ storyWorldId: input.storyWorldId as V2StoryWorldId, characterId: input.characterId as V2CharacterId }))!;
+  }
+
+  public async listCharacterRelationships(storyWorldId: V2StoryWorldId, characterId?: V2CharacterId): Promise<readonly V2CanonCharacterRelationship[]> {
+    const rows = characterId
+      ? this.db.prepare("SELECT * FROM v2_character_relationships WHERE story_world_id = ? AND (from_character_id = ? OR to_character_id = ?) AND archived_at IS NULL ORDER BY relationship_id").all(storyWorldId, characterId, characterId)
+      : this.db.prepare("SELECT * FROM v2_character_relationships WHERE story_world_id = ? AND archived_at IS NULL ORDER BY relationship_id").all(storyWorldId);
+    return rows.map(mapCharacterRelationship);
+  }
+
+  public async upsertCharacterRelationship(input: V2CanonCharacterRelationship): Promise<V2CanonCharacterRelationship> {
+    this.db.prepare(`INSERT INTO v2_character_relationships (relationship_id, story_world_id, from_character_id, to_character_id, type, custom_label, description, strength, visibility, archived_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(story_world_id, from_character_id, to_character_id) DO UPDATE SET relationship_id=excluded.relationship_id, type=excluded.type, custom_label=excluded.custom_label, description=excluded.description, strength=excluded.strength, visibility=excluded.visibility, archived_at=excluded.archived_at`)
+      .run(input.relationshipId, input.storyWorldId, input.fromCharacterId, input.toCharacterId, input.type, input.customLabel ?? null, input.description ?? null, input.strength, input.visibility, input.archivedAt ?? null);
+    return mapCharacterRelationship(this.db.prepare("SELECT * FROM v2_character_relationships WHERE story_world_id = ? AND relationship_id = ?").get(input.storyWorldId, input.relationshipId));
+  }
+
+  public async recordCharacterContextTrace(input: {
+    readonly traceId: V2CharacterContextTraceId;
+    readonly storyWorldId: V2StoryWorldId;
+    readonly task: string;
+    readonly contextHash: string;
+    readonly canonRevision: V2Revision;
+    readonly sources: unknown;
+    readonly omittedSources: unknown;
+    readonly budget: unknown;
+  }): Promise<void> {
+    this.db.prepare(`INSERT INTO v2_character_context_traces (trace_id, story_world_id, task, context_hash, canon_revision, selected_sources_json, omitted_sources_json, budget_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(input.traceId, input.storyWorldId, input.task, input.contextHash, input.canonRevision, JSON.stringify(input.sources), JSON.stringify(input.omittedSources), JSON.stringify(input.budget));
+  }
+
+  public async listCharacterContextTraces(storyWorldId: V2StoryWorldId, limit = 100): Promise<readonly import("@living-network/contracts/v2").V2CharacterContextTraceDto[]> {
+    return this.db.prepare("SELECT * FROM v2_character_context_traces WHERE story_world_id = ? ORDER BY created_at DESC, trace_id DESC LIMIT ?").all(storyWorldId, Math.min(Math.max(limit, 1), 500)).map((row) => {
+      const record = requireRecord(row);
+      return {
+        traceId: requireString(record.trace_id, "trace_id") as never,
+        storyWorldId: requireString(record.story_world_id, "story_world_id") as never,
+        task: requireString(record.task, "task") as never,
+        contextHash: requireString(record.context_hash, "context_hash"),
+        canonRevision: Number(record.canon_revision) as never,
+        sources: normalizeTraceSources(parseJsonValue(record.selected_sources_json, "selected_sources_json")),
+        omittedSources: normalizeTraceSources(parseJsonValue(record.omitted_sources_json, "omitted_sources_json")),
+      };
+    });
+  }
+
+  public async listCharacterStateDefinitions(storyWorldId: V2StoryWorldId, characterId?: V2CharacterId): Promise<readonly V2CanonCharacterStateDefinition[]> {
+    const rows = characterId
+      ? this.db.prepare("SELECT * FROM v2_character_state_definitions WHERE story_world_id = ? AND character_id = ? AND archived_at IS NULL ORDER BY key").all(storyWorldId, characterId)
+      : this.db.prepare("SELECT * FROM v2_character_state_definitions WHERE story_world_id = ? AND archived_at IS NULL ORDER BY character_id, key").all(storyWorldId);
+    return rows.map(mapCharacterStateDefinition);
+  }
+
+  public async createCharacterStateDefinition(input: V2CanonCharacterStateDefinition): Promise<V2CanonCharacterStateDefinition> {
+    this.db.prepare("INSERT INTO v2_character_state_definitions (state_definition_id, story_world_id, character_id, key, value_type, default_json, constraints_json) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(input.stateDefinitionId, input.storyWorldId, input.characterId, input.key, input.valueType, JSON.stringify(input.defaultValue), JSON.stringify(input.constraints));
+    return (await this.listCharacterStateDefinitions(input.storyWorldId as V2StoryWorldId, input.characterId as V2CharacterId)).find((item) => item.stateDefinitionId === input.stateDefinitionId)!;
+  }
+
+  public async updateCharacterStateDefinition(input: V2CanonCharacterStateDefinition): Promise<V2CanonCharacterStateDefinition> {
+    const result = this.db.prepare("UPDATE v2_character_state_definitions SET default_json = ?, constraints_json = ?, archived_at = ? WHERE story_world_id = ? AND state_definition_id = ?")
+      .run(JSON.stringify(input.defaultValue), JSON.stringify(input.constraints), input.archivedAt ?? null, input.storyWorldId, input.stateDefinitionId);
+    if (result.changes !== 1) throw new Error("V2 character state definition update did not affect one row");
+    return (await this.listCharacterStateDefinitions(input.storyWorldId as V2StoryWorldId, input.characterId as V2CharacterId)).find((item) => item.stateDefinitionId === input.stateDefinitionId) ?? input;
+  }
+
+  public async listCharacterVisualVariants(storyWorldId: V2StoryWorldId, characterId?: V2CharacterId): Promise<readonly V2CanonCharacterVisualVariant[]> {
+    const rows = characterId
+      ? this.db.prepare("SELECT * FROM v2_character_visual_variants WHERE story_world_id = ? AND character_id = ? AND archived_at IS NULL ORDER BY name").all(storyWorldId, characterId)
+      : this.db.prepare("SELECT * FROM v2_character_visual_variants WHERE story_world_id = ? AND archived_at IS NULL ORDER BY character_id, name").all(storyWorldId);
+    return rows.map((row) => mapCharacterVisualVariant(row, this.db));
+  }
+
+  public async upsertCharacterVisualVariant(input: V2CanonCharacterVisualVariant): Promise<V2CanonCharacterVisualVariant> {
+    for (const assetId of input.referenceAssetIds) {
+      const approved = this.db.prepare("SELECT asset_id FROM v2_approved_assets WHERE asset_id = ? AND story_world_id = ?").get(assetId, input.storyWorldId);
+      if (approved === undefined) throw new V2DomainError("INVALID_INPUT", `Reference asset ${assetId} must be an approved formal asset in this world`);
+    }
+    if (input.isDefault) this.db.prepare("UPDATE v2_character_visual_variants SET is_default = 0 WHERE story_world_id = ? AND character_id = ?").run(input.storyWorldId, input.characterId);
+    this.db.prepare(`INSERT INTO v2_character_visual_variants (visual_variant_id, story_world_id, character_id, name, appearance_json, loras_json, trigger_words_json, negative_prompt, workflow_preset, is_default) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(visual_variant_id) DO UPDATE SET name=excluded.name, appearance_json=excluded.appearance_json, loras_json=excluded.loras_json, trigger_words_json=excluded.trigger_words_json, negative_prompt=excluded.negative_prompt, workflow_preset=excluded.workflow_preset, is_default=excluded.is_default, archived_at=NULL`)
+      .run(input.visualVariantId, input.storyWorldId, input.characterId, input.name, JSON.stringify(input.appearance), JSON.stringify(input.loras), JSON.stringify(input.triggerWords), input.negativePrompt ?? null, input.workflowPreset ?? null, input.isDefault ? 1 : 0);
+    this.db.prepare("DELETE FROM v2_character_reference_assets WHERE visual_variant_id = ?").run(input.visualVariantId);
+    for (const assetId of input.referenceAssetIds) this.db.prepare("INSERT INTO v2_character_reference_assets (visual_variant_id, asset_id) VALUES (?, ?)").run(input.visualVariantId, assetId);
+    return mapCharacterVisualVariant(this.db.prepare("SELECT * FROM v2_character_visual_variants WHERE visual_variant_id = ?").get(input.visualVariantId), this.db);
+  }
+
+  public async listCharacterEventDefinitions(storyWorldId: V2StoryWorldId): Promise<readonly V2CanonCharacterEventDefinition[]> {
+    return this.db.prepare("SELECT * FROM v2_character_event_definitions WHERE story_world_id = ? AND archived_at IS NULL ORDER BY name").all(storyWorldId).map(mapCharacterEventDefinition);
+  }
+
+  public async upsertCharacterEventDefinition(input: V2CanonCharacterEventDefinition): Promise<V2CanonCharacterEventDefinition> {
+    this.db.prepare(`INSERT INTO v2_character_event_definitions (event_definition_id, story_world_id, name, description, participant_ids_json, initial_state_json) VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(event_definition_id) DO UPDATE SET name=excluded.name, description=excluded.description, participant_ids_json=excluded.participant_ids_json, initial_state_json=excluded.initial_state_json, archived_at=NULL`)
+      .run(input.eventDefinitionId, input.storyWorldId, input.name, input.description ?? null, JSON.stringify(input.participantCharacterIds), JSON.stringify(input.initialState));
+    return (await this.listCharacterEventDefinitions(input.storyWorldId as V2StoryWorldId)).find((item) => item.eventDefinitionId === input.eventDefinitionId)!;
+  }
+
+  public async getCharacterProactivePolicy(storyWorldId: V2StoryWorldId, characterId: V2CharacterId): Promise<V2CharacterProactivePolicyDto | undefined> {
+    const row = this.db.prepare("SELECT * FROM v2_character_proactive_policy WHERE story_world_id = ? AND character_id = ?").get(storyWorldId, characterId);
+    if (row === undefined) return undefined;
+    const record = requireRecord(row);
+    return {
+      storyWorldId,
+      characterId,
+      enabled: Number(record.enabled) === 1,
+      cooldownMinutes: Number(record.cooldown_minutes),
+      dailyLimit: Number(record.daily_limit),
+      quietStart: requireString(record.quiet_start, "quiet_start"),
+      quietEnd: requireString(record.quiet_end, "quiet_end"),
+      ...(record.last_executed_at === null ? {} : { lastExecutedAt: requireString(record.last_executed_at, "last_executed_at") }),
+    };
+  }
+
+  public async updateCharacterProactivePolicy(input: V2CharacterProactivePolicyDto): Promise<V2CharacterProactivePolicyDto> {
+    this.db.prepare(`INSERT INTO v2_character_proactive_policy (story_world_id, character_id, enabled, cooldown_minutes, daily_limit, quiet_start, quiet_end, last_executed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(story_world_id, character_id) DO UPDATE SET enabled=excluded.enabled, cooldown_minutes=excluded.cooldown_minutes, daily_limit=excluded.daily_limit, quiet_start=excluded.quiet_start, quiet_end=excluded.quiet_end, last_executed_at=excluded.last_executed_at`)
+      .run(input.storyWorldId, input.characterId, input.enabled ? 1 : 0, input.cooldownMinutes, input.dailyLimit, input.quietStart, input.quietEnd, input.lastExecutedAt ?? null);
+    return (await this.getCharacterProactivePolicy(input.storyWorldId, input.characterId))!;
+  }
+
+  public async createCharacterCandidate(input: Omit<V2CharacterCandidateDto, "createdAt"> & { readonly createdAt?: string }): Promise<V2CharacterCandidateDto> {
+    this.db.prepare("INSERT INTO v2_character_candidates (candidate_id, story_world_id, kind, target_scope, base_revision, status, payload_json, provenance_json, context_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(input.candidateId, input.storyWorldId, input.kind, input.targetScope, input.baseRevision, input.status, JSON.stringify(input.payload), JSON.stringify(input.provenance), input.contextHash ?? null);
+    const created = await this.getCharacterCandidate(input.storyWorldId, input.candidateId);
+    if (!created) throw new Error("Character candidate insert did not return a row");
+    return created;
+  }
+
+  public async getCharacterCandidate(storyWorldId: V2StoryWorldId, candidateId: string): Promise<V2CharacterCandidateDto | undefined> {
+    const row = this.db.prepare("SELECT * FROM v2_character_candidates WHERE story_world_id = ? AND candidate_id = ?").get(storyWorldId, candidateId);
+    return row === undefined ? undefined : mapCharacterCandidate(row);
+  }
+
+  public async listCharacterCandidates(storyWorldId: V2StoryWorldId, status?: V2CharacterCandidateStatus): Promise<readonly V2CharacterCandidateDto[]> {
+    const rows = status === undefined
+      ? this.db.prepare("SELECT * FROM v2_character_candidates WHERE story_world_id = ? ORDER BY created_at DESC, candidate_id").all(storyWorldId)
+      : this.db.prepare("SELECT * FROM v2_character_candidates WHERE story_world_id = ? AND status = ? ORDER BY created_at DESC, candidate_id").all(storyWorldId, status);
+    return rows.map(mapCharacterCandidate);
+  }
+
+  public async reviewCharacterCandidate(input: { readonly storyWorldId: V2StoryWorldId; readonly candidateId: string; readonly status: V2CharacterCandidateStatus; readonly reviewer: string; readonly reason?: string }): Promise<V2CharacterCandidateDto> {
+    const result = this.db.prepare("UPDATE v2_character_candidates SET status = ?, reviewed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), reviewer = ?, review_reason = ? WHERE story_world_id = ? AND candidate_id = ? AND status = 'pending'")
+      .run(input.status, input.reviewer, input.reason ?? null, input.storyWorldId, input.candidateId);
+    if (result.changes !== 1) throw new V2DomainError("INVALID_INPUT", "Character candidate is missing or already reviewed");
+    this.db.prepare("INSERT INTO v2_character_candidate_review_audits (story_world_id, candidate_id, status, reviewer, reason, reviewed_at) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))")
+      .run(input.storyWorldId, input.candidateId, input.status, input.reviewer, input.reason ?? null);
+    return (await this.getCharacterCandidate(input.storyWorldId, input.candidateId))!;
   }
 
   public async updateFact(input: V2CanonFact): Promise<V2CanonFact> {
@@ -404,6 +565,12 @@ export class V2SqliteCanonRepository implements V2CanonRepository {
       VALUES (?, ?, ?, ?)
     `).run(input.key, input.operation, input.payloadHash, JSON.stringify(input.result));
   }
+}
+
+function normalizeTraceSources(value: unknown): readonly { readonly path: string; readonly sourceId?: string; readonly reason: string; readonly tokens: number }[] {
+  if (Array.isArray(value)) return value as readonly { readonly path: string; readonly sourceId?: string; readonly reason: string; readonly tokens: number }[];
+  if (value && typeof value === "object") return Object.entries(value as Record<string, unknown>).map(([path, item]) => ({ path, reason: "legacy_trace", tokens: 1, ...(typeof item === "string" ? { sourceId: item } : {}) }));
+  return [];
 }
 
 export class V2SqliteGraphStateRepository implements V2GraphStateRepository {
@@ -707,9 +874,135 @@ function mapCharacter(row: unknown): V2CanonCharacter {
     name: requireString(record.name, "name"),
     ...(record.summary === null ? {} : { summary: requireString(record.summary, "summary") }),
     ...(record.persona_text === null ? {} : { personaText: requireString(record.persona_text, "persona_text") }),
+    profile: mapCharacterProfile(record),
     ...(record.home_location_id === null ? {} : { homeLocationId: requireString(record.home_location_id, "home_location_id") as V2LocationId }),
     createdAt: requireString(record.created_at, "created_at"),
   };
+}
+
+function mapCharacterProfile(record: Record<string, unknown>): V2CanonCharacterProfile {
+  const legacy = record.persona_text === null ? undefined : requireString(record.persona_text, "persona_text");
+  const aliases = parseCharacterJsonArray(record.aliases_json);
+  const tags = parseCharacterJsonArray(record.tags_json);
+  const personaRecord = parseJsonRecord(record.persona_json);
+  return {
+    aliases,
+    tags,
+    ...(record.identity === null || record.identity === undefined ? {} : { identity: requireString(record.identity, "identity") }),
+    persona: {
+      traits: parseCharacterJsonArray(personaRecord.traits),
+      behaviorPatterns: parseCharacterJsonArray(personaRecord.behaviorPatterns),
+      values: parseCharacterJsonArray(personaRecord.values),
+      taboos: parseCharacterJsonArray(personaRecord.taboos),
+      ...(typeof personaRecord.speechStyle === "string" ? { speechStyle: personaRecord.speechStyle } : {}),
+      ...(typeof personaRecord.backgroundStory === "string" ? { backgroundStory: personaRecord.backgroundStory } : {}),
+      ...(typeof personaRecord.advancedPrompt === "string" ? { advancedPrompt: personaRecord.advancedPrompt } : legacy === undefined ? {} : { advancedPrompt: legacy }),
+    },
+  };
+}
+
+function parseCharacterJsonArray(value: unknown): readonly string[] {
+  if (Array.isArray(value)) return value.filter((item): item is string => typeof item === "string");
+  if (typeof value !== "string") return [];
+  try { const parsed = JSON.parse(value); return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : []; } catch { return []; }
+}
+
+function parseJsonRecord(value: unknown): Record<string, unknown> {
+  if (typeof value !== "string") return {};
+  try { const parsed = JSON.parse(value); return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}; } catch { return {}; }
+}
+
+function mapCharacterRelationship(row: unknown): V2CanonCharacterRelationship {
+  const record = requireRecord(row);
+  return {
+    relationshipId: requireString(record.relationship_id, "relationship_id"),
+    storyWorldId: requireString(record.story_world_id, "story_world_id"),
+    fromCharacterId: requireString(record.from_character_id, "from_character_id"),
+    toCharacterId: requireString(record.to_character_id, "to_character_id"),
+    type: requireString(record.type, "type") as V2CanonCharacterRelationship["type"],
+    ...(record.custom_label === null ? {} : { customLabel: requireString(record.custom_label, "custom_label") }),
+    ...(record.description === null ? {} : { description: requireString(record.description, "description") }),
+    strength: Number(record.strength),
+    visibility: requireString(record.visibility, "visibility") as V2CanonCharacterRelationship["visibility"],
+    ...(record.archived_at === null ? {} : { archivedAt: requireString(record.archived_at, "archived_at") }),
+  };
+}
+
+function mapCharacterStateDefinition(row: unknown): V2CanonCharacterStateDefinition {
+  const record = requireRecord(row);
+  const valueType = requireString(record.value_type, "value_type") as V2CanonCharacterStateDefinition["valueType"];
+  const defaultValue = JSON.parse(requireString(record.default_json, "default_json")) as unknown;
+  if (typeof defaultValue !== valueType) throw new Error("Character state default type mismatch");
+  return {
+    stateDefinitionId: requireString(record.state_definition_id, "state_definition_id"),
+    storyWorldId: requireString(record.story_world_id, "story_world_id"),
+    characterId: requireString(record.character_id, "character_id"),
+    key: requireString(record.key, "key"),
+    valueType,
+    defaultValue: defaultValue as string | number | boolean,
+    constraints: parseCharacterScalarRecord(record.constraints_json),
+    ...(record.archived_at === null ? {} : { archivedAt: requireString(record.archived_at, "archived_at") }),
+  };
+}
+
+function parseCharacterScalarRecord(value: unknown): Readonly<Record<string, string | number | boolean>> {
+  const parsed = parseJsonRecord(value);
+  const entries = Object.entries(parsed).filter(([, item]) => typeof item === "string" || typeof item === "number" || typeof item === "boolean");
+  return Object.fromEntries(entries) as Readonly<Record<string, string | number | boolean>>;
+}
+
+function mapCharacterVisualVariant(row: unknown, db: DatabaseSync): V2CanonCharacterVisualVariant {
+  const record = requireRecord(row);
+  return {
+    visualVariantId: requireString(record.visual_variant_id, "visual_variant_id"),
+    storyWorldId: requireString(record.story_world_id, "story_world_id"),
+    characterId: requireString(record.character_id, "character_id"),
+    name: requireString(record.name, "name"),
+    appearance: parseJsonRecord(record.appearance_json) as Readonly<Record<string, string>>,
+    loras: parseJsonArray<{ readonly name: string; readonly weight: number }>(record.loras_json, "loras_json"),
+    triggerWords: parseJsonArray<string>(record.trigger_words_json, "trigger_words_json"),
+    ...(record.negative_prompt === null ? {} : { negativePrompt: requireString(record.negative_prompt, "negative_prompt") }),
+    ...(record.workflow_preset === null ? {} : { workflowPreset: requireString(record.workflow_preset, "workflow_preset") }),
+    isDefault: Number(record.is_default) === 1,
+    referenceAssetIds: db.prepare("SELECT asset_id FROM v2_character_reference_assets WHERE visual_variant_id = ? ORDER BY asset_id").all(requireString(record.visual_variant_id, "visual_variant_id")).map((item) => requireString((item as Record<string, unknown>).asset_id, "asset_id")),
+    ...(record.archived_at === null ? {} : { archivedAt: requireString(record.archived_at, "archived_at") }),
+  };
+}
+
+function mapCharacterCandidate(row: unknown): V2CharacterCandidateDto {
+  const record = requireRecord(row);
+  return {
+    candidateId: requireString(record.candidate_id, "candidate_id") as V2CharacterCandidateDto["candidateId"],
+    storyWorldId: requireString(record.story_world_id, "story_world_id") as V2CharacterCandidateDto["storyWorldId"],
+    kind: requireString(record.kind, "kind") as V2CharacterCandidateDto["kind"],
+    targetScope: requireString(record.target_scope, "target_scope"),
+    baseRevision: Number(record.base_revision) as V2CharacterCandidateDto["baseRevision"],
+    status: requireString(record.status, "status") as V2CharacterCandidateDto["status"],
+    payload: parseJsonValue(record.payload_json, "payload_json"),
+    provenance: parseJsonValue(record.provenance_json, "provenance_json"),
+    ...(record.context_hash === null ? {} : { contextHash: requireString(record.context_hash, "context_hash") }),
+    createdAt: requireString(record.created_at, "created_at"),
+    ...(record.reviewed_at === null ? {} : { reviewedAt: requireString(record.reviewed_at, "reviewed_at") }),
+    ...(record.reviewer === null ? {} : { reviewer: requireString(record.reviewer, "reviewer") }),
+    ...(record.review_reason === null ? {} : { reviewReason: requireString(record.review_reason, "review_reason") }),
+  };
+}
+
+function mapCharacterEventDefinition(row: unknown): V2CanonCharacterEventDefinition {
+  const record = requireRecord(row);
+  return {
+    eventDefinitionId: requireString(record.event_definition_id, "event_definition_id"),
+    storyWorldId: requireString(record.story_world_id, "story_world_id"),
+    name: requireString(record.name, "name"),
+    ...(record.description === null ? {} : { description: requireString(record.description, "description") }),
+    participantCharacterIds: parseJsonArray<string>(record.participant_ids_json, "participant_ids_json"),
+    initialState: parseCharacterScalarRecord(record.initial_state_json),
+    ...(record.archived_at === null ? {} : { archivedAt: requireString(record.archived_at, "archived_at") }),
+  };
+}
+
+function parseJsonValue(value: unknown, field: string): unknown {
+  return JSON.parse(requireString(value, field)) as unknown;
 }
 
 function mapFact(row: unknown): V2CanonFact {

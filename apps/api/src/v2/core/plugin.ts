@@ -10,6 +10,14 @@ import type {
 import { toV2HttpError, V2HttpError } from "./errors.ts";
 import {
   parseCreateCharacterBody,
+  parseCreateCharacterCandidateBody,
+  parseUpsertCharacterRelationshipBody,
+  parseCharacterContextPreviewBody,
+  parseCreateCharacterStateDefinitionBody,
+  parseUpdateCharacterStateDefinitionBody,
+  parseUpsertCharacterVisualVariantBody,
+  parseUpsertCharacterEventDefinitionBody,
+  parseUpdateCharacterProactivePolicyBody,
   parseCreateArcBody,
   parseCreateChoiceBody,
   parseCreateFactBody,
@@ -73,6 +81,78 @@ export const v2CorePlugin: FastifyPluginAsync<V2CorePluginOptions> = async (app,
   app.post("/worlds/:storyWorldId/characters", async (request, reply) => {
     const { storyWorldId } = getWorldParams(request.params);
     const result = await useCases.createCharacter(storyWorldId, parseCreateCharacterBody(request.body));
+    return reply.status(201).send(result);
+  });
+  app.get("/worlds/:storyWorldId/characters/:characterId", async (request) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    return useCases.getCharacter(storyWorldId, getRouteParam(request.params, "characterId") as never);
+  });
+  app.post("/worlds/:storyWorldId/characters/:characterId/context/preview", async (request) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    return useCases.previewCharacterContext(storyWorldId, getRouteParam(request.params, "characterId") as never, parseCharacterContextPreviewBody(request.body));
+  });
+  app.get("/worlds/:storyWorldId/character-context-traces", async (request) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    return { traces: await useCases.listCharacterContextTraces(storyWorldId) };
+  });
+  app.get("/worlds/:storyWorldId/characters/:characterId/state-definitions", async (request) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    return { definitions: await useCases.listCharacterStateDefinitions(storyWorldId, getRouteParam(request.params, "characterId") as never) };
+  });
+  app.post("/worlds/:storyWorldId/characters/:characterId/state-definitions", async (request, reply) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    const characterId = getRouteParam(request.params, "characterId");
+    const body = request.body && typeof request.body === "object" && !Array.isArray(request.body) ? request.body as Record<string, unknown> : {};
+    const result = await useCases.createCharacterStateDefinition(storyWorldId, parseCreateCharacterStateDefinitionBody({ ...body, characterId: body.characterId ?? characterId }));
+    return reply.status(201).send(result);
+  });
+  app.patch("/worlds/:storyWorldId/characters/:characterId/state-definitions/:stateDefinitionId", async (request) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    return useCases.updateCharacterStateDefinition(storyWorldId, getRouteParam(request.params, "stateDefinitionId"), parseUpdateCharacterStateDefinitionBody(request.body));
+  });
+  app.get("/worlds/:storyWorldId/characters/:characterId/visual-variants", async (request) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    return { variants: await useCases.listCharacterVisualVariants(storyWorldId, getRouteParam(request.params, "characterId") as never) };
+  });
+  app.post("/worlds/:storyWorldId/characters/:characterId/visual-variants", async (request, reply) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    const characterId = getRouteParam(request.params, "characterId");
+    const body = request.body && typeof request.body === "object" && !Array.isArray(request.body) ? request.body as Record<string, unknown> : {};
+    const result = await useCases.upsertCharacterVisualVariant(storyWorldId, parseUpsertCharacterVisualVariantBody({ ...body, characterId: body.characterId ?? characterId }));
+    return reply.status(201).send(result);
+  });
+  app.get("/worlds/:storyWorldId/characters/:characterId/events", async (request) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    return { events: await useCases.listCharacterEventDefinitions(storyWorldId, getRouteParam(request.params, "characterId") as never) };
+  });
+  app.post("/worlds/:storyWorldId/characters/:characterId/events", async (request, reply) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    const result = await useCases.upsertCharacterEventDefinition(storyWorldId, parseUpsertCharacterEventDefinitionBody(request.body));
+    return reply.status(201).send(result);
+  });
+  app.get("/worlds/:storyWorldId/characters/:characterId/proactive-policy", async (request) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    return useCases.getCharacterProactivePolicy(storyWorldId, getRouteParam(request.params, "characterId") as never);
+  });
+  app.patch("/worlds/:storyWorldId/characters/:characterId/proactive-policy", async (request) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    return useCases.updateCharacterProactivePolicy(storyWorldId, getRouteParam(request.params, "characterId") as never, parseUpdateCharacterProactivePolicyBody(request.body));
+  });
+  app.get("/worlds/:storyWorldId/characters/:characterId/relationships", async (request) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    return { relationships: await useCases.listCharacterRelationships(storyWorldId, getRouteParam(request.params, "characterId") as never) };
+  });
+  app.post("/worlds/:storyWorldId/characters/:characterId/relationships", async (request, reply) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    const characterId = getRouteParam(request.params, "characterId");
+    const body = request.body && typeof request.body === "object" && !Array.isArray(request.body) ? request.body as Record<string, unknown> : {};
+    const parsed = parseUpsertCharacterRelationshipBody({ ...body, fromCharacterId: body.fromCharacterId ?? characterId });
+    const result = await useCases.upsertCharacterRelationship(storyWorldId, parsed);
+    return reply.status(201).send(result);
+  });
+  app.post("/worlds/:storyWorldId/character-relationships", async (request, reply) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    const result = await useCases.upsertCharacterRelationship(storyWorldId, parseUpsertCharacterRelationshipBody(request.body));
     return reply.status(201).send(result);
   });
   app.post("/worlds/:storyWorldId/facts", async (request, reply) => {
@@ -178,6 +258,24 @@ export const v2CorePlugin: FastifyPluginAsync<V2CorePluginOptions> = async (app,
     const { storyWorldId } = getWorldParams(request.params);
     const result = await useCases.submitSceneCandidate(storyWorldId, parseSubmitSceneCandidateBody(request.body));
     return reply.status(201).send(result);
+  });
+  app.get("/worlds/:storyWorldId/candidates/characters", async (request) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    const status = (request.query as Record<string, unknown>).status;
+    return useCases.listCharacterCandidates(storyWorldId, typeof status === "string" ? status as never : undefined);
+  });
+  app.post("/worlds/:storyWorldId/candidates/characters", async (request, reply) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    const result = await useCases.createCharacterCandidate(storyWorldId, parseCreateCharacterCandidateBody(request.body));
+    return reply.status(201).send(result);
+  });
+  app.get("/worlds/:storyWorldId/candidates/characters/:candidateId", async (request) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    return useCases.getCharacterCandidate(storyWorldId, getRouteParam(request.params, "candidateId"));
+  });
+  app.post("/worlds/:storyWorldId/candidates/characters/:candidateId/review", async (request) => {
+    const { storyWorldId } = getWorldParams(request.params);
+    return useCases.reviewCharacterCandidate(storyWorldId, getRouteParam(request.params, "candidateId"), parseReviewCandidateBody(request.body) as never);
   });
   app.get("/worlds/:storyWorldId/candidates/scenes/:candidateId", async (request) => {
     const { storyWorldId, candidateId } = getCandidateParams(request.params);

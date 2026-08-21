@@ -8,6 +8,10 @@ import type {
 } from "../shared/index.ts";
 import type { V2StateValue } from "./graph.ts";
 
+export type V2CharacterRuntimeState = Record<string, Record<string, V2StateValue>>;
+export type V2RelationshipRuntimeOverlay = Record<string, number>;
+export type V2CharacterEventInstance = { readonly eventInstanceId: string; readonly eventDefinitionId: string; readonly state: Record<string, V2StateValue> };
+
 export interface V2RuntimeRunDto {
   readonly runId: V2RunId;
   readonly releaseId: V2ReleaseId;
@@ -15,6 +19,9 @@ export interface V2RuntimeRunDto {
   readonly currentSceneId: V2SceneId;
   readonly stateValues: Record<string, V2StateValue>;
   readonly choiceHistory: readonly V2ChoiceId[];
+  readonly characterState: V2CharacterRuntimeState;
+  readonly relationshipRuntime: V2RelationshipRuntimeOverlay;
+  readonly eventInstances: readonly V2CharacterEventInstance[];
   readonly createdAt: string;
   readonly updatedAt: string;
 }
@@ -41,6 +48,9 @@ export interface V2RuntimeSaveDto {
   readonly currentSceneId: V2SceneId;
   readonly stateValues: Record<string, V2StateValue>;
   readonly choiceHistory: readonly V2ChoiceId[];
+  readonly characterState: V2CharacterRuntimeState;
+  readonly relationshipRuntime: V2RelationshipRuntimeOverlay;
+  readonly eventInstances: readonly V2CharacterEventInstance[];
   readonly label?: string;
   readonly createdAt: string;
 }

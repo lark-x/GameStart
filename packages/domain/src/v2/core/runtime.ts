@@ -2,6 +2,7 @@ import type {
   V2GraphChoice,
   V2GraphScene,
   V2GraphStateGate,
+  V2GraphStateConsequenceOperation,
 } from "./graph.ts";
 import type {
   V2TypedStateValue,
@@ -13,6 +14,8 @@ import {
 } from "./state.ts";
 import { V2DomainError } from "../shared/index.ts";
 
+type V2RuntimeEventInstance = { readonly eventInstanceId: string; readonly eventDefinitionId: string; readonly state: Record<string, V2TypedStateValue> };
+
 export interface V2RuntimeRun {
   readonly runId: string;
   readonly releaseId: string;
@@ -20,6 +23,9 @@ export interface V2RuntimeRun {
   readonly currentSceneId: string;
   readonly stateValues: Record<string, V2TypedStateValue>;
   readonly choiceHistory: readonly string[];
+  readonly characterState?: Record<string, Record<string, V2TypedStateValue>>;
+  readonly relationshipRuntime?: Record<string, number>;
+  readonly eventInstances?: readonly V2RuntimeEventInstance[];
   readonly createdAt?: string;
   readonly updatedAt?: string;
 }
@@ -40,6 +46,9 @@ export function startV2RuntimeRun(input: {
     currentSceneId: entryScene.sceneId,
     stateValues: buildV2InitialTypedState(input.stateSchema),
     choiceHistory: [],
+    characterState: {},
+    relationshipRuntime: {},
+    eventInstances: [],
   };
 }
 
@@ -50,6 +59,9 @@ export function loadV2RuntimeSave(input: {
   readonly currentSceneId: string;
   readonly stateValues: Record<string, V2TypedStateValue>;
   readonly choiceHistory: readonly string[];
+  readonly characterState?: Record<string, Record<string, V2TypedStateValue>>;
+  readonly relationshipRuntime?: Record<string, number>;
+  readonly eventInstances?: readonly V2RuntimeEventInstance[];
 }): V2RuntimeRun {
   return {
     runId: assertNonEmptyId(input.runId, "runId"),
@@ -58,6 +70,9 @@ export function loadV2RuntimeSave(input: {
     currentSceneId: assertNonEmptyId(input.currentSceneId, "currentSceneId"),
     stateValues: input.stateValues,
     choiceHistory: input.choiceHistory,
+    characterState: input.characterState ?? {},
+    relationshipRuntime: input.relationshipRuntime ?? {},
+    eventInstances: input.eventInstances ?? [],
   };
 }
 
@@ -101,14 +116,64 @@ export function submitV2RuntimeChoice(input: {
     stateValues: applyV2TypedStateDelta({
       schema: input.stateSchema,
       currentValues: input.run.stateValues,
-      deltas: input.choice.consequences.map((consequence) => ({
+      deltas: input.choice.consequences.filter(isStoryConsequence).map((consequence) => ({
         stateKey: consequence.stateKey,
         operation: consequence.operation,
         value: consequence.value,
       })),
     }),
     choiceHistory: [...input.run.choiceHistory, input.choice.choiceId],
+    characterState: applyCharacterConsequences(input.run.characterState ?? {}, input.choice.consequences),
+    relationshipRuntime: applyRelationshipConsequences(input.run.relationshipRuntime ?? {}, input.choice.consequences),
+    eventInstances: applyEventConsequences(input.run.eventInstances ?? [], input.choice.consequences),
   };
+}
+
+function applyCharacterConsequences(current: Record<string, Record<string, V2TypedStateValue>>, consequences: V2GraphChoice["consequences"]): Record<string, Record<string, V2TypedStateValue>> {
+  const next = structuredClone(current);
+  for (const consequence of consequences) {
+    if (consequence.kind !== "character") continue;
+    const character = next[consequence.characterId] ?? {};
+    const currentValue = character[consequence.stateKey];
+    if (consequence.operation === "increment") {
+      if (typeof currentValue !== "number" || typeof consequence.value !== "number") throw new V2DomainError("INVALID_INPUT", "character increment requires numeric state");
+      character[consequence.stateKey] = currentValue + consequence.value;
+    } else character[consequence.stateKey] = consequence.value;
+    next[consequence.characterId] = character;
+  }
+  return next;
+}
+
+function applyRelationshipConsequences(current: Record<string, number>, consequences: V2GraphChoice["consequences"]): Record<string, number> {
+  const next = { ...current };
+  for (const consequence of consequences) {
+    if (consequence.kind !== "relationship") continue;
+    const key = `${consequence.fromCharacterId}->${consequence.toCharacterId}`;
+    const value = consequence.operation === "increment" ? (next[key] ?? 0) + consequence.value : consequence.value;
+    next[key] = Math.max(-100, Math.min(100, value));
+  }
+  return next;
+}
+
+function applyEventConsequences(current: readonly V2RuntimeEventInstance[], consequences: V2GraphChoice["consequences"]): readonly V2RuntimeEventInstance[] {
+  const next = [...current];
+  for (const consequence of consequences) {
+    if (consequence.kind !== "event") continue;
+    const index = consequence.eventInstanceId === undefined ? -1 : next.findIndex((event) => event.eventInstanceId === consequence.eventInstanceId);
+    if (consequence.operation === "create") {
+      const eventInstanceId = consequence.eventInstanceId ?? `${consequence.eventDefinitionId}:${next.length + 1}`;
+      next.push({ eventInstanceId, eventDefinitionId: consequence.eventDefinitionId, state: { ...(consequence.state ?? {}) } });
+    } else if (index >= 0) {
+      const existing = next[index];
+      if (existing === undefined) continue;
+      next[index] = { ...existing, eventDefinitionId: consequence.eventDefinitionId, state: { ...existing.state, ...(consequence.state ?? {}) } };
+    }
+  }
+  return next;
+}
+
+function isStoryConsequence(consequence: V2GraphChoice["consequences"][number]): consequence is Extract<V2GraphChoice["consequences"][number], { readonly stateKey: string; readonly operation: V2GraphStateConsequenceOperation }> {
+  return consequence.kind === undefined || consequence.kind === "story";
 }
 
 function evaluateGate(values: Record<string, V2TypedStateValue>, gate: V2GraphStateGate): boolean {

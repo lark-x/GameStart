@@ -117,6 +117,27 @@ test("V2 canon SQLite repository rejects cross-world character location referenc
   }
 });
 
+test("V2 character visual variants enforce one default per character at the database boundary", async () => {
+  const { db, cleanup } = openV2TempSqliteConnection();
+  try {
+    applyV2Migrations(db);
+    const repository = new V2SqliteCanonRepository(db);
+    const world = await repository.createWorld(createV2CanonWorld({ storyWorldId: "world_visual_default" as never, name: "World" }));
+    await repository.createCharacter(createV2CanonCharacter({ storyWorldId: world.storyWorldId, characterId: "char_visual" as never, name: "Visual" }));
+    db.prepare(`
+      INSERT INTO v2_character_visual_variants (visual_variant_id, story_world_id, character_id, name, is_default)
+      VALUES (?, ?, ?, ?, 1)
+    `).run("variant_one", "world_visual_default", "char_visual", "One");
+    assert.throws(() => db.prepare(`
+      INSERT INTO v2_character_visual_variants (visual_variant_id, story_world_id, character_id, name, is_default)
+      VALUES (?, ?, ?, ?, 1)
+    `).run("variant_two", "world_visual_default", "char_visual", "Two"));
+  } finally {
+    db.close();
+    cleanup();
+  }
+});
+
 test("V2 canon repository handles missing revision worlds and typed row failures", async () => {
   const { db, cleanup } = openV2TempSqliteConnection();
   try {
