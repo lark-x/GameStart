@@ -271,6 +271,17 @@ test("acquireDeployLock clears a dead PID lock regardless of age", () => {
   release();
 });
 
+test("release does not remove a newer owner's lock", () => {
+  const lockFile = resolve(tmpRoot, "lock-replaced", "deploy.lock");
+  const release = acquireDeployLock(lockFile);
+  writeFileSync(lockFile, JSON.stringify({ pid: process.pid, startedAt: "2099-01-01T00:00:00.000Z" }));
+
+  release();
+
+  assert.ok(existsSync(lockFile));
+  rmSync(resolve(tmpRoot, "lock-replaced"), { recursive: true, force: true });
+});
+
 // ---------------------------------------------------------------------------
 // 6b. INTEGRATION_SECRET_KEY Auto Generation (P1-3)
 // ---------------------------------------------------------------------------
@@ -502,4 +513,3 @@ test("parseServiceHealth accurately handles JSON array, object, and plain string
   const rawRunning = parseServiceHealth("living-network-worker-1 Up 2 minutes", "worker");
   assert.equal(rawRunning.ok, true);
 });
-
