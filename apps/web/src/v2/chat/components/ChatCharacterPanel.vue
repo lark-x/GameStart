@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BookOpen, Brain, Globe, Sparkles, User } from "@lucide/vue";
+import { Brain, Globe, Sparkles } from "@lucide/vue";
 import type { V2ChatContextResponse } from "@living-network/contracts/v2";
 
 defineProps<{
