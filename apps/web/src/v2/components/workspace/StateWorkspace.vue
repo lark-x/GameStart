@@ -10,6 +10,7 @@ import Input from "../../../components/ui/Input.vue";
 import Select from "../../../components/ui/Select.vue";
 import type { V2WorkspaceSnapshot } from "../../adapters";
 import { useV2WorkspaceStore } from "../../stores/workspace";
+import ModulePurposeCard from "./ModulePurposeCard.vue";
 
 defineProps<{ snapshot: V2WorkspaceSnapshot; loading: boolean }>();
 const store = useV2WorkspaceStore();
@@ -77,6 +78,16 @@ async function submit(): Promise<void> {
 
 <template>
   <section class="state-workspace">
+    <ModulePurposeCard
+      title="状态与逻辑"
+      description="定义故事运行过程中可以发生变化的数据。这些变量服务于选择条件、选择结果和玩家存档，当前不会自动进入场景生成上下文。"
+      :usages="[
+        { label: 'Choice 条件', status: 'direct' },
+        { label: 'Choice 结果', status: 'direct' },
+        { label: 'Player Runtime', status: 'direct' },
+        { label: 'Scene Generation', status: 'unused' },
+      ]"
+    />
     <div class="state-toolbar">
       <div>
         <p class="state-kicker">状态变量</p>
