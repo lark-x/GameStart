@@ -32,6 +32,94 @@ export interface ModelProfileSummary {
   readonly hasApiKey: boolean;
 }
 
+export interface ModelPreset {
+  readonly id: string;
+  readonly name: string;
+  readonly provider: string;
+  readonly description: string;
+  readonly protocol: "openai-compatible" | "anthropic";
+  readonly baseUrl: string;
+  readonly model: string;
+  readonly timeoutMs: string;
+  readonly maxTokens: string;
+  readonly contextWindow: string;
+  readonly inputModalities: string[];
+  readonly temperature: string;
+}
+
+export const MODEL_PRESETS: readonly ModelPreset[] = [
+  {
+    id: "deepseek-v3",
+    name: "DeepSeek V3",
+    provider: "DeepSeek 官方",
+    description: "高性价比通用对话与长文本推理",
+    protocol: "openai-compatible",
+    baseUrl: "https://api.deepseek.com",
+    model: "deepseek-chat",
+    timeoutMs: "60000",
+    maxTokens: "8192",
+    contextWindow: "65536",
+    inputModalities: ["text"],
+    temperature: "0.3",
+  },
+  {
+    id: "deepseek-r1-silicon",
+    name: "SiliconFlow DeepSeek R1",
+    provider: "硅基流动",
+    description: "国内高速托管深度思考大模型",
+    protocol: "openai-compatible",
+    baseUrl: "https://api.siliconflow.cn/v1",
+    model: "deepseek-ai/DeepSeek-R1",
+    timeoutMs: "90000",
+    maxTokens: "4096",
+    contextWindow: "32768",
+    inputModalities: ["text"],
+    temperature: "0.6",
+  },
+  {
+    id: "openai-gpt4o",
+    name: "GPT-4o",
+    provider: "OpenAI",
+    description: "旗舰级全能多模态，支持图文理解",
+    protocol: "openai-compatible",
+    baseUrl: "https://api.openai.com/v1",
+    model: "gpt-4o",
+    timeoutMs: "45000",
+    maxTokens: "4096",
+    contextWindow: "128000",
+    inputModalities: ["text", "image"],
+    temperature: "0.2",
+  },
+  {
+    id: "anthropic-claude",
+    name: "Claude 3.5 Sonnet",
+    provider: "Anthropic",
+    description: "顶级叙事创作与角色扮演大模型",
+    protocol: "anthropic",
+    baseUrl: "https://api.anthropic.com",
+    model: "claude-3-5-sonnet-20241022",
+    timeoutMs: "60000",
+    maxTokens: "8192",
+    contextWindow: "200000",
+    inputModalities: ["text", "image"],
+    temperature: "0.3",
+  },
+  {
+    id: "ollama-local",
+    name: "Ollama 本地 (Qwen 2.5)",
+    provider: "本地离线",
+    description: "本机或局域网私有化运行",
+    protocol: "openai-compatible",
+    baseUrl: "http://localhost:11434/v1",
+    model: "qwen2.5:14b",
+    timeoutMs: "60000",
+    maxTokens: "4096",
+    contextWindow: "32768",
+    inputModalities: ["text"],
+    temperature: "0.2",
+  },
+];
+
 export function connectionLabel(value: string | undefined): string {
   if (value === "ok") return "连接正常";
   if (value === "failed") return "连接失败";

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { ArrowLeft, Copy, Download, Save, Trash2, Wifi } from "@lucide/vue";
+import { ArrowLeft, Copy, Download, Save, Sparkles, Trash2, Wifi } from "@lucide/vue";
 import type {
   V2ModelBindingDto,
   V2ModelProfileDto,
@@ -18,7 +18,7 @@ import PageHeader from "../../components/layout/PageHeader.vue";
 import Select from "../../components/ui/Select.vue";
 import { platformErrorMessage, v2PlatformClient } from "./platform.ts";
 import { useNotificationStore } from "../stores/notification.ts";
-import { modalityLabel, providerLabel } from "./models-view-model.ts";
+import { modalityLabel, providerLabel, MODEL_PRESETS, type ModelPreset } from "./models-view-model.ts";
 
 interface ModelForm {
   readonly id?: string | undefined;
@@ -256,6 +256,24 @@ function selectDiscoveredModel(modelId: string): void {
   if (!form.value.name || form.value.name.trim().length === 0) form.value.name = modelId;
 }
 
+function applyPreset(preset: ModelPreset): void {
+  form.value = {
+    id: form.value.id,
+    sourceProfileId: form.value.sourceProfileId,
+    name: form.value.name && form.value.name.trim() !== "" ? form.value.name : preset.name,
+    protocol: preset.protocol,
+    baseUrl: preset.baseUrl,
+    model: preset.model,
+    timeoutMs: preset.timeoutMs,
+    maxTokens: preset.maxTokens,
+    contextWindow: preset.contextWindow,
+    inputModalities: [...preset.inputModalities],
+    temperature: preset.temperature,
+    apiKey: form.value.apiKey,
+  };
+  draftNotice.value = `已套用预设「${preset.name}」（${preset.provider}），请填入对应的 API Key 后保存。`;
+}
+
 function goBack(): void {
   void router.push("/v2/settings/models");
 }
@@ -284,6 +302,26 @@ onMounted(() => {
 
     <div v-else class="model-detail-layout">
       <form class="model-detail-card" @submit.prevent="save">
+        <!-- 快捷预设模版 -->
+        <div class="model-presets-bar">
+          <div class="model-presets-title">
+            <Sparkles :size="13" aria-hidden="true" />
+            <span>快捷预设模版（一键填入常用大模型配置）</span>
+          </div>
+          <div class="model-presets-chips">
+            <button
+              v-for="preset in MODEL_PRESETS"
+              :key="preset.id"
+              type="button"
+              class="model-preset-btn"
+              @click="applyPreset(preset)"
+            >
+              <strong>{{ preset.name }}</strong>
+              <small>{{ preset.provider }}</small>
+            </button>
+          </div>
+        </div>
+
         <fieldset class="model-form-section">
           <legend>基础配置</legend>
           <div class="model-form-grid">
@@ -457,6 +495,59 @@ onMounted(() => {
   border-radius: var(--radius-lg);
   background: var(--surface);
   box-shadow: var(--shadow-sm);
+}
+
+.model-presets-bar {
+  display: grid;
+  gap: var(--space-2);
+  margin-bottom: var(--space-5);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+}
+
+.model-presets-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.model-presets-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.model-preset-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: border-color var(--motion-fast), background var(--motion-fast), transform var(--motion-fast);
+}
+
+.model-preset-btn:hover {
+  border-color: var(--primary);
+  background: var(--primary-faint);
+  transform: translateY(-1px);
+}
+
+.model-preset-btn strong {
+  font-weight: 600;
+}
+
+.model-preset-btn small {
+  color: var(--muted);
 }
 
 .model-form-section {
