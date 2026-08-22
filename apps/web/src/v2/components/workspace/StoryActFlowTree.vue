@@ -10,6 +10,7 @@ import {
   Star,
   Wand2,
 } from "@lucide/vue";
+import type { V2ArcId, V2SceneId } from "@living-network/contracts/v2";
 import Badge from "../../../components/ui/Badge.vue";
 import Button from "../../../components/ui/Button.vue";
 import Drawer from "../../../components/ui/Drawer.vue";
@@ -97,7 +98,7 @@ const swimlanes = computed<readonly ActSwimlane[]>(() => {
     result.push({
       id: arc.arcId,
       title: arc.title,
-      summary: arc.summary,
+      ...(arc.summary ? { summary: arc.summary } : {}),
       isUnassigned: false,
       arc,
       scenes: matchedScenes,
@@ -190,7 +191,7 @@ async function handleSaveArc() {
         id: editingArc.value.arcId,
         input: {
           title: arcTitle.value.trim(),
-          summary: arcSummary.value.trim() || undefined,
+          ...(arcSummary.value.trim() ? { summary: arcSummary.value.trim() } : {}),
         },
       });
     } else {
@@ -198,7 +199,7 @@ async function handleSaveArc() {
         kind: "arc",
         input: {
           title: arcTitle.value.trim(),
-          summary: arcSummary.value.trim() || undefined,
+          ...(arcSummary.value.trim() ? { summary: arcSummary.value.trim() } : {}),
         },
       });
     }
@@ -216,12 +217,13 @@ async function handleSaveArc() {
 function handleSelectCharacter(char: V2CharacterSummary) {
   editingNode.value = {
     id: char.characterId,
+    tier: 2,
     kind: "character",
-    name: char.name,
-    summary: char.summary,
-    homeLocationId: char.homeLocationId,
-    personaText: char.personaText,
+    title: char.name,
+    subtitle: char.role || "正典角色",
+    description: char.personaText || char.summary || "",
     roleImpact: "主线故事参演",
+    rawData: char,
   };
   nodeDrawerKind.value = "character";
   nodeDrawerOpen.value = true;
@@ -230,10 +232,13 @@ function handleSelectCharacter(char: V2CharacterSummary) {
 function handleSelectLocation(loc: V2LocationSummary) {
   editingNode.value = {
     id: loc.locationId,
+    tier: 1,
     kind: "location",
-    name: loc.name,
-    summary: loc.summary,
+    title: loc.name,
+    subtitle: "舞台地点",
+    description: loc.summary || "",
     roleImpact: "主线核心舞台",
+    rawData: loc,
   };
   nodeDrawerKind.value = "location";
   nodeDrawerOpen.value = true;
@@ -282,7 +287,7 @@ async function generateThreeActSkeleton() {
       input: {
         title: "歌剧院初遇",
         body: "在宏伟的歌剧院舞台前，与正典伙伴第一次展开命定对话。",
-        arcId: arc1?.arcId,
+        ...(arc1?.arcId ? { arcId: arc1.arcId as V2ArcId } : {}),
         isEntry: true,
       },
     });
@@ -294,7 +299,7 @@ async function generateThreeActSkeleton() {
       input: {
         title: "审判席上的对峙",
         body: "冲突爆发，双方在审判席前据理力争，寻求真相。",
-        arcId: arc2?.arcId,
+        ...(arc2?.arcId ? { arcId: arc2.arcId as V2ArcId } : {}),
         isEntry: false,
       },
     });
@@ -306,7 +311,7 @@ async function generateThreeActSkeleton() {
       input: {
         title: "破晓之光 (结局 A)",
         body: "真相大白，黎明之光重新普照大地，与同伴共同守护正义。",
-        arcId: arc3?.arcId,
+        ...(arc3?.arcId ? { arcId: arc3.arcId as V2ArcId } : {}),
         isEntry: false,
       },
     });
@@ -317,8 +322,8 @@ async function generateThreeActSkeleton() {
       await store.createGraphEntity({
         kind: "choice",
         input: {
-          sourceSceneId: scene1.sceneId,
-          targetSceneId: scene2.sceneId,
+          sourceSceneId: scene1.sceneId as V2SceneId,
+          targetSceneId: scene2.sceneId as V2SceneId,
           label: "挺身而出，介入这场突如其来的纷争",
           gates: [],
           consequences: [],
@@ -329,8 +334,8 @@ async function generateThreeActSkeleton() {
       await store.createGraphEntity({
         kind: "choice",
         input: {
-          sourceSceneId: scene2.sceneId,
-          targetSceneId: scene3.sceneId,
+          sourceSceneId: scene2.sceneId as V2SceneId,
+          targetSceneId: scene3.sceneId as V2SceneId,
           label: "出示决定性证据，彻底终结审判",
           gates: [],
           consequences: [],

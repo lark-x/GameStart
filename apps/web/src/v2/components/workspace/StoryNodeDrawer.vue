@@ -21,6 +21,7 @@ import { useV2WorkspaceStore } from "../../stores/workspace";
 import type { StorySkillNode } from "./StoryInspectionCard.vue";
 
 export type CanonEntityKind = "world" | "location" | "character" | "fact" | "rule" | "timeline" | "scene" | "state";
+export type StoryEditingNode = StorySkillNode;
 
 const props = defineProps<{
   open: boolean;

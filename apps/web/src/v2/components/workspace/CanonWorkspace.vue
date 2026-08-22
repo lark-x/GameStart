@@ -29,6 +29,7 @@ import { useV2WorkspaceStore } from "../../stores/workspace";
 import WorkspaceModuleIntro from "./WorkspaceModuleIntro.vue";
 import StoryActFlowTree from "./StoryActFlowTree.vue";
 import StoryNodeDrawer, { type CanonEntityKind } from "./StoryNodeDrawer.vue";
+import type { StorySkillNode } from "./StoryInspectionCard.vue";
 
 const route = useRoute();
 const router = useRouter();

@@ -8,6 +8,7 @@ import {
   User,
   X,
 } from "@lucide/vue";
+import type { V2ArcId, V2SceneId } from "@living-network/contracts/v2";
 import Badge from "../../../components/ui/Badge.vue";
 import Button from "../../../components/ui/Button.vue";
 import Drawer from "../../../components/ui/Drawer.vue";
@@ -126,7 +127,7 @@ async function handleSaveScene() {
         input: {
           title: title.value.trim(),
           body: body.value.trim(),
-          arcId: arcId.value || undefined,
+          ...(arcId.value.trim() ? { arcId: arcId.value.trim() as V2ArcId } : {}),
           isEntry: isEntry.value,
         },
       });
@@ -136,7 +137,7 @@ async function handleSaveScene() {
         input: {
           title: title.value.trim(),
           body: body.value.trim(),
-          arcId: arcId.value || undefined,
+          ...(arcId.value.trim() ? { arcId: arcId.value.trim() as V2ArcId } : {}),
           isEntry: isEntry.value,
         },
       });
@@ -158,8 +159,8 @@ async function handleAddChoice() {
     await store.createGraphEntity({
       kind: "choice",
       input: {
-        sourceSceneId: props.scene.sceneId,
-        targetSceneId: newChoiceTargetSceneId.value || undefined,
+        sourceSceneId: props.scene.sceneId as V2SceneId,
+        ...(newChoiceTargetSceneId.value.trim() ? { targetSceneId: newChoiceTargetSceneId.value.trim() as V2SceneId } : {}),
         label: newChoiceLabel.value.trim(),
         gates: [],
         consequences: [],
