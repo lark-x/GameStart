@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
-import { Activity, ArrowLeft, BookOpen, Copy, ImagePlus, MoreHorizontal, RefreshCw, Send, Smile, Sparkles, Square, Sticker, UserRound, X } from "@lucide/vue";
+import { Activity, ArrowLeft, BookOpen, Copy, ImagePlus, MoreHorizontal, Send, Smile, Sparkles, Square, Sticker, UserRound, X } from "@lucide/vue";
 
 import Button from "../../components/ui/Button.vue";
 import Textarea from "../../components/ui/Textarea.vue";
@@ -22,7 +22,9 @@ import { randomUuid } from "../random.ts";
 import { buildStickerSendPayload, isChatModelConfigured } from "./chat-view-model.ts";
 import ChatCharacterPanel from "../chat/components/ChatCharacterPanel.vue";
 import ChatConversationSidebar from "../chat/components/ChatConversationSidebar.vue";
+import ChatDiagnosticsModal from "../chat/components/ChatDiagnosticsModal.vue";
 import ChatEmojiPicker from "../chat/components/ChatEmojiPicker.vue";
+import ChatMessageBubble from "../chat/components/ChatMessageBubble.vue";
 import ChatStickerPicker from "../chat/components/ChatStickerPicker.vue";
 
 const route = useRoute();
@@ -60,10 +62,6 @@ const modelSummary = computed(() => {
   if (model === undefined) return "";
   return `${model.profileName ?? model.model} · ${model.inputModalities.includes("image") ? "文本 · 图片" : "文本"}`;
 });
-
-function avatarInitial(name: string): string {
-  return [...name.trim()][0] ?? "?";
-}
 
 // Multimodal composer state
 interface PendingAttachment {
@@ -169,13 +167,6 @@ async function copyConversationId(): Promise<void> {
   } finally {
     moreMenuOpen.value = false;
   }
-}
-
-function messageStatusLabel(message: V2ChatMessageDto): string | undefined {
-  if (message.status === "pending") return "生成中";
-  if (message.status === "failed") return "发送失败";
-  if (message.status === "interrupted") return "已中断";
-  return undefined;
 }
 
 function openImagePreview(url: string): void {
@@ -564,10 +555,6 @@ function stopGeneration(): void {
   abortController?.abort();
 }
 
-function isUser(message: V2ChatMessageDto): boolean {
-  return message.role === "user";
-}
-
 function openConversation(nextId: string): void {
   if (nextId === conversationId.value) return;
   void router.push(`/v2/chat/${encodeURIComponent(nextId)}`);
@@ -666,64 +653,14 @@ function openConversation(nextId: string): void {
         </div>
         <div v-else-if="!hasMore && messages.length >= 50" class="v2-chat-pagination-status">已加载全部历史记录</div>
 
-        <article
+        <ChatMessageBubble
           v-for="message in messages"
           :key="message.messageId"
-          class="v2-chat-message-row"
-          :class="{ 'v2-chat-message-user': isUser(message), 'v2-chat-message-assistant': !isUser(message) }"
-        >
-          <div v-if="!isUser(message)" class="v2-chat-avatar v2-chat-avatar-assistant" aria-hidden="true">
-            {{ avatarInitial(conversationTitle) }}
-          </div>
-
-          <div class="v2-chat-message-content">
-            <div class="v2-chat-bubble" :class="{ 'v2-chat-bubble-pending': message.status === 'pending' && !message.text }">
-              <template v-if="message.text">
-                <div class="v2-chat-text">{{ message.text }}</div>
-              </template>
-              <div v-else-if="message.status === 'pending'" class="v2-chat-typing" aria-label="正在生成回复">
-                <span class="v2-chat-typing-dot" />
-                <span class="v2-chat-typing-dot" />
-                <span class="v2-chat-typing-dot" />
-              </div>
-              <template v-else>（空消息）</template>
-
-              <div v-if="message.attachments.length" class="v2-chat-images">
-                <div
-                  v-for="attachment in message.attachments"
-                  :key="attachment.attachmentId"
-                  class="v2-chat-image-card"
-                >
-                  <img
-                    :src="client.mediaUrl(attachment.mediaRef)"
-                    :alt="'聊天图片'"
-                    class="v2-chat-image"
-                    loading="lazy"
-                    @error="(event) => (event.target as HTMLImageElement).style.display = 'none'"
-                    @click="openImagePreview(client.mediaUrl(attachment.mediaRef))"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div
-              v-if="messageStatusLabel(message)"
-              class="v2-chat-status-pill"
-              :class="{
-                'v2-chat-status-error': message.status === 'failed',
-                'v2-chat-status-interrupted': message.status === 'interrupted',
-                'v2-chat-status-pending': message.status === 'pending'
-              }"
-            >
-              <span class="v2-chat-status-dot" />
-              <span>{{ messageStatusLabel(message) }}</span>
-            </div>
-          </div>
-
-          <div v-if="isUser(message)" class="v2-chat-avatar v2-chat-avatar-user" aria-hidden="true">
-            我
-          </div>
-        </article>
+          :message="message"
+          :conversation-title="conversationTitle"
+          :media-url="client.mediaUrl"
+          @preview-image="openImagePreview"
+        />
 
         <button v-if="showScrollHint" type="button" class="v2-chat-scroll-hint" @click="jumpToLatest">
           ↓ 查看新消息
@@ -826,62 +763,14 @@ function openConversation(nextId: string): void {
       <ChatCharacterPanel :context="context" :loading="loadingContext" :error="contextError" />
     </aside>
 
-    <div v-if="showDiagnostics" class="v2-chat-drawer-backdrop" @click="showDiagnostics = false" />
-    <aside v-if="showDiagnostics" class="v2-chat-drawer" role="dialog" aria-modal="true" aria-label="上下文诊断面板">
-      <div class="v2-chat-diagnostics-header">
-        <h3>上下文诊断</h3>
-        <div class="v2-chat-diagnostics-actions">
-          <Button
-            variant="ghost"
-            size="icon"
-            :loading="loadingDiagnostics"
-            aria-label="刷新诊断数据"
-            @click="refreshDiagnostics"
-          >
-            <RefreshCw :size="14" aria-hidden="true" />
-          </Button>
-          <Button variant="ghost" size="icon" aria-label="关闭诊断面板" @click="showDiagnostics = false">
-            <X :size="14" aria-hidden="true" />
-          </Button>
-        </div>
-      </div>
-      <div v-if="loadingDiagnostics && !diagnostics" class="v2-chat-diagnostics-loading">
-        正在读取上下文状态…
-      </div>
-      <div v-else-if="diagnosticsError" class="v2-chat-diagnostics-error">
-        <p>{{ diagnosticsError }}</p>
-        <Button variant="secondary" size="sm" @click="refreshDiagnostics">重试</Button>
-      </div>
-      <div v-else-if="diagnostics" class="v2-chat-diagnostics-grid">
-        <div class="v2-diag-item">
-          <span class="v2-diag-label">提示词模板</span>
-          <span class="v2-diag-value">{{ diagnostics.templateId || "chat:roleplay:v1" }}</span>
-        </div>
-        <div class="v2-diag-item">
-          <span class="v2-diag-label">Token 预算上限</span>
-          <span class="v2-diag-value">{{ diagnostics.inputBudget ? `${diagnostics.inputBudget} tokens` : "4096 tokens" }}</span>
-        </div>
-        <div class="v2-diag-item">
-          <span class="v2-diag-label">活跃长期记忆</span>
-          <span class="v2-diag-value">{{ diagnostics.selectedMemoryIds ? `${diagnostics.selectedMemoryIds.length} 条` : "0 条" }}</span>
-        </div>
-        <div class="v2-diag-item">
-          <span class="v2-diag-label">会话摘要版本</span>
-          <span class="v2-diag-value">{{ diagnostics.summaryVersion ? `v${diagnostics.summaryVersion}` : "暂无" }}</span>
-        </div>
-        <div class="v2-diag-item">
-          <span class="v2-diag-label">最近消息窗口</span>
-          <span class="v2-diag-value">{{ diagnostics.recentCount !== undefined ? `${diagnostics.recentCount} 条` : "0 条" }}</span>
-        </div>
-        <div class="v2-diag-item">
-          <span class="v2-diag-label">多模态图片</span>
-          <span class="v2-diag-value">{{ diagnostics.imageCount !== undefined ? `${diagnostics.imageCount} 张` : "0 张" }}</span>
-        </div>
-      </div>
-      <div v-else class="v2-chat-diagnostics-loading">
-        暂无诊断数据
-      </div>
-    </aside>
+    <ChatDiagnosticsModal
+      :open="showDiagnostics"
+      :diagnostics="diagnostics"
+      :loading="loadingDiagnostics"
+      :error="diagnosticsError"
+      @close="showDiagnostics = false"
+      @refresh="refreshDiagnostics"
+    />
 
     <div v-if="showCharacterPanel" class="v2-chat-drawer-backdrop" @click="showCharacterPanel = false" />
     <aside v-if="showCharacterPanel" class="v2-chat-drawer" role="dialog" aria-modal="true" aria-label="角色信息面板">

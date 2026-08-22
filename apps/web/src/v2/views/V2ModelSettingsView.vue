@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { Copy, Cpu, Download, Plus, RefreshCw, Save, ShieldCheck, Trash2, Wifi } from "@lucide/vue";
+import { Copy, Cpu, Download, Plus, RefreshCw, Save, ShieldCheck, Sparkles, Trash2, Wifi } from "@lucide/vue";
 import type {
   V2ModelBindingDto,
   V2ModelProfileDto,
@@ -19,6 +19,7 @@ import PageHeader from "../../components/layout/PageHeader.vue";
 import Select from "../../components/ui/Select.vue";
 import { platformErrorMessage, v2PlatformClient } from "./platform.ts";
 import { useNotificationStore } from "../stores/notification.ts";
+import { MODEL_PRESETS, type ModelPreset } from "./models-view-model.ts";
 
 interface ModelForm {
   readonly id?: string | undefined;
@@ -165,6 +166,24 @@ function duplicateProfile(): void {
     apiKey: "",
   };
   draftNotice.value = "已基于当前配置复制为新档案草稿，可直接修改模型名称后保存。";
+}
+
+function applyPreset(preset: ModelPreset): void {
+  form.value = {
+    id: form.value.id,
+    sourceProfileId: form.value.sourceProfileId,
+    name: form.value.name && form.value.name.trim() !== "" ? form.value.name : preset.name,
+    protocol: preset.protocol,
+    baseUrl: preset.baseUrl,
+    model: preset.model,
+    timeoutMs: preset.timeoutMs,
+    maxTokens: preset.maxTokens,
+    contextWindow: preset.contextWindow,
+    inputModalities: [...preset.inputModalities],
+    temperature: preset.temperature,
+    apiKey: form.value.apiKey,
+  };
+  draftNotice.value = `已套用预设「${preset.name}」（${preset.provider}），请填入对应的 API Key 后保存。`;
 }
 
 async function fetchModels(): Promise<void> {
@@ -459,6 +478,26 @@ onMounted(() => {
           <Badge v-if="selectedProfile?.hasApiKey" tone="success">密钥已保存</Badge>
         </div>
         <form @submit.prevent="save">
+          <!-- 快捷预设模版 -->
+          <div class="v2-presets-bar">
+            <div class="v2-presets-title">
+              <Sparkles :size="13" aria-hidden="true" />
+              <span>快捷预设模版（一键填入常用大模型配置）</span>
+            </div>
+            <div class="v2-presets-chips">
+              <button
+                v-for="preset in MODEL_PRESETS"
+                :key="preset.id"
+                type="button"
+                class="v2-preset-btn"
+                @click="applyPreset(preset)"
+              >
+                <strong>{{ preset.name }}</strong>
+                <small>{{ preset.provider }}</small>
+              </button>
+            </div>
+          </div>
+
           <fieldset class="v2-form-section">
             <legend>基础信息</legend>
             <div class="v2-form-grid">
@@ -708,9 +747,57 @@ onMounted(() => {
   font-size: var(--text-sm);
 }
 
-.v2-profile-item-main small {
-  color: var(--muted);
+.v2-presets-bar {
+  display: grid;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+}
+
+.v2-presets-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.v2-presets-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.v2-preset-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: border-color var(--motion-fast), background var(--motion-fast), transform var(--motion-fast);
+}
+
+.v2-preset-btn:hover {
+  border-color: var(--primary);
+  background: var(--primary-faint);
+  transform: translateY(-1px);
+}
+
+.v2-preset-btn strong {
+  font-weight: 600;
+}
+
+.v2-preset-btn small {
+  color: var(--muted);
 }
 
 .v2-editor-form { display: grid; gap: var(--space-4); }

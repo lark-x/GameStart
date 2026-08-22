@@ -11,6 +11,7 @@ import {
   connectionTone,
   formatCapabilityToggleError,
   modalityLabel,
+  MODEL_PRESETS,
   providerLabel,
 } from "./models-view-model.ts";
 
@@ -105,4 +106,13 @@ test("models view model summarizes profiles and formats toggle errors", () => {
   assert.equal(formatCapabilityToggleError(new V2PlatformClientError("VALIDATION_FAILED", "bad input", 422)), "VALIDATION_FAILED: bad input");
   assert.equal(formatCapabilityToggleError(new Error("boom")), "boom");
   assert.equal(formatCapabilityToggleError(null, "fallback"), "fallback");
+});
+
+test("models view model exposes standard model presets with valid configs", () => {
+  assert.ok(MODEL_PRESETS.length >= 5);
+  const deepseek = MODEL_PRESETS.find((p) => p.id === "deepseek-v3");
+  assert.ok(deepseek);
+  assert.equal(deepseek.protocol, "openai-compatible");
+  assert.ok(deepseek.baseUrl.includes("deepseek.com"));
+  assert.ok(deepseek.maxTokens.length > 0);
 });
