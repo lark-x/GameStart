@@ -367,7 +367,7 @@ function selectCharacterFilter(charId: string | null): void {
 .moments-view-layout {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
+  gap: 24px;
   width: 100%;
   max-width: 860px;
   margin: 0 auto;
@@ -378,11 +378,13 @@ function selectCharacterFilter(charId: string | null): void {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-5) var(--space-6);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-2xl, 24px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.03);
+  padding: 20px 28px;
+  background: rgba(26, 23, 40, 0.75);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
 }
 
 .topbar-title-group {
@@ -393,15 +395,15 @@ function selectCharacterFilter(charId: string | null): void {
 
 .moments-page-title {
   margin: 0;
-  font-size: var(--text-xl, 20px);
+  font-size: 20px;
   font-weight: 900;
-  color: var(--text-strong);
+  color: #f8fafc;
   letter-spacing: -0.02em;
 }
 
 .moments-subtitle {
-  font-size: var(--text-xs);
-  color: var(--muted);
+  font-size: 13px;
+  color: #94a3b8;
 }
 
 .btn-disturb {
@@ -409,22 +411,21 @@ function selectCharacterFilter(charId: string | null): void {
   align-items: center;
   gap: 7px;
   padding: 10px 20px;
-  border-radius: var(--radius-full);
-  border: 1px solid var(--border);
-  background: linear-gradient(135deg, var(--surface-soft), var(--surface));
-  color: var(--text-strong);
+  border-radius: 9999px;
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  background: rgba(99, 102, 241, 0.15);
+  color: #e0e7ff;
   font-size: 13px;
   font-weight: 800;
   cursor: pointer;
-  box-shadow: var(--shadow-sm);
-  transition: all var(--motion-fast);
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.3);
+  transition: all 0.2s ease;
 }
 
 .btn-disturb:hover {
-  border-color: var(--primary);
-  color: var(--primary);
+  background: #6366f1;
+  color: #ffffff;
   transform: translateY(-1px);
-  box-shadow: var(--shadow-md);
 }
 
 .btn-sparkle {
@@ -444,14 +445,14 @@ function selectCharacterFilter(charId: string | null): void {
   top: 140px;
   right: calc(50% - 430px + 24px);
   width: 260px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-2xl);
-  padding: var(--space-4);
+  background: #1e1b2e;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: 8px;
 }
 
 @media (max-width: 900px) {
@@ -466,13 +467,13 @@ function selectCharacterFilter(charId: string | null): void {
   justify-content: space-between;
   font-size: 12px;
   font-weight: 800;
-  color: var(--muted);
+  color: #94a3b8;
 }
 
 .picker-close {
   border: 0;
   background: transparent;
-  color: var(--muted);
+  color: #94a3b8;
   cursor: pointer;
 }
 
@@ -485,82 +486,88 @@ function selectCharacterFilter(charId: string | null): void {
 .picker-btn {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: 12px;
   padding: 8px 12px;
-  border-radius: var(--radius-md);
-  border: 0;
-  background: var(--surface-soft);
-  color: var(--text-strong);
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.04);
+  color: #f1f5f9;
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
-  transition: all var(--motion-fast);
+  transition: all 0.2s ease;
 }
 
 .picker-btn:hover {
-  background: var(--primary-soft);
-  color: var(--primary);
+  background: rgba(99, 102, 241, 0.2);
+  color: #ffffff;
 }
 
 .picker-avatar {
   width: 28px;
   height: 28px;
-  border-radius: var(--radius-full);
-  background: var(--primary);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 800;
+  border-radius: 9999px;
+  background: #6366f1;
+  color: #ffffff;
   display: grid;
   place-items: center;
+  font-size: 12px;
+  font-weight: 800;
 }
 
-/* 过滤轴 */
-.filter-bar {
+/* 筛选栏 */
+.moments-filter-bar {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-4) var(--space-5);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-2xl, 24px);
+  gap: 12px;
+  padding: 12px 20px;
+  background: rgba(26, 23, 40, 0.75);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 9999px;
   overflow-x: auto;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.02);
 }
 
-.filter-chip {
+.filter-chip-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 7px 16px;
-  border-radius: var(--radius-full);
-  border: 1px solid var(--border);
-  background: var(--surface-soft);
-  color: var(--muted);
+  gap: 6px;
+  padding: 6px 16px;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: #94a3b8;
   font-size: 12px;
   font-weight: 800;
   cursor: pointer;
+  transition: all 0.2s ease;
   white-space: nowrap;
-  transition: all var(--motion-fast);
 }
 
-.filter-chip.active {
-  background: var(--primary);
-  color: #fff;
-  border-color: var(--primary);
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+.filter-chip-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f8fafc;
+}
+
+.filter-chip-btn.active {
+  background: #6366f1;
+  color: #ffffff;
+  border-color: #6366f1;
+  box-shadow: 0 2px 10px rgba(99, 102, 241, 0.4);
 }
 
 .filter-divider {
   width: 1px;
-  height: 28px;
-  background: var(--border);
+  height: 24px;
+  background: rgba(255, 255, 255, 0.1);
   flex-shrink: 0;
 }
 
 .filter-avatar-scroll {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 8px;
 }
 
 .filter-avatar-btn {
@@ -568,24 +575,24 @@ function selectCharacterFilter(charId: string | null): void {
   align-items: center;
   gap: 8px;
   padding: 4px 14px 4px 4px;
-  border-radius: var(--radius-full);
-  border: 1px solid var(--border);
-  background: var(--surface-soft);
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
   cursor: pointer;
   white-space: nowrap;
-  transition: all var(--motion-fast);
+  transition: all 0.2s ease;
 }
 
 .filter-avatar-btn.active {
-  border-color: var(--primary);
-  background: var(--primary-soft);
+  border-color: #6366f1;
+  background: rgba(99, 102, 241, 0.2);
 }
 
 .filter-avatar-circle {
   width: 30px;
   height: 30px;
-  border-radius: var(--radius-full);
-  background: var(--primary);
+  border-radius: 9999px;
+  background: #6366f1;
   color: #fff;
   font-size: 12px;
   font-weight: 900;
@@ -596,30 +603,33 @@ function selectCharacterFilter(charId: string | null): void {
 .filter-avatar-label {
   font-size: 12px;
   font-weight: 800;
-  color: var(--text-strong);
+  color: #f8fafc;
 }
 
 /* 动态流 */
 .moments-stream {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
+  gap: 24px;
 }
 
 .moment-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-2xl, 24px);
-  padding: var(--space-6) var(--space-7);
+  background: rgba(26, 23, 40, 0.75);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  padding: 24px 28px;
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
-  transition: transform var(--motion-fast), box-shadow var(--motion-fast);
+  gap: 16px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .moment-card:hover {
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.06);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
 }
 
 .moment-header {

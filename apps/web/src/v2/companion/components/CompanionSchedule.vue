@@ -186,38 +186,40 @@ async function handleResetAll(): Promise<void> {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-5) var(--space-6);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-2xl, 24px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.03);
-  gap: var(--space-4);
+  padding: 20px 28px;
+  background: rgba(26, 23, 40, 0.75);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
+  gap: 16px;
   flex-wrap: wrap;
 }
 
 .topbar-left {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
 }
 
 .schedule-page-title {
   margin: 0;
-  font-size: var(--text-xl, 20px);
+  font-size: 20px;
   font-weight: 900;
-  color: var(--text-strong);
+  color: #f8fafc;
   letter-spacing: -0.02em;
 }
 
 .schedule-subtitle {
-  font-size: var(--text-xs);
-  color: var(--muted);
+  font-size: 13px;
+  color: #94a3b8;
 }
 
 .topbar-actions {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: 12px;
 }
 
 .search-input-wrap {
@@ -229,24 +231,24 @@ async function handleResetAll(): Promise<void> {
 .search-icon {
   position: absolute;
   left: 12px;
-  color: var(--muted);
+  color: #94a3b8;
 }
 
 .search-input {
   padding: 8px 14px 8px 34px;
-  border-radius: var(--radius-full);
-  border: 1px solid var(--border);
-  background: var(--surface-soft);
-  color: var(--text-strong);
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #141220;
+  color: #f8fafc;
   font-size: 13px;
   outline: none;
   width: 180px;
-  transition: width var(--motion-fast), border-color var(--motion-fast);
+  transition: width 0.2s ease, border-color 0.2s ease;
 }
 
 .search-input:focus {
   width: 240px;
-  border-color: var(--primary);
+  border-color: #6366f1;
 }
 
 .btn-reset-schedule {
@@ -254,20 +256,20 @@ async function handleResetAll(): Promise<void> {
   align-items: center;
   gap: 6px;
   padding: 8px 18px;
-  border-radius: var(--radius-full);
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text-strong);
+  border-radius: 9999px;
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  background: rgba(99, 102, 241, 0.15);
+  color: #e0e7ff;
   font-size: 13px;
   font-weight: 800;
   cursor: pointer;
-  box-shadow: var(--shadow-sm);
-  transition: all var(--motion-fast);
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.3);
+  transition: all 0.2s ease;
 }
 
 .btn-reset-schedule:hover {
-  border-color: var(--primary);
-  color: var(--primary);
+  background: #6366f1;
+  color: #ffffff;
   transform: translateY(-1px);
 }
 
@@ -279,26 +281,28 @@ async function handleResetAll(): Promise<void> {
 .status-card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-  gap: var(--space-5);
+  gap: 20px;
 }
 
 .status-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-2xl, 24px);
-  padding: var(--space-6);
+  background: rgba(26, 23, 40, 0.75);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  padding: 24px;
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.04);
+  gap: 16px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
   cursor: pointer;
-  transition: transform var(--motion-fast), border-color var(--motion-fast), box-shadow var(--motion-fast);
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .status-card:hover {
   transform: translateY(-3px);
-  border-color: var(--primary);
-  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.07);
+  border-color: rgba(99, 102, 241, 0.4);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
 }
 
 /* 顶部 */
