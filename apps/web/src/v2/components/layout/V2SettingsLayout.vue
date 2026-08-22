@@ -15,8 +15,8 @@ import SettingsNavigation from "./SettingsNavigation.vue";
 <style scoped>
 .v2-settings-layout {
   display: grid;
-  grid-template-columns: 220px 1fr;
-  gap: var(--space-6);
+  grid-template-columns: 168px minmax(0, 1fr);
+  gap: var(--space-5);
   align-items: start;
   min-height: 0;
 }
