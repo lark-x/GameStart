@@ -224,9 +224,9 @@ function avatarInitial(name: string): string {
 .tavern-view-layout {
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  gap: var(--space-6);
   width: 100%;
-  max-width: 980px;
+  max-width: 1080px;
   margin: 0 auto;
 }
 
@@ -234,24 +234,25 @@ function avatarInitial(name: string): string {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-4) var(--space-5);
+  padding: var(--space-5) var(--space-6);
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
+  border-radius: var(--radius-2xl, 24px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.03);
 }
 
 .topbar-left {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 
 .tavern-page-title {
   margin: 0;
-  font-size: var(--text-lg);
+  font-size: var(--text-xl, 20px);
   font-weight: 900;
   color: var(--text-strong);
+  letter-spacing: -0.02em;
 }
 
 .tavern-subtitle {
@@ -263,12 +264,12 @@ function avatarInitial(name: string): string {
 .user-profile-card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-5);
+  border-radius: var(--radius-2xl, 24px);
+  padding: var(--space-6) var(--space-7);
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-  box-shadow: var(--shadow-sm);
+  gap: var(--space-5);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.03);
 }
 
 .card-header-row {

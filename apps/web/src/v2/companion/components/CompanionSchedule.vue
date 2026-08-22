@@ -54,8 +54,8 @@ async function handleResetAll(): Promise<void> {
     <!-- 顶栏：标题 + 搜索 + 全部重置 -->
     <div class="schedule-topbar">
       <div class="topbar-left">
-        <h2 class="schedule-page-title">日程</h2>
-        <span class="schedule-subtitle">24 小时生活日程 · 伴侣根据真实时钟生活与行动</span>
+        <h2 class="schedule-page-title">伴侣生活日程</h2>
+        <span class="schedule-subtitle">24 小时作息模型 · 伴侣根据现实时钟在不同场景生活、漫步与休憩</span>
       </div>
 
       <div class="topbar-actions">
@@ -65,7 +65,7 @@ async function handleResetAll(): Promise<void> {
             v-model="searchQuery"
             type="text"
             class="search-input"
-            placeholder="搜索角色或地点…"
+            placeholder="搜索伴侣或地点…"
           />
         </div>
 
@@ -85,11 +85,11 @@ async function handleResetAll(): Promise<void> {
     <!-- 角色状态卡片网格 (对标 CharacterStatusCard) -->
     <div v-if="loading && (!roster || roster.characters.length === 0)" class="schedule-loading-state">
       <div class="spinner-ring" />
-      <span>正在同步角色全天生活日程…</span>
+      <span>正在同步伴侣全天生活作息…</span>
     </div>
 
     <div v-else-if="filteredCharacters.length === 0" class="schedule-empty-state">
-      <Clock :size="32" class="text-primary" aria-hidden="true" />
+      <Clock :size="36" class="text-primary" aria-hidden="true" />
       <p>没有找到相关角色的生活日程</p>
     </div>
 
@@ -124,11 +124,11 @@ async function handleResetAll(): Promise<void> {
         <!-- 中部：地点 + 行为描述 -->
         <div class="card-mid">
           <div class="info-line">
-            <MapPin :size="13" class="text-primary" aria-hidden="true" />
+            <MapPin :size="14" class="text-primary" aria-hidden="true" />
             <span class="info-bold">{{ c.schedule.currentActivity.locationName }}</span>
           </div>
           <div class="info-line">
-            <Clock :size="13" class="text-primary" aria-hidden="true" />
+            <Clock :size="14" class="text-primary" aria-hidden="true" />
             <span>{{ c.schedule.currentActivity.activityName }}</span>
           </div>
           <p class="activity-desc">{{ c.schedule.currentActivity.description }}</p>
@@ -141,7 +141,7 @@ async function handleResetAll(): Promise<void> {
             class="expand-timeline-btn"
             @click.stop="toggleSchedule(c.characterId)"
           >
-            {{ expandedSchedule[c.characterId] ? '收起 24 小时作息' : '查看 24 小时全天作息时间线' }}
+            {{ expandedSchedule[c.characterId] ? '收起 24 小时作息 ▲' : '查看 24 小时生活时间线 ▼' }}
           </button>
         </div>
 
@@ -175,9 +175,9 @@ async function handleResetAll(): Promise<void> {
 .schedule-view-layout {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-6);
   width: 100%;
-  max-width: 980px;
+  max-width: 1080px;
   margin: 0 auto;
 }
 
@@ -186,26 +186,27 @@ async function handleResetAll(): Promise<void> {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-4) var(--space-5);
+  padding: var(--space-5) var(--space-6);
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
-  gap: var(--space-3);
+  border-radius: var(--radius-2xl, 24px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.03);
+  gap: var(--space-4);
   flex-wrap: wrap;
 }
 
 .topbar-left {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 
 .schedule-page-title {
   margin: 0;
-  font-size: var(--text-lg);
+  font-size: var(--text-xl, 20px);
   font-weight: 900;
   color: var(--text-strong);
+  letter-spacing: -0.02em;
 }
 
 .schedule-subtitle {
@@ -216,7 +217,7 @@ async function handleResetAll(): Promise<void> {
 .topbar-actions {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-3);
 }
 
 .search-input-wrap {
@@ -227,38 +228,38 @@ async function handleResetAll(): Promise<void> {
 
 .search-icon {
   position: absolute;
-  left: 10px;
+  left: 12px;
   color: var(--muted);
 }
 
 .search-input {
-  padding: 6px 12px 6px 30px;
+  padding: 8px 14px 8px 34px;
   border-radius: var(--radius-full);
   border: 1px solid var(--border);
   background: var(--surface-soft);
   color: var(--text-strong);
-  font-size: 12px;
+  font-size: 13px;
   outline: none;
-  width: 160px;
-  transition: width var(--motion-fast);
+  width: 180px;
+  transition: width var(--motion-fast), border-color var(--motion-fast);
 }
 
 .search-input:focus {
-  width: 200px;
+  width: 240px;
   border-color: var(--primary);
 }
 
 .btn-reset-schedule {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 6px 14px;
+  gap: 6px;
+  padding: 8px 18px;
   border-radius: var(--radius-full);
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text-strong);
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 800;
   cursor: pointer;
   box-shadow: var(--shadow-sm);
   transition: all var(--motion-fast);
@@ -267,6 +268,7 @@ async function handleResetAll(): Promise<void> {
 .btn-reset-schedule:hover {
   border-color: var(--primary);
   color: var(--primary);
+  transform: translateY(-1px);
 }
 
 .spin-icon {
@@ -276,52 +278,54 @@ async function handleResetAll(): Promise<void> {
 /* 状态卡片网格 */
 .status-card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: var(--space-5);
 }
 
 .status-card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-5);
+  border-radius: var(--radius-2xl, 24px);
+  padding: var(--space-6);
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  box-shadow: var(--shadow-sm);
+  gap: var(--space-4);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.04);
   cursor: pointer;
-  transition: transform var(--motion-fast), border-color var(--motion-fast);
+  transition: transform var(--motion-fast), border-color var(--motion-fast), box-shadow var(--motion-fast);
 }
 
 .status-card:hover {
-  transform: translateY(-2px);
+  transform: translateY(-3px);
   border-color: var(--primary);
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.07);
 }
 
 /* 顶部 */
 .card-top {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-4);
 }
 
 .avatar-box {
-  padding: 2px;
+  padding: 3px;
   border-radius: var(--radius-full);
-  background: linear-gradient(135deg, var(--primary), var(--secondary, #8b5cf6));
+  background: linear-gradient(135deg, #f43f5e, var(--primary, #6366f1));
   flex-shrink: 0;
+  box-shadow: 0 3px 10px rgba(99, 102, 241, 0.2);
 }
 
 .avatar-inner {
-  width: 46px;
-  height: 46px;
+  width: 48px;
+  height: 48px;
   border-radius: var(--radius-full);
   background: var(--surface);
   color: var(--primary);
   display: grid;
   place-items: center;
   font-size: var(--text-base);
-  font-weight: 800;
+  font-weight: 900;
 }
 
 .name-row {
@@ -341,22 +345,22 @@ async function handleResetAll(): Promise<void> {
 .char-name {
   margin: 0;
   font-size: var(--text-base);
-  font-weight: 800;
+  font-weight: 900;
   color: var(--text-strong);
 }
 
 .status-badge {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 2px 8px;
+  gap: 4px;
+  padding: 2px 9px;
   border-radius: var(--radius-full);
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 800;
 }
 
 .live-badge {
-  background: rgb(16 185 129 / 10%);
+  background: rgba(16, 185, 129, 0.12);
   color: #10b981;
 }
 
@@ -367,9 +371,9 @@ async function handleResetAll(): Promise<void> {
 }
 
 .tag-badge {
-  font-size: 10px;
-  font-weight: 700;
-  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 2px 8px;
   border-radius: var(--radius-full);
 }
 
@@ -379,7 +383,7 @@ async function handleResetAll(): Promise<void> {
 }
 
 .tag-orange {
-  background: rgb(245 158 11 / 10%);
+  background: rgba(245, 158, 11, 0.12);
   color: #f59e0b;
 }
 
@@ -387,31 +391,31 @@ async function handleResetAll(): Promise<void> {
 .card-mid {
   background: var(--surface-soft);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-xl, 18px);
+  padding: var(--space-4) var(--space-5);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .info-line {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
+  gap: 8px;
+  font-size: 13px;
   color: var(--text);
 }
 
 .info-bold {
-  font-weight: 700;
+  font-weight: 800;
   color: var(--text-strong);
 }
 
 .activity-desc {
   margin: 4px 0 0;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
-  line-height: 1.4;
+  line-height: 1.5;
 }
 
 /* 底部操作 */
@@ -424,72 +428,76 @@ async function handleResetAll(): Promise<void> {
   border: 0;
   background: transparent;
   color: var(--primary);
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 800;
   cursor: pointer;
+}
+
+.expand-timeline-btn:hover {
+  text-decoration: underline;
 }
 
 /* 时间线 */
 .timeline-container {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  padding-top: var(--space-3);
+  gap: var(--space-3);
+  padding-top: var(--space-4);
   border-top: 1px dashed var(--border);
-  max-height: 280px;
+  max-height: 320px;
   overflow-y: auto;
 }
 
 .timeline-row {
   display: flex;
   align-items: flex-start;
-  gap: var(--space-2);
-  font-size: 11px;
+  gap: var(--space-3);
+  font-size: 12px;
 }
 
 .timeline-dot-col {
-  padding-top: 4px;
+  padding-top: 5px;
 }
 
 .t-dot {
   display: block;
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: var(--radius-full);
   background: var(--muted);
 }
 
 .timeline-row.is-current-active .t-dot {
   background: var(--primary);
-  box-shadow: 0 0 0 2px var(--primary-soft);
+  box-shadow: 0 0 0 3px var(--primary-soft);
 }
 
 .timeline-content {
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
 }
 
 .t-meta {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-3);
 }
 
 .t-time {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
-  font-weight: 700;
+  font-weight: 800;
 }
 
 .t-loc {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
 }
 
 .t-act {
-  font-weight: 700;
+  font-weight: 800;
   color: var(--text-strong);
 }
 
@@ -499,7 +507,7 @@ async function handleResetAll(): Promise<void> {
 
 .t-desc {
   margin: 0;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
 }
 
@@ -513,13 +521,13 @@ async function handleResetAll(): Promise<void> {
   align-items: center;
   gap: var(--space-3);
   background: var(--surface);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-2xl, 24px);
   border: 1px solid var(--border);
 }
 
 .spinner-ring {
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   border: 2px solid var(--border);
   border-top-color: var(--primary);
   border-radius: var(--radius-full);
