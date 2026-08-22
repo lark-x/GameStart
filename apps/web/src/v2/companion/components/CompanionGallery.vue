@@ -105,27 +105,27 @@ function formatDate(iso: string): string {
 .gallery-view-layout {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-6);
   width: 100%;
-  max-width: 1040px;
+  max-width: 1120px;
   margin: 0 auto;
 }
 
 .gallery-topbar {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4) var(--space-5);
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-6);
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
+  border-radius: var(--radius-2xl, 24px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.03);
 }
 
 .topbar-left {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 
 .title-row {
@@ -136,18 +136,19 @@ function formatDate(iso: string): string {
 
 .gallery-page-title {
   margin: 0;
-  font-size: var(--text-lg);
+  font-size: var(--text-xl, 20px);
   font-weight: 900;
   color: var(--text-strong);
+  letter-spacing: -0.02em;
 }
 
 .photo-count-pill {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--primary);
   background: var(--primary-soft);
-  padding: 2px 8px;
+  padding: 3px 10px;
   border-radius: var(--radius-full);
-  font-weight: 700;
+  font-weight: 800;
 }
 
 .gallery-subtitle {
@@ -162,13 +163,13 @@ function formatDate(iso: string): string {
 }
 
 .chip-btn {
-  padding: 4px 12px;
+  padding: 6px 16px;
   border-radius: var(--radius-full);
   border: 1px solid var(--border);
   background: var(--surface-soft);
   color: var(--muted);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 800;
   cursor: pointer;
   transition: all var(--motion-fast);
 }
@@ -182,19 +183,20 @@ function formatDate(iso: string): string {
   background: var(--primary);
   color: #fff;
   border-color: var(--primary);
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
 }
 
 /* 照片网格 */
 .gallery-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--space-4);
 }
 
 .photo-card {
   position: relative;
   aspect-ratio: 1 / 1;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-xl, 18px);
   overflow: hidden;
   border: 1px solid var(--border);
   cursor: zoom-in;

@@ -367,9 +367,9 @@ function selectCharacterFilter(charId: string | null): void {
 .moments-view-layout {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-6);
   width: 100%;
-  max-width: 780px;
+  max-width: 860px;
   margin: 0 auto;
 }
 
@@ -378,25 +378,25 @@ function selectCharacterFilter(charId: string | null): void {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-4) var(--space-5);
+  padding: var(--space-5) var(--space-6);
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
+  border-radius: var(--radius-2xl, 24px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.03);
 }
 
 .topbar-title-group {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 
 .moments-page-title {
   margin: 0;
-  font-size: var(--text-lg);
+  font-size: var(--text-xl, 20px);
   font-weight: 900;
   color: var(--text-strong);
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
 }
 
 .moments-subtitle {
@@ -407,13 +407,13 @@ function selectCharacterFilter(charId: string | null): void {
 .btn-disturb {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
+  gap: 7px;
+  padding: 10px 20px;
   border-radius: var(--radius-full);
   border: 1px solid var(--border);
   background: linear-gradient(135deg, var(--surface-soft), var(--surface));
   color: var(--text-strong);
-  font-size: var(--text-xs);
+  font-size: 13px;
   font-weight: 800;
   cursor: pointer;
   box-shadow: var(--shadow-sm);
@@ -424,6 +424,7 @@ function selectCharacterFilter(charId: string | null): void {
   border-color: var(--primary);
   color: var(--primary);
   transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
 }
 
 .btn-sparkle {
@@ -440,22 +441,22 @@ function selectCharacterFilter(charId: string | null): void {
 
 .picker-popover {
   position: absolute;
-  top: 130px;
-  right: calc(50% - 390px + 20px);
-  width: 240px;
+  top: 140px;
+  right: calc(50% - 430px + 24px);
+  width: 260px;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-xl);
-  padding: var(--space-3);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-2xl);
+  padding: var(--space-4);
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
 }
 
-@media (max-width: 820px) {
+@media (max-width: 900px) {
   .picker-popover {
-    right: 20px;
+    right: 24px;
   }
 }
 
@@ -463,8 +464,8 @@ function selectCharacterFilter(charId: string | null): void {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 800;
   color: var(--muted);
 }
 
@@ -484,13 +485,13 @@ function selectCharacterFilter(charId: string | null): void {
 .picker-btn {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  padding: 6px 10px;
+  gap: var(--space-3);
+  padding: 8px 12px;
   border-radius: var(--radius-md);
   border: 0;
   background: var(--surface-soft);
   color: var(--text-strong);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
   cursor: pointer;
   transition: all var(--motion-fast);
@@ -502,12 +503,12 @@ function selectCharacterFilter(charId: string | null): void {
 }
 
 .picker-avatar {
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   border-radius: var(--radius-full);
   background: var(--primary);
   color: #fff;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 800;
   display: grid;
   place-items: center;
@@ -517,25 +518,26 @@ function selectCharacterFilter(charId: string | null): void {
 .filter-bar {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-2xl, 24px);
   overflow-x: auto;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.02);
 }
 
 .filter-chip {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 5px 14px;
+  gap: 5px;
+  padding: 7px 16px;
   border-radius: var(--radius-full);
   border: 1px solid var(--border);
   background: var(--surface-soft);
   color: var(--muted);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 800;
   cursor: pointer;
   white-space: nowrap;
   transition: all var(--motion-fast);
@@ -545,11 +547,12 @@ function selectCharacterFilter(charId: string | null): void {
   background: var(--primary);
   color: #fff;
   border-color: var(--primary);
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
 }
 
 .filter-divider {
   width: 1px;
-  height: 24px;
+  height: 28px;
   background: var(--border);
   flex-shrink: 0;
 }
@@ -563,8 +566,8 @@ function selectCharacterFilter(charId: string | null): void {
 .filter-avatar-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 10px 3px 3px;
+  gap: 8px;
+  padding: 4px 14px 4px 4px;
   border-radius: var(--radius-full);
   border: 1px solid var(--border);
   background: var(--surface-soft);
@@ -579,20 +582,20 @@ function selectCharacterFilter(charId: string | null): void {
 }
 
 .filter-avatar-circle {
-  width: 26px;
-  height: 26px;
+  width: 30px;
+  height: 30px;
   border-radius: var(--radius-full);
   background: var(--primary);
   color: #fff;
-  font-size: 11px;
-  font-weight: 800;
+  font-size: 12px;
+  font-weight: 900;
   display: grid;
   place-items: center;
 }
 
 .filter-avatar-label {
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 800;
   color: var(--text-strong);
 }
 
@@ -600,49 +603,55 @@ function selectCharacterFilter(charId: string | null): void {
 .moments-stream {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-6);
 }
 
 .moment-card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-5);
+  border-radius: var(--radius-2xl, 24px);
+  padding: var(--space-6) var(--space-7);
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  box-shadow: var(--shadow-sm);
+  gap: var(--space-4);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+  transition: transform var(--motion-fast), box-shadow var(--motion-fast);
+}
+
+.moment-card:hover {
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.06);
 }
 
 .moment-header {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-4);
 }
 
 .moment-avatar-ring {
   cursor: pointer;
-  padding: 2px;
+  padding: 3px;
   border-radius: var(--radius-full);
-  background: linear-gradient(135deg, var(--primary), var(--secondary, #8b5cf6));
+  background: linear-gradient(135deg, #f43f5e, var(--primary, #6366f1));
+  box-shadow: 0 3px 10px rgba(99, 102, 241, 0.2);
 }
 
 .moment-avatar {
-  width: 44px;
-  height: 44px;
+  width: 50px;
+  height: 50px;
   border-radius: var(--radius-full);
   background: var(--surface);
   color: var(--primary);
   display: grid;
   place-items: center;
-  font-size: var(--text-base);
-  font-weight: 800;
+  font-size: var(--text-lg);
+  font-weight: 900;
 }
 
 .moment-author-info {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 
 .moment-name-row {
@@ -652,8 +661,8 @@ function selectCharacterFilter(charId: string | null): void {
 }
 
 .moment-author-name {
-  font-size: var(--text-sm);
-  font-weight: 800;
+  font-size: var(--text-base);
+  font-weight: 900;
   color: var(--text-strong);
   cursor: pointer;
 }
@@ -663,31 +672,31 @@ function selectCharacterFilter(charId: string | null): void {
 }
 
 .moment-time-tag {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
 }
 
 .moment-text-content {
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
   color: var(--text);
-  line-height: 1.6;
+  line-height: 1.7;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
 /* 配图 */
 .moment-media-container {
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-xl, 18px);
   overflow: hidden;
 }
 
 .moment-media-wrap {
   aspect-ratio: 16 / 10;
-  max-height: 380px;
+  max-height: 440px;
   background: var(--surface-soft);
   cursor: zoom-in;
   overflow: hidden;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-xl, 18px);
   border: 1px solid var(--border);
 }
 
@@ -707,23 +716,23 @@ function selectCharacterFilter(charId: string | null): void {
 .moment-action-row {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
-  padding-top: var(--space-2);
+  gap: var(--space-5);
+  padding-top: var(--space-3);
   border-top: 1px solid var(--border);
 }
 
 .action-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   border: 0;
   background: transparent;
   color: var(--muted);
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 800;
   cursor: pointer;
-  padding: 4px 8px;
-  border-radius: var(--radius-md);
+  padding: 6px 12px;
+  border-radius: var(--radius-full);
   transition: all var(--motion-fast);
 }
 
@@ -743,11 +752,11 @@ function selectCharacterFilter(charId: string | null): void {
 /* 评论区 */
 .moment-comments-area {
   background: var(--surface-soft);
-  border-radius: var(--radius-md);
-  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-xl, 18px);
+  padding: var(--space-4) var(--space-5);
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-3);
 }
 
 .comments-list {
