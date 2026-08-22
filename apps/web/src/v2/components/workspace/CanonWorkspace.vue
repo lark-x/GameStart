@@ -27,7 +27,7 @@ import Textarea from "../../../components/ui/Textarea.vue";
 import type { V2WorkspaceSnapshot } from "../../adapters";
 import { useV2WorkspaceStore } from "../../stores/workspace";
 import WorkspaceModuleIntro from "./WorkspaceModuleIntro.vue";
-import StorySkillTree from "./StorySkillTree.vue";
+import StoryActFlowTree from "./StoryActFlowTree.vue";
 import StoryNodeDrawer, { type CanonEntityKind } from "./StoryNodeDrawer.vue";
 import type { StorySkillNode } from "./StoryInspectionCard.vue";
 
@@ -235,7 +235,7 @@ const filteredTimeline = computed(() => {
                 @click="viewMode = 'tree'"
               >
                 <GitFork :size="14" aria-hidden="true" />
-                <span>🌲 故事技能树</span>
+                <span>🌲 篇章剧情树</span>
               </button>
               <button
                 type="button"
@@ -244,7 +244,7 @@ const filteredTimeline = computed(() => {
                 @click="viewMode = 'list'"
               >
                 <LayoutGrid :size="14" aria-hidden="true" />
-                <span>📋 经典卡片列表</span>
+                <span>📋 实体资产列表</span>
               </button>
             </div>
 
@@ -276,8 +276,8 @@ const filteredTimeline = computed(() => {
         </div>
       </Card>
 
-      <!-- 🌟 视图 A: RPG 故事技能树矩阵视图 (4 阶层拓扑与检视看板) -->
-      <StorySkillTree
+      <!-- 🌟 视图 A: 篇章剧幕与分支剧情树 (Act Flow Swimlanes) -->
+      <StoryActFlowTree
         v-if="viewMode === 'tree'"
         :snapshot="snapshot"
         :loading="loading"
