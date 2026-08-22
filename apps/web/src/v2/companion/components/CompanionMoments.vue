@@ -2,10 +2,8 @@
 import { computed, ref } from "vue";
 import { Heart, MessageCircle, Send, Share2, Sparkles, X } from "@lucide/vue";
 import type {
-  V2CharacterId,
   V2CompanionMomentDto,
   V2IdempotencyKey,
-  V2MomentId,
 } from "@living-network/contracts/v2";
 import type { V2CompanionClient } from "../client.ts";
 
@@ -21,39 +19,31 @@ const emit = defineEmits<{
   "select-character": [characterId: string];
 }>();
 
-// Filter states: null = all, 'liked' = only liked, characterId = specific character
+// Filter states
 const activeFilter = ref<string | null>(null);
 const filterLikedOnly = ref(false);
 
-// Active post comment draft
-const replyDrafts = ref<Record<string, string>>({});
+// Comment inputs
 const activeCommentPostId = ref<string | null>(null);
-const submittingComment = ref<Record<string, boolean>>({});
+const replyDrafts = ref<Record<string, string>>({});
+const isSubmittingComment = ref(false);
 
-// Trigger new post modal
-const showGeneratePicker = ref(false);
-const isGeneratingPost = ref(false);
+// "Disturb Worldline" trigger modal
+const showPickerPopover = ref(false);
+const isGenerating = ref(false);
 
-// Unique characters with posts
-const charactersWithPosts = computed(() => {
-  const map = new Map<string, { characterId: string; characterName: string }>();
-  for (const m of props.moments) {
-    if (!map.has(m.characterId)) {
-      map.set(m.characterId, { characterId: m.characterId, characterName: m.characterName });
-    }
-  }
-  return Array.from(map.values());
-});
+const availableCharacters = [
+  { id: "character:furina", name: "芙宁娜" },
+  { id: "character:clorinde", name: "克洛琳德" },
+  { id: "character:navia", name: "娜维娅" },
+];
 
 const filteredMoments = computed(() => {
-  let result = props.moments;
-  if (filterLikedOnly.value) {
-    result = result.filter((m) => m.isLiked);
-  }
-  if (activeFilter.value) {
-    result = result.filter((m) => m.characterId === activeFilter.value);
-  }
-  return result;
+  return props.moments.filter((m) => {
+    if (activeFilter.value && m.characterId !== activeFilter.value) return false;
+    if (filterLikedOnly.value && !m.isLiked) return false;
+    return true;
+  });
 });
 
 function avatarInitial(name: string): string {
@@ -64,15 +54,14 @@ function formatTime(iso: string): string {
   try {
     const d = new Date(iso);
     const now = new Date();
-    const diffMs = now.getTime() - d.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    if (diffMins < 1) return "刚刚";
-    if (diffMins < 60) return `${diffMins}分钟前`;
-    const diffHours = Math.floor(diffMins / 60);
+    const diffMin = Math.floor((now.getTime() - d.getTime()) / 60000);
+    if (diffMin < 1) return "刚刚";
+    if (diffMin < 60) return `${diffMin}分钟前`;
+    const diffHours = Math.floor(diffMin / 60);
     if (diffHours < 24) return `${diffHours}小时前`;
     return `${d.getMonth() + 1}月${d.getDate()}日`;
   } catch {
-    return "";
+    return iso;
   }
 }
 
@@ -80,8 +69,8 @@ async function handleLike(moment: V2CompanionMomentDto): Promise<void> {
   try {
     await props.client.toggleLikeMoment(moment.momentId);
     emit("refresh");
-  } catch (err) {
-    console.error("Like failed:", err);
+  } catch (error) {
+    console.error("Failed to like moment:", error);
   }
 }
 
@@ -97,136 +86,120 @@ function toggleCommentBox(momentId: string): void {
 }
 
 async function submitComment(momentId: string): Promise<void> {
-  const text = replyDrafts.value[momentId]?.trim();
-  if (!text || submittingComment.value[momentId]) return;
+  const content = replyDrafts.value[momentId]?.trim();
+  if (!content || isSubmittingComment.value) return;
 
-  submittingComment.value[momentId] = true;
+  isSubmittingComment.value = true;
   try {
     const idempotencyKey = `comment:${momentId}:${Date.now()}` as V2IdempotencyKey;
-    await props.client.addComment(momentId as V2MomentId, {
-      content: text,
-      idempotencyKey,
-    });
+    await props.client.addComment(momentId as never, { content, idempotencyKey });
     replyDrafts.value[momentId] = "";
     activeCommentPostId.value = null;
     emit("refresh");
-  } catch (err) {
-    console.error("Comment failed:", err);
+  } catch (error) {
+    console.error("Failed to comment on moment:", error);
   } finally {
-    submittingComment.value[momentId] = false;
+    isSubmittingComment.value = false;
   }
 }
 
-async function triggerNewPost(characterId: string): Promise<void> {
-  showGeneratePicker.value = false;
-  isGeneratingPost.value = true;
+async function triggerDisturb(characterId: string): Promise<void> {
+  if (isGenerating.value) return;
+  isGenerating.value = true;
+  showPickerPopover.value = false;
   try {
-    const idempotencyKey = `gen:moment:${characterId}:${Date.now()}` as V2IdempotencyKey;
+    const idempotencyKey = `moment:${characterId}:${Date.now()}` as V2IdempotencyKey;
     await props.client.createMoment({
-      characterId: characterId as V2CharacterId,
+      characterId: characterId as never,
       idempotencyKey,
     });
     emit("refresh");
-  } catch (err) {
-    console.error("Trigger moment failed:", err);
+  } catch (error) {
+    console.error("Failed to trigger companion moment:", error);
   } finally {
-    isGeneratingPost.value = false;
+    isGenerating.value = false;
   }
-}
-
-function toggleLikedFilter(): void {
-  filterLikedOnly.value = !filterLikedOnly.value;
-}
-
-function selectCharacterFilter(charId: string | null): void {
-  activeFilter.value = activeFilter.value === charId ? null : charId;
 }
 </script>
 
 <template>
   <div class="moments-view-layout">
-    <!-- 顶栏：标题 + 扰动世界线操作 -->
+    <!-- 顶栏：标题 + 扰动世界线按钮 -->
     <div class="moments-topbar">
       <div class="topbar-title-group">
-        <h2 class="moments-page-title">朋友圈</h2>
-        <span class="moments-subtitle">Moments · 伴侣自发动态与真实生活互动</span>
+        <h2 class="moments-page-title">朋友圈动态</h2>
+        <span class="moments-subtitle">伴侣会根据当下的作息与心情，在这里分享生活日常与写真照片</span>
       </div>
 
       <div class="topbar-actions">
         <button
           type="button"
           class="btn-disturb"
-          :disabled="isGeneratingPost"
-          @click.stop="showGeneratePicker = !showGeneratePicker"
+          :disabled="isGenerating"
+          @click="showPickerPopover = !showPickerPopover"
         >
-          <Sparkles :size="15" class="btn-sparkle" aria-hidden="true" />
-          <span>{{ isGeneratingPost ? '扰动中…' : '🎬 扰动世界线' }}</span>
+          <Sparkles :size="15" class="text-primary" aria-hidden="true" />
+          <span>{{ isGenerating ? '正在生成新动态…' : '🎬 扰动世界线' }}</span>
         </button>
       </div>
     </div>
 
-    <!-- 角色选择下拉气泡 (选择发朋友圈的角色) -->
-    <div v-if="showGeneratePicker" class="picker-popover-backdrop" @click="showGeneratePicker = false">
+    <!-- 角色选择气泡 (用于扰动世界线) -->
+    <div v-if="showPickerPopover" class="picker-popover-backdrop" @click="showPickerPopover = false">
       <div class="picker-popover" @click.stop>
         <div class="picker-header">
-          <span>选择激发动态的角色：</span>
-          <button type="button" class="picker-close" @click="showGeneratePicker = false">
-            <X :size="14" aria-hidden="true" />
-          </button>
+          <span>选择要扰动世界线的伴侣：</span>
+          <button type="button" class="picker-close" @click="showPickerPopover = false"><X :size="14" /></button>
         </div>
         <div class="picker-list">
           <button
-            v-for="c in charactersWithPosts"
-            :key="c.characterId"
+            v-for="char in availableCharacters"
+            :key="char.id"
             type="button"
             class="picker-btn"
-            @click="triggerNewPost(c.characterId)"
+            @click="triggerDisturb(char.id)"
           >
-            <div class="picker-avatar">{{ avatarInitial(c.characterName) }}</div>
-            <span>{{ c.characterName }}</span>
+            <div class="picker-btn-avatar">{{ avatarInitial(char.name) }}</div>
+            <span>由 {{ char.name }} 发送一条新朋友圈</span>
           </button>
         </div>
       </div>
     </div>
 
-    <!-- 角色过滤轴 (全部 / ❤️ 赞过 / 各角色头像) -->
-    <div class="filter-bar">
+    <!-- 筛选轴：全部 / 我赞过的 / 单角色筛选 -->
+    <div class="moments-filter-bar">
       <button
         type="button"
-        class="filter-chip filter-all"
+        class="filter-chip-btn"
         :class="{ active: activeFilter === null && !filterLikedOnly }"
         @click="activeFilter = null; filterLikedOnly = false;"
       >
-        全部
+        <span>全部动态</span>
       </button>
 
       <button
         type="button"
-        class="filter-chip filter-heart"
+        class="filter-chip-btn"
         :class="{ active: filterLikedOnly }"
-        title="只看赞过的"
-        @click="toggleLikedFilter"
+        @click="filterLikedOnly = !filterLikedOnly; activeFilter = null;"
       >
-        <Heart :size="14" :class="{ 'fill-current': filterLikedOnly }" aria-hidden="true" />
-        <span>赞过</span>
+        <Heart :size="13" class="fill-current text-rose-500" aria-hidden="true" />
+        <span>特别关心</span>
       </button>
 
       <div class="filter-divider" />
 
       <div class="filter-avatar-scroll">
         <button
-          v-for="ch in charactersWithPosts"
-          :key="ch.characterId"
+          v-for="char in availableCharacters"
+          :key="char.id"
           type="button"
           class="filter-avatar-btn"
-          :class="{ active: activeFilter === ch.characterId }"
-          :title="ch.characterName"
-          @click="selectCharacterFilter(ch.characterId)"
+          :class="{ active: activeFilter === char.id }"
+          @click="activeFilter = activeFilter === char.id ? null : char.id; filterLikedOnly = false;"
         >
-          <div class="filter-avatar-circle">
-            {{ avatarInitial(ch.characterName) }}
-          </div>
-          <span class="filter-avatar-label">{{ ch.characterName }}</span>
+          <div class="filter-avatar-circle">{{ avatarInitial(char.name) }}</div>
+          <span class="filter-avatar-label">{{ char.name }}</span>
         </button>
       </div>
     </div>
@@ -300,7 +273,7 @@ function selectCharacterFilter(charId: string | null): void {
             :class="{ active: moment.isLiked }"
             @click="handleLike(moment)"
           >
-            <Heart :size="16" :class="{ 'fill-current text-danger': moment.isLiked }" aria-hidden="true" />
+            <Heart :size="16" :class="{ 'fill-current text-rose-500': moment.isLiked }" aria-hidden="true" />
             <span v-if="moment.likesCount > 0" class="like-count">{{ moment.likesCount }}</span>
             <span v-else>赞</span>
           </button>
@@ -349,12 +322,12 @@ function selectCharacterFilter(charId: string | null): void {
             />
             <button
               type="button"
-              class="comment-send-btn"
-              :disabled="!replyDrafts[moment.momentId]?.trim() || submittingComment[moment.momentId]"
+              class="comment-submit-btn"
+              :disabled="!replyDrafts[moment.momentId]?.trim() || isSubmittingComment"
               @click="submitComment(moment.momentId)"
             >
-              <Send :size="14" aria-hidden="true" />
-              <span>发送</span>
+              <Send :size="13" aria-hidden="true" />
+              <span>回复</span>
             </button>
           </div>
         </div>
@@ -367,10 +340,11 @@ function selectCharacterFilter(charId: string | null): void {
 .moments-view-layout {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 20px;
   width: 100%;
-  max-width: 860px;
+  max-width: 820px;
   margin: 0 auto;
+  padding-bottom: 60px;
 }
 
 /* 顶栏 */
@@ -378,13 +352,11 @@ function selectCharacterFilter(charId: string | null): void {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 20px 28px;
-  background: rgba(26, 23, 40, 0.75);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 20px;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
+  padding: 18px 24px;
+  background: var(--cmp-surface, #ffffff);
+  border: 1px solid var(--cmp-border, #ebdcd1);
+  border-radius: 18px;
+  box-shadow: var(--cmp-shadow-sm, 0 2px 8px rgba(120, 80, 60, 0.05));
 }
 
 .topbar-title-group {
@@ -395,41 +367,38 @@ function selectCharacterFilter(charId: string | null): void {
 
 .moments-page-title {
   margin: 0;
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 900;
-  color: #f8fafc;
-  letter-spacing: -0.02em;
+  color: var(--cmp-text-strong, #2c221e);
+  letter-spacing: -0.01em;
 }
 
 .moments-subtitle {
-  font-size: 13px;
-  color: #94a3b8;
+  font-size: 12px;
+  color: var(--cmp-text-muted, #8c7d74);
 }
 
 .btn-disturb {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 10px 20px;
+  gap: 6px;
+  padding: 8px 18px;
   border-radius: 9999px;
-  border: 1px solid rgba(99, 102, 241, 0.4);
-  background: rgba(99, 102, 241, 0.15);
-  color: #e0e7ff;
+  border: 1px solid var(--cmp-border, #ebdcd1);
+  background: var(--cmp-surface-soft, #f6f1ea);
+  color: var(--cmp-text-strong, #2c221e);
   font-size: 13px;
   font-weight: 800;
   cursor: pointer;
-  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.3);
-  transition: all 0.2s ease;
+  box-shadow: var(--cmp-shadow-sm, 0 2px 8px rgba(120, 80, 60, 0.05));
+  transition: all 0.18s ease;
 }
 
 .btn-disturb:hover {
-  background: #6366f1;
-  color: #ffffff;
+  border-color: var(--cmp-primary, #e06d53);
+  color: var(--cmp-primary, #e06d53);
+  background: var(--cmp-surface, #ffffff);
   transform: translateY(-1px);
-}
-
-.btn-sparkle {
-  color: #f59e0b;
 }
 
 /* 角色选择气泡 */
@@ -437,19 +406,19 @@ function selectCharacterFilter(charId: string | null): void {
   position: fixed;
   inset: 0;
   z-index: 60;
-  background: transparent;
+  background: rgba(0, 0, 0, 0.2);
 }
 
 .picker-popover {
   position: absolute;
   top: 140px;
-  right: calc(50% - 430px + 24px);
+  right: calc(50% - 410px + 24px);
   width: 260px;
-  background: #1e1b2e;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 18px;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
-  padding: 16px;
+  background: var(--cmp-surface, #ffffff);
+  border: 1px solid var(--cmp-border, #ebdcd1);
+  border-radius: 16px;
+  box-shadow: var(--cmp-shadow-lg, 0 16px 36px rgba(120, 80, 60, 0.12));
+  padding: 14px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -467,13 +436,13 @@ function selectCharacterFilter(charId: string | null): void {
   justify-content: space-between;
   font-size: 12px;
   font-weight: 800;
-  color: #94a3b8;
+  color: var(--cmp-text-muted, #8c7d74);
 }
 
 .picker-close {
   border: 0;
   background: transparent;
-  color: #94a3b8;
+  color: var(--cmp-text-muted, #8c7d74);
   cursor: pointer;
 }
 
@@ -486,113 +455,112 @@ function selectCharacterFilter(charId: string | null): void {
 .picker-btn {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   padding: 8px 12px;
   border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  background: rgba(255, 255, 255, 0.04);
-  color: #f1f5f9;
+  border: 1px solid var(--cmp-border-light, #f3eae2);
+  background: var(--cmp-surface-soft, #f6f1ea);
+  color: var(--cmp-text-strong, #2c221e);
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 800;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.18s ease;
 }
 
 .picker-btn:hover {
-  background: rgba(99, 102, 241, 0.2);
-  color: #ffffff;
+  background: var(--cmp-primary-soft, #fcedea);
+  border-color: var(--cmp-primary, #e06d53);
+  color: var(--cmp-primary, #e06d53);
 }
 
-.picker-avatar {
-  width: 28px;
-  height: 28px;
+.picker-btn-avatar {
+  width: 26px;
+  height: 26px;
   border-radius: 9999px;
-  background: #6366f1;
-  color: #ffffff;
+  background: var(--cmp-primary, #e06d53);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 900;
   display: grid;
   place-items: center;
-  font-size: 12px;
-  font-weight: 800;
 }
 
 /* 筛选栏 */
 .moments-filter-bar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 20px;
-  background: rgba(26, 23, 40, 0.75);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  gap: 10px;
+  padding: 10px 18px;
+  background: var(--cmp-surface, #ffffff);
+  border: 1px solid var(--cmp-border, #ebdcd1);
   border-radius: 9999px;
+  box-shadow: var(--cmp-shadow-sm, 0 2px 8px rgba(120, 80, 60, 0.05));
   overflow-x: auto;
 }
 
 .filter-chip-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 16px;
+  gap: 5px;
+  padding: 5px 14px;
   border-radius: 9999px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.04);
-  color: #94a3b8;
+  border: 1px solid var(--cmp-border-light, #f3eae2);
+  background: var(--cmp-surface-soft, #f6f1ea);
+  color: var(--cmp-text-muted, #8c7d74);
   font-size: 12px;
   font-weight: 800;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.18s ease;
   white-space: nowrap;
 }
 
 .filter-chip-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #f8fafc;
+  background: var(--cmp-surface, #ffffff);
+  color: var(--cmp-text-strong, #2c221e);
 }
 
 .filter-chip-btn.active {
-  background: #6366f1;
-  color: #ffffff;
-  border-color: #6366f1;
-  box-shadow: 0 2px 10px rgba(99, 102, 241, 0.4);
+  background: var(--cmp-primary, #e06d53);
+  color: #fff;
+  border-color: var(--cmp-primary, #e06d53);
 }
 
 .filter-divider {
   width: 1px;
-  height: 24px;
-  background: rgba(255, 255, 255, 0.1);
+  height: 20px;
+  background: var(--cmp-border, #ebdcd1);
   flex-shrink: 0;
 }
 
 .filter-avatar-scroll {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .filter-avatar-btn {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 14px 4px 4px;
+  gap: 6px;
+  padding: 3px 12px 3px 3px;
   border-radius: 9999px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--cmp-border-light, #f3eae2);
+  background: var(--cmp-surface-soft, #f6f1ea);
   cursor: pointer;
   white-space: nowrap;
-  transition: all 0.2s ease;
+  transition: all 0.18s ease;
 }
 
 .filter-avatar-btn.active {
-  border-color: #6366f1;
-  background: rgba(99, 102, 241, 0.2);
+  border-color: var(--cmp-primary, #e06d53);
+  background: var(--cmp-primary-soft, #fcedea);
 }
 
 .filter-avatar-circle {
-  width: 30px;
-  height: 30px;
+  width: 26px;
+  height: 26px;
   border-radius: 9999px;
-  background: #6366f1;
+  background: var(--cmp-primary, #e06d53);
   color: #fff;
   font-size: 12px;
   font-weight: 900;
@@ -603,111 +571,91 @@ function selectCharacterFilter(charId: string | null): void {
 .filter-avatar-label {
   font-size: 12px;
   font-weight: 800;
-  color: #f8fafc;
+  color: var(--cmp-text-strong, #2c221e);
 }
 
 /* 动态流 */
 .moments-stream {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 20px;
 }
 
 .moment-card {
-  background: rgba(26, 23, 40, 0.75);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 20px;
-  padding: 24px 28px;
+  background: var(--cmp-surface, #ffffff);
+  border: 1px solid var(--cmp-border, #ebdcd1);
+  border-radius: 18px;
+  padding: 22px 26px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.moment-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+  gap: 14px;
+  box-shadow: var(--cmp-shadow-sm, 0 2px 8px rgba(120, 80, 60, 0.05));
+  transition: transform 0.18s ease;
 }
 
 .moment-header {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
+  gap: 12px;
 }
 
 .moment-avatar-ring {
   cursor: pointer;
-  padding: 3px;
-  border-radius: var(--radius-full);
-  background: linear-gradient(135deg, #f43f5e, var(--primary, #6366f1));
-  box-shadow: 0 3px 10px rgba(99, 102, 241, 0.2);
+  padding: 2px;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, var(--cmp-primary, #e06d53), var(--cmp-accent, #f59e0b));
 }
 
 .moment-avatar {
-  width: 50px;
-  height: 50px;
-  border-radius: var(--radius-full);
-  background: var(--surface);
-  color: var(--primary);
+  width: 44px;
+  height: 44px;
+  border-radius: 9999px;
+  background: var(--cmp-surface, #ffffff);
+  color: var(--cmp-primary, #e06d53);
   display: grid;
   place-items: center;
-  font-size: var(--text-lg);
+  font-size: 16px;
   font-weight: 900;
 }
 
 .moment-author-info {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-}
-
-.moment-name-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  gap: 2px;
 }
 
 .moment-author-name {
-  font-size: var(--text-base);
+  font-size: 15px;
   font-weight: 900;
-  color: var(--text-strong);
+  color: var(--cmp-text-strong, #2c221e);
   cursor: pointer;
 }
 
-.moment-author-name:hover {
-  color: var(--primary);
-}
-
 .moment-time-tag {
-  font-size: 12px;
-  color: var(--muted);
+  font-size: 11px;
+  color: var(--cmp-text-muted, #8c7d74);
 }
 
 .moment-text-content {
-  font-size: var(--text-base);
-  color: var(--text);
+  font-size: 14px;
   line-height: 1.7;
+  color: var(--cmp-text-strong, #2c221e);
   white-space: pre-wrap;
-  word-break: break-word;
 }
 
-/* 配图 */
 .moment-media-container {
-  border-radius: var(--radius-xl, 18px);
+  border-radius: 14px;
   overflow: hidden;
+  max-width: 520px;
 }
 
 .moment-media-wrap {
   aspect-ratio: 16 / 10;
-  max-height: 440px;
-  background: var(--surface-soft);
-  cursor: zoom-in;
+  max-height: 380px;
+  border-radius: 14px;
   overflow: hidden;
-  border-radius: var(--radius-xl, 18px);
-  border: 1px solid var(--border);
+  cursor: zoom-in;
+  border: 1px solid var(--cmp-border, #ebdcd1);
 }
 
 .moment-media-img {
@@ -715,152 +663,130 @@ function selectCharacterFilter(charId: string | null): void {
   height: 100%;
   object-fit: cover;
   display: block;
-  transition: transform var(--motion-fast);
 }
 
-.moment-media-wrap:hover .moment-media-img {
-  transform: scale(1.03);
-}
-
-/* 互动栏 */
 .moment-action-row {
   display: flex;
   align-items: center;
-  gap: var(--space-5);
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--border);
+  gap: 8px;
+  padding-top: 4px;
 }
 
 .action-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  font-size: 13px;
+  gap: 5px;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  border: 1px solid var(--cmp-border-light, #f3eae2);
+  background: var(--cmp-surface-soft, #f6f1ea);
+  color: var(--cmp-text-muted, #8c7d74);
+  font-size: 12px;
   font-weight: 800;
   cursor: pointer;
-  padding: 6px 12px;
-  border-radius: var(--radius-full);
-  transition: all var(--motion-fast);
+  transition: all 0.18s ease;
 }
 
 .action-btn:hover {
-  background: var(--surface-soft);
-  color: var(--text-strong);
+  background: var(--cmp-surface, #ffffff);
+  color: var(--cmp-text-strong, #2c221e);
 }
 
 .action-btn.active {
-  color: var(--primary);
-}
-
-.action-like.active {
-  color: var(--danger, #f43f5e);
+  background: var(--cmp-primary-soft, #fcedea);
+  color: var(--cmp-primary, #e06d53);
+  border-color: var(--cmp-primary, #e06d53);
 }
 
 /* 评论区 */
 .moment-comments-area {
-  background: var(--surface-soft);
-  border-radius: var(--radius-xl, 18px);
-  padding: var(--space-4) var(--space-5);
+  background: var(--cmp-surface-soft, #f6f1ea);
+  border: 1px solid var(--cmp-border-light, #f3eae2);
+  border-radius: 14px;
+  padding: 12px 16px;
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: 10px;
 }
 
 .comments-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .comment-item {
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.5;
 }
 
 .comment-author {
   font-weight: 800;
-  color: var(--primary);
+  color: var(--cmp-primary, #e06d53);
 }
 
 .is-char-comment .comment-author {
-  color: var(--primary);
+  color: var(--cmp-accent, #d97706);
 }
 
 .comment-colon {
-  color: var(--muted);
+  color: var(--cmp-text-muted, #8c7d74);
 }
 
 .comment-text {
-  color: var(--text-strong);
+  color: var(--cmp-text, #4a3e39);
 }
 
 .comment-input-box {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  margin-top: var(--space-1);
+  gap: 8px;
+  margin-top: 4px;
 }
 
 .comment-input-field {
   flex: 1 1 auto;
-  min-width: 0;
-  padding: 6px 12px;
-  border-radius: var(--radius-full);
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text-strong);
-  font-size: 12px;
+  padding: 7px 12px;
+  border-radius: 9999px;
+  border: 1px solid var(--cmp-border, #ebdcd1);
+  background: var(--cmp-surface, #ffffff);
+  color: var(--cmp-text-strong, #2c221e);
+  font-size: 13px;
   outline: none;
 }
 
-.comment-input-field:focus {
-  border-color: var(--primary);
-}
-
-.comment-send-btn {
+.comment-submit-btn {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 6px 14px;
-  border-radius: var(--radius-full);
+  padding: 7px 14px;
+  border-radius: 9999px;
   border: 0;
-  background: var(--primary);
+  background: var(--cmp-primary, #e06d53);
   color: #fff;
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 800;
   cursor: pointer;
-  transition: opacity var(--motion-fast);
-}
-
-.comment-send-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .moments-loading-state,
 .moments-empty-state {
-  padding: var(--space-12) var(--space-4);
+  padding: 40px;
   text-align: center;
-  color: var(--muted);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-3);
-  background: var(--surface);
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border);
+  color: var(--cmp-text-muted, #8c7d74);
+  background: var(--cmp-surface, #ffffff);
+  border-radius: 18px;
+  border: 1px solid var(--cmp-border, #ebdcd1);
 }
 
 .spinner-ring {
-  width: 26px;
-  height: 26px;
-  border: 2px solid var(--border);
-  border-top-color: var(--primary);
-  border-radius: var(--radius-full);
+  width: 28px;
+  height: 28px;
+  border: 2px solid var(--cmp-border-light, #f3eae2);
+  border-top-color: var(--cmp-primary, #e06d53);
+  border-radius: 9999px;
   animation: spin 0.8s linear infinite;
+  margin: 0 auto 10px;
 }
 
 @keyframes spin {

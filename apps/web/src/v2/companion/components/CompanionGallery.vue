@@ -14,89 +14,115 @@ const emit = defineEmits<{
   "preview-image": [url: string];
 }>();
 
-const selectedCharacter = ref<string>("ALL");
+const activeFilter = ref<string | null>(null);
 
-const availableCharacters = computed(() => {
-  const set = new Set<string>();
-  for (const item of props.gallery) {
-    set.add(item.characterName);
-  }
-  return ["ALL", ...Array.from(set)];
-});
+const availableCharacters = [
+  { id: "character:furina", name: "芙宁娜" },
+  { id: "character:clorinde", name: "克洛琳德" },
+  { id: "character:navia", name: "娜维娅" },
+];
 
 const filteredGallery = computed(() => {
-  if (selectedCharacter.value === "ALL") return props.gallery;
-  return props.gallery.filter((item) => item.characterName === selectedCharacter.value);
+  if (!activeFilter.value) return props.gallery;
+  return props.gallery.filter((g) => g.characterId === activeFilter.value);
 });
+
+function avatarInitial(name: string): string {
+  return [...name.trim()][0] ?? "?";
+}
 
 function formatDate(iso: string): string {
   try {
     const d = new Date(iso);
-    return `${d.getMonth() + 1}月${d.getDate()}日`;
+    return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`;
   } catch {
-    return "";
+    return iso;
   }
 }
 </script>
 
 <template>
   <div class="gallery-view-layout">
-    <!-- 顶栏 -->
+    <!-- 顶栏：标题 + 照片计数 + 筛选 -->
     <div class="gallery-topbar">
       <div class="topbar-left">
         <div class="title-row">
-          <h2 class="gallery-page-title">相册</h2>
-          <span class="photo-count-pill">{{ filteredGallery.length }} 张写真</span>
+          <h2 class="gallery-page-title">回忆相册写真</h2>
+          <span class="photo-count-pill">{{ filteredGallery.length }} 张珍藏</span>
         </div>
-        <span class="gallery-subtitle">伴侣写真回忆相册 · 收集对话与朋友圈生成的高清插画瞬间</span>
+        <span class="gallery-subtitle">与伴侣在不同场景下留存的高清写真与生活瞬间</span>
       </div>
 
-      <!-- 角色分类筛选 -->
-      <div v-if="availableCharacters.length > 2" class="gallery-filter-chips">
+      <!-- 角色筛选 -->
+      <div class="gallery-filter-chips">
         <button
-          v-for="char in availableCharacters"
-          :key="char"
           type="button"
           class="chip-btn"
-          :class="{ active: selectedCharacter === char }"
-          @click="selectedCharacter = char"
+          :class="{ active: activeFilter === null }"
+          @click="activeFilter = null"
         >
-          {{ char === 'ALL' ? '全部角色' : char }}
+          全部写真
+        </button>
+
+        <button
+          v-for="char in availableCharacters"
+          :key="char.id"
+          type="button"
+          class="chip-btn"
+          :class="{ active: activeFilter === char.id }"
+          @click="activeFilter = char.id"
+        >
+          {{ char.name }}
         </button>
       </div>
     </div>
 
-    <!-- 照片网格 -->
-    <div v-if="loading && gallery.length === 0" class="gallery-loading-state">
+    <!-- 加载中 -->
+    <div v-if="loading && gallery.length === 0" class="gallery-loading">
       <div class="spinner-ring" />
-      <span>正在载入回忆写真相册…</span>
+      <span>正在读取相册写真…</span>
     </div>
 
-    <div v-else-if="filteredGallery.length === 0" class="gallery-empty-state">
-      <ImageIcon :size="32" class="text-primary" aria-hidden="true" />
-      <h4>暂无写真照片</h4>
-      <p>在朋友圈或故事对话中与伴侣互动，角色会主动为你生成带有精美配图的生活瞬间！</p>
+    <!-- 空态 -->
+    <div v-else-if="filteredGallery.length === 0" class="gallery-empty">
+      <ImageIcon :size="36" class="text-primary" aria-hidden="true" />
+      <p>相册里还没有照片哦，前往聊天向伴侣索要即时自拍，或让伴侣在朋友圈发布新动态吧！</p>
     </div>
 
+    <!-- 照片网格 -->
     <div v-else class="gallery-grid">
-      <div
+      <article
         v-for="item in filteredGallery"
-        :key="item.mediaId"
+        :key="item.mediaRef"
         class="photo-card"
         @click="emit('preview-image', client.mediaUrl(item.mediaRef))"
       >
         <img
           :src="client.mediaUrl(item.mediaRef)"
-          :alt="item.title"
+          :alt="item.title || '伴侣写真'"
           class="photo-img"
           loading="lazy"
-          @error="(e) => (e.target as HTMLElement).style.display = 'none'"
         />
-        <div class="photo-meta-overlay">
-          <span class="char-tag">{{ item.characterName }}</span>
-          <span class="date-tag">{{ formatDate(item.createdAt) }}</span>
+
+        <div class="photo-overlay">
+          <div class="photo-top-tags">
+            <span class="char-pill">
+              <span class="char-avatar-dot">{{ avatarInitial(item.characterName) }}</span>
+              <span>{{ item.characterName }}</span>
+            </span>
+            <span class="date-tag">{{ formatDate(item.createdAt) }}</span>
+          </div>
+
+          <div class="photo-bottom-info">
+            <p v-if="item.title" class="photo-caption">{{ item.title }}</p>
+            <div class="photo-meta-line">
+              <span class="meta-item">
+                <span>{{ item.source === 'chat' ? '💬 对话合影' : '📸 动态写真' }}</span>
+              </span>
+            </div>
+          </div>
         </div>
-      </div>
+      </article>
     </div>
   </div>
 </template>
@@ -105,9 +131,9 @@ function formatDate(iso: string): string {
 .gallery-view-layout {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 20px;
   width: 100%;
-  max-width: 1120px;
+  max-width: 1040px;
   margin: 0 auto;
   padding-bottom: 60px;
 }
@@ -115,98 +141,99 @@ function formatDate(iso: string): string {
 .gallery-topbar {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 20px 28px;
-  background: rgba(26, 23, 40, 0.75);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 20px;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
+  gap: 12px;
+  padding: 18px 24px;
+  background: var(--cmp-surface, #ffffff);
+  border: 1px solid var(--cmp-border, #ebdcd1);
+  border-radius: 18px;
+  box-shadow: var(--cmp-shadow-sm, 0 2px 8px rgba(120, 80, 60, 0.05));
 }
 
 .topbar-left {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
 .title-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .gallery-page-title {
   margin: 0;
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 900;
-  color: #f8fafc;
-  letter-spacing: -0.02em;
+  color: var(--cmp-text-strong, #2c221e);
+  letter-spacing: -0.01em;
 }
 
 .photo-count-pill {
-  font-size: 12px;
-  color: #a5b4fc;
-  background: rgba(99, 102, 241, 0.15);
-  border: 1px solid rgba(99, 102, 241, 0.3);
-  padding: 3px 12px;
+  font-size: 11px;
+  color: var(--cmp-primary, #e06d53);
+  background: var(--cmp-primary-soft, #fcedea);
+  padding: 2px 10px;
   border-radius: 9999px;
   font-weight: 800;
 }
 
 .gallery-subtitle {
-  font-size: 13px;
-  color: #94a3b8;
+  font-size: 12px;
+  color: var(--cmp-text-muted, #8c7d74);
 }
 
 .gallery-filter-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
 }
 
 .chip-btn {
-  padding: 6px 16px;
+  padding: 5px 14px;
   border-radius: 9999px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.04);
-  color: #94a3b8;
+  border: 1px solid var(--cmp-border-light, #f3eae2);
+  background: var(--cmp-surface-soft, #f6f1ea);
+  color: var(--cmp-text-muted, #8c7d74);
   font-size: 12px;
   font-weight: 800;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.18s ease;
 }
 
 .chip-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #f8fafc;
+  background: var(--cmp-surface, #ffffff);
+  color: var(--cmp-text-strong, #2c221e);
 }
 
 .chip-btn.active {
-  background: #6366f1;
-  color: #ffffff;
-  border-color: #6366f1;
-  box-shadow: 0 2px 10px rgba(99, 102, 241, 0.4);
+  background: var(--cmp-primary, #e06d53);
+  color: #fff;
+  border-color: var(--cmp-primary, #e06d53);
 }
 
 /* 照片网格 */
 .gallery-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 18px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
 }
 
 .photo-card {
   position: relative;
   aspect-ratio: 1 / 1;
-  border-radius: 18px;
+  border-radius: 16px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--cmp-border, #ebdcd1);
+  box-shadow: var(--cmp-shadow-sm, 0 2px 8px rgba(120, 80, 60, 0.05));
   cursor: zoom-in;
-  background: var(--surface-soft);
-  box-shadow: var(--shadow-sm);
+  background: var(--cmp-surface-soft, #f6f1ea);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.photo-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--cmp-shadow-md, 0 8px 24px rgba(120, 80, 60, 0.08));
 }
 
 .photo-img {
@@ -214,59 +241,108 @@ function formatDate(iso: string): string {
   height: 100%;
   object-fit: cover;
   display: block;
-  transition: transform var(--motion-fast);
 }
 
-.photo-card:hover .photo-img {
-  transform: scale(1.06);
-}
-
-.photo-meta-overlay {
+.photo-overlay {
   position: absolute;
-  inset: auto 0 0 0;
-  padding: var(--space-2) var(--space-3);
-  background: linear-gradient(to top, rgb(0 0 0 / 80%), transparent);
+  inset: 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.75) 0%, rgba(0, 0, 0, 0.1) 50%, rgba(0, 0, 0, 0.4) 100%);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 12px;
+  color: #ffffff;
+  opacity: 0.95;
+  transition: opacity 0.2s ease;
+}
+
+.photo-card:hover .photo-overlay {
+  opacity: 1;
+}
+
+.photo-top-tags {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  color: #fff;
 }
 
-.char-tag {
+.char-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(8px);
   font-size: 11px;
-  font-weight: 700;
-  background: rgb(255 255 255 / 20%);
-  backdrop-filter: blur(4px);
-  padding: 1px 7px;
-  border-radius: var(--radius-full);
+  font-weight: 800;
+}
+
+.char-avatar-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  background: var(--cmp-primary, #e06d53);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-size: 9px;
+  font-weight: 900;
 }
 
 .date-tag {
   font-size: 10px;
-  opacity: 0.9;
+  color: rgba(255, 255, 255, 0.8);
 }
 
-.gallery-loading-state,
-.gallery-empty-state {
-  padding: var(--space-12) var(--space-4);
-  text-align: center;
-  color: var(--muted);
+.photo-bottom-info {
   display: flex;
   flex-direction: column;
+  gap: 4px;
+}
+
+.photo-caption {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.photo-meta-line {
+  display: flex;
   align-items: center;
-  gap: var(--space-3);
-  background: var(--surface);
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border);
+  gap: 8px;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.gallery-loading,
+.gallery-empty {
+  padding: 40px;
+  text-align: center;
+  color: var(--cmp-text-muted, #8c7d74);
+  background: var(--cmp-surface, #ffffff);
+  border-radius: 18px;
+  border: 1px solid var(--cmp-border, #ebdcd1);
 }
 
 .spinner-ring {
-  width: 26px;
-  height: 26px;
-  border: 2px solid var(--border);
-  border-top-color: var(--primary);
-  border-radius: var(--radius-full);
+  width: 28px;
+  height: 28px;
+  border: 2px solid var(--cmp-border-light, #f3eae2);
+  border-top-color: var(--cmp-primary, #e06d53);
+  border-radius: 9999px;
   animation: spin 0.8s linear infinite;
+  margin: 0 auto 10px;
 }
 
 @keyframes spin {
