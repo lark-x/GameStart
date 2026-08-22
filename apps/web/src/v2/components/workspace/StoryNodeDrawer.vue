@@ -345,7 +345,7 @@ async function handleSave(): Promise<void> {
         <div class="drawer-actions">
           <Button variant="primary" size="md" type="submit" :loading="saving">
             <Save :size="15" aria-hidden="true" />
-            {{ editingNode ? "保存修改" : "确认添加至技能树" }}
+            {{ editingNode ? "保存修改" : "确认保存设定" }}
           </Button>
           <Button variant="secondary" size="md" :disabled="saving" @click="emit('update:open', false)">
             取消

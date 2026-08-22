@@ -1,23 +1,36 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { Plus, User, MapPin, BookOpen, ShieldAlert, Clock3, Pencil } from "@lucide/vue";
+import {
+  BookOpen,
+  Calendar,
+  Clock3,
+  Globe,
+  MapPin,
+  Pencil,
+  Plus,
+  Search,
+  Settings,
+  ShieldAlert,
+  Sparkles,
+  User,
+} from "@lucide/vue";
 import Badge from "../../../components/ui/Badge.vue";
 import Button from "../../../components/ui/Button.vue";
+import Card from "../../../components/ui/Card.vue";
+import Drawer from "../../../components/ui/Drawer.vue";
 import Field from "../../../components/ui/Field.vue";
 import Input from "../../../components/ui/Input.vue";
-import Drawer from "../../../components/ui/Drawer.vue";
-import Select from "../../../components/ui/Select.vue";
 import Textarea from "../../../components/ui/Textarea.vue";
 import type { V2WorkspaceSnapshot } from "../../adapters";
 import { useV2WorkspaceStore } from "../../stores/workspace";
 import WorkspaceModuleIntro from "./WorkspaceModuleIntro.vue";
-import StorySkillTree from "./StorySkillTree.vue";
-import { getDataFlowNode, getUsageSummaryForGroup } from "./workspace-data-flow";
+import StoryNodeDrawer, { type CanonEntityKind } from "./StoryNodeDrawer.vue";
+import type { StorySkillNode } from "./StoryInspectionCard.vue";
 
 const route = useRoute();
 const router = useRouter();
-const viewMode = ref<"tree" | "list">("tree");
+const store = useV2WorkspaceStore();
 
 const props = defineProps<{
   snapshot: V2WorkspaceSnapshot | null;
@@ -35,32 +48,14 @@ const emit = defineEmits<{
   resetCanonDraft: [];
 }>();
 
-const store = useV2WorkspaceStore();
-
-type CanonTab = "all" | "characters" | "locations" | "facts" | "rules" | "timeline";
-const validTabs = new Set<CanonTab>(["all", "characters", "locations", "facts", "rules", "timeline"]);
-const activeTab = ref<CanonTab>(validTabs.has(route.query.tab as CanonTab) ? (route.query.tab as CanonTab) : "all");
+type CanonCategory = "characters" | "locations" | "rules_facts" | "timeline" | "all";
+const validTabs = new Set<CanonCategory>(["characters", "locations", "rules_facts", "timeline", "all"]);
+const activeTab = ref<CanonCategory>(validTabs.has(route.query.tab as CanonCategory) ? (route.query.tab as CanonCategory) : "characters");
 const searchQuery = ref("");
-const usageSummary = computed(() => {
-  const groups: Record<CanonTab, readonly string[]> = {
-    all: [],
-    characters: ["character_name", "character_persona", "character_summary"],
-    locations: ["location"],
-    facts: ["fact"],
-    rules: ["rule"],
-    timeline: ["timeline"],
-  };
-  const ids = groups[activeTab.value] ?? [];
-  if (ids.length === 0) return [];
-  const summary = getUsageSummaryForGroup(ids);
-  return Array.from(summary.entries())
-    .map(([consumerId, status]) => ({ consumerId, label: getDataFlowNode(consumerId)?.label ?? consumerId, status }))
-    .sort((a, b) => a.label.localeCompare(b.label));
-});
 
 watch(() => route.query.tab, (tab) => {
-  if (typeof tab === "string" && validTabs.has(tab as CanonTab)) {
-    activeTab.value = tab as CanonTab;
+  if (typeof tab === "string" && validTabs.has(tab as CanonCategory)) {
+    activeTab.value = tab as CanonCategory;
   }
 });
 
@@ -68,152 +63,137 @@ watch(activeTab, (tab) => {
   void router.replace({ query: { ...route.query, tab } });
 });
 
-type CanonEntityKind = "location" | "character" | "fact" | "rule" | "timeline";
-const entityDrawerOpen = ref(false);
-const editingEntityId = ref<string | null>(null);
-const entityKind = ref<CanonEntityKind>("location");
-const entityName = ref("");
-const entitySummary = ref("");
-const entityText = ref("");
-const entityDate = ref("");
-const entityVisibility = ref<"creator_only" | "player_visible">("player_visible");
-const entitySeverity = ref<"guideline" | "required">("guideline");
-const entityError = ref<string | null>(null);
-const entityPersona = ref("");
-const entityHomeLocationId = ref("");
-const entityLocations = computed(() => props.snapshot?.world.locations ?? []);
+// Modals / Drawers
+const nodeDrawerOpen = ref(false);
+const nodeDrawerKind = ref<CanonEntityKind>("character");
+const editingNode = ref<StorySkillNode | null>(null);
+const worldDrawerOpen = ref(false);
+
 function locationNameById(id: string | undefined): string {
-  const location = entityLocations.value.find((item) => item.locationId === id);
-  return location?.name ?? "";
-}
-function openEditCharacter(char: { readonly characterId: string; readonly name: string; readonly role: string; readonly summary?: string; readonly personaText?: string; readonly homeLocationId?: string }): void {
-  openEditEntity("character", char.characterId, {
-    name: char.name,
-    ...(char.summary === undefined ? {} : { summary: char.summary }),
-  });
-  entityPersona.value = char.personaText ?? "";
-  entityHomeLocationId.value = char.homeLocationId ?? "";
+  if (!id || !props.snapshot) return "";
+  const loc = props.snapshot.world.locations.find((l) => l.locationId === id);
+  return loc?.name ?? "";
 }
 
-function openEntityDrawer(kind: CanonEntityKind = "location"): void {
-  editingEntityId.value = null;
-  entityKind.value = kind;
-  entityName.value = "";
-  entitySummary.value = "";
-  entityText.value = "";
-  entityDate.value = "";
-  entityVisibility.value = "player_visible";
-  entitySeverity.value = "guideline";
-  entityError.value = null;
-  entityPersona.value = "";
-  entityHomeLocationId.value = "";
-  entityDrawerOpen.value = true;
+function openAdd(kind: CanonEntityKind) {
+  editingNode.value = null;
+  nodeDrawerKind.value = kind;
+  nodeDrawerOpen.value = true;
 }
 
-function openEditEntity(kind: CanonEntityKind, id: string, value: { name?: string; summary?: string; text?: string; localDate?: string; visibility?: "creator_only" | "player_visible"; severity?: "guideline" | "required" }): void {
-  editingEntityId.value = id;
-  entityKind.value = kind;
-  entityName.value = value.name ?? "";
-  entitySummary.value = value.summary ?? "";
-  entityText.value = value.text ?? "";
-  entityVisibility.value = value.visibility ?? "player_visible";
-  entitySeverity.value = value.severity ?? "guideline";
-  entityDate.value = value.localDate ?? "";
-  entityError.value = null;
-  entityPersona.value = "";
-  entityHomeLocationId.value = "";
-  entityDrawerOpen.value = true;
-}
-async function submitEntity(): Promise<void> {
-  entityError.value = null;
-  try {
-    if (entityKind.value === "location") {
-      const input = { name: entityName.value.trim(), ...(entitySummary.value.trim() ? { summary: entitySummary.value.trim() } : {}) };
-      if (editingEntityId.value) await store.updateCanonEntity({ kind: "location", id: editingEntityId.value, input }); else await store.createCanonEntity({ kind: "location", input });
-    }
-    if (entityKind.value === "character") {
-      const characterInput = {
-        name: entityName.value.trim(),
-        ...(editingEntityId.value === null
-          ? (entitySummary.value.trim() ? { summary: entitySummary.value.trim() } : {})
-          : { summary: entitySummary.value.trim() || null }),
-        ...(editingEntityId.value === null
-          ? (entityPersona.value.trim() ? { personaText: entityPersona.value.trim() } : {})
-          : { personaText: entityPersona.value.trim() || null }),
-        ...(entityHomeLocationId.value ? { homeLocationId: entityHomeLocationId.value as never } : {}),
-        ...(editingEntityId.value !== null && !entityHomeLocationId.value ? { homeLocationId: null as never } : {}),
-      };
-      if (editingEntityId.value) await store.updateCanonEntity({ kind: "character", id: editingEntityId.value, input: characterInput }); else await store.createCanonEntity({ kind: "character", input: characterInput });
-    }
-    if (entityKind.value === "fact") {
-      const input = { text: entityText.value.trim(), visibility: entityVisibility.value };
-      if (editingEntityId.value) await store.updateCanonEntity({ kind: "fact", id: editingEntityId.value, input }); else await store.createCanonEntity({ kind: "fact", input });
-    }
-    if (entityKind.value === "rule") {
-      const input = { text: entityText.value.trim(), severity: entitySeverity.value };
-      if (editingEntityId.value) await store.updateCanonEntity({ kind: "rule", id: editingEntityId.value, input }); else await store.createCanonEntity({ kind: "rule", input });
-    }
-    if (entityKind.value === "timeline") {
-      const input = { localDate: entityDate.value, title: entityName.value.trim(), ...(entitySummary.value.trim() ? { summary: entitySummary.value.trim() } : {}) };
-      if (editingEntityId.value) await store.updateCanonEntity({ kind: "timeline", id: editingEntityId.value, input }); else await store.createCanonEntity({ kind: "timeline", input });
-    }
-    if (store.error) throw new Error(store.error);
-    entityDrawerOpen.value = false;
-  } catch (error) {
-    entityError.value = error instanceof Error ? error.message : "保存失败";
-  }
+function openEditCharacter(char: { readonly characterId: string; readonly name: string; readonly role: string; readonly summary?: string; readonly personaText?: string; readonly homeLocationId?: string }) {
+  editingNode.value = {
+    id: char.characterId,
+    tier: 2,
+    kind: "character",
+    title: char.name,
+    subtitle: char.role,
+    description: char.summary ?? "",
+    roleImpact: "主线故事推进者与对话交互伙伴",
+    rawData: char,
+  };
+  nodeDrawerKind.value = "character";
+  nodeDrawerOpen.value = true;
 }
 
+function openEditLocation(loc: { readonly locationId: string; readonly name: string; readonly summary?: string }) {
+  editingNode.value = {
+    id: loc.locationId,
+    tier: 1,
+    kind: "location",
+    title: loc.name,
+    description: loc.summary ?? "",
+    roleImpact: "主线核心舞台与角色常驻居所",
+    rawData: loc,
+  };
+  nodeDrawerKind.value = "location";
+  nodeDrawerOpen.value = true;
+}
 
+function openEditRule(rule: { readonly ruleId: string; readonly text: string; readonly severity: "soft" | "hard" }) {
+  editingNode.value = {
+    id: rule.ruleId,
+    tier: 1,
+    kind: "rule",
+    title: rule.text,
+    description: rule.text,
+    roleImpact: rule.severity === "hard" ? "AI 扩写与审校时必须严格遵循的硬性铁律" : "风格指导规则",
+    rawData: rule,
+  };
+  nodeDrawerKind.value = "rule";
+  nodeDrawerOpen.value = true;
+}
+
+function openEditFact(fact: { readonly factId: string; readonly text: string; readonly visibility: "creator" | "player" }) {
+  editingNode.value = {
+    id: fact.factId,
+    tier: 1,
+    kind: "fact",
+    title: fact.text,
+    description: fact.text,
+    roleImpact: "注入全局提示词常识库，提供世界观背景上下文",
+    rawData: fact,
+  };
+  nodeDrawerKind.value = "fact";
+  nodeDrawerOpen.value = true;
+}
+
+function openEditTimeline(event: { readonly timelineEventId: string; readonly title: string; readonly localDate: string; readonly summary?: string }) {
+  editingNode.value = {
+    id: event.timelineEventId,
+    tier: 1,
+    kind: "timeline",
+    title: event.title,
+    description: event.summary ?? "",
+    roleImpact: "世界历史背景与主线事件里程碑",
+    rawData: event,
+  };
+  nodeDrawerKind.value = "timeline";
+  nodeDrawerOpen.value = true;
+}
+
+// Filtered Lists
 const filteredCharacters = computed(() => {
   if (!props.snapshot) return [];
-  if (!searchQuery.value.trim()) return props.snapshot.world.characters;
-  const q = searchQuery.value.toLowerCase();
-  return props.snapshot.world.characters.filter(c => c.name.toLowerCase().includes(q) || c.role.toLowerCase().includes(q));
+  const q = searchQuery.value.trim().toLowerCase();
+  if (!q) return props.snapshot.world.characters;
+  return props.snapshot.world.characters.filter((c) => c.name.toLowerCase().includes(q) || c.role.toLowerCase().includes(q) || (c.personaText ?? "").toLowerCase().includes(q));
 });
 
 const filteredLocations = computed(() => {
   if (!props.snapshot) return [];
-  if (!searchQuery.value.trim()) return props.snapshot.world.locations;
-  const q = searchQuery.value.toLowerCase();
-  return props.snapshot.world.locations.filter(l => l.name.toLowerCase().includes(q) || (l.summary ?? "").toLowerCase().includes(q));
-});
-
-const filteredFacts = computed(() => {
-  if (!props.snapshot) return [];
-  if (!searchQuery.value.trim()) return props.snapshot.world.facts;
-  const q = searchQuery.value.toLowerCase();
-  return props.snapshot.world.facts.filter(f => f.text.toLowerCase().includes(q));
+  const q = searchQuery.value.trim().toLowerCase();
+  if (!q) return props.snapshot.world.locations;
+  return props.snapshot.world.locations.filter((l) => l.name.toLowerCase().includes(q) || (l.summary ?? "").toLowerCase().includes(q));
 });
 
 const filteredRules = computed(() => {
   if (!props.snapshot) return [];
-  if (!searchQuery.value.trim()) return props.snapshot.world.rules;
-  const q = searchQuery.value.toLowerCase();
-  return props.snapshot.world.rules.filter(r => r.text.toLowerCase().includes(q));
+  const q = searchQuery.value.trim().toLowerCase();
+  if (!q) return props.snapshot.world.rules;
+  return props.snapshot.world.rules.filter((r) => r.text.toLowerCase().includes(q));
 });
 
-const filteredTimelineEvents = computed(() => {
+const filteredFacts = computed(() => {
   if (!props.snapshot) return [];
-  if (!searchQuery.value.trim()) return props.snapshot.world.timelineEvents;
-  const q = searchQuery.value.toLowerCase();
-  return props.snapshot.world.timelineEvents.filter(event => event.title.toLowerCase().includes(q) || event.summary?.toLowerCase().includes(q));
+  const q = searchQuery.value.trim().toLowerCase();
+  if (!q) return props.snapshot.world.facts;
+  return props.snapshot.world.facts.filter((f) => f.text.toLowerCase().includes(q));
 });
 
-function visibilityLabel(visibility: string): string {
-  return visibility === "creator" ? "创作者可见" : "玩家可见";
-}
-
-function ruleSeverityLabel(severity: string): string {
-  return severity === "hard" ? "硬约束" : "软约束";
-}
+const filteredTimeline = computed(() => {
+  if (!props.snapshot) return [];
+  const q = searchQuery.value.trim().toLowerCase();
+  if (!q) return props.snapshot.world.timelineEvents;
+  return props.snapshot.world.timelineEvents.filter((t) => t.title.toLowerCase().includes(q) || (t.summary ?? "").toLowerCase().includes(q));
+});
 </script>
 
 <template>
-  <div class="canon-workspace">
-    <div v-if="!snapshot && loading" class="canon-loading">正在加载工作区快照...</div>
+  <div class="canon-workspace-root">
+    <div v-if="!snapshot && loading" class="canon-loading">正在加载故事世界快照...</div>
 
-    <!-- 空库：显示模块说明，引导用户先创建故事 -->
+    <!-- 空库引导 -->
     <WorkspaceModuleIntro
       v-else-if="!snapshot"
       title="世界设定"
@@ -223,40 +203,465 @@ function ruleSeverityLabel(severity: string): string {
     />
 
     <template v-else>
-      <!-- Top Configuration & Revision Controls -->
-      <div class="canon-card config-card">
-        <div class="card-header">
-          <h3>正典修订与设定基线</h3>
-          <div class="card-actions">
-            <Badge tone="neutral">版本 v{{ snapshot.world.revision }}</Badge>
+      <!-- 🌟 顶部故事世界概览 Hero Banner -->
+      <Card class="world-hero-banner">
+        <div class="hero-top-row">
+          <div class="hero-title-group">
+            <div class="hero-icon-box">
+              <Globe :size="22" aria-hidden="true" />
+            </div>
+            <div class="hero-texts">
+              <div class="hero-name-row">
+                <h2>{{ snapshot.world.name }}</h2>
+                <Badge tone="info">v{{ snapshot.world.revision }} 正典基线</Badge>
+              </div>
+              <p class="hero-premise">{{ snapshot.world.premise || "暂无世界观背景描述。" }}</p>
+            </div>
+          </div>
+          <div class="hero-actions">
+            <Button variant="secondary" size="md" @click="worldDrawerOpen = true">
+              <Settings :size="15" aria-hidden="true" />
+              编辑世界设定
+            </Button>
           </div>
         </div>
 
-      <form class="v2-canon-form" aria-label="保存故事设定" @submit.prevent="emit('previewCanonDraft')">
-        <div class="form-row">
-          <Field label="故事空间名称" hint="保存时会校验版本，避免覆盖其他创作者的修改">
-            <Input
-              :model-value="draftWorldName"
-              :disabled="loading"
-              id="v2-world-name"
-              aria-label="故事空间名称"
-              @update:model-value="emit('update:draftWorldName', $event)"
-            />
-          </Field>
+        <!-- 统计指标芯片 -->
+        <div class="hero-stats-row">
+          <div class="hero-stat-chip" :class="{ active: activeTab === 'characters' }" @click="activeTab = 'characters'">
+            <User :size="14" />
+            <span>{{ snapshot.world.characters.length }} 位角色</span>
+          </div>
+          <div class="hero-stat-chip" :class="{ active: activeTab === 'locations' }" @click="activeTab = 'locations'">
+            <MapPin :size="14" />
+            <span>{{ snapshot.world.locations.length }} 处地点</span>
+          </div>
+          <div class="hero-stat-chip" :class="{ active: activeTab === 'rules_facts' }" @click="activeTab = 'rules_facts'">
+            <ShieldAlert :size="14" />
+            <span>{{ snapshot.world.rules.length + snapshot.world.facts.length }} 条规则与事实</span>
+          </div>
+          <div class="hero-stat-chip" :class="{ active: activeTab === 'timeline' }" @click="activeTab = 'timeline'">
+            <Clock3 :size="14" />
+            <span>{{ snapshot.world.timelineEvents.length }} 项历史事件</span>
+          </div>
+        </div>
+      </Card>
+
+      <!-- 🌟 导航与操作栏 -->
+      <div class="canon-toolbar">
+        <div class="canon-tab-pills">
+          <button
+            type="button"
+            class="tab-pill"
+            :class="{ active: activeTab === 'characters' }"
+            @click="activeTab = 'characters'"
+          >
+            <User :size="15" />
+            <span>正典角色 ({{ snapshot.world.characters.length }})</span>
+          </button>
+          <button
+            type="button"
+            class="tab-pill"
+            :class="{ active: activeTab === 'locations' }"
+            @click="activeTab = 'locations'"
+          >
+            <MapPin :size="15" />
+            <span>舞台地点 ({{ snapshot.world.locations.length }})</span>
+          </button>
+          <button
+            type="button"
+            class="tab-pill"
+            :class="{ active: activeTab === 'rules_facts' }"
+            @click="activeTab = 'rules_facts'"
+          >
+            <ShieldAlert :size="15" />
+            <span>规则与事实 ({{ snapshot.world.rules.length + snapshot.world.facts.length }})</span>
+          </button>
+          <button
+            type="button"
+            class="tab-pill"
+            :class="{ active: activeTab === 'timeline' }"
+            @click="activeTab = 'timeline'"
+          >
+            <Clock3 :size="15" />
+            <span>时间线 ({{ snapshot.world.timelineEvents.length }})</span>
+          </button>
+          <button
+            type="button"
+            class="tab-pill"
+            :class="{ active: activeTab === 'all' }"
+            @click="activeTab = 'all'"
+          >
+            <Sparkles :size="15" />
+            <span>全部正典</span>
+          </button>
         </div>
 
-        <Field label="故事前提 / 世界观背景">
+        <div class="toolbar-right">
+          <div class="search-input-wrap">
+            <Search :size="15" class="search-icon" aria-hidden="true" />
+            <Input
+              v-model="searchQuery"
+              placeholder="搜索角色、地点、规则..."
+              size="sm"
+              class="canon-search-input"
+            />
+          </div>
+
+          <!-- 根据当前 Tab 提供精准的新增主按钮 -->
+          <Button
+            v-if="activeTab === 'characters'"
+            variant="primary"
+            size="md"
+            @click="openAdd('character')"
+          >
+            <Plus :size="16" aria-hidden="true" />
+            新增正典角色
+          </Button>
+          <Button
+            v-else-if="activeTab === 'locations'"
+            variant="primary"
+            size="md"
+            @click="openAdd('location')"
+          >
+            <Plus :size="16" aria-hidden="true" />
+            新增舞台地点
+          </Button>
+          <Button
+            v-else-if="activeTab === 'rules_facts'"
+            variant="primary"
+            size="md"
+            @click="openAdd('rule')"
+          >
+            <Plus :size="16" aria-hidden="true" />
+            新增规则 / 事实
+          </Button>
+          <Button
+            v-else-if="activeTab === 'timeline'"
+            variant="primary"
+            size="md"
+            @click="openAdd('timeline')"
+          >
+            <Plus :size="16" aria-hidden="true" />
+            新增时间线事件
+          </Button>
+          <Button
+            v-else
+            variant="primary"
+            size="md"
+            @click="openAdd('character')"
+          >
+            <Plus :size="16" aria-hidden="true" />
+            新增正典数据
+          </Button>
+        </div>
+      </div>
+
+      <!-- 🌟 内容卡片网格 -->
+      <div class="entities-container">
+        <!-- 1. 角色网格 -->
+        <section v-if="activeTab === 'characters' || activeTab === 'all'" class="entity-section">
+          <div v-if="activeTab === 'all'" class="section-heading">
+            <User :size="16" class="section-heading-icon" />
+            <h3>正典角色 ({{ filteredCharacters.length }})</h3>
+          </div>
+
+          <div v-if="filteredCharacters.length > 0" class="entity-cards-grid">
+            <article
+              v-for="char in filteredCharacters"
+              :key="char.characterId"
+              class="clean-entity-card character-card"
+            >
+              <div class="card-head">
+                <div class="card-avatar">
+                  <User :size="18" />
+                </div>
+                <div class="card-title-block">
+                  <h4 class="card-name">
+                    <button
+                      type="button"
+                      class="char-link-btn"
+                      @click="router.push(`/v2/workspace/characters/${encodeURIComponent(char.characterId)}`)"
+                    >
+                      {{ char.name }}
+                    </button>
+                  </h4>
+                  <span class="card-sub">{{ char.role || "正典角色" }}</span>
+                </div>
+                <div class="card-head-actions">
+                  <Badge tone="success">角色</Badge>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="编辑角色"
+                    @click="openEditCharacter(char)"
+                  >
+                    <Pencil :size="14" />
+                  </Button>
+                </div>
+              </div>
+
+              <!-- 描述与人设：仅显示一次，绝不重复 -->
+              <p class="card-body-text">
+                {{ char.personaText || char.summary || "由用户人设创建的正典 AI 角色。" }}
+              </p>
+
+              <div class="card-foot">
+                <span class="foot-location">
+                  <MapPin :size="12" />
+                  {{ locationNameById(char.homeLocationId) ? `常驻：${locationNameById(char.homeLocationId)}` : "未绑定常驻地点" }}
+                </span>
+                <span class="foot-impact">🎯 对话与剧情角色</span>
+              </div>
+            </article>
+          </div>
+
+          <div v-else class="empty-state-card">
+            <User :size="32" class="empty-icon" />
+            <h4>暂无匹配的角色</h4>
+            <p>创建正典角色后，可在伴侣专区发起沉浸对白，并在主线故事中出场。</p>
+            <Button variant="primary" size="md" @click="openAdd('character')">
+              <Plus :size="15" /> 新增正典角色
+            </Button>
+          </div>
+        </section>
+
+        <!-- 2. 地点网格 -->
+        <section v-if="activeTab === 'locations' || activeTab === 'all'" class="entity-section">
+          <div v-if="activeTab === 'all'" class="section-heading">
+            <MapPin :size="16" class="section-heading-icon" />
+            <h3>舞台地点 ({{ filteredLocations.length }})</h3>
+          </div>
+
+          <div v-if="filteredLocations.length > 0" class="entity-cards-grid">
+            <article
+              v-for="loc in filteredLocations"
+              :key="loc.locationId"
+              class="clean-entity-card location-card"
+            >
+              <div class="card-head">
+                <div class="card-avatar location-avatar">
+                  <MapPin :size="18" />
+                </div>
+                <div class="card-title-block">
+                  <h4 class="card-name">{{ loc.name }}</h4>
+                  <span class="card-sub">地理舞台</span>
+                </div>
+                <div class="card-head-actions">
+                  <Badge tone="info">地点</Badge>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="编辑地点"
+                    @click="openEditLocation(loc)"
+                  >
+                    <Pencil :size="14" />
+                  </Button>
+                </div>
+              </div>
+
+              <p class="card-body-text">
+                {{ loc.summary || "用于承载主线剧情场景与角色生活场景的核心地理位置。" }}
+              </p>
+
+              <div class="card-foot">
+                <span class="foot-impact">🎯 场景发生地与角色居所</span>
+              </div>
+            </article>
+          </div>
+
+          <div v-else-if="activeTab === 'locations'" class="empty-state-card">
+            <MapPin :size="32" class="empty-icon" />
+            <h4>暂无舞台地点</h4>
+            <p>添加地理地点后，角色可以绑定常驻居所，主线场景也可在此地展开。</p>
+            <Button variant="primary" size="md" @click="openAdd('location')">
+              <Plus :size="15" /> 新增舞台地点
+            </Button>
+          </div>
+        </section>
+
+        <!-- 3. 规则与事实网格 -->
+        <section v-if="activeTab === 'rules_facts' || activeTab === 'all'" class="entity-section">
+          <div v-if="activeTab === 'all'" class="section-heading">
+            <ShieldAlert :size="16" class="section-heading-icon" />
+            <h3>规则与事实 ({{ filteredRules.length + filteredFacts.length }})</h3>
+          </div>
+
+          <div v-if="filteredRules.length + filteredFacts.length > 0" class="entity-cards-grid">
+            <!-- 规则卡片 -->
+            <article
+              v-for="rule in filteredRules"
+              :key="rule.ruleId"
+              class="clean-entity-card rule-card"
+            >
+              <div class="card-head">
+                <div class="card-avatar rule-avatar">
+                  <ShieldAlert :size="18" />
+                </div>
+                <div class="card-title-block">
+                  <h4 class="card-name">世界规则</h4>
+                  <span class="card-sub">{{ rule.severity === "hard" ? "硬性必须遵守" : "软性风格指导" }}</span>
+                </div>
+                <div class="card-head-actions">
+                  <Badge :tone="rule.severity === 'hard' ? 'warning' : 'neutral'">
+                    {{ rule.severity === "hard" ? "硬约束" : "软指导" }}
+                  </Badge>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="编辑规则"
+                    @click="openEditRule(rule)"
+                  >
+                    <Pencil :size="14" />
+                  </Button>
+                </div>
+              </div>
+
+              <p class="card-body-text">{{ rule.text }}</p>
+
+              <div class="card-foot">
+                <span class="foot-impact">🎯 AI 扩写与审校硬性门禁</span>
+              </div>
+            </article>
+
+            <!-- 事实卡片 -->
+            <article
+              v-for="fact in filteredFacts"
+              :key="fact.factId"
+              class="clean-entity-card fact-card"
+            >
+              <div class="card-head">
+                <div class="card-avatar fact-avatar">
+                  <BookOpen :size="18" />
+                </div>
+                <div class="card-title-block">
+                  <h4 class="card-name">世界常识事实</h4>
+                  <span class="card-sub">{{ fact.visibility === "player" ? "玩家公开可见" : "创作者隐藏" }}</span>
+                </div>
+                <div class="card-head-actions">
+                  <Badge tone="info">{{ fact.visibility === "player" ? "公开事实" : "暗线事实" }}</Badge>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="编辑事实"
+                    @click="openEditFact(fact)"
+                  >
+                    <Pencil :size="14" />
+                  </Button>
+                </div>
+              </div>
+
+              <p class="card-body-text">{{ fact.text }}</p>
+
+              <div class="card-foot">
+                <span class="foot-impact">🎯 全局提示词与对话常识库</span>
+              </div>
+            </article>
+          </div>
+
+          <div v-else-if="activeTab === 'rules_facts'" class="empty-state-card">
+            <ShieldAlert :size="32" class="empty-icon" />
+            <h4>暂无规则与事实</h4>
+            <p>设定公理事实与行为规则，能够保障大模型在剧情扩写与角色对话时不违背世界观。</p>
+            <Button variant="primary" size="md" @click="openAdd('rule')">
+              <Plus :size="15" /> 新增规则 / 事实
+            </Button>
+          </div>
+        </section>
+
+        <!-- 4. 时间线网格 -->
+        <section v-if="activeTab === 'timeline' || activeTab === 'all'" class="entity-section">
+          <div v-if="activeTab === 'all'" class="section-heading">
+            <Clock3 :size="16" class="section-heading-icon" />
+            <h3>时间线历史 ({{ filteredTimeline.length }})</h3>
+          </div>
+
+          <div v-if="filteredTimeline.length > 0" class="entity-cards-grid">
+            <article
+              v-for="ev in filteredTimeline"
+              :key="ev.timelineEventId"
+              class="clean-entity-card timeline-card"
+            >
+              <div class="card-head">
+                <div class="card-avatar timeline-avatar">
+                  <Calendar :size="18" />
+                </div>
+                <div class="card-title-block">
+                  <h4 class="card-name">{{ ev.title }}</h4>
+                  <span class="card-sub">{{ ev.localDate }}</span>
+                </div>
+                <div class="card-head-actions">
+                  <Badge tone="neutral">时间线</Badge>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="编辑时间线事件"
+                    @click="openEditTimeline(ev)"
+                  >
+                    <Pencil :size="14" />
+                  </Button>
+                </div>
+              </div>
+
+              <p class="card-body-text">
+                {{ ev.summary || "记录在世界观历史中发生的重要标志性事件。" }}
+              </p>
+
+              <div class="card-foot">
+                <span class="foot-impact">🎯 主线历史前置与背景</span>
+              </div>
+            </article>
+          </div>
+
+          <div v-else-if="activeTab === 'timeline'" class="empty-state-card">
+            <Clock3 :size="32" class="empty-icon" />
+            <h4>暂无时间线事件</h4>
+            <p>记录历史大事件与剧幕节点，梳理宏观编年史。</p>
+            <Button variant="primary" size="md" @click="openAdd('timeline')">
+              <Plus :size="15" /> 新增时间线事件
+            </Button>
+          </div>
+        </section>
+      </div>
+    </template>
+
+    <!-- 🌟 影响驱动型数据创建 / 编辑抽屉 -->
+    <StoryNodeDrawer
+      v-model:open="nodeDrawerOpen"
+      :initial-kind="nodeDrawerKind"
+      :editing-node="editingNode"
+      :snapshot="snapshot"
+      @saved="store.loadSnapshot()"
+    />
+
+    <!-- 🌟 世界观设定修订抽屉 -->
+    <Drawer
+      :open="worldDrawerOpen"
+      title="编辑故事世界设定"
+      description="修改故事世界空间名称与世界观背景前提"
+      @update:open="worldDrawerOpen = $event"
+    >
+      <form class="world-edit-form" @submit.prevent="emit('previewCanonDraft'); worldDrawerOpen = false">
+        <Field label="故事空间名称" hint="例如：主线故事世界 或 枫丹廷的生活物语">
+          <Input
+            :model-value="draftWorldName"
+            :disabled="loading"
+            placeholder="故事空间名称"
+            @update:model-value="emit('update:draftWorldName', $event)"
+          />
+        </Field>
+
+        <Field label="世界观背景前提 / Premise" hint="注入所有下游场景与提示词的最高世界观设定">
           <Textarea
             :model-value="draftPremise"
             :disabled="loading"
-            id="v2-world-premise"
-            aria-label="故事前提"
-            :rows="3"
+            :rows="5"
+            placeholder="描述整个故事世界的背景、时代特征与基本社会构成..."
             @update:model-value="emit('update:draftPremise', $event)"
           />
         </Field>
 
-        <div class="v2-form-actions">
+        <div class="world-form-actions">
           <Button variant="primary" size="md" type="submit" :disabled="!hasDraftChanges || loading">
             保存修改
           </Button>
@@ -265,287 +670,148 @@ function ruleSeverityLabel(severity: string): string {
           </Button>
         </div>
       </form>
-    </div>
-
-    <!-- 视图模式切换 -->
-    <div class="view-mode-bar">
-      <div class="view-mode-tabs">
-        <button
-          type="button"
-          class="view-mode-tab"
-          :class="{ active: viewMode === 'tree' }"
-          @click="viewMode = 'tree'"
-        >
-          <GitFork :size="15" /> 故事技能树视图
-        </button>
-        <button
-          type="button"
-          class="view-mode-tab"
-          :class="{ active: viewMode === 'list' }"
-          @click="viewMode = 'list'"
-        >
-          <BookOpen :size="15" /> 经典卡片列表
-        </button>
-      </div>
-    </div>
-
-    <!-- 技能树主视图 -->
-    <StorySkillTree
-      v-if="viewMode === 'tree'"
-      :snapshot="snapshot"
-      :loading="loading"
-      @refreshed="store.loadSnapshot()"
-    />
-
-    <!-- 经典列表视图 -->
-    <div v-else class="canon-classic-list-view">
-    <!-- Filters & Metrics Summary -->
-    <div class="canon-overview">
-      <div class="filter-tabs">
-        <button
-          type="button"
-          :class="['filter-btn', { active: activeTab === 'all' }]"
-          @click="activeTab = 'all'"
-        >
-          全部正典
-        </button>
-        <button
-          type="button"
-          :class="['filter-btn', { active: activeTab === 'characters' }]"
-          @click="activeTab = 'characters'"
-        >
-          <User :size="14" /> 角色 ({{ snapshot.world.characters.length }})
-        </button>
-        <button
-          type="button"
-          :class="['filter-btn', { active: activeTab === 'locations' }]"
-          @click="activeTab = 'locations'"
-        >
-          <MapPin :size="14" /> 地点 ({{ snapshot.world.locations.length }})
-        </button>
-        <button
-          type="button"
-          :class="['filter-btn', { active: activeTab === 'facts' }]"
-          @click="activeTab = 'facts'"
-        >
-          <BookOpen :size="14" /> 事实 ({{ snapshot.world.facts.length }})
-        </button>
-        <button
-          type="button"
-          :class="['filter-btn', { active: activeTab === 'rules' }]"
-          @click="activeTab = 'rules'"
-        >
-          <ShieldAlert :size="14" /> 规则 ({{ snapshot.world.rules.length }})
-        </button>
-        <button
-          type="button"
-          :class="['filter-btn', { active: activeTab === 'timeline' }]"
-          @click="activeTab = 'timeline'"
-        >
-          <Clock3 :size="14" /> 时间线 ({{ snapshot.world.timelineEvents.length }})
-        </button>
-      </div>
-
-      <div v-if="usageSummary.length" class="canon-usage-summary" aria-label="当前数据用途">
-        <span class="canon-usage-label">当前用途</span>
-        <span v-for="item in usageSummary" :key="item.consumerId" class="canon-usage-item">
-          <Badge :tone="item.status === 'direct' ? 'success' : item.status === 'partial' ? 'info' : 'neutral'">{{ item.label }}</Badge>
-          <span class="canon-usage-status">{{ item.status === 'direct' ? '使用' : item.status === 'partial' ? '部分' : '间接' }}</span>
-        </span>
-      </div>
-
-      <div class="search-box">
-        <Input
-          v-model="searchQuery"
-          placeholder="搜索角色、地点、事实规则..."
-          size="sm"
-        />
-      <Button variant="primary" size="md" :disabled="loading" @click="openEntityDrawer(activeTab === 'all' ? 'location' : activeTab as CanonEntityKind)">
-        <Plus :size="16" aria-hidden="true" />
-        新增正典数据
-      </Button>
-      </div>
-    </div>
-
-    <!-- Entity Cards Grid -->
-    <div class="entities-grid">
-      <!-- Characters -->
-      <template v-if="activeTab === 'all' || activeTab === 'characters'">
-        <article
-          v-for="char in filteredCharacters"
-          :key="char.characterId"
-          class="entity-card character-card"
-        >
-          <div class="entity-header">
-            <div class="avatar-placeholder">
-              <User :size="18" />
-            </div>
-          <div class="header-info">
-            <h4><button class="character-link" type="button" @click="router.push(`/v2/workspace/characters/${char.characterId}`)">{{ char.name }}</button></h4>
-            <span class="sub">{{ char.role || '\u89d2\u8272' }}</span>
-          </div>
-          <Badge tone="info">角色</Badge><Button variant="ghost" size="icon" aria-label="编辑角色" @click="openEditCharacter(char)"><Pencil :size="15" aria-hidden="true" /></Button>
-          </div>
-          <p class="entity-summary">{{ char.summary ?? char.role }}</p>
-          <p v-if="char.personaText" class="entity-sub-summary">Persona：{{ char.personaText.slice(0, 120) }}{{ char.personaText.length > 120 ? '…' : '' }}</p>
-          <p v-if="locationNameById(char.homeLocationId)" class="entity-sub-summary">常驻：{{ locationNameById(char.homeLocationId) }}</p>
-          
-        </article>
-      </template>
-
-      <!-- Locations -->
-      <template v-if="activeTab === 'all' || activeTab === 'locations'">
-        <article
-          v-for="loc in filteredLocations"
-          :key="loc.locationId"
-          class="entity-card location-card"
-        >
-          <div class="entity-header">
-            <div class="avatar-placeholder location-icon">
-              <MapPin :size="18" />
-            </div>
-            <div class="header-info">
-              <h4>{{ loc.name }}</h4>
-              <span class="sub">场景地点</span>
-            </div>
-            <Badge tone="neutral">地点</Badge><Button variant="ghost" size="icon" aria-label="编辑地点" @click="openEditEntity('location', loc.locationId, { name: loc.name, ...(loc.summary === undefined ? {} : { summary: loc.summary }) })"><Pencil :size="15" aria-hidden="true" /></Button>
-          </div>
-          <p v-if="loc.summary" class="entity-summary">{{ loc.summary }}</p>
-        </article>
-      </template>
-
-      <!-- Facts -->
-      <template v-if="activeTab === 'all' || activeTab === 'facts'">
-        <article
-          v-for="fact in filteredFacts"
-          :key="fact.factId"
-          class="entity-card fact-card"
-        >
-          <div class="entity-header">
-            <Badge :tone="fact.visibility === 'creator' ? 'warning' : 'info'">
-              {{ visibilityLabel(fact.visibility) }}
-            </Badge>
-            <span class="fact-id">{{ fact.factId }}</span><Button variant="ghost" size="icon" aria-label="编辑事实" @click="openEditEntity('fact', fact.factId, { text: fact.text, visibility: fact.visibility === 'creator' ? 'creator_only' : 'player_visible' })"><Pencil :size="15" aria-hidden="true" /></Button>
-          </div>
-          <p class="fact-text">{{ fact.text }}</p>
-        </article>
-      </template>
-
-      <!-- Rules -->
-      <template v-if="activeTab === 'all' || activeTab === 'rules'">
-        <article
-          v-for="rule in filteredRules"
-          :key="rule.ruleId"
-          class="entity-card rule-card"
-        >
-          <div class="entity-header">
-            <Badge :tone="rule.severity === 'hard' ? 'danger' : 'neutral'">
-              {{ ruleSeverityLabel(rule.severity) }}
-            </Badge>
-            <span class="rule-id">{{ rule.ruleId }}</span><Button variant="ghost" size="icon" aria-label="编辑规则" @click="openEditEntity('rule', rule.ruleId, { text: rule.text, severity: rule.severity === 'hard' ? 'required' : 'guideline' })"><Pencil :size="15" aria-hidden="true" /></Button>
-          </div>
-          <p class="rule-text">{{ rule.text }}</p>
-        </article>
-      </template>
-
-      <!-- Timeline -->
-      <template v-if="activeTab === 'all' || activeTab === 'timeline'">
-        <article
-          v-for="event in filteredTimelineEvents"
-          :key="event.timelineEventId"
-          class="entity-card timeline-card"
-        >
-          <div class="entity-header">
-            <div class="avatar-placeholder timeline-icon"><Clock3 :size="18" /></div>
-            <div class="header-info">
-              <h4>{{ event.title }}</h4>
-              <span class="sub">{{ event.localDate }}</span>
-            </div>
-            <Badge tone="neutral">时间线</Badge><Button variant="ghost" size="icon" aria-label="编辑时间线事件" @click="openEditEntity('timeline', event.timelineEventId, { name: event.title, localDate: event.localDate, ...(event.summary === undefined ? {} : { summary: event.summary }) })"><Pencil :size="15" aria-hidden="true" /></Button>
-          </div>
-          <p v-if="event.summary" class="entity-summary">{{ event.summary }}</p>
-        </article>
-      </template>
-    </div>
-    </div>
-
-    <Drawer
-      :open="entityDrawerOpen"
-      :title="editingEntityId ? '编辑正典数据' : '新增正典数据'"
-      description="系统会自动生成业务 ID，并使用当前修订号保存。"
-      @close="entityDrawerOpen = false"
-    >
-      <form class="create-story-form" @submit.prevent="submitEntity">
-        <Field for-id="v2-entity-kind" label="数据类型" required>
-          <Select id="v2-entity-kind" v-model="entityKind" aria-label="数据类型">
-            <option value="location">地点</option>
-            <option value="character">角色</option>
-            <option value="fact">事实</option>
-            <option value="rule">规则</option>
-            <option value="timeline">时间线事件</option>
-          </Select>
-        </Field>
-        <Field v-if="entityKind === 'location' || entityKind === 'character' || entityKind === 'timeline'" for-id="v2-entity-name" :label="entityKind === 'timeline' ? '事件标题' : '名称'" required>
-          <Input id="v2-entity-name" v-model="entityName" :placeholder="entityKind === 'timeline' ? '事件标题' : '名称'" required />
-        </Field>
-        <Field v-if="entityKind === 'location' || entityKind === 'character' || entityKind === 'timeline'" for-id="v2-entity-summary" label="说明">
-          <Textarea id="v2-entity-summary" v-model="entitySummary" :rows="4" placeholder="可选说明" />
-        </Field>
-        <Field v-if="entityKind === 'character'" for-id="v2-entity-persona" label="角色人设 Persona">
-          <Textarea id="v2-entity-persona" v-model="entityPersona" :rows="5" placeholder="角色的性格、说话方式、背景……" />
-        </Field>
-        <Field v-if="entityKind === 'character'" for-id="v2-entity-home-location" label="常驻地点">
-          <Select id="v2-entity-home-location" v-model="entityHomeLocationId" aria-label="常驻地点">
-            <option value="">无</option>
-            <option v-for="location in entityLocations" :key="location.locationId" :value="location.locationId">{{ location.name }}</option>
-          </Select>
-        </Field>
-        <Field v-if="entityKind === 'fact' || entityKind === 'rule'" for-id="v2-entity-text" :label="entityKind === 'fact' ? '事实内容' : '规则内容'" required>
-          <Textarea id="v2-entity-text" v-model="entityText" :rows="5" required />
-        </Field>
-        <Field v-if="entityKind === 'fact'" for-id="v2-entity-visibility" label="可见范围" required>
-          <Select id="v2-entity-visibility" v-model="entityVisibility" aria-label="可见范围"><option value="player_visible">玩家可见</option><option value="creator_only">仅创作者可见</option></Select>
-        </Field>
-        <Field v-if="entityKind === 'rule'" for-id="v2-entity-severity" label="规则级别" required>
-          <Select id="v2-entity-severity" v-model="entitySeverity" aria-label="规则级别"><option value="guideline">指导</option><option value="required">必须遵守</option></Select>
-        </Field>
-        <Field v-if="entityKind === 'timeline'" for-id="v2-entity-date" label="日期" required>
-          <Input id="v2-entity-date" v-model="entityDate" type="date" required />
-        </Field>
-        <p v-if="entityError" class="create-story-error" role="alert">{{ entityError }}</p>
-      </form>
-      <template #footer>
-        <Button variant="secondary" size="md" :disabled="loading" @click="entityDrawerOpen = false">取消</Button>
-        <Button variant="primary" size="md" :loading="loading" @click="submitEntity">保存数据</Button>
-      </template>
     </Drawer>
-    </template>
   </div>
 </template>
 
 <style scoped>
-.canon-workspace {
-  display: grid;
+.canon-workspace-root {
+  display: flex;
+  flex-direction: column;
   gap: var(--space-4);
+  width: 100%;
 }
 
-.view-mode-bar {
+.canon-loading {
+  padding: var(--space-8);
+  text-align: center;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+/* 🌟 顶部 Hero Banner */
+.world-hero-banner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.hero-top-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.hero-title-group {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  min-width: 0;
+  flex: 1;
+}
+
+.hero-icon-box {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  background: var(--primary-soft);
+  color: var(--primary);
+  flex-shrink: 0;
+}
+
+.hero-texts {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.hero-name-row {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
   gap: var(--space-2);
+  flex-wrap: wrap;
 }
 
-.view-mode-tabs {
+.hero-name-row h2 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: var(--text-lg);
+  font-weight: 800;
+}
+
+.hero-premise {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+  opacity: 0.9;
+}
+
+.hero-stats-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.hero-stat-chip {
   display: inline-flex;
-  padding: 3px;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--motion-fast);
+}
+
+.hero-stat-chip:hover {
+  border-color: var(--primary);
+  color: var(--text);
+}
+
+.hero-stat-chip.active {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+/* 🌟 操作栏 */
+.canon-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.canon-tab-pills {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
   border-radius: var(--radius-md);
   background: var(--surface-soft);
   border: 1px solid var(--border);
-  gap: 2px;
+  flex-wrap: wrap;
 }
 
-.view-mode-tab {
+.tab-pill {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -558,245 +824,261 @@ function ruleSeverityLabel(severity: string): string {
   font-weight: 700;
   cursor: pointer;
   transition: all var(--motion-fast);
+  white-space: nowrap;
 }
 
-.view-mode-tab:hover {
+.tab-pill:hover {
   color: var(--text-strong);
 }
 
-.view-mode-tab.active {
+.tab-pill.active {
   background: var(--surface);
   color: var(--primary);
   box-shadow: var(--shadow-sm);
 }
 
-.canon-card {
-  padding: var(--space-4);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--surface-soft);
-}
-
-.card-header {
+.toolbar-right {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: var(--space-3);
+  gap: var(--space-2);
+  flex-wrap: wrap;
 }
 
-.card-header h3 {
-  font-size: var(--text-md);
-  font-weight: 700;
+.search-input-wrap {
+  position: relative;
+  width: 220px;
+}
+
+.search-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.canon-search-input {
+  padding-left: 32px !important;
+}
+
+/* 🌟 卡片网格 */
+.entities-container {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.entity-section {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.section-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   color: var(--text-strong);
-  margin: 0;
 }
 
-.card-actions {
-  display: inline-flex;
+.section-heading h3 {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 800;
+}
+
+.section-heading-icon {
+  color: var(--primary);
+}
+
+.entity-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--space-3);
+}
+
+.clean-entity-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  transition: all var(--motion-fast);
+}
+
+.clean-entity-card:hover {
+  border-color: var(--primary);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.card-head {
+  display: flex;
   align-items: center;
   gap: var(--space-2);
 }
 
-.canon-loading {
-  padding: var(--space-6);
+.card-avatar {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  background: var(--primary-soft);
+  color: var(--primary);
+  flex-shrink: 0;
+}
+
+.location-avatar {
+  background: var(--info-soft);
+  color: var(--info);
+}
+
+.rule-avatar {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.fact-avatar {
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+.timeline-avatar {
+  background: var(--surface-soft);
   color: var(--muted);
-  font-size: var(--text-sm);
+}
+
+.card-title-block {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.card-name {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.char-link-btn {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.char-link-btn:hover {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
+.card-sub {
+  color: var(--muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.card-body-text {
+  margin: 0;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.5;
+  opacity: 0.9;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  flex: 1;
+}
+
+.card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px dashed var(--border);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.foot-location {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.foot-impact {
+  color: var(--primary);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* 空状态 */
+.empty-state-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-8) var(--space-4);
+  border-radius: var(--radius-lg);
+  border: 1px dashed var(--border-strong);
+  background: var(--surface-soft);
   text-align: center;
 }
 
-.create-story-form {
+.empty-icon {
+  color: var(--muted);
+}
+
+.empty-state-card h4 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.empty-state-card p {
+  margin: 0 0 var(--space-2);
+  color: var(--muted);
+  font-size: 12px;
+  max-width: 380px;
+}
+
+/* 世界编辑表单 */
+.world-edit-form {
   display: grid;
   gap: var(--space-4);
 }
 
-.create-story-error {
-  margin: 0;
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-sm);
-  background: var(--danger-soft);
-  color: var(--danger);
-  font-size: var(--text-xs);
-}
-
-.form-row {
-  display: grid;
-  grid-template-columns: 2fr 1fr;
-  gap: var(--space-3);
-}
-
-.v2-canon-form {
-  display: grid;
-  gap: var(--space-3);
-}
-
-.v2-form-actions {
+.world-form-actions {
   display: flex;
   gap: var(--space-2);
-}
-
-.canon-overview {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--space-3);
-}
-
-.canon-usage-summary {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  width: 100%;
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--surface-soft);
-}
-
-.canon-usage-label {
-  font-size: var(--text-xs);
-  font-weight: 700;
-  color: var(--muted);
-}
-
-.canon-usage-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.canon-usage-status {
-  font-size: var(--text-xs);
-  color: var(--muted);
-}
-
-.filter-tabs {
-  display: flex;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
-.filter-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-1) var(--space-3);
-  font-size: var(--text-sm);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text);
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.filter-btn.active {
-  background: var(--primary);
-  color: #fff;
-  border-color: var(--primary);
-}
-
-.search-box {
-  min-width: 240px;
-}
-
-.entities-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: var(--space-3);
-}
-
-.entity-card {
-  padding: var(--space-3);
-  background: var(--surface-soft);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-}
-
-.entity-card:hover {
-  border-color: var(--border-strong);
-  box-shadow: var(--shadow-sm);
-}
-
-.entity-header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.avatar-placeholder {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  background: var(--primary-soft, #eef2ff);
-  color: var(--primary);
-  display: grid;
-  place-items: center;
-}
-
-.avatar-placeholder.location-icon {
-  background: #ecfdf5;
-  color: #059669;
-}
-
-.header-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.header-info h4 {
-  margin: 0;
-  font-size: var(--text-sm);
-  font-weight: 700;
-  color: var(--text-strong);
-}
-
-.character-link { border: 0; padding: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; text-align: left; }
-.character-link:hover { color: var(--primary); text-decoration: underline; }
-
-.header-info .sub {
-  font-size: var(--text-xs);
-  color: var(--muted);
-}
-
-.entity-summary, .fact-text, .rule-text {
-  margin: 0;
-  font-size: var(--text-sm);
-  color: var(--text);
-  line-height: 1.4;
-  word-break: break-word;
-}
-
-.tag-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: auto;
-}
-
-.tag {
-  font-size: var(--text-xs);
-  padding: 1px 6px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xs);
-  color: var(--muted);
-}
-
-.fact-id, .rule-id {
-  font-size: var(--text-xs);
-  color: var(--muted);
-  margin-left: auto;
-}
-
-@media (max-width: 640px) {
-  .form-row {
-    grid-template-columns: 1fr;
-  }
+  margin-top: var(--space-2);
 }
 </style>
