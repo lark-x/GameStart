@@ -6,6 +6,7 @@ import {
   Check,
   ChevronDown,
   FileCheck2,
+  HeartHandshake,
   Image as ImageIcon,
   Menu,
   MessageSquare,
@@ -31,6 +32,12 @@ const primaryNavItems: readonly PrimaryNavItem[] = [
     label: "对话",
     icon: MessageSquare,
     matchPrefixes: ["/v2/chat", "/v2/start"],
+  },
+  {
+    to: "/v2/companion",
+    label: "陪伴",
+    icon: HeartHandshake,
+    matchPrefixes: ["/v2/companion"],
   },
   {
     to: "/v2/workspace/project",

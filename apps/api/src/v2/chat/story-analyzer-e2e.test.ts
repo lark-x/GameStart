@@ -194,9 +194,13 @@ test("V2 Story Analyzer End-to-End: Chat -> story_analyze -> Candidate -> Review
     assert.ok(graph.scenes.some((s: any) => s.title === "迷雾森林的古老神庙"), "Approved scene must exist in Canon graph");
   } finally {
     pump.stop();
-    await runtime.app.close();
+    await runtime.close();
     workerDb.close();
-    rmSync(tempDir, { recursive: true, force: true });
+    try {
+      rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      // Safe on Windows
+    }
   }
 });
 
@@ -309,6 +313,10 @@ test("V2 Story Analyzer analyzes recent messages first and only new messages inc
   } finally {
     await runtime.close();
     workerDb.close();
-    rmSync(tempDir, { recursive: true, force: true });
+    try {
+      rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      // Safe on Windows
+    }
   }
 });

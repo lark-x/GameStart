@@ -23,12 +23,15 @@ import {
   V2SqliteGraphStateUnitOfWork,
   V2SqlitePlatformRepository,
   V2SqliteReleaseRuntimeUnitOfWork,
+  V2CompanionRepository,
 } from "@living-network/database/v2";
 import type { V2CapabilitiesResponse } from "@living-network/contracts/v2";
 
 import { createV2AssetsPlugin } from "../assets/index.ts";
 import { createV2ChatPlugin, createV2JobsPlugin, type V2ResolvedChatModel } from "../chat/index.ts";
 import { createV2ChatUseCases } from "../chat/use-cases.ts";
+import { createV2CompanionPlugin } from "../companion/plugin.ts";
+import { V2CompanionUseCases } from "../companion/use-cases.ts";
 import { createV2ApiMemoryRuntime } from "../memory-runtime/index.ts";
 import { createV2MemoryPlugin } from "../memory-runtime/plugin.ts";
 import { createV2GenerationPlugin } from "../generation/index.ts";
@@ -176,8 +179,14 @@ export function createV2ApiRuntime(options: {
         inputModalities: options.chatInputModalities ?? ["text"],
       })
     : () => resolver.resolve();
+  const companionRepo = new V2CompanionRepository(db);
+  const companionUseCases = new V2CompanionUseCases({
+    companionRepo,
+    canonRepo: new V2SqliteCanonRepository(db),
+  });
   const app = createV2FastifyApp({
     coreOptions: { useCases: coreUseCases },
+    companionPlugin: createV2CompanionPlugin({ useCases: companionUseCases }),
     chatPlugin: createV2ChatPlugin({
       useCases: chatUseCases,
       resolveModel,

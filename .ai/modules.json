@@ -86,6 +86,26 @@
         "apps/worker/src/v2/maintenance-dispatch-pump*.ts"
       ]
     },
+    "companion": {
+      "description": "Living Companion: moments, character affinity, VAD emotion, daily schedules and gallery",
+      "allowedDependencies": [
+        "companion",
+        "chat",
+        "core",
+        "facts",
+        "memory-engine",
+        "integration"
+      ],
+      "ownedPaths": [
+        "apps/api/src/v2/companion/**",
+        "apps/web/src/v2/companion/**",
+        "apps/web/src/v2/views/V2CompanionView.vue",
+        "packages/contracts/src/v2/companion/**",
+        "packages/domain/src/v2/companion/**",
+        "packages/ports/src/v2/companion/**",
+        "packages/database/src/v2/companion/**"
+      ]
+    },
     "facts": {
       "description": "Fact layer: unified fact extraction contracts, ledger persistence and memory engine offsets",
       "allowedDependencies": [
@@ -171,6 +191,7 @@
       "allowedDependencies": [
         "core",
         "chat",
+        "companion",
         "generation-assets",
         "platform",
         "facts",
