@@ -12,6 +12,21 @@ const characterId = computed(() => typeof route.params.characterId === "string" 
 const characters = computed(() => store.snapshot?.world.characters ?? []);
 const character = computed(() => characters.value.find((item) => item.characterId === characterId.value));
 const tabs = ["overview", "persona", "relationships", "visual", "memory", "state", "events", "usage"] as const;
+
+interface StoryTab {
+  readonly label: string;
+  readonly to: string;
+  readonly exact?: boolean;
+}
+
+const storyTabs: readonly StoryTab[] = [
+  { label: "总览", to: "/v2/workspace/project", exact: true },
+  { label: "世界设定", to: "/v2/workspace/world" },
+  { label: "角色中心", to: "/v2/workspace/characters" },
+  { label: "状态与逻辑", to: "/v2/workspace/state" },
+  { label: "故事结构", to: "/v2/workspace/story" },
+  { label: "数据流程", to: "/v2/workspace/data-flow" },
+];
 const traces = ref<readonly { task: string; contextHash: string; sources: readonly { path: string; reason: string; tokens: number }[]; omittedSources: readonly { path: string; reason: string; tokens: number }[] }[]>([]);
 const relationships = ref<readonly Record<string, unknown>[]>([]);
 const visualVariants = ref<readonly Record<string, unknown>[]>([]);
@@ -38,10 +53,26 @@ watch([() => store.snapshot?.world.storyWorldId, characterId], async ([worldId, 
 }, { immediate: true });
 const relevantTraces = computed(() => traces.value.filter((trace) => trace.sources.some((source) => source.path.includes("character"))));
 function participantCount(item: Record<string, unknown>): number { return Array.isArray(item.participantCharacterIds) ? item.participantCharacterIds.length : 0; }
+function isStoryTabActive(tab: StoryTab): boolean {
+  if (tab.exact) return route.path === tab.to;
+  return route.path === tab.to || route.path.startsWith(`${tab.to}/`);
+}
 </script>
 
 <template>
   <main class="character-center" aria-labelledby="character-center-title">
+    <nav class="story-tabs" aria-label="故事模块">
+      <RouterLink
+        v-for="tab in storyTabs"
+        :key="tab.to"
+        :to="tab.to"
+        class="story-tab"
+        :class="{ active: isStoryTabActive(tab) }"
+        :aria-current="isStoryTabActive(tab) ? 'page' : undefined"
+      >
+        {{ tab.label }}
+      </RouterLink>
+    </nav>
     <header class="character-header">
       <div class="portrait" aria-hidden="true">{{ character?.name?.slice(0, 1) ?? "?" }}</div>
       <div>
@@ -90,6 +121,9 @@ function participantCount(item: Record<string, unknown>): number { return Array.
 
 <style scoped>
 .character-center { max-width: 1100px; margin: 0 auto; padding: var(--space-6); }
+.story-tabs { display: flex; gap: var(--space-1); overflow-x: auto; border-bottom: 1px solid var(--color-border); margin-bottom: var(--space-5); }
+.story-tab { padding: .6rem .8rem; border-bottom: 2px solid transparent; color: var(--color-text-secondary); text-decoration: none; white-space: nowrap; font-weight: 600; }
+.story-tab.active { color: var(--color-accent-strong); border-bottom-color: var(--color-accent-strong); }
 .character-header { display: flex; gap: var(--space-4); align-items: center; flex-wrap: wrap; }
 .portrait { width: 72px; height: 72px; border-radius: 18px; display: grid; place-items: center; background: var(--color-accent-soft); color: var(--color-accent-strong); font-size: 2rem; font-weight: 700; }
 .eyebrow { margin: 0; color: var(--color-text-secondary); font-size: .8rem; }
