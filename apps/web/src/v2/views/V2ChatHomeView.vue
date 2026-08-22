@@ -114,9 +114,13 @@ onMounted(() => {
       description="与你的 AI 故事角色展开即时对话。角色将结合当前人设设定与长期记忆记忆库进行回应。"
     >
       <template #actions>
+        <Button variant="secondary" size="md" @click="router.push('/companion')">
+          <Sparkles :size="14" class="text-primary" aria-hidden="true" />
+          <span>进入角色陪伴专区 📱</span>
+        </Button>
         <Button variant="secondary" size="md" :loading="loading" @click="load">
           <RefreshCw :size="14" aria-hidden="true" />
-          刷新
+          <span>刷新</span>
         </Button>
         <RouterLink to="/v2/start" class="chat-home-quick">
           <Button variant="primary" size="md">

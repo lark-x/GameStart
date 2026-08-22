@@ -229,6 +229,10 @@ function editCharacterInCanon(): void {
           <p>管理故事世界中所有角色的人格设定、人际关系网、视觉立绘与运行时状态。</p>
         </div>
         <div class="v2-characters-header-actions">
+          <Button variant="secondary" size="md" @click="router.push('/companion')">
+            <Sparkles :size="16" class="text-primary" aria-hidden="true" />
+            <span>邻舍陪伴生活 🚀</span>
+          </Button>
           <Button variant="secondary" size="md" @click="editCharacterInCanon">
             <Plus :size="16" aria-hidden="true" />
             <span>新建角色设定</span>
@@ -408,6 +412,10 @@ function editCharacterInCanon(): void {
             <Button variant="primary" size="md" @click="startChatWithCharacter">
               <MessageSquare :size="16" aria-hidden="true" />
               <span>开启对话</span>
+            </Button>
+            <Button variant="secondary" size="md" @click="router.push('/companion')">
+              <Sparkles :size="16" class="text-primary" aria-hidden="true" />
+              <span>陪伴生活 📱</span>
             </Button>
             <Button variant="secondary" size="md" @click="generateImageForCharacter">
               <ImageIcon :size="16" aria-hidden="true" />
