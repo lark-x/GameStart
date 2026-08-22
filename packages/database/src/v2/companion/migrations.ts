@@ -53,6 +53,54 @@ export const v2CompanionMomentsMigration: V2SqliteMigration = {
   `),
 };
 
+export const v2ConsolidateMainStoryWorldMigration: V2SqliteMigration = {
+  id: "0500_v2_consolidate_main_story_world",
+  up: (db: DatabaseSync) => {
+    const hasWorldsTable = db.prepare(
+      "SELECT 1 FROM sqlite_master WHERE type='table' AND name='v2_worlds'",
+    ).get() !== undefined;
+
+    if (!hasWorldsTable) return;
+
+    const hasInstantWorlds = db.prepare(
+      "SELECT 1 FROM v2_worlds WHERE story_world_id LIKE 'world:instant:%' LIMIT 1",
+    ).get() !== undefined;
+
+    if (hasInstantWorlds) {
+      db.exec(`
+        INSERT OR IGNORE INTO v2_worlds (story_world_id, name, summary, revision)
+        VALUES ('world:main', '主线故事世界', '统一主线故事世界，包含所有正典角色与生活物语。', 1);
+
+        INSERT OR IGNORE INTO v2_characters (character_id, story_world_id, name, summary, home_location_id, created_at)
+        SELECT character_id, 'world:main', name, summary, home_location_id, created_at
+        FROM v2_characters
+        WHERE story_world_id LIKE 'world:instant:%';
+      `);
+
+      const hasConversations = db.prepare(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='v2_chat_conversations'",
+      ).get() !== undefined;
+
+      if (hasConversations) {
+        db.exec(`
+          UPDATE v2_chat_conversations
+          SET story_world_id = 'world:main'
+          WHERE story_world_id LIKE 'world:instant:%';
+        `);
+      }
+
+      db.exec(`
+        DELETE FROM v2_worlds
+        WHERE story_world_id LIKE 'world:instant:%';
+      `);
+    }
+  },
+  down: () => {
+    // Non-destructive down migration
+  },
+};
+
 export const v2CompanionMigrations: readonly V2SqliteMigration[] = [
   v2CompanionMomentsMigration,
+  v2ConsolidateMainStoryWorldMigration,
 ];

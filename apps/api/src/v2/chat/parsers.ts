@@ -42,9 +42,15 @@ function optionalMessageId(value: unknown, field: string): V2MessageId | undefin
 export function parseCreateInstantStoryRequest(value: unknown): V2CreateInstantStoryRequest {
   if (!isRecord(value)) throw new V2HttpError(422, "VALIDATION_FAILED", "request body must be an object");
   const displayName = value.displayName === undefined ? undefined : optionalString(value.displayName, "displayName");
+  const storyWorldId = value.storyWorldId === undefined ? undefined : optionalString(value.storyWorldId, "storyWorldId") as V2StoryWorldId;
+  const storyWorldName = value.storyWorldName === undefined ? undefined : optionalString(value.storyWorldName, "storyWorldName");
+  const characterId = value.characterId === undefined ? undefined : optionalString(value.characterId, "characterId") as V2CharacterId;
   return {
     persona: nonEmptyString(value.persona, "persona"),
     ...(displayName === undefined ? {} : { displayName }),
+    ...(storyWorldId === undefined ? {} : { storyWorldId }),
+    ...(storyWorldName === undefined ? {} : { storyWorldName }),
+    ...(characterId === undefined ? {} : { characterId }),
     idempotencyKey: nonEmptyString(value.idempotencyKey, "idempotencyKey") as V2IdempotencyKey,
   };
 }

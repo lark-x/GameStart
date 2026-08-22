@@ -380,12 +380,13 @@ async function createInstantStory(
 ): Promise<V2CreateInstantStoryResponse> {
   const persona = assertV2PersonaText(input.persona);
   const hash = createHash("sha256").update(input.idempotencyKey).digest("hex").slice(0, 24);
-  const storyWorldId = `world:instant:${hash}` as V2StoryWorldId;
-  const characterId = `character:instant:${hash}` as V2CanonCharacter["characterId"];
+  const storyWorldId = (input.storyWorldId ?? "world:main") as V2StoryWorldId;
+  const characterId = (input.characterId ?? `character:instant:${hash}`) as V2CanonCharacter["characterId"];
   const conversationId = `conversation:instant:${hash}` as V2ConversationId;
   const displayName = input.displayName?.trim();
+  const storyWorldName = input.storyWorldName?.trim() ?? "主线故事世界";
   const payloadHash = createHash("sha256")
-    .update(JSON.stringify({ persona, displayName: displayName ?? null }))
+    .update(JSON.stringify({ persona, displayName: displayName ?? null, storyWorldId, characterId }))
     .digest("hex");
 
   return unitOfWork.withChatTransaction(async ({ canon, conversations }) => {
@@ -393,49 +394,60 @@ async function createInstantStory(
       key: input.idempotencyKey,
       operation: "createInstantStory",
     });
-    if (mutation !== undefined && mutation.payloadHash !== payloadHash) {
-      throw new V2HttpError(409, "IDEMPOTENCY_CONFLICT", "Idempotency key was already used with a different instant story payload");
-    }
-    const existingWorld = await canon.getWorld(storyWorldId);
-    if (existingWorld !== undefined) {
-      const character = await canon.getCharacter({ storyWorldId, characterId: characterId as V2CharacterId });
-      const conversation = await conversations.get(conversationId);
-      if (character === undefined || conversation === undefined) {
-        throw new V2HttpError(409, "IDEMPOTENCY_CONFLICT", "Instant story idempotency key maps to an incomplete story");
+    if (mutation !== undefined) {
+      if (mutation.payloadHash !== payloadHash) {
+        throw new V2HttpError(409, "IDEMPOTENCY_CONFLICT", "Idempotency key was already used with a different instant story payload");
       }
-      return {
-        storyWorld: {
-          storyWorldId,
-          name: existingWorld.name,
-          ...(existingWorld.summary === undefined ? {} : { summary: existingWorld.summary }),
-        },
-        character: {
-          characterId: character.characterId as V2CreateInstantStoryResponse["character"]["characterId"],
-          name: character.name,
-          personaText: character.personaText ?? persona,
-        },
-        conversation: toConversationDto(conversation),
-      };
+      const existingWorld = await canon.getWorld(storyWorldId);
+      const existingChar = await canon.getCharacter({ storyWorldId, characterId: characterId as V2CharacterId });
+      const existingConv = await conversations.get(mutation.result.conversationId);
+      if (existingWorld !== undefined && existingChar !== undefined && existingConv !== undefined) {
+        return {
+          storyWorld: {
+            storyWorldId,
+            name: existingWorld.name,
+            ...(existingWorld.summary === undefined ? {} : { summary: existingWorld.summary }),
+          },
+          character: {
+            characterId: existingChar.characterId as V2CreateInstantStoryResponse["character"]["characterId"],
+            name: existingChar.name,
+            personaText: existingChar.personaText ?? persona,
+          },
+          conversation: toConversationDto(existingConv),
+        };
+      }
     }
 
-    const world = await canon.createWorld(createV2CanonWorld({
-      storyWorldId,
-      name: displayName ?? "即时故事",
-      summary: `由用户人设创建：${persona.slice(0, 240)}`,
-    }));
-    const character = await canon.createCharacter(createV2CanonCharacter({
-      storyWorldId,
-      characterId,
-      name: displayName ?? "角色",
-      summary: "由用户人设创建的 AI 角色",
-      personaText: persona,
-    }));
-    const conversation = await conversations.create(createV2ChatConversation({
-      conversationId,
-      storyWorldId,
-      primaryCharacterId: character.characterId,
-      ...(displayName === undefined ? {} : { title: displayName }),
-    }));
+    let world = await canon.getWorld(storyWorldId);
+    if (world === undefined) {
+      world = await canon.createWorld(createV2CanonWorld({
+        storyWorldId,
+        name: storyWorldName,
+        summary: "统一主线故事世界，包含所有正典角色与生活物语。",
+      }));
+    }
+
+    let character = await canon.getCharacter({ storyWorldId, characterId: characterId as V2CharacterId });
+    if (character === undefined) {
+      character = await canon.createCharacter(createV2CanonCharacter({
+        storyWorldId,
+        characterId,
+        name: displayName ?? "角色",
+        summary: `由用户人设创建：${persona.slice(0, 120)}`,
+        personaText: persona,
+      }));
+    }
+
+    let conversation = await conversations.get(conversationId);
+    if (conversation === undefined) {
+      conversation = await conversations.create(createV2ChatConversation({
+        conversationId,
+        storyWorldId,
+        primaryCharacterId: character.characterId,
+        ...(displayName === undefined ? {} : { title: displayName }),
+      }));
+    }
+
     await canon.saveMutation({
       key: input.idempotencyKey,
       operation: "createInstantStory",
@@ -443,7 +455,6 @@ async function createInstantStory(
       result: { conversationId },
     });
 
-    void world;
     return {
       storyWorld: {
         storyWorldId,

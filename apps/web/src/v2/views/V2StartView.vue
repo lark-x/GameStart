@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 import { MessageSquare, Sparkles } from "@lucide/vue";
-import type { V2ChatConversationSummaryDto, V2IdempotencyKey } from "@living-network/contracts/v2";
+import type { V2ChatConversationSummaryDto, V2IdempotencyKey, V2StoryWorldId } from "@living-network/contracts/v2";
 
 import Button from "../../components/ui/Button.vue";
 import Input from "../../components/ui/Input.vue";
@@ -66,6 +66,8 @@ async function startStory(): Promise<void> {
     const result = await client.createInstantStory({
       persona: personaText,
       ...(displayName.value.trim() ? { displayName: displayName.value.trim() } : {}),
+      storyWorldId: "world:main" as V2StoryWorldId,
+      storyWorldName: "主线故事世界",
       idempotencyKey: `instant:${Date.now()}:${randomUuid()}` as V2IdempotencyKey,
     });
     await router.push(`/v2/chat/${encodeURIComponent(result.conversation.conversationId)}`);
