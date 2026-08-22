@@ -909,7 +909,7 @@ onUnmounted(() => {
   }
 
   .viewport-content-container.is-chat-container {
-    padding: 10px;
+    padding: 10px 10px 76px 10px;
   }
 }
 </style>

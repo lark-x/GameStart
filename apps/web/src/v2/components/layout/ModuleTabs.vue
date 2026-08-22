@@ -93,4 +93,10 @@ function isActive(tab: ModuleTab): boolean {
   font-size: 11px;
   padding-inline: 6px;
 }
+
+@media (max-width: 960px) {
+  .v2-module-tabs {
+    padding-left: 48px;
+  }
+}
 </style>
