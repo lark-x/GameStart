@@ -58,7 +58,7 @@ function avatarInitial(name: string): string {
       <div class="card-header-row">
         <div class="card-title-wrap">
           <div class="user-avatar-icon">
-            <User :size="18" class="text-indigo-400" aria-hidden="true" />
+            <User :size="18" class="text-primary" aria-hidden="true" />
           </div>
           <div>
             <h3 class="card-title">玩家自身档案设定</h3>
@@ -142,7 +142,7 @@ function avatarInitial(name: string): string {
     <!-- 伴侣角色羁绊与好感度卡片列表 -->
     <section class="roster-section">
       <div class="section-head-title">
-        <Sparkles :size="18" class="text-indigo-400" aria-hidden="true" />
+        <Sparkles :size="18" class="text-primary" aria-hidden="true" />
         <h3>伴侣角色羁绊与三维情绪状态</h3>
       </div>
 
@@ -238,9 +238,9 @@ function avatarInitial(name: string): string {
 .tavern-view-layout {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 20px;
   width: 100%;
-  max-width: 1120px;
+  max-width: 1040px;
   margin: 0 auto;
   padding-bottom: 60px;
 }
@@ -249,46 +249,42 @@ function avatarInitial(name: string): string {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 20px 28px;
-  background: rgba(26, 23, 40, 0.75);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 20px;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
+  padding: 18px 24px;
+  background: var(--cmp-surface, #ffffff);
+  border: 1px solid var(--cmp-border, #ebdcd1);
+  border-radius: 18px;
+  box-shadow: var(--cmp-shadow-sm, 0 2px 8px rgba(120, 80, 60, 0.05));
 }
 
 .topbar-left {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
 .tavern-page-title {
   margin: 0;
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 900;
-  color: #f8fafc;
-  letter-spacing: -0.02em;
+  color: var(--cmp-text-strong, #2c221e);
+  letter-spacing: -0.01em;
 }
 
 .tavern-subtitle {
-  font-size: 13px;
-  color: #94a3b8;
+  font-size: 12px;
+  color: var(--cmp-text-muted, #8c7d74);
 }
 
 /* 玩家卡 */
 .user-profile-card {
-  background: rgba(26, 23, 40, 0.75);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 20px;
-  padding: 24px 28px;
+  background: var(--cmp-surface, #ffffff);
+  border: 1px solid var(--cmp-border, #ebdcd1);
+  border-radius: 18px;
+  padding: 20px 24px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
+  gap: 16px;
+  box-shadow: var(--cmp-shadow-sm, 0 2px 8px rgba(120, 80, 60, 0.05));
 }
 
 .card-header-row {
@@ -300,62 +296,62 @@ function avatarInitial(name: string): string {
 .card-title-wrap {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .user-avatar-icon {
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   border-radius: 9999px;
-  background: rgba(99, 102, 241, 0.15);
-  border: 1px solid rgba(99, 102, 241, 0.3);
+  background: var(--cmp-primary-soft, #fcedea);
+  border: 1px solid var(--cmp-border, #ebdcd1);
   display: grid;
   place-items: center;
 }
 
 .card-title {
   margin: 0;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 800;
-  color: #f8fafc;
+  color: var(--cmp-text-strong, #2c221e);
 }
 
 .card-desc {
-  font-size: 12px;
-  color: #94a3b8;
+  font-size: 11px;
+  color: var(--cmp-text-muted, #8c7d74);
 }
 
 .edit-toggle-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 18px;
+  padding: 6px 14px;
   border-radius: 9999px;
-  border: 1px solid rgba(99, 102, 241, 0.4);
-  background: rgba(99, 102, 241, 0.15);
-  color: #a5b4fc;
-  font-size: 13px;
+  border: 1px solid var(--cmp-border, #ebdcd1);
+  background: var(--cmp-surface-soft, #f6f1ea);
+  color: var(--cmp-primary, #e06d53);
+  font-size: 12px;
   font-weight: 800;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.18s ease;
 }
 
 .edit-toggle-btn:hover {
-  background: rgba(99, 102, 241, 0.3);
-  color: #ffffff;
+  background: var(--cmp-primary-soft, #fcedea);
+  border-color: var(--cmp-primary, #e06d53);
   transform: translateY(-1px);
 }
 
 .profile-fields-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
+  gap: 14px;
 }
 
 .field-item {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .field-item.full-width {
@@ -365,15 +361,15 @@ function avatarInitial(name: string): string {
 .field-label {
   font-size: 12px;
   font-weight: 800;
-  color: #94a3b8;
+  color: var(--cmp-text-muted, #8c7d74);
 }
 
 .field-value-box {
   padding: 10px 14px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--cmp-surface-soft, #f6f1ea);
+  border: 1px solid var(--cmp-border-light, #f3eae2);
   border-radius: 12px;
-  min-height: 42px;
+  min-height: 40px;
   display: flex;
   align-items: center;
 }
@@ -383,25 +379,25 @@ function avatarInitial(name: string): string {
 }
 
 .field-val-text {
-  font-size: 14px;
-  color: #e2e8f0;
+  font-size: 13px;
+  color: var(--cmp-text, #4a3e39);
   margin: 0;
-  line-height: 1.6;
+  line-height: 1.5;
 }
 
 .field-val-text.highlight {
   font-weight: 800;
-  color: #f8fafc;
+  color: var(--cmp-text-strong, #2c221e);
 }
 
 .field-input,
 .field-textarea {
-  padding: 10px 14px;
-  background: #141220;
-  border: 1px solid #6366f1;
+  padding: 8px 12px;
+  background: var(--cmp-surface, #ffffff);
+  border: 1px solid var(--cmp-primary, #e06d53);
   border-radius: 12px;
-  color: #f8fafc;
-  font-size: 14px;
+  color: var(--cmp-text-strong, #2c221e);
+  font-size: 13px;
   outline: none;
   font-family: inherit;
 }
@@ -414,70 +410,68 @@ function avatarInitial(name: string): string {
 .roster-section {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
 }
 
 .section-head-title {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #f8fafc;
+  color: var(--cmp-text-strong, #2c221e);
 }
 
 .section-head-title h3 {
   margin: 0;
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 900;
   letter-spacing: -0.01em;
 }
 
 .characters-roster-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
 }
 
 .character-tavern-card {
-  background: rgba(26, 23, 40, 0.75);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 20px;
-  padding: 24px;
+  background: var(--cmp-surface, #ffffff);
+  border: 1px solid var(--cmp-border, #ebdcd1);
+  border-radius: 18px;
+  padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
-  transition: transform 0.2s ease, border-color 0.2s ease;
+  gap: 16px;
+  box-shadow: var(--cmp-shadow-sm, 0 2px 8px rgba(120, 80, 60, 0.05));
+  transition: transform 0.18s ease, border-color 0.18s ease;
 }
 
 .character-tavern-card:hover {
   transform: translateY(-2px);
-  border-color: rgba(99, 102, 241, 0.4);
+  border-color: var(--cmp-primary, #e06d53);
 }
 
 .char-card-header {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
 }
 
 .char-avatar-ring {
-  padding: 3px;
+  padding: 2px;
   border-radius: 9999px;
-  background: linear-gradient(135deg, #f43f5e, #6366f1);
+  background: linear-gradient(135deg, var(--cmp-primary, #e06d53), var(--cmp-accent, #f59e0b));
   flex-shrink: 0;
 }
 
 .char-avatar-inner {
-  width: 48px;
-  height: 48px;
+  width: 42px;
+  height: 42px;
   border-radius: 9999px;
-  background: #181528;
-  color: #a5b4fc;
+  background: var(--cmp-surface, #ffffff);
+  color: var(--cmp-primary, #e06d53);
   display: grid;
   place-items: center;
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 900;
 }
 
@@ -486,7 +480,7 @@ function avatarInitial(name: string): string {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
 .char-name-line {
@@ -497,9 +491,9 @@ function avatarInitial(name: string): string {
 
 .char-name {
   margin: 0;
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 900;
-  color: #f8fafc;
+  color: var(--cmp-text-strong, #2c221e);
 }
 
 .mood-pill {
@@ -508,29 +502,28 @@ function avatarInitial(name: string): string {
   gap: 4px;
   font-size: 11px;
   font-weight: 800;
-  padding: 3px 10px;
+  padding: 2px 8px;
   border-radius: 9999px;
-  background: rgba(245, 158, 11, 0.15);
-  border: 1px solid rgba(245, 158, 11, 0.3);
-  color: #fbbf24;
+  background: var(--cmp-accent-soft, #fef3c7);
+  color: var(--cmp-accent, #d97706);
 }
 
 .char-desc {
   margin: 0;
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--cmp-text-muted, #8c7d74);
   line-height: 1.4;
 }
 
 /* 进阶与 VAD */
 .box-segment {
-  background: rgba(20, 18, 32, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 14px;
-  padding: 14px 16px;
+  background: var(--cmp-surface-soft, #f6f1ea);
+  border: 1px solid var(--cmp-border-light, #f3eae2);
+  border-radius: 12px;
+  padding: 12px 14px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .segment-head {
@@ -545,25 +538,25 @@ function avatarInitial(name: string): string {
   gap: 5px;
   font-size: 12px;
   font-weight: 800;
-  color: #fb7185;
+  color: var(--cmp-danger, #e11d48);
 }
 
 .exp-text {
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--cmp-text-muted, #8c7d74);
   font-weight: 700;
 }
 
 .progress-bar {
   height: 6px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--cmp-border-light, #f3eae2);
   border-radius: 9999px;
   overflow: hidden;
 }
 
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #f43f5e, #8b5cf6);
+  background: linear-gradient(90deg, var(--cmp-primary, #e06d53), var(--cmp-accent, #f59e0b));
   border-radius: 9999px;
   transition: width 0.3s ease;
 }
@@ -571,25 +564,25 @@ function avatarInitial(name: string): string {
 .segment-label {
   font-size: 11px;
   font-weight: 800;
-  color: #64748b;
+  color: var(--cmp-text-muted, #8c7d74);
 }
 
 .vad-triple-row {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .vad-cell {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   font-size: 12px;
 }
 
 .vad-name {
-  width: 78px;
-  color: #94a3b8;
+  width: 72px;
+  color: var(--cmp-text-muted, #8c7d74);
   font-size: 11px;
   font-weight: 700;
   flex-shrink: 0;
@@ -598,7 +591,7 @@ function avatarInitial(name: string): string {
 .vad-bar {
   flex: 1 1 auto;
   height: 6px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--cmp-border-light, #f3eae2);
   border-radius: 9999px;
   overflow: hidden;
 }
@@ -610,14 +603,14 @@ function avatarInitial(name: string): string {
 
 .fill-v { background: linear-gradient(90deg, #10b981, #34d399); }
 .fill-a { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
-.fill-d { background: linear-gradient(90deg, #6366f1, #818cf8); }
+.fill-d { background: linear-gradient(90deg, #e06d53, #f97316); }
 
 .vad-val {
-  width: 36px;
+  width: 32px;
   text-align: right;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 800;
-  color: #e2e8f0;
+  color: var(--cmp-text-strong, #2c221e);
   flex-shrink: 0;
 }
 
@@ -625,42 +618,42 @@ function avatarInitial(name: string): string {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 12px;
+  gap: 6px;
+  padding: 10px;
   border-radius: 12px;
-  border: 1px solid rgba(99, 102, 241, 0.4);
-  background: rgba(99, 102, 241, 0.15);
-  color: #e0e7ff;
+  border: 1px solid var(--cmp-border, #ebdcd1);
+  background: var(--cmp-surface-soft, #f6f1ea);
+  color: var(--cmp-text-strong, #2c221e);
   font-size: 13px;
   font-weight: 800;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.18s ease;
 }
 
 .start-chat-btn:hover {
-  background: #6366f1;
+  background: var(--cmp-primary, #e06d53);
   color: #ffffff;
-  transform: translateY(-1px);
+  border-color: var(--cmp-primary, #e06d53);
 }
 
 .tavern-loading,
 .tavern-empty {
-  padding: 40px;
+  padding: 36px;
   text-align: center;
-  color: #94a3b8;
-  background: rgba(26, 23, 40, 0.75);
-  border-radius: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--cmp-text-muted, #8c7d74);
+  background: var(--cmp-surface, #ffffff);
+  border-radius: 18px;
+  border: 1px solid var(--cmp-border, #ebdcd1);
 }
 
 .spinner-ring {
-  width: 32px;
-  height: 32px;
-  border: 3px solid rgba(255, 255, 255, 0.1);
-  border-top-color: #6366f1;
+  width: 28px;
+  height: 28px;
+  border: 2px solid var(--cmp-border-light, #f3eae2);
+  border-top-color: var(--cmp-primary, #e06d53);
   border-radius: 9999px;
   animation: spin 0.8s linear infinite;
-  margin: 0 auto 12px;
+  margin: 0 auto 10px;
 }
 
 @keyframes spin {

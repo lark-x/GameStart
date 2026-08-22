@@ -1,0 +1,98 @@
+/* ============================================================
+   邻舍伴侣专区（Companion）独立专属暖色设计令牌
+   完全隔离于工作区 /v2，通过 [data-companion-theme] 作用域驱动
+   ============================================================ */
+
+/* 1. 暖阳奶油（Cream）—— 默认主打色：日系恋爱治愈，温润奶油麦色 */
+[data-companion-theme="cream"] {
+  color-scheme: light;
+
+  /* 背景与层次 */
+  --cmp-bg: #faf7f2;
+  --cmp-bg-gradient: radial-gradient(circle at 10% 10%, rgba(224, 109, 83, 0.08) 0%, transparent 45%),
+                      radial-gradient(circle at 90% 90%, rgba(245, 158, 11, 0.06) 0%, transparent 45%),
+                      radial-gradient(circle at 50% 50%, rgba(251, 243, 233, 0.6) 0%, transparent 70%);
+
+  --cmp-surface: #ffffff;
+  --cmp-surface-soft: #f6f1ea;
+  --cmp-surface-muted: #ece3d7;
+  --cmp-surface-glass: rgba(255, 255, 255, 0.88);
+
+  /* 边框 */
+  --cmp-border: #ebdcd1;
+  --cmp-border-light: #f3eae2;
+  --cmp-border-strong: #d9c5b6;
+
+  /* 文字 */
+  --cmp-text: #4a3e39;
+  --cmp-text-strong: #2c221e;
+  --cmp-text-muted: #8c7d74;
+  --cmp-text-faint: #b8aba2;
+
+  /* 品牌与重点色：温暖珊瑚橘红 & 琥珀金 */
+  --cmp-primary: #e06d53;
+  --cmp-primary-hover: #c8573d;
+  --cmp-primary-soft: #fcedea;
+  --cmp-primary-faint: #fdf6f4;
+  --cmp-on-primary: #ffffff;
+
+  --cmp-accent: #f59e0b;
+  --cmp-accent-soft: #fef3c7;
+  --cmp-danger: #e11d48;
+  --cmp-danger-soft: #ffe4e6;
+  --cmp-success: #10b981;
+  --cmp-success-soft: #d1fae5;
+
+  /* 阴影与光效 */
+  --cmp-shadow-sm: 0 2px 8px rgba(120, 80, 60, 0.05);
+  --cmp-shadow-md: 0 8px 24px rgba(120, 80, 60, 0.08);
+  --cmp-shadow-lg: 0 16px 36px rgba(120, 80, 60, 0.12);
+  --cmp-focus-ring: rgba(224, 109, 83, 0.25);
+}
+
+/* 2. 落日暖咖（Latte）—— 温暖深醇色：黄昏暖阳与琥珀拿铁 */
+[data-companion-theme="latte"] {
+  color-scheme: light;
+
+  /* 背景与层次 */
+  --cmp-bg: #f3ece4;
+  --cmp-bg-gradient: radial-gradient(circle at 10% 15%, rgba(194, 120, 47, 0.1) 0%, transparent 45%),
+                      radial-gradient(circle at 90% 85%, rgba(180, 83, 9, 0.08) 0%, transparent 45%),
+                      radial-gradient(circle at 50% 50%, rgba(245, 237, 227, 0.7) 0%, transparent 70%);
+
+  --cmp-surface: #fdfaf6;
+  --cmp-surface-soft: #ede2d5;
+  --cmp-surface-muted: #e0d2c2;
+  --cmp-surface-glass: rgba(253, 250, 246, 0.9);
+
+  /* 边框 */
+  --cmp-border: #e2d1c0;
+  --cmp-border-light: #ece0d3;
+  --cmp-border-strong: #ccb6a0;
+
+  /* 文字 */
+  --cmp-text: #42352f;
+  --cmp-text-strong: #2a1f1a;
+  --cmp-text-muted: #827269;
+  --cmp-text-faint: #ad9e95;
+
+  /* 品牌与重点色：落日琥珀金 & 暖木橘 */
+  --cmp-primary: #c2782f;
+  --cmp-primary-hover: #a86221;
+  --cmp-primary-soft: #faebd9;
+  --cmp-primary-faint: #fcf4ec;
+  --cmp-on-primary: #ffffff;
+
+  --cmp-accent: #d97706;
+  --cmp-accent-soft: #fef3c7;
+  --cmp-danger: #dc2626;
+  --cmp-danger-soft: #fee2e2;
+  --cmp-success: #059669;
+  --cmp-success-soft: #d1fae5;
+
+  /* 阴影与光效 */
+  --cmp-shadow-sm: 0 2px 8px rgba(90, 60, 40, 0.06);
+  --cmp-shadow-md: 0 8px 24px rgba(90, 60, 40, 0.09);
+  --cmp-shadow-lg: 0 16px 36px rgba(90, 60, 40, 0.13);
+  --cmp-focus-ring: rgba(194, 120, 47, 0.25);
+}

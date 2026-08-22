@@ -9,7 +9,7 @@ import {
   Menu,
   MessageSquare,
   Moon,
-  Sparkles,
+  Palette,
   Sun,
   Users,
   X,
@@ -25,11 +25,15 @@ import CompanionMoments from "../companion/components/CompanionMoments.vue";
 import CompanionSchedule from "../companion/components/CompanionSchedule.vue";
 import CompanionTavern from "../companion/components/CompanionTavern.vue";
 import { createV2CompanionClient } from "../companion/client.ts";
+import { useCompanionTheme } from "../companion/theme.ts";
+import "../companion/companion-theme.css";
 
 const router = useRouter();
 const environment = import.meta.env as Record<string, string | undefined>;
 const baseUrl = environment.VITE_API_BASE || (typeof window === "undefined" ? "http://127.0.0.1:3003" : window.location.origin);
 const client = createV2CompanionClient({ baseUrl });
+
+const { theme, toggleTheme } = useCompanionTheme();
 
 type ActiveTab = "chat" | "moments" | "schedule" | "gallery" | "tavern";
 const activeTab = ref<ActiveTab>("chat");
@@ -138,7 +142,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="linshe-standalone-root">
+  <div class="linshe-standalone-root" :data-companion-theme="theme">
     <!-- 移动端抽屉遮罩 (Scrim) -->
     <div
       v-if="mobileSidebarOpen"
@@ -146,11 +150,11 @@ onUnmounted(() => {
       @click="mobileSidebarOpen = false"
     />
 
-    <!-- ═══ 1. 左侧 NavBar 导航栏 (80px, 经典玻璃拟态) ═══ -->
+    <!-- ═══ 1. 左侧 NavBar 导航栏 (56px 极致轻巧) ═══ -->
     <nav class="linshe-navbar" aria-label="邻舍主导航">
       <div class="navbar-top">
         <div class="linshe-brand-mark" title="邻舍 · 角色陪伴生活">
-          <Sparkles :size="22" class="brand-sparkle" aria-hidden="true" />
+          <span class="brand-heart">💖</span>
         </div>
 
         <button
@@ -161,7 +165,7 @@ onUnmounted(() => {
           @click="activeTab = 'chat'"
         >
           <div class="nav-icon-wrap">
-            <MessageSquare :size="22" aria-hidden="true" />
+            <MessageSquare :size="20" aria-hidden="true" />
           </div>
           <span class="nav-label">聊天</span>
         </button>
@@ -174,7 +178,7 @@ onUnmounted(() => {
           @click="activeTab = 'moments'"
         >
           <div class="nav-icon-wrap">
-            <Compass :size="22" aria-hidden="true" />
+            <Compass :size="20" aria-hidden="true" />
             <span v-if="moments.length > 0" class="nav-dot">{{ moments.length }}</span>
           </div>
           <span class="nav-label">朋友圈</span>
@@ -188,7 +192,7 @@ onUnmounted(() => {
           @click="activeTab = 'schedule'"
         >
           <div class="nav-icon-wrap">
-            <Calendar :size="22" aria-hidden="true" />
+            <Calendar :size="20" aria-hidden="true" />
           </div>
           <span class="nav-label">日程</span>
         </button>
@@ -201,7 +205,7 @@ onUnmounted(() => {
           @click="activeTab = 'gallery'"
         >
           <div class="nav-icon-wrap">
-            <ImageIcon :size="22" aria-hidden="true" />
+            <ImageIcon :size="20" aria-hidden="true" />
           </div>
           <span class="nav-label">相册</span>
         </button>
@@ -214,13 +218,27 @@ onUnmounted(() => {
           @click="activeTab = 'tavern'"
         >
           <div class="nav-icon-wrap">
-            <Users :size="22" aria-hidden="true" />
+            <Users :size="20" aria-hidden="true" />
           </div>
           <span class="nav-label">酒馆</span>
         </button>
       </div>
 
       <div class="navbar-bottom">
+        <!-- 独立暖色主题切换 -->
+        <button
+          type="button"
+          class="nav-item theme-toggle-btn"
+          :title="theme === 'cream' ? '当前：暖阳奶油（点击切为落日暖咖）' : '当前：落日暖咖（点击切为暖阳奶油）'"
+          @click="toggleTheme"
+        >
+          <div class="nav-icon-wrap">
+            <Palette :size="18" aria-hidden="true" />
+          </div>
+          <span class="nav-label">{{ theme === 'cream' ? '奶油' : '暖咖' }}</span>
+        </button>
+
+        <!-- 返回创作工作台 -->
         <button
           type="button"
           class="nav-item return-workspace-btn"
@@ -228,14 +246,14 @@ onUnmounted(() => {
           @click="router.push('/v2/workspace/project')"
         >
           <div class="nav-icon-wrap">
-            <ArrowLeft :size="20" aria-hidden="true" />
+            <ArrowLeft :size="18" aria-hidden="true" />
           </div>
           <span class="nav-label">工作台</span>
         </button>
       </div>
     </nav>
 
-    <!-- ═══ 2. 中间 Sidebar 伴侣列表与作息抽屉 (320px) ═══ -->
+    <!-- ═══ 2. 中间 Sidebar 伴侣精简列表 (240px) ═══ -->
     <aside
       class="linshe-sidebar"
       :class="{ 'mobile-open': mobileSidebarOpen }"
@@ -245,9 +263,9 @@ onUnmounted(() => {
         <div class="sidebar-title-row">
           <span class="sidebar-title">伴侣名册</span>
           <div class="ambient-tag" :class="{ 'is-day': isDay, 'is-night': !isDay }">
-            <Sun v-if="isDay" :size="12" aria-hidden="true" />
-            <Moon v-else :size="12" aria-hidden="true" />
-            <span>{{ timeLabel }} {{ currentTime }}</span>
+            <Sun v-if="isDay" :size="11" class="text-amber-500" aria-hidden="true" />
+            <Moon v-else :size="11" class="text-indigo-400" aria-hidden="true" />
+            <span>{{ timeLabel }}</span>
           </div>
         </div>
       </div>
@@ -270,10 +288,9 @@ onUnmounted(() => {
           <div class="char-info-col">
             <div class="char-name-time-row">
               <span class="char-name-text">{{ c.name }}</span>
-              <span class="char-mood-text">{{ c.affinity.emotion.moodLabel }}</span>
             </div>
             <div class="char-schedule-preview">
-              {{ c.schedule.currentActivity.locationName }} · {{ c.schedule.currentActivity.activityName }}
+              {{ c.schedule.currentActivity.locationName }}
             </div>
           </div>
         </div>
@@ -282,32 +299,9 @@ onUnmounted(() => {
           正在读取伴侣数据…
         </div>
       </div>
-
-      <!-- 选中伴侣的快捷 mini card -->
-      <div v-if="focusedCharacter" class="sidebar-bottom-focus">
-        <div class="focus-head">
-          <span class="focus-title">{{ focusedCharacter.name }} 的羁绊</span>
-          <span class="focus-level">Lv.{{ focusedCharacter.affinity.level }} · {{ focusedCharacter.affinity.levelTitle }}</span>
-        </div>
-        <div class="focus-exp-bar">
-          <div
-            class="focus-exp-fill"
-            :style="{ width: `${Math.min(100, Math.round((focusedCharacter.affinity.currentExp / focusedCharacter.affinity.maxExp) * 100))}%` }"
-          />
-        </div>
-        <button
-          v-if="activeTab !== 'chat'"
-          type="button"
-          class="focus-chat-btn"
-          @click="handleStartChat(focusedCharacter.characterId)"
-        >
-          <MessageSquare :size="14" aria-hidden="true" />
-          <span>与 {{ focusedCharacter.name }} 开启对话</span>
-        </button>
-      </div>
     </aside>
 
-    <!-- ═══ 3. 右侧主视口区 (Page Host) ═══ -->
+    <!-- ═══ 3. 右侧主视口区 (Page Host 占据 75%+ 宽屏主舞台) ═══ -->
     <main class="linshe-main-viewport" :class="{ 'is-chat-layout': activeTab === 'chat' }">
       <!-- 移动端顶部 Header -->
       <div class="mobile-topbar-header">
@@ -320,12 +314,12 @@ onUnmounted(() => {
           <Menu :size="18" aria-hidden="true" />
         </button>
         <span class="mobile-page-name">
-          {{ activeTab === 'chat' ? `对话 · ${focusedCharacter?.name || '伴侣'}` : activeTab === 'moments' ? '朋友圈' : activeTab === 'schedule' ? '24h 生活日程' : activeTab === 'gallery' ? '回忆相册' : '酒馆档案' }}
+          {{ activeTab === 'chat' ? `对话 · ${focusedCharacter?.name || '伴侣'}` : activeTab === 'moments' ? '朋友圈' : activeTab === 'schedule' ? '生活日程' : activeTab === 'gallery' ? '相册写真' : '酒馆档案' }}
         </span>
         <button
           type="button"
           class="mobile-back-btn"
-          title="返回创作工作台"
+          title="返回工作台"
           @click="router.push('/v2/workspace/project')"
         >
           <ArrowLeft :size="16" aria-hidden="true" />
@@ -390,7 +384,7 @@ onUnmounted(() => {
         :class="{ active: activeTab === 'chat' }"
         @click="activeTab = 'chat'"
       >
-        <MessageSquare :size="20" aria-hidden="true" />
+        <MessageSquare :size="18" aria-hidden="true" />
         <span>聊天</span>
       </button>
 
@@ -400,7 +394,7 @@ onUnmounted(() => {
         :class="{ active: activeTab === 'moments' }"
         @click="activeTab = 'moments'"
       >
-        <Compass :size="20" aria-hidden="true" />
+        <Compass :size="18" aria-hidden="true" />
         <span>朋友圈</span>
       </button>
 
@@ -410,7 +404,7 @@ onUnmounted(() => {
         :class="{ active: activeTab === 'schedule' }"
         @click="activeTab = 'schedule'"
       >
-        <Calendar :size="20" aria-hidden="true" />
+        <Calendar :size="18" aria-hidden="true" />
         <span>日程</span>
       </button>
 
@@ -420,7 +414,7 @@ onUnmounted(() => {
         :class="{ active: activeTab === 'gallery' }"
         @click="activeTab = 'gallery'"
       >
-        <ImageIcon :size="20" aria-hidden="true" />
+        <ImageIcon :size="18" aria-hidden="true" />
         <span>相册</span>
       </button>
 
@@ -430,7 +424,7 @@ onUnmounted(() => {
         :class="{ active: activeTab === 'tavern' }"
         @click="activeTab = 'tavern'"
       >
-        <Users :size="20" aria-hidden="true" />
+        <Users :size="18" aria-hidden="true" />
         <span>酒馆</span>
       </button>
     </nav>
@@ -466,88 +460,79 @@ onUnmounted(() => {
   height: 100vh;
   height: 100dvh;
   overflow: hidden;
-  background: #0d0b18;
-  background-image:
-    radial-gradient(circle at 10% 15%, rgba(99, 102, 241, 0.18) 0%, transparent 45%),
-    radial-gradient(circle at 90% 85%, rgba(244, 63, 94, 0.15) 0%, transparent 45%),
-    radial-gradient(circle at 50% 50%, rgba(30, 27, 75, 0.25) 0%, transparent 70%);
-  color: #f1f5f9;
+  background: var(--cmp-bg, #faf7f2);
+  background-image: var(--cmp-bg-gradient);
+  color: var(--cmp-text, #4a3e39);
   font-family: inherit;
   position: relative;
 }
 
-/* ════ 1. 左侧 NavBar (80px) ════ */
+/* ════ 1. 左侧 NavBar (56px 极致轻量) ════ */
 .linshe-navbar {
-  width: 80px;
-  min-width: 80px;
+  width: 56px;
+  min-width: 56px;
   height: 100%;
-  background: rgba(18, 15, 29, 0.95);
-  backdrop-filter: blur(28px);
-  -webkit-backdrop-filter: blur(28px);
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--cmp-surface-glass, rgba(255, 255, 255, 0.95));
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-right: 1px solid var(--cmp-border-light, #f3eae2);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: space-between;
-  padding: 24px 0;
+  padding: 16px 0 12px 0;
   z-index: 30;
   user-select: none;
-  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--cmp-shadow-sm, 0 2px 8px rgba(120, 80, 60, 0.05));
 }
 
 .navbar-top {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
+  gap: 8px;
   width: 100%;
 }
 
 .linshe-brand-mark {
-  width: 48px;
-  height: 48px;
+  width: 38px;
+  height: 38px;
   border-radius: 9999px;
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.25), rgba(244, 63, 94, 0.25));
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: var(--cmp-primary-soft, #fcedea);
+  border: 1px solid var(--cmp-border, #ebdcd1);
   display: grid;
   place-items: center;
-  margin-bottom: 8px;
-  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.3);
-}
-
-.brand-sparkle {
-  color: #a5b4fc;
+  margin-bottom: 6px;
+  font-size: 16px;
 }
 
 .nav-item {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 5px;
-  padding: 10px 4px;
-  border-radius: 16px;
-  width: 64px;
+  gap: 2px;
+  padding: 8px 2px;
+  border-radius: 12px;
+  width: 46px;
   border: 1px solid transparent;
   background: transparent;
-  color: #94a3b8;
-  font-size: 11px;
+  color: var(--cmp-text-muted, #8c7d74);
+  font-size: 10px;
   font-weight: 800;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.18s ease;
   position: relative;
 }
 
 .nav-item:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: #f8fafc;
-  transform: translateY(-1px);
+  background: var(--cmp-surface-soft, #f6f1ea);
+  color: var(--cmp-text-strong, #2c221e);
 }
 
 .nav-item.active {
-  background: rgba(99, 102, 241, 0.2);
-  border-color: rgba(99, 102, 241, 0.4);
-  color: #a5b4fc;
-  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.3);
+  background: var(--cmp-primary-soft, #fcedea);
+  border-color: var(--cmp-primary, #e06d53);
+  color: var(--cmp-primary, #e06d53);
 }
 
 .nav-icon-wrap {
@@ -557,56 +542,62 @@ onUnmounted(() => {
 
 .nav-dot {
   position: absolute;
-  top: -4px;
-  right: -10px;
-  padding: 0 5px;
-  min-width: 16px;
-  height: 16px;
+  top: -3px;
+  right: -8px;
+  padding: 0 4px;
+  min-width: 14px;
+  height: 14px;
   border-radius: 9999px;
-  background: #f43f5e;
+  background: var(--cmp-danger, #e11d48);
   color: #fff;
   font-size: 9px;
   font-weight: 900;
-  line-height: 16px;
+  line-height: 14px;
   text-align: center;
-  box-shadow: 0 2px 8px rgba(244, 63, 94, 0.5);
 }
 
 .navbar-bottom {
   display: flex;
   flex-direction: column;
   align-items: center;
+  gap: 6px;
   width: 100%;
 }
 
+.theme-toggle-btn {
+  color: var(--cmp-accent, #d97706);
+}
+
+.theme-toggle-btn:hover {
+  background: var(--cmp-accent-soft, #fef3c7);
+  color: var(--cmp-accent, #d97706);
+}
+
 .return-workspace-btn {
-  color: #64748b;
+  color: var(--cmp-text-muted, #8c7d74);
 }
 
 .return-workspace-btn:hover {
-  color: #f43f5e;
-  background: rgba(244, 63, 94, 0.1);
-  border-color: rgba(244, 63, 94, 0.2);
+  color: var(--cmp-primary, #e06d53);
+  background: var(--cmp-primary-soft, #fcedea);
 }
 
-/* ════ 2. 中间 Sidebar 伴侣列表 (320px) ════ */
+/* ════ 2. 中间 Sidebar 伴侣列表 (240px 精简) ════ */
 .linshe-sidebar {
-  width: 320px;
-  min-width: 320px;
+  width: 240px;
+  min-width: 240px;
   height: 100%;
-  background: rgba(22, 19, 36, 0.9);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--cmp-surface, #ffffff);
+  border-right: 1px solid var(--cmp-border-light, #f3eae2);
   display: flex;
   flex-direction: column;
   z-index: 20;
-  box-shadow: 6px 0 30px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--cmp-shadow-sm, 0 2px 8px rgba(120, 80, 60, 0.05));
 }
 
 .sidebar-header {
-  padding: 20px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--cmp-border-light, #f3eae2);
 }
 
 .sidebar-title-row {
@@ -616,83 +607,82 @@ onUnmounted(() => {
 }
 
 .sidebar-title {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 900;
-  color: #f8fafc;
+  color: var(--cmp-text-strong, #2c221e);
   letter-spacing: -0.01em;
 }
 
 .ambient-tag {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   font-size: 11px;
   font-weight: 800;
-  padding: 4px 10px;
+  padding: 3px 8px;
   border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: #94a3b8;
+  background: var(--cmp-surface-soft, #f6f1ea);
+  border: 1px solid var(--cmp-border-light, #f3eae2);
+  color: var(--cmp-text-muted, #8c7d74);
 }
 
 .ambient-tag.is-day {
-  color: #fbbf24;
+  color: var(--cmp-accent, #d97706);
 }
 
 .ambient-tag.is-night {
-  color: #818cf8;
+  color: #6366f1;
 }
 
 .char-list-scroll {
   flex: 1 1 auto;
   overflow-y: auto;
-  padding: 12px;
+  padding: 10px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .char-item-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  background: rgba(255, 255, 255, 0.02);
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  background: transparent;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.18s ease;
 }
 
 .char-item-row:hover {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.1);
-  transform: translateY(-1px);
+  background: var(--cmp-surface-soft, #f6f1ea);
+  border-color: var(--cmp-border-light, #f3eae2);
 }
 
 .char-item-row.active {
-  background: rgba(99, 102, 241, 0.18);
-  border-color: rgba(99, 102, 241, 0.45);
-  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.2);
+  background: var(--cmp-primary-soft, #fcedea);
+  border-color: var(--cmp-primary, #e06d53);
+  box-shadow: var(--cmp-shadow-sm, 0 2px 8px rgba(120, 80, 60, 0.05));
 }
 
 .char-avatar-ring {
   position: relative;
   padding: 2px;
   border-radius: 9999px;
-  background: linear-gradient(135deg, #f43f5e, #6366f1);
+  background: linear-gradient(135deg, var(--cmp-primary, #e06d53), var(--cmp-accent, #f59e0b));
   flex-shrink: 0;
 }
 
 .char-avatar-box {
-  width: 44px;
-  height: 44px;
+  width: 36px;
+  height: 36px;
   border-radius: 9999px;
-  background: #181528;
-  color: #a5b4fc;
+  background: var(--cmp-surface, #ffffff);
+  color: var(--cmp-primary, #e06d53);
   display: grid;
   place-items: center;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 900;
 }
 
@@ -700,11 +690,11 @@ onUnmounted(() => {
   position: absolute;
   bottom: 0;
   right: 0;
-  width: 11px;
-  height: 11px;
+  width: 9px;
+  height: 9px;
   border-radius: 9999px;
-  background: #10b981;
-  border: 2px solid #181528;
+  background: var(--cmp-success, #10b981);
+  border: 2px solid var(--cmp-surface, #ffffff);
 }
 
 .char-info-col {
@@ -712,7 +702,7 @@ onUnmounted(() => {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
 .char-name-time-row {
@@ -724,93 +714,25 @@ onUnmounted(() => {
 .char-name-text {
   font-size: 14px;
   font-weight: 900;
-  color: #f8fafc;
-}
-
-.char-mood-text {
-  font-size: 11px;
-  color: #fbbf24;
-  font-weight: 800;
+  color: var(--cmp-text-strong, #2c221e);
 }
 
 .char-schedule-preview {
-  font-size: 12px;
-  color: #94a3b8;
+  font-size: 11px;
+  color: var(--cmp-text-muted, #8c7d74);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .sidebar-loading {
-  padding: 32px;
+  padding: 24px;
   text-align: center;
-  color: #94a3b8;
+  color: var(--cmp-text-muted, #8c7d74);
   font-size: 12px;
 }
 
-.sidebar-bottom-focus {
-  padding: 16px 20px;
-  background: rgba(18, 15, 29, 0.95);
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.focus-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.focus-title {
-  font-size: 13px;
-  font-weight: 900;
-  color: #f8fafc;
-}
-
-.focus-level {
-  font-size: 11px;
-  font-weight: 800;
-  color: #fb7185;
-}
-
-.focus-exp-bar {
-  height: 6px;
-  border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.08);
-  overflow: hidden;
-}
-
-.focus-exp-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #f43f5e, #6366f1);
-  transition: width 0.3s ease;
-}
-
-.focus-chat-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 10px 14px;
-  border-radius: 12px;
-  border: 1px solid rgba(99, 102, 241, 0.4);
-  background: rgba(99, 102, 241, 0.15);
-  color: #e0e7ff;
-  font-size: 13px;
-  font-weight: 800;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.focus-chat-btn:hover {
-  background: #6366f1;
-  color: #ffffff;
-  transform: translateY(-1px);
-}
-
-/* ════ 3. 右侧主视口 (Page Host) ════ */
+/* ════ 3. 右侧主视口 (75%+ 宽屏主舞台) ════ */
 .linshe-main-viewport {
   flex: 1 1 auto;
   min-width: 0;
@@ -826,20 +748,20 @@ onUnmounted(() => {
   display: none;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
-  background: rgba(22, 19, 36, 0.95);
+  padding: 10px 16px;
+  background: var(--cmp-surface-glass, rgba(255, 255, 255, 0.95));
   backdrop-filter: blur(16px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--cmp-border-light, #f3eae2);
 }
 
 .mobile-menu-btn,
 .mobile-back-btn {
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   border-radius: 9999px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.06);
-  color: #f8fafc;
+  border: 1px solid var(--cmp-border, #ebdcd1);
+  background: var(--cmp-surface, #ffffff);
+  color: var(--cmp-text-strong, #2c221e);
   display: grid;
   place-items: center;
   cursor: pointer;
@@ -848,20 +770,20 @@ onUnmounted(() => {
 .mobile-page-name {
   font-size: 14px;
   font-weight: 800;
-  color: #f8fafc;
+  color: var(--cmp-text-strong, #2c221e);
 }
 
 .viewport-content-container {
   flex: 1 1 0;
   min-height: 0;
   overflow-y: auto;
-  padding: 32px 40px 100px 40px;
+  padding: 24px 32px 80px 32px;
   display: flex;
   flex-direction: column;
 }
 
 .viewport-content-container.is-chat-container {
-  padding: 24px 32px;
+  padding: 18px 24px;
   height: 100%;
   overflow: hidden;
 }
@@ -873,12 +795,12 @@ onUnmounted(() => {
   bottom: 0;
   left: 0;
   right: 0;
-  background: rgba(22, 19, 36, 0.95);
+  background: var(--cmp-surface-glass, rgba(255, 255, 255, 0.95));
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid var(--cmp-border-light, #f3eae2);
   grid-template-columns: repeat(5, 1fr);
-  padding: 10px 0;
+  padding: 8px 0;
   z-index: 50;
 }
 
@@ -886,19 +808,18 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
+  gap: 2px;
   border: 0;
   background: transparent;
-  color: #94a3b8;
-  font-size: 11px;
+  color: var(--cmp-text-muted, #8c7d74);
+  font-size: 10px;
   font-weight: 800;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.18s ease;
 }
 
 .dock-item.active {
-  color: #a5b4fc;
-  transform: translateY(-1px);
+  color: var(--cmp-primary, #e06d53);
 }
 
 /* 全屏 Lightbox */
@@ -906,20 +827,20 @@ onUnmounted(() => {
   position: fixed;
   inset: 0;
   z-index: 999;
-  background: rgba(0, 0, 0, 0.92);
-  backdrop-filter: blur(16px);
+  background: rgba(0, 0, 0, 0.88);
+  backdrop-filter: blur(12px);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 32px;
+  padding: 24px;
 }
 
 .lightbox-close {
   position: absolute;
-  top: 24px;
-  right: 24px;
-  width: 44px;
-  height: 44px;
+  top: 20px;
+  right: 20px;
+  width: 40px;
+  height: 40px;
   border-radius: 9999px;
   border: 1px solid rgba(255, 255, 255, 0.2);
   background: rgba(255, 255, 255, 0.1);
@@ -931,15 +852,15 @@ onUnmounted(() => {
 }
 
 .lightbox-close:hover {
-  background: #f43f5e;
-  border-color: #f43f5e;
+  background: var(--cmp-danger, #e11d48);
+  border-color: var(--cmp-danger, #e11d48);
 }
 
 .lightbox-image {
   max-width: 90vw;
   max-height: 85vh;
   border-radius: 16px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
   border: 1px solid rgba(255, 255, 255, 0.15);
   object-fit: contain;
 }
@@ -962,13 +883,13 @@ onUnmounted(() => {
     position: fixed;
     top: 0;
     left: 0;
-    bottom: 60px;
-    width: 280px;
-    min-width: 280px;
+    bottom: 56px;
+    width: 240px;
+    min-width: 240px;
     transform: translateX(-100%);
-    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: transform 0.25s ease;
     z-index: 90;
-    box-shadow: 10px 0 40px rgba(0, 0, 0, 0.6);
+    box-shadow: var(--cmp-shadow-lg, 0 16px 36px rgba(120, 80, 60, 0.12));
   }
 
   .linshe-sidebar.mobile-open {
@@ -978,13 +899,13 @@ onUnmounted(() => {
   .mobile-scrim {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.65);
-    backdrop-filter: blur(4px);
+    background: rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(3px);
     z-index: 80;
   }
 
   .viewport-content-container {
-    padding: 16px 16px 80px 16px;
+    padding: 14px 14px 70px 14px;
   }
 
   .viewport-content-container.is-chat-container {

@@ -1,7 +1,19 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { Clock, MapPin, RefreshCw, Search, Sun } from "@lucide/vue";
-import type { V2CompanionRosterResponse } from "@living-network/contracts/v2";
+import {
+  Calendar,
+  Clock,
+  Heart,
+  MapPin,
+  RefreshCw,
+  Search,
+  Smile,
+} from "@lucide/vue";
+import type {
+  V2CompanionRosterResponse,
+} from "@living-network/contracts/v2";
+
+type V2CompanionRosterCharacter = V2CompanionRosterResponse["characters"][number];
 
 const props = defineProps<{
   roster: V2CompanionRosterResponse | null;
@@ -14,18 +26,26 @@ const emit = defineEmits<{
 }>();
 
 const searchQuery = ref("");
-const expandedSchedule = ref<Record<string, boolean>>({});
-const isResetting = ref(false);
+const selectedScheduleCharId = ref<string | null>(null);
+
+const characters = computed(() => props.roster?.characters || []);
+
+const activeCharacter = computed<V2CompanionRosterCharacter | null>(() => {
+  if (!characters.value.length) return null;
+  if (selectedScheduleCharId.value) {
+    const found = characters.value.find((c) => c.characterId === selectedScheduleCharId.value);
+    if (found) return found;
+  }
+  return characters.value[0] ?? null;
+});
 
 const filteredCharacters = computed(() => {
-  if (!props.roster) return [];
-  const q = searchQuery.value.trim().toLowerCase();
-  if (!q) return props.roster.characters;
-  return props.roster.characters.filter(
-    (c) =>
-      c.name.toLowerCase().includes(q) ||
-      c.schedule.currentActivity.activityName.toLowerCase().includes(q) ||
-      c.schedule.currentActivity.locationName.toLowerCase().includes(q),
+  const query = searchQuery.value.trim().toLowerCase();
+  if (!query) return characters.value;
+  return characters.value.filter((c) =>
+    c.name.toLowerCase().includes(query) ||
+    c.schedule.currentActivity.locationName.toLowerCase().includes(query) ||
+    c.schedule.currentActivity.activityName.toLowerCase().includes(query)
   );
 });
 
@@ -33,29 +53,19 @@ function avatarInitial(name: string): string {
   return [...name.trim()][0] ?? "?";
 }
 
-function toggleSchedule(charId: string): void {
-  expandedSchedule.value[charId] = !expandedSchedule.value[charId];
-}
-
-async function handleResetAll(): Promise<void> {
-  isResetting.value = true;
-  try {
-    emit("refresh");
-  } finally {
-    setTimeout(() => {
-      isResetting.value = false;
-    }, 600);
-  }
+function handleSelectChar(charId: string): void {
+  selectedScheduleCharId.value = charId;
+  emit("select-character", charId);
 }
 </script>
 
 <template>
   <div class="schedule-view-layout">
-    <!-- 顶栏：标题 + 搜索 + 全部重置 -->
+    <!-- 顶栏 -->
     <div class="schedule-topbar">
       <div class="topbar-left">
-        <h2 class="schedule-page-title">伴侣生活日程</h2>
-        <span class="schedule-subtitle">24 小时作息模型 · 伴侣根据现实时钟在不同场景生活、漫步与休憩</span>
+        <h2 class="schedule-page-title">伴侣 24h 生活日程</h2>
+        <span class="schedule-subtitle">角色拥有基于现实时间的 24 小时真实作息与自主活动轨迹</span>
       </div>
 
       <div class="topbar-actions">
@@ -64,109 +74,108 @@ async function handleResetAll(): Promise<void> {
           <input
             v-model="searchQuery"
             type="text"
+            placeholder="搜索角色 / 地点…"
             class="search-input"
-            placeholder="搜索伴侣或地点…"
           />
         </div>
 
         <button
           type="button"
-          class="btn-reset-schedule"
-          :class="{ 'is-resetting': isResetting }"
-          :disabled="isResetting || loading"
-          @click="handleResetAll"
+          class="btn-refresh-schedule"
+          :disabled="loading"
+          @click="emit('refresh')"
         >
-          <RefreshCw :size="14" :class="{ 'spin-icon': isResetting || loading }" aria-hidden="true" />
-          <span>{{ isResetting || loading ? '刷新中…' : '全部刷新' }}</span>
+          <RefreshCw :size="14" :class="{ 'spin-icon': loading }" aria-hidden="true" />
+          <span>刷新</span>
         </button>
       </div>
     </div>
 
-    <!-- 角色状态卡片网格 (对标 CharacterStatusCard) -->
-    <div v-if="loading && (!roster || roster.characters.length === 0)" class="schedule-loading-state">
+    <!-- 伴侣当前实时动态卡片矩阵 -->
+    <div v-if="loading && characters.length === 0" class="schedule-loading">
       <div class="spinner-ring" />
-      <span>正在同步伴侣全天生活作息…</span>
+      <span>正在读取伴侣 24 小时生活日程…</span>
     </div>
 
-    <div v-else-if="filteredCharacters.length === 0" class="schedule-empty-state">
-      <Clock :size="36" class="text-primary" aria-hidden="true" />
-      <p>没有找到相关角色的生活日程</p>
+    <div v-else-if="filteredCharacters.length === 0" class="schedule-empty">
+      <p>没有匹配的伴侣日程</p>
     </div>
 
     <div v-else class="status-card-grid">
-      <article
+      <div
         v-for="c in filteredCharacters"
         :key="c.characterId"
         class="status-card"
-        @click="emit('select-character', c.characterId)"
+        :class="{ active: activeCharacter?.characterId === c.characterId }"
+        @click="handleSelectChar(c.characterId)"
       >
-        <!-- 顶部：头像 + 名字 + 状态徽章 -->
+        <!-- 头部 -->
         <div class="card-top">
           <div class="avatar-box">
             <div class="avatar-inner">{{ avatarInitial(c.name) }}</div>
           </div>
-
-          <div class="name-row">
-            <div class="name-badge-line">
+          <div class="meta-box">
+            <div class="name-row">
               <h3 class="char-name">{{ c.name }}</h3>
-              <span class="status-badge live-badge">
-                <Sun :size="11" class="text-amber-500" aria-hidden="true" />
-                <span>进行中</span>
+              <span class="affinity-pill">
+                <Heart :size="11" class="fill-current text-rose-500" aria-hidden="true" />
+                <span>Lv.{{ c.affinity.level }} · {{ c.affinity.levelTitle }}</span>
               </span>
             </div>
-            <div class="tag-row">
-              <span class="tag-badge tag-green">{{ c.schedule.currentActivity.timeSlot }}</span>
-              <span class="tag-badge tag-orange">{{ c.affinity.emotion.moodLabel }}</span>
+            <div class="mood-row">
+              <Smile :size="12" class="text-amber-500" aria-hidden="true" />
+              <span>当前心情：<strong>{{ c.affinity.emotion.moodLabel }}</strong></span>
             </div>
           </div>
         </div>
 
-        <!-- 中部：地点 + 行为描述 -->
-        <div class="card-mid">
-          <div class="info-line">
-            <MapPin :size="14" class="text-primary" aria-hidden="true" />
-            <span class="info-bold">{{ c.schedule.currentActivity.locationName }}</span>
+        <!-- 实时地点与活动 -->
+        <div class="current-activity-box">
+          <div class="activity-head">
+            <span class="activity-tag">📍 正在进行</span>
+            <span class="time-range">{{ c.schedule.currentActivity.startHour }}:00 - {{ c.schedule.currentActivity.endHour }}:00</span>
           </div>
-          <div class="info-line">
-            <Clock :size="14" class="text-primary" aria-hidden="true" />
-            <span>{{ c.schedule.currentActivity.activityName }}</span>
-          </div>
-          <p class="activity-desc">{{ c.schedule.currentActivity.description }}</p>
-        </div>
-
-        <!-- 底部：展开 24h 时间轴 -->
-        <div class="card-footer-action">
-          <button
-            type="button"
-            class="expand-timeline-btn"
-            @click.stop="toggleSchedule(c.characterId)"
-          >
-            {{ expandedSchedule[c.characterId] ? '收起 24 小时作息 ▲' : '查看 24 小时生活时间线 ▼' }}
-          </button>
-        </div>
-
-        <!-- 全天作息列表 -->
-        <div v-if="expandedSchedule[c.characterId]" class="timeline-container" @click.stop>
-          <div
-            v-for="(r, idx) in c.schedule.routines"
-            :key="idx"
-            class="timeline-row"
-            :class="{ 'is-current-active': r.activityName === c.schedule.currentActivity.activityName }"
-          >
-            <div class="timeline-dot-col">
-              <span class="t-dot" />
-            </div>
-            <div class="timeline-content">
-              <div class="t-meta">
-                <span class="t-time">{{ r.timeSlot }}</span>
-                <span class="t-loc">{{ r.locationName }}</span>
-              </div>
-              <div class="t-act">{{ r.activityName }}</div>
-              <p class="t-desc">{{ r.description }}</p>
+          <div class="activity-content">
+            <h4 class="activity-name">{{ c.schedule.currentActivity.activityName }}</h4>
+            <div class="activity-loc">
+              <MapPin :size="13" class="text-primary" aria-hidden="true" />
+              <span>{{ c.schedule.currentActivity.locationName }}</span>
             </div>
           </div>
         </div>
-      </article>
+      </div>
+    </div>
+
+    <!-- 24 小时作息详情时间轴 -->
+    <div v-if="activeCharacter" class="timeline-detail-section">
+      <div class="timeline-head">
+        <div class="timeline-title-wrap">
+          <Calendar :size="18" class="text-primary" aria-hidden="true" />
+          <h3>{{ activeCharacter.name }} 的完整 24 小时作息安排</h3>
+        </div>
+        <span class="timeline-desc">日程会随时间自然流转，并驱动朋友圈与聊天情境</span>
+      </div>
+
+      <div class="timeline-list">
+        <div
+          v-for="(slot, idx) in activeCharacter.schedule.routines"
+          :key="idx"
+          class="timeline-row-item"
+        >
+          <div class="time-badge">
+            <Clock :size="12" aria-hidden="true" />
+            <span>{{ String(slot.startHour).padStart(2, '0') }}:00 - {{ String(slot.endHour).padStart(2, '0') }}:00</span>
+          </div>
+
+          <div class="slot-body">
+            <div class="slot-name-loc">
+              <strong class="slot-act-name">{{ slot.activityName }}</strong>
+              <span class="slot-loc-tag">{{ slot.locationName }}</span>
+            </div>
+            <span class="slot-type-badge">{{ slot.timeSlot }}</span>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -175,51 +184,49 @@ async function handleResetAll(): Promise<void> {
 .schedule-view-layout {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
+  gap: 20px;
   width: 100%;
-  max-width: 1080px;
+  max-width: 1040px;
   margin: 0 auto;
+  padding-bottom: 60px;
 }
 
-/* 顶栏 */
 .schedule-topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 20px 28px;
-  background: rgba(26, 23, 40, 0.75);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 20px;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
-  gap: 16px;
+  padding: 18px 24px;
+  background: var(--cmp-surface, #ffffff);
+  border: 1px solid var(--cmp-border, #ebdcd1);
+  border-radius: 18px;
+  box-shadow: var(--cmp-shadow-sm, 0 2px 8px rgba(120, 80, 60, 0.05));
+  gap: 12px;
   flex-wrap: wrap;
 }
 
 .topbar-left {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
 .schedule-page-title {
   margin: 0;
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 900;
-  color: #f8fafc;
-  letter-spacing: -0.02em;
+  color: var(--cmp-text-strong, #2c221e);
+  letter-spacing: -0.01em;
 }
 
 .schedule-subtitle {
-  font-size: 13px;
-  color: #94a3b8;
+  font-size: 12px;
+  color: var(--cmp-text-muted, #8c7d74);
 }
 
 .topbar-actions {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .search-input-wrap {
@@ -230,117 +237,102 @@ async function handleResetAll(): Promise<void> {
 
 .search-icon {
   position: absolute;
-  left: 12px;
-  color: #94a3b8;
+  left: 10px;
+  color: var(--cmp-text-muted, #8c7d74);
 }
 
 .search-input {
-  padding: 8px 14px 8px 34px;
+  padding: 6px 12px 6px 30px;
   border-radius: 9999px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: #141220;
-  color: #f8fafc;
-  font-size: 13px;
+  border: 1px solid var(--cmp-border, #ebdcd1);
+  background: var(--cmp-surface-soft, #f6f1ea);
+  color: var(--cmp-text-strong, #2c221e);
+  font-size: 12px;
   outline: none;
-  width: 180px;
-  transition: width 0.2s ease, border-color 0.2s ease;
+  width: 160px;
 }
 
-.search-input:focus {
-  width: 240px;
-  border-color: #6366f1;
-}
-
-.btn-reset-schedule {
+.btn-refresh-schedule {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 18px;
+  gap: 5px;
+  padding: 6px 14px;
   border-radius: 9999px;
-  border: 1px solid rgba(99, 102, 241, 0.4);
-  background: rgba(99, 102, 241, 0.15);
-  color: #e0e7ff;
-  font-size: 13px;
+  border: 1px solid var(--cmp-border, #ebdcd1);
+  background: var(--cmp-surface-soft, #f6f1ea);
+  color: var(--cmp-text-strong, #2c221e);
+  font-size: 12px;
   font-weight: 800;
   cursor: pointer;
-  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.3);
-  transition: all 0.2s ease;
+  transition: all 0.18s ease;
 }
 
-.btn-reset-schedule:hover {
-  background: #6366f1;
+.btn-refresh-schedule:hover {
+  background: var(--cmp-primary, #e06d53);
   color: #ffffff;
-  transform: translateY(-1px);
+  border-color: var(--cmp-primary, #e06d53);
 }
 
-.spin-icon {
-  animation: spin 0.8s linear infinite;
-}
-
-/* 状态卡片网格 */
+/* 卡片网格 */
 .status-card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
 }
 
 .status-card {
-  background: rgba(26, 23, 40, 0.75);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 20px;
-  padding: 24px;
+  background: var(--cmp-surface, #ffffff);
+  border: 1px solid var(--cmp-border, #ebdcd1);
+  border-radius: 18px;
+  padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
+  gap: 14px;
+  box-shadow: var(--cmp-shadow-sm, 0 2px 8px rgba(120, 80, 60, 0.05));
   cursor: pointer;
-  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  transition: transform 0.18s ease, border-color 0.18s ease;
 }
 
-.status-card:hover {
-  transform: translateY(-3px);
-  border-color: rgba(99, 102, 241, 0.4);
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+.status-card:hover,
+.status-card.active {
+  transform: translateY(-2px);
+  border-color: var(--cmp-primary, #e06d53);
 }
 
-/* 顶部 */
 .card-top {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
+  gap: 12px;
 }
 
 .avatar-box {
-  padding: 3px;
-  border-radius: var(--radius-full);
-  background: linear-gradient(135deg, #f43f5e, var(--primary, #6366f1));
+  padding: 2px;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, var(--cmp-primary, #e06d53), var(--cmp-accent, #f59e0b));
   flex-shrink: 0;
-  box-shadow: 0 3px 10px rgba(99, 102, 241, 0.2);
 }
 
 .avatar-inner {
-  width: 48px;
-  height: 48px;
-  border-radius: var(--radius-full);
-  background: var(--surface);
-  color: var(--primary);
+  width: 42px;
+  height: 42px;
+  border-radius: 9999px;
+  background: var(--cmp-surface, #ffffff);
+  color: var(--cmp-primary, #e06d53);
   display: grid;
   place-items: center;
-  font-size: var(--text-base);
+  font-size: 15px;
   font-weight: 900;
 }
 
-.name-row {
+.meta-box {
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
-.name-badge-line {
+.name-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -348,194 +340,188 @@ async function handleResetAll(): Promise<void> {
 
 .char-name {
   margin: 0;
-  font-size: var(--text-base);
+  font-size: 15px;
   font-weight: 900;
-  color: var(--text-strong);
+  color: var(--cmp-text-strong, #2c221e);
 }
 
-.status-badge {
+.affinity-pill {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 9px;
-  border-radius: var(--radius-full);
-  font-size: 11px;
-  font-weight: 800;
-}
-
-.live-badge {
-  background: rgba(16, 185, 129, 0.12);
-  color: #10b981;
-}
-
-.tag-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.tag-badge {
   font-size: 11px;
   font-weight: 800;
   padding: 2px 8px;
-  border-radius: var(--radius-full);
+  border-radius: 9999px;
+  background: var(--cmp-primary-soft, #fcedea);
+  color: var(--cmp-primary, #e06d53);
 }
 
-.tag-green {
-  background: var(--primary-soft);
-  color: var(--primary);
+.mood-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--cmp-text-muted, #8c7d74);
 }
 
-.tag-orange {
-  background: rgba(245, 158, 11, 0.12);
-  color: #f59e0b;
-}
-
-/* 中部 */
-.card-mid {
-  background: var(--surface-soft);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xl, 18px);
-  padding: var(--space-4) var(--space-5);
+.current-activity-box {
+  background: var(--cmp-surface-soft, #f6f1ea);
+  border: 1px solid var(--cmp-border-light, #f3eae2);
+  border-radius: 12px;
+  padding: 12px 14px;
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.info-line {
+.activity-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.activity-tag {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--cmp-primary, #e06d53);
+}
+
+.time-range {
+  font-size: 11px;
+  color: var(--cmp-text-muted, #8c7d74);
+}
+
+.activity-name {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--cmp-text-strong, #2c221e);
+}
+
+.activity-loc {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--cmp-text-muted, #8c7d74);
+}
+
+/* 时间轴 */
+.timeline-detail-section {
+  background: var(--cmp-surface, #ffffff);
+  border: 1px solid var(--cmp-border, #ebdcd1);
+  border-radius: 18px;
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: var(--cmp-shadow-sm, 0 2px 8px rgba(120, 80, 60, 0.05));
+}
+
+.timeline-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.timeline-title-wrap {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
-  color: var(--text);
 }
 
-.info-bold {
-  font-weight: 800;
-  color: var(--text-strong);
+.timeline-title-wrap h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 900;
+  color: var(--cmp-text-strong, #2c221e);
 }
 
-.activity-desc {
-  margin: 4px 0 0;
-  font-size: 12px;
-  color: var(--muted);
-  line-height: 1.5;
+.timeline-desc {
+  font-size: 11px;
+  color: var(--cmp-text-muted, #8c7d74);
 }
 
-/* 底部操作 */
-.card-footer-action {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.expand-timeline-btn {
-  border: 0;
-  background: transparent;
-  color: var(--primary);
-  font-size: 12px;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.expand-timeline-btn:hover {
-  text-decoration: underline;
-}
-
-/* 时间线 */
-.timeline-container {
+.timeline-list {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  padding-top: var(--space-4);
-  border-top: 1px dashed var(--border);
-  max-height: 320px;
-  overflow-y: auto;
+  gap: 8px;
 }
 
-.timeline-row {
+.timeline-row-item {
   display: flex;
-  align-items: flex-start;
-  gap: var(--space-3);
-  font-size: 12px;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--cmp-surface-soft, #f6f1ea);
+  border: 1px solid var(--cmp-border-light, #f3eae2);
 }
 
-.timeline-dot-col {
-  padding-top: 5px;
+.time-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 9999px;
+  background: var(--cmp-surface, #ffffff);
+  border: 1px solid var(--cmp-border, #ebdcd1);
+  color: var(--cmp-text-muted, #8c7d74);
+  width: 120px;
 }
 
-.t-dot {
-  display: block;
-  width: 7px;
-  height: 7px;
-  border-radius: var(--radius-full);
-  background: var(--muted);
-}
-
-.timeline-row.is-current-active .t-dot {
-  background: var(--primary);
-  box-shadow: 0 0 0 3px var(--primary-soft);
-}
-
-.timeline-content {
+.slot-body {
   flex: 1 1 auto;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  justify-content: space-between;
 }
 
-.t-meta {
+.slot-name-loc {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: 8px;
 }
 
-.t-time {
+.slot-act-name {
+  font-size: 13px;
+  color: var(--cmp-text-strong, #2c221e);
+}
+
+.slot-loc-tag {
   font-size: 11px;
-  color: var(--muted);
-  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--cmp-primary-soft, #fcedea);
+  color: var(--cmp-primary, #e06d53);
 }
 
-.t-loc {
+.slot-type-badge {
   font-size: 11px;
-  color: var(--muted);
+  color: var(--cmp-text-muted, #8c7d74);
 }
 
-.t-act {
-  font-weight: 800;
-  color: var(--text-strong);
-}
-
-.timeline-row.is-current-active .t-act {
-  color: var(--primary);
-}
-
-.t-desc {
-  margin: 0;
-  font-size: 11px;
-  color: var(--muted);
-}
-
-.schedule-loading-state,
-.schedule-empty-state {
-  padding: var(--space-12) var(--space-4);
+.schedule-loading,
+.schedule-empty {
+  padding: 40px;
   text-align: center;
-  color: var(--muted);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-3);
-  background: var(--surface);
-  border-radius: var(--radius-2xl, 24px);
-  border: 1px solid var(--border);
+  color: var(--cmp-text-muted, #8c7d74);
+  background: var(--cmp-surface, #ffffff);
+  border-radius: 18px;
+  border: 1px solid var(--cmp-border, #ebdcd1);
 }
 
 .spinner-ring {
   width: 28px;
   height: 28px;
-  border: 2px solid var(--border);
-  border-top-color: var(--primary);
-  border-radius: var(--radius-full);
+  border: 2px solid var(--cmp-border-light, #f3eae2);
+  border-top-color: var(--cmp-primary, #e06d53);
+  border-radius: 9999px;
   animation: spin 0.8s linear infinite;
+  margin: 0 auto 10px;
 }
 
 @keyframes spin {
