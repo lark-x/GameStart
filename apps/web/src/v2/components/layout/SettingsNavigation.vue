@@ -193,6 +193,8 @@ function isItemActive(item: SettingsNavItem): boolean {
   .settings-nav-mobile {
     display: grid;
     gap: var(--space-1);
+    padding-left: 48px;
+    margin-bottom: var(--space-2);
   }
 
   .settings-nav-mobile-label {

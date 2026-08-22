@@ -1081,4 +1081,42 @@ const filteredTimeline = computed(() => {
   gap: var(--space-2);
   margin-top: var(--space-2);
 }
+
+@media (max-width: 640px) {
+  .hero-top-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .hero-actions {
+    width: 100%;
+  }
+
+  .hero-actions > * {
+    width: 100%;
+  }
+
+  .canon-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .toolbar-right {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .search-input-wrap {
+    width: 100%;
+  }
+
+  .toolbar-right > button {
+    width: 100%;
+  }
+
+  .entity-cards-grid {
+    grid-template-columns: 1fr;
+  }
+}
 </style>

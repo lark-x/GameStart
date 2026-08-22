@@ -111,7 +111,7 @@ onMounted(() => {
   <div class="chat-home">
     <PageHeader
       title="故事对话"
-      description="与你的 AI 故事角色展开即时对话。角色将结合当前人设设定与长期记忆记忆库进行回应。"
+      description="与你的 AI 故事角色展开即时对话。角色将结合当前人设设定与长期记忆库进行回应。"
     >
       <template #actions>
         <Button variant="secondary" size="md" :loading="loading" @click="load">
