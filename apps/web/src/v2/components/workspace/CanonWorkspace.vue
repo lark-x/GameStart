@@ -12,10 +12,12 @@ import Textarea from "../../../components/ui/Textarea.vue";
 import type { V2WorkspaceSnapshot } from "../../adapters";
 import { useV2WorkspaceStore } from "../../stores/workspace";
 import WorkspaceModuleIntro from "./WorkspaceModuleIntro.vue";
+import StorySkillTree from "./StorySkillTree.vue";
 import { getDataFlowNode, getUsageSummaryForGroup } from "./workspace-data-flow";
 
 const route = useRoute();
 const router = useRouter();
+const viewMode = ref<"tree" | "list">("tree");
 
 const props = defineProps<{
   snapshot: V2WorkspaceSnapshot | null;
@@ -265,6 +267,38 @@ function ruleSeverityLabel(severity: string): string {
       </form>
     </div>
 
+    <!-- 视图模式切换 -->
+    <div class="view-mode-bar">
+      <div class="view-mode-tabs">
+        <button
+          type="button"
+          class="view-mode-tab"
+          :class="{ active: viewMode === 'tree' }"
+          @click="viewMode = 'tree'"
+        >
+          <GitFork :size="15" /> 故事技能树视图
+        </button>
+        <button
+          type="button"
+          class="view-mode-tab"
+          :class="{ active: viewMode === 'list' }"
+          @click="viewMode = 'list'"
+        >
+          <BookOpen :size="15" /> 经典卡片列表
+        </button>
+      </div>
+    </div>
+
+    <!-- 技能树主视图 -->
+    <StorySkillTree
+      v-if="viewMode === 'tree'"
+      :snapshot="snapshot"
+      :loading="loading"
+      @refreshed="store.loadSnapshot()"
+    />
+
+    <!-- 经典列表视图 -->
+    <div v-else class="canon-classic-list-view">
     <!-- Filters & Metrics Summary -->
     <div class="canon-overview">
       <div class="filter-tabs">
@@ -433,7 +467,7 @@ function ruleSeverityLabel(severity: string): string {
         </article>
       </template>
     </div>
-    </template>
+    </div>
 
     <Drawer
       :open="entityDrawerOpen"
@@ -485,6 +519,7 @@ function ruleSeverityLabel(severity: string): string {
         <Button variant="primary" size="md" :loading="loading" @click="submitEntity">保存数据</Button>
       </template>
     </Drawer>
+    </template>
   </div>
 </template>
 
@@ -492,6 +527,47 @@ function ruleSeverityLabel(severity: string): string {
 .canon-workspace {
   display: grid;
   gap: var(--space-4);
+}
+
+.view-mode-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--space-2);
+}
+
+.view-mode-tabs {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  gap: 2px;
+}
+
+.view-mode-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all var(--motion-fast);
+}
+
+.view-mode-tab:hover {
+  color: var(--text-strong);
+}
+
+.view-mode-tab.active {
+  background: var(--surface);
+  color: var(--primary);
+  box-shadow: var(--shadow-sm);
 }
 
 .canon-card {
