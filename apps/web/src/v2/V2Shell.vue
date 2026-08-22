@@ -6,7 +6,6 @@ import {
   Check,
   ChevronDown,
   FileCheck2,
-  HeartHandshake,
   Image as ImageIcon,
   Menu,
   MessageSquare,
@@ -32,12 +31,6 @@ const primaryNavItems: readonly PrimaryNavItem[] = [
     label: "对话",
     icon: MessageSquare,
     matchPrefixes: ["/v2/chat", "/v2/start"],
-  },
-  {
-    to: "/v2/companion",
-    label: "陪伴",
-    icon: HeartHandshake,
-    matchPrefixes: ["/v2/companion", "/companion"],
   },
   {
     to: "/v2/workspace/project",
@@ -234,6 +227,15 @@ onUnmounted(() => {
             <span>{{ item.label }}</span>
           </RouterLink>
         </nav>
+
+        <!-- 独立陪伴专区快捷启动入口 -->
+        <div class="v2-companion-launcher-slot">
+          <RouterLink to="/companion" class="v2-companion-launch-btn">
+            <span class="v2-launch-icon">💖</span>
+            <span class="v2-launch-text">邻舍陪伴专区</span>
+            <span class="v2-launch-arrow">↗</span>
+          </RouterLink>
+        </div>
 
         <div class="v2-sidebar-footer">
           <span class="v2-runtime-dot" :class="store.error ? 'v2-runtime-dot-error' : 'v2-runtime-dot-ok'" aria-hidden="true" />
@@ -654,5 +656,45 @@ onUnmounted(() => {
     padding-right: var(--space-4);
     padding-left: var(--space-4);
   }
+}
+
+.v2-companion-launcher-slot {
+  padding: var(--space-2) var(--space-3);
+  margin-top: auto;
+}
+
+.v2-companion-launch-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  color: var(--text-strong);
+  text-decoration: none;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  transition: all var(--motion-fast);
+}
+
+.v2-companion-launch-btn:hover {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+  color: var(--primary);
+  transform: translateY(-1px);
+}
+
+.v2-launch-icon {
+  font-size: 14px;
+}
+
+.v2-launch-text {
+  flex: 1 1 auto;
+}
+
+.v2-launch-arrow {
+  color: var(--primary);
+  font-weight: 800;
 }
 </style>
