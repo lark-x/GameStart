@@ -13,7 +13,13 @@ export function createV2TempSqliteDatabase(prefix = "living-network-v2-"): {
   const path = join(dir, "test.sqlite");
   return {
     path,
-    cleanup: () => rmSync(dir, { recursive: true, force: true }),
+    cleanup: () => {
+      try {
+        rmSync(dir, { recursive: true, force: true });
+      } catch {
+        // Safe on Windows when sqlite lock briefly lingers
+      }
+    },
   };
 }
 

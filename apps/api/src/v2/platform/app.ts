@@ -26,6 +26,8 @@ export interface CreateV2FastifyAppOptions {
   readonly jobsOptions?: Record<string, unknown>;
   readonly chatPlugin?: FastifyPluginAsync;
   readonly chatOptions?: Record<string, unknown>;
+  readonly companionPlugin?: FastifyPluginAsync;
+  readonly companionOptions?: Record<string, unknown>;
   readonly mediaRoot?: string;
 }
 
@@ -105,6 +107,9 @@ export function createV2FastifyApp(options: CreateV2FastifyAppOptions = {}): Fas
     }
     if (options.chatPlugin !== undefined) {
       await v2.register(options.chatPlugin, options.chatOptions ?? {});
+    }
+    if (options.companionPlugin !== undefined) {
+      await v2.register(options.companionPlugin, options.companionOptions ?? {});
     }
   }, { prefix: "/api/v2" });
   return app;
