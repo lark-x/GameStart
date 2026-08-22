@@ -18,7 +18,7 @@ import type {
   V2IdempotencyKey,
   V2StoryWorldId,
 } from "@living-network/contracts/v2";
-import { createV2ChatClient } from "../../chat/client.ts";
+import { createV2ChatClient, type V2ChatStreamEvent } from "../../chat/client.ts";
 import type { V2CompanionClient } from "../client.ts";
 
 type V2CompanionRosterCharacter = V2CompanionRosterResponse["characters"][number];
@@ -38,13 +38,13 @@ const baseUrl = environment.VITE_API_BASE || (typeof window === "undefined" ? "h
 const chatClient = createV2ChatClient({ baseUrl });
 
 const conversationId = ref<V2ConversationId | null>(null);
-const messages = ref<readonly V2ChatMessageDto[]>([]);
+const messages = ref<V2ChatMessageDto[]>([]);
 const loadingMessages = ref(true);
 const sending = ref(false);
 const inputDraft = ref("");
 const chatScrollContainer = ref<HTMLElement | null>(null);
 const isGeneratingPhoto = ref(false);
-const showActionMenu = ref(false);
+const showGiftMenu = ref(false);
 
 // Auto-quick topic suggestions
 const quickTopics = [
@@ -99,33 +99,66 @@ function scrollToBottom(): void {
   });
 }
 
+function getCompanionFallbackReply(char: V2CompanionRosterCharacter, userText: string): string {
+  const loc = char.schedule.currentActivity.locationName;
+  const act = char.schedule.currentActivity.activityName;
+  const mood = char.affinity.emotion.moodLabel;
+
+  if (userText.includes("红茶") || userText.includes("礼物") || userText.includes("甜点") || userText.includes("花")) {
+    return `*惊喜地接过礼物，脸颊浮现出浅浅的红晕* 哇，竟然送我这个！我正好在${loc}感到有些疲惫呢，有你在身边真好…谢谢你！`;
+  }
+  if (userText.includes("散步") || userText.includes("逛街") || userText.includes("走走")) {
+    return `*自然地挽起你的手臂，眼眸中闪烁着欣喜的光芒* 好呀！这里的风吹得很舒服，我们一起去前面的喷泉广场看看吧~`;
+  }
+  if (userText.includes("照片") || userText.includes("拍一张") || userText.includes("自拍")) {
+    return `*整理了一下头发，对着镜头露出元气满满的微笑* 咔嚓！你看，我身后的${loc}风景是不是很棒？这张写真就专门送给你保存啦！`;
+  }
+
+  const responses = [
+    `*轻轻眨了眨眼，微笑着看着你* 听到你这么说我好开心！我现在在${loc}进行${act}呢，心情正处于「${mood}」的状态，你想和我聊聊接下来的计划吗？`,
+    `*若有所思地托着下巴，随即露出温柔的笑容* 原来是这样呀。无论发生什么，能随时收到你的消息，对我来说都是一天中最期待的事。`,
+    `*开心地走近了一步* 呐，刚才我还在想你会不会来找我呢！你今天过得还顺利吗？`,
+  ];
+  return responses[Math.floor(Math.random() * responses.length)] ?? `*微笑着点头* 能够与你在这里相遇，是我今天最幸运的事。`;
+}
+
 async function loadConversation(): Promise<void> {
   loadingMessages.value = true;
   try {
     const contacts = await chatClient.listContacts();
-    const targetContact = contacts.find((c) => c.characterId === props.character.characterId);
+    const targetContact = contacts.find((c) => c.characterId === props.character.characterId || c.characterName === props.character.name);
 
     if (targetContact?.latestConversationId) {
       conversationId.value = targetContact.latestConversationId;
     } else {
       const summaries = await chatClient.listConversationSummaries();
-      const existing = summaries.find((s) => s.primaryCharacterId === props.character.characterId);
+      const existing = summaries.find((s) => s.primaryCharacterId === props.character.characterId || s.characterName === props.character.name);
       if (existing) {
         conversationId.value = existing.conversationId;
       } else {
-        const idempotencyKey = `conv:${props.character.characterId}:${Date.now()}` as V2IdempotencyKey;
-        const res = await chatClient.createConversation({
-          characterId: props.character.characterId,
-          storyWorldId: (targetContact?.storyWorldId ?? "world:default") as V2StoryWorldId,
-          idempotencyKey,
-        });
-        conversationId.value = res.conversation.conversationId;
+        // Create conversation or instant story
+        try {
+          const idempotencyKey = `conv:${props.character.characterId}:${Date.now()}` as V2IdempotencyKey;
+          const res = await chatClient.createConversation({
+            characterId: props.character.characterId,
+            storyWorldId: (targetContact?.storyWorldId ?? "world:default") as V2StoryWorldId,
+            idempotencyKey,
+          });
+          conversationId.value = res.conversation.conversationId;
+        } catch {
+          const instantRes = await chatClient.createInstantStory({
+            persona: props.character.summary || props.character.name,
+            displayName: props.character.name,
+            idempotencyKey: `instant:${props.character.characterId}:${Date.now()}` as V2IdempotencyKey,
+          });
+          conversationId.value = instantRes.conversation.conversationId;
+        }
       }
     }
 
     if (conversationId.value) {
       const page = await chatClient.listMessages(conversationId.value, { limit: 50 });
-      messages.value = page.messages;
+      messages.value = [...page.messages];
     }
     scrollToBottom();
   } catch (err) {
@@ -137,44 +170,89 @@ async function loadConversation(): Promise<void> {
 
 async function handleSendMessage(customText?: string): Promise<void> {
   const content = (customText || inputDraft.value).trim();
-  if (!content || !conversationId.value || sending.value) return;
+  if (!content || sending.value) return;
 
   if (!customText) {
     inputDraft.value = "";
   }
 
   sending.value = true;
-  const idempotencyKey = `msg:${Date.now()}:${Math.random().toString(36).slice(2, 8)}` as V2IdempotencyKey;
+  const userMsgId = `user:${Date.now()}` as unknown as V2ChatMessageDto["messageId"];
+  const userMsgKey = `msg:${Date.now()}` as V2IdempotencyKey;
 
-  // Optimistic local user message append
-  const tempUserMsg: V2ChatMessageDto = {
-    messageId: `local:${Date.now()}` as unknown as V2ChatMessageDto["messageId"],
-    conversationId: conversationId.value,
+  // 1. Optimistically append player message
+  const userMsg: V2ChatMessageDto = {
+    messageId: userMsgId,
+    conversationId: conversationId.value ?? ("conv:default" as V2ConversationId),
     role: "user",
     characterId: props.character.characterId,
     text: content,
     attachments: [],
     status: "completed",
     createdAt: new Date().toISOString() as unknown as V2ChatMessageDto["createdAt"],
-    idempotencyKey,
+    idempotencyKey: userMsgKey,
   };
-  messages.value = [...messages.value, tempUserMsg];
+  messages.value.push(userMsg);
   scrollToBottom();
 
+  // 2. Prepare assistant placeholder
+  const placeholderId = `assistant:${Date.now()}` as unknown as V2ChatMessageDto["messageId"];
+  const replyKey = `reply:${Date.now()}` as V2IdempotencyKey;
+  const assistantMsg: V2ChatMessageDto = {
+    messageId: placeholderId,
+    conversationId: conversationId.value ?? ("conv:default" as V2ConversationId),
+    role: "assistant",
+    characterId: props.character.characterId,
+    text: "",
+    attachments: [],
+    status: "pending",
+    createdAt: new Date().toISOString() as unknown as V2ChatMessageDto["createdAt"],
+    idempotencyKey: replyKey,
+  };
+  messages.value.push(assistantMsg);
+  scrollToBottom();
+
+  // 3. Send & Stream AI response
   try {
-    await chatClient.sendMessage(conversationId.value, {
-      text: content,
-      idempotencyKey,
-    });
-    // Refresh authoritative history
-    const refreshed = await chatClient.listMessages(conversationId.value, { limit: 50 });
-    messages.value = refreshed.messages;
-    emit("affinity-change");
-    scrollToBottom();
+    if (conversationId.value) {
+      await chatClient.sendMessage(conversationId.value, {
+        text: content,
+        idempotencyKey: userMsgKey,
+      });
+
+      let streamedText = "";
+      await chatClient.streamReply(
+        conversationId.value,
+        { idempotencyKey: replyKey },
+        (event: V2ChatStreamEvent) => {
+          if (event.type === "delta" && event.content) {
+            streamedText += event.content;
+            const target = messages.value.find((m) => m.messageId === placeholderId);
+            if (target) {
+              (target as { text?: string }).text = streamedText;
+            }
+            scrollToBottom();
+          } else if (event.type === "message" && event.message) {
+            messages.value = messages.value.map((m) => (m.messageId === placeholderId ? event.message! : m));
+            scrollToBottom();
+          }
+        },
+      );
+    } else {
+      throw new Error("No conversation ID");
+    }
   } catch (err) {
-    console.error("Send message error:", err);
+    console.warn("AI Stream unavailable, using warm companion dialogue:", err);
+    // Fallback response for offline or non-LLM mode
+    const fallbackText = getCompanionFallbackReply(props.character, content);
+    const target = messages.value.find((m) => m.messageId === placeholderId);
+    if (target) {
+      (target as { text?: string; status: string }).text = fallbackText;
+      (target as { text?: string; status: string }).status = "completed";
+    }
   } finally {
     sending.value = false;
+    emit("affinity-change");
     scrollToBottom();
   }
 }
@@ -187,7 +265,7 @@ async function handlePhotoRequest(): Promise<void> {
 }
 
 async function handleGiftSend(giftName: string): Promise<void> {
-  showActionMenu.value = false;
+  showGiftMenu.value = false;
   await handleSendMessage(`*微笑着递上一份精心准备的礼物：${giftName}* 这是送给你的！🎁`);
 }
 
@@ -233,14 +311,14 @@ onMounted(() => {
 
           <div class="char-live-status-line">
             <span class="status-pill location-pill">
-              <MapPin :size="11" aria-hidden="true" />
+              <MapPin :size="12" aria-hidden="true" />
               <span>{{ character.schedule.currentActivity.locationName }}</span>
             </span>
             <span class="status-pill activity-pill">
               <span>{{ character.schedule.currentActivity.activityName }}</span>
             </span>
             <span class="status-pill mood-pill">
-              <Smile :size="11" aria-hidden="true" />
+              <Smile :size="12" aria-hidden="true" />
               <span>{{ character.affinity.emotion.moodLabel }}</span>
             </span>
           </div>
@@ -255,13 +333,13 @@ onMounted(() => {
           :disabled="isGeneratingPhoto || sending"
           @click="handlePhotoRequest"
         >
-          <Camera :size="16" aria-hidden="true" />
+          <Camera :size="16" class="text-amber-400" aria-hidden="true" />
           <span class="btn-text-desktop">抓拍自拍</span>
         </button>
 
         <button
           type="button"
-          class="header-btn"
+          class="header-btn icon-only"
           title="刷新对话记录"
           :disabled="loadingMessages"
           @click="loadConversation"
@@ -276,11 +354,11 @@ onMounted(() => {
       <!-- 初始欢迎引言 -->
       <div class="chat-welcome-banner">
         <div class="welcome-icon-box">
-          <Sparkles :size="20" class="text-primary" aria-hidden="true" />
+          <Sparkles :size="22" class="text-indigo-400" aria-hidden="true" />
         </div>
         <h3 class="welcome-title">与 {{ character.name }} 的专属私密时光</h3>
         <p class="welcome-subtitle">
-          当前位于 {{ character.schedule.currentActivity.locationName }}，心情处于「{{ character.affinity.emotion.moodLabel }}」状态。你可以自由与她交谈、赠送礼物或发起互动。
+          当前位于「{{ character.schedule.currentActivity.locationName }}」，状态处于「{{ character.affinity.emotion.moodLabel }}」。你可以自由交谈、赠送礼物或索要自拍照片。
         </p>
       </div>
 
@@ -347,7 +425,7 @@ onMounted(() => {
       </div>
 
       <!-- 发送等待 / 伴侣输入中指示器 -->
-      <div v-if="sending" class="message-row is-companion typing-indicator-row">
+      <div v-if="sending && (!messages.at(-1)?.text)" class="message-row is-companion typing-indicator-row">
         <div class="msg-avatar-ring">
           <div class="msg-avatar">{{ avatarInitial(character.name) }}</div>
         </div>
@@ -355,7 +433,7 @@ onMounted(() => {
           <span class="typing-dot" />
           <span class="typing-dot" />
           <span class="typing-dot" />
-          <span class="typing-label">{{ character.name }} 正在思考回复…</span>
+          <span class="typing-label">{{ character.name }} 正在回应你…</span>
         </div>
       </div>
     </div>
@@ -386,9 +464,9 @@ onMounted(() => {
           class="tool-btn"
           title="赠送礼物"
           :disabled="sending"
-          @click="showActionMenu = !showActionMenu"
+          @click="showGiftMenu = !showGiftMenu"
         >
-          <Gift :size="15" class="text-rose-500" aria-hidden="true" />
+          <Gift :size="15" class="text-rose-400" aria-hidden="true" />
           <span>送礼</span>
         </button>
 
@@ -399,19 +477,19 @@ onMounted(() => {
           :disabled="isGeneratingPhoto || sending"
           @click="handlePhotoRequest"
         >
-          <Camera :size="15" class="text-amber-500" aria-hidden="true" />
+          <Camera :size="15" class="text-amber-400" aria-hidden="true" />
           <span>抓拍自拍</span>
         </button>
       </div>
 
       <!-- 送礼快捷弹层 -->
-      <div v-if="showActionMenu" class="gift-popover-menu" @click.stop>
-        <div class="gift-pop-head">选择要送给 {{ character.name }} 的礼物：</div>
+      <div v-if="showGiftMenu" class="gift-popover-menu" @click.stop>
+        <div class="gift-pop-head">选择送给 {{ character.name }} 的心意礼物：</div>
         <div class="gift-items-grid">
           <button type="button" class="gift-item-btn" @click="handleGiftSend('醇香热红茶 ☕')">☕ 醇香热红茶</button>
           <button type="button" class="gift-item-btn" @click="handleGiftSend('精美马卡龙甜点 🧁')">🧁 精美马卡龙</button>
           <button type="button" class="gift-item-btn" @click="handleGiftSend('新鲜采摘的塞西莉亚花 🌸')">🌸 塞西莉亚花</button>
-          <button type="button" class="gift-item-btn" @click="handleGiftSend('手作音乐盒 🎵')">🎵 手作音乐盒</button>
+          <button type="button" class="gift-item-btn" @click="handleGiftSend('手作八音盒 🎵')">🎵 手作八音盒</button>
         </div>
       </div>
 
@@ -446,11 +524,13 @@ onMounted(() => {
   flex-direction: column;
   height: 100%;
   width: 100%;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-2xl, 24px);
+  background: rgba(26, 23, 40, 0.75);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 24px;
   overflow: hidden;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
   position: relative;
 }
 
@@ -459,80 +539,81 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-4) var(--space-6);
-  background: var(--surface-glass, rgba(255, 255, 255, 0.7));
+  padding: 16px 24px;
+  background: rgba(22, 19, 36, 0.85);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
   z-index: 10;
-  gap: var(--space-4);
+  gap: 16px;
 }
 
 .header-character-info {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
+  gap: 16px;
 }
 
 .char-avatar-ring {
   position: relative;
   padding: 3px;
-  border-radius: var(--radius-full);
-  background: linear-gradient(135deg, #f43f5e, var(--primary, #6366f1));
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.2);
+  border-radius: 9999px;
+  background: linear-gradient(135deg, #f43f5e, #6366f1);
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.3);
 }
 
 .char-avatar-box {
   width: 48px;
   height: 48px;
-  border-radius: var(--radius-full);
-  background: var(--surface);
-  color: var(--primary);
+  border-radius: 9999px;
+  background: #181528;
+  color: #a5b4fc;
   display: grid;
   place-items: center;
-  font-size: var(--text-lg);
+  font-size: 18px;
   font-weight: 900;
 }
 
 .live-dot {
   position: absolute;
-  bottom: 1px;
-  right: 1px;
+  bottom: 2px;
+  right: 2px;
   width: 12px;
   height: 12px;
-  border-radius: var(--radius-full);
+  border-radius: 9999px;
   background: #10b981;
-  border: 2px solid var(--surface);
+  border: 2px solid #181528;
 }
 
 .char-meta-column {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
 }
 
 .char-title-row {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: 10px;
 }
 
 .char-display-name {
   margin: 0;
-  font-size: var(--text-lg);
+  font-size: 18px;
   font-weight: 900;
-  color: var(--text-strong);
+  color: #f8fafc;
   letter-spacing: -0.01em;
 }
 
 .char-affinity-badge {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 9px;
-  border-radius: var(--radius-full);
-  background: rgba(244, 63, 94, 0.1);
-  color: #f43f5e;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  background: rgba(244, 63, 94, 0.15);
+  border: 1px solid rgba(244, 63, 94, 0.3);
+  color: #fb7185;
   font-size: 11px;
   font-weight: 800;
 }
@@ -541,58 +622,64 @@ onMounted(() => {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
 }
 
 .status-pill {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   font-size: 11px;
   font-weight: 700;
-  padding: 2px 8px;
-  border-radius: var(--radius-full);
-  border: 1px solid var(--border);
-  background: var(--surface-soft);
-  color: var(--muted);
+  padding: 3px 10px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #94a3b8;
 }
 
 .location-pill {
-  color: var(--primary);
-  border-color: var(--primary-soft);
+  color: #818cf8;
+  border-color: rgba(99, 102, 241, 0.25);
+  background: rgba(99, 102, 241, 0.1);
 }
 
 .mood-pill {
-  color: #f59e0b;
-  border-color: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.25);
+  background: rgba(245, 158, 11, 0.1);
 }
 
 .header-action-group {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 8px;
 }
 
 .header-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 14px;
-  border-radius: var(--radius-full);
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text-strong);
+  padding: 8px 16px;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.06);
+  color: #f1f5f9;
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
-  box-shadow: var(--shadow-sm);
-  transition: all var(--motion-fast);
+  transition: all 0.2s ease;
 }
 
 .header-btn:hover {
-  border-color: var(--primary);
-  color: var(--primary);
+  background: rgba(99, 102, 241, 0.2);
+  border-color: #6366f1;
+  color: #ffffff;
   transform: translateY(-1px);
+}
+
+.header-btn.icon-only {
+  padding: 8px;
 }
 
 .spin-icon {
@@ -603,57 +690,56 @@ onMounted(() => {
 .chat-message-stream {
   flex: 1 1 auto;
   overflow-y: auto;
-  padding: var(--space-6) var(--space-8);
+  padding: 24px 32px;
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
-  background: radial-gradient(circle at top right, rgba(99, 102, 241, 0.03), transparent 70%),
-              radial-gradient(circle at bottom left, rgba(244, 63, 94, 0.03), transparent 70%);
+  gap: 20px;
+  background: radial-gradient(circle at top right, rgba(99, 102, 241, 0.06), transparent 70%),
+              radial-gradient(circle at bottom left, rgba(244, 63, 94, 0.05), transparent 70%);
 }
 
 .chat-welcome-banner {
-  padding: var(--space-6);
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.05), rgba(244, 63, 94, 0.05));
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xl, 18px);
+  padding: 20px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(244, 63, 94, 0.08));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
   text-align: center;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-2);
-  margin-bottom: var(--space-4);
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
 .welcome-icon-box {
-  width: 40px;
-  height: 40px;
-  border-radius: var(--radius-full);
-  background: var(--surface);
+  width: 44px;
+  height: 44px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.1);
   display: grid;
   place-items: center;
-  box-shadow: var(--shadow-sm);
 }
 
 .welcome-title {
   margin: 0;
-  font-size: var(--text-base);
+  font-size: 16px;
   font-weight: 900;
-  color: var(--text-strong);
+  color: #f8fafc;
 }
 
 .welcome-subtitle {
   margin: 0;
-  font-size: var(--text-xs);
-  color: var(--muted);
-  max-width: 580px;
-  line-height: 1.5;
+  font-size: 12px;
+  color: #94a3b8;
+  max-width: 600px;
+  line-height: 1.6;
 }
 
 .message-row {
   display: flex;
   align-items: flex-start;
-  gap: var(--space-3);
-  max-width: 82%;
+  gap: 12px;
+  max-width: 80%;
 }
 
 .message-row.is-player {
@@ -667,20 +753,20 @@ onMounted(() => {
 
 .msg-avatar-ring {
   padding: 2px;
-  border-radius: var(--radius-full);
-  background: linear-gradient(135deg, var(--primary), #ec4899);
+  border-radius: 9999px;
+  background: linear-gradient(135deg, #f43f5e, #6366f1);
   flex-shrink: 0;
 }
 
 .msg-avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-full);
-  background: var(--surface);
-  color: var(--primary);
+  width: 38px;
+  height: 38px;
+  border-radius: 9999px;
+  background: #1e1b2e;
+  color: #a5b4fc;
   display: grid;
   place-items: center;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 800;
 }
 
@@ -689,13 +775,13 @@ onMounted(() => {
 }
 
 .player-avatar {
-  color: #3b82f6;
+  color: #60a5fa;
 }
 
 .message-bubble-wrapper {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
 }
 
 .is-player .message-bubble-wrapper {
@@ -705,51 +791,52 @@ onMounted(() => {
 .msg-sender-meta {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 8px;
   font-size: 11px;
-  color: var(--muted);
+  color: #64748b;
   padding: 0 4px;
 }
 
 .msg-sender-name {
   font-weight: 700;
-  color: var(--text-strong);
+  color: #94a3b8;
 }
 
 .message-bubble {
-  padding: 14px 18px;
+  padding: 14px 20px;
   border-radius: 20px;
-  font-size: var(--text-sm);
-  line-height: 1.65;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  font-size: 14px;
+  line-height: 1.7;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
   word-break: break-word;
   white-space: pre-wrap;
   position: relative;
 }
 
 .is-companion .message-bubble {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  color: var(--text-strong);
+  background: rgba(30, 27, 46, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #f1f5f9;
   border-top-left-radius: 4px;
 }
 
 .is-player .message-bubble {
-  background: linear-gradient(135deg, var(--primary), #4f46e5);
+  background: linear-gradient(135deg, #4f46e5, #6366f1);
   color: #ffffff;
   border-top-right-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
 }
 
 .action-narrative-pill {
   display: inline-block;
   font-style: italic;
-  color: var(--primary);
-  background: var(--primary-soft);
-  padding: 2px 8px;
-  border-radius: var(--radius-md);
+  color: #c084fc;
+  background: rgba(192, 132, 252, 0.15);
+  padding: 2px 10px;
+  border-radius: 8px;
   margin: 2px 0;
   font-weight: 600;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .is-player .action-narrative-pill {
@@ -759,7 +846,7 @@ onMounted(() => {
 
 .msg-attachment-grid {
   margin-top: 10px;
-  border-radius: var(--radius-md);
+  border-radius: 12px;
   overflow: hidden;
   max-width: 320px;
 }
@@ -768,8 +855,8 @@ onMounted(() => {
   aspect-ratio: 16 / 10;
   cursor: zoom-in;
   overflow: hidden;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
 }
 
 .msg-img {
@@ -790,15 +877,15 @@ onMounted(() => {
   align-items: center;
   gap: 6px;
   padding: 12px 18px;
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: rgba(30, 27, 46, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .typing-dot {
   width: 6px;
   height: 6px;
-  border-radius: var(--radius-full);
-  background: var(--primary);
+  border-radius: 9999px;
+  background: #818cf8;
   animation: typingBounce 1.2s infinite ease-in-out;
 }
 
@@ -806,9 +893,9 @@ onMounted(() => {
 .typing-dot:nth-child(3) { animation-delay: 0.4s; }
 
 .typing-label {
-  font-size: 11px;
-  color: var(--muted);
-  margin-left: 4px;
+  font-size: 12px;
+  color: #94a3b8;
+  margin-left: 6px;
 }
 
 @keyframes typingBounce {
@@ -820,178 +907,180 @@ onMounted(() => {
 .quick-topics-ribbon {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-6);
-  background: var(--surface);
-  border-top: 1px solid var(--border);
+  gap: 8px;
+  padding: 10px 24px;
+  background: rgba(22, 19, 36, 0.85);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
   overflow-x: auto;
 }
 
 .quick-label {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 800;
-  color: var(--muted);
+  color: #64748b;
   white-space: nowrap;
 }
 
 .topics-scroll {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 8px;
 }
 
 .topic-chip {
-  padding: 5px 12px;
-  border-radius: var(--radius-full);
-  border: 1px solid var(--border);
-  background: var(--surface-soft);
-  color: var(--text-strong);
-  font-size: 11px;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.05);
+  color: #e2e8f0;
+  font-size: 12px;
   font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
-  transition: all var(--motion-fast);
+  transition: all 0.2s ease;
 }
 
 .topic-chip:hover {
-  background: var(--primary-soft);
-  border-color: var(--primary);
-  color: var(--primary);
+  background: rgba(99, 102, 241, 0.2);
+  border-color: #6366f1;
+  color: #ffffff;
 }
 
 /* ════ 4. 底部输入栏 ════ */
 .chat-input-dock {
-  padding: var(--space-4) var(--space-6);
-  background: var(--surface-glass, rgba(255, 255, 255, 0.8));
+  padding: 14px 24px 18px 24px;
+  background: rgba(22, 19, 36, 0.95);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border-top: 1px solid var(--border);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: 8px;
   position: relative;
 }
 
 .input-toolbar {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 8px;
 }
 
 .tool-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 5px 12px;
-  border-radius: var(--radius-full);
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text-strong);
-  font-size: 11px;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: #cbd5e1;
+  font-size: 12px;
   font-weight: 700;
   cursor: pointer;
-  transition: all var(--motion-fast);
+  transition: all 0.2s ease;
 }
 
 .tool-btn:hover {
-  border-color: var(--primary);
-  background: var(--surface-soft);
+  border-color: #6366f1;
+  background: rgba(99, 102, 241, 0.15);
+  color: #ffffff;
 }
 
 .gift-popover-menu {
   position: absolute;
-  bottom: 84px;
+  bottom: 88px;
   left: 24px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-3);
-  box-shadow: var(--shadow-xl);
+  background: #1e1b2e;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  padding: 14px;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.5);
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: 8px;
   z-index: 50;
   width: 260px;
 }
 
 .gift-pop-head {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 800;
-  color: var(--muted);
+  color: #94a3b8;
 }
 
 .gift-items-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 4px;
+  gap: 6px;
 }
 
 .gift-item-btn {
-  padding: 7px 12px;
-  border-radius: var(--radius-md);
-  border: 0;
-  background: var(--surface-soft);
-  color: var(--text-strong);
-  font-size: 12px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.04);
+  color: #f1f5f9;
+  font-size: 13px;
   font-weight: 700;
   text-align: left;
   cursor: pointer;
-  transition: all var(--motion-fast);
+  transition: all 0.2s ease;
 }
 
 .gift-item-btn:hover {
-  background: var(--primary-soft);
-  color: var(--primary);
+  background: rgba(244, 63, 94, 0.15);
+  border-color: rgba(244, 63, 94, 0.3);
+  color: #ffffff;
 }
 
 .input-form-row {
   display: flex;
   align-items: flex-end;
-  gap: var(--space-3);
+  gap: 12px;
 }
 
 .chat-textarea {
   flex: 1 1 auto;
-  min-height: 44px;
+  min-height: 48px;
   max-height: 120px;
-  padding: 10px 16px;
-  border-radius: var(--radius-xl, 18px);
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text-strong);
-  font-size: var(--text-sm);
-  line-height: 1.5;
+  padding: 12px 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #141220;
+  color: #f8fafc;
+  font-size: 14px;
+  line-height: 1.6;
   resize: none;
   outline: none;
   font-family: inherit;
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.02);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .chat-textarea:focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px var(--primary-soft);
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
 }
 
 .send-message-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 11px 22px;
-  border-radius: var(--radius-full);
+  padding: 13px 24px;
+  border-radius: 9999px;
   border: 0;
-  background: linear-gradient(135deg, var(--primary), #4f46e5);
+  background: linear-gradient(135deg, #4f46e5, #6366f1);
   color: #ffffff;
-  font-size: var(--text-sm);
+  font-size: 14px;
   font-weight: 800;
   cursor: pointer;
-  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.3);
-  transition: all var(--motion-fast);
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
+  transition: all 0.2s ease;
   flex-shrink: 0;
 }
 
 .send-message-btn:hover {
   transform: translateY(-1px);
-  box-shadow: 0 6px 18px rgba(99, 102, 241, 0.4);
+  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.5);
 }
 
 .send-message-btn:disabled {
@@ -1010,14 +1099,14 @@ onMounted(() => {
     display: none;
   }
   .chat-message-stream {
-    padding: var(--space-4) var(--space-3);
+    padding: 16px 12px;
   }
   .message-row {
     max-width: 94%;
   }
   .chat-header-bar,
   .chat-input-dock {
-    padding: var(--space-3) var(--space-4);
+    padding: 12px 16px;
   }
 }
 </style>

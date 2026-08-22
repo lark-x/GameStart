@@ -105,100 +105,105 @@ function formatDate(iso: string): string {
 .gallery-view-layout {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
+  gap: 24px;
   width: 100%;
   max-width: 1120px;
   margin: 0 auto;
+  padding-bottom: 60px;
 }
 
 .gallery-topbar {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-  padding: var(--space-5) var(--space-6);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-2xl, 24px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.03);
+  gap: 16px;
+  padding: 20px 28px;
+  background: rgba(26, 23, 40, 0.75);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
 }
 
 .topbar-left {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
 }
 
 .title-row {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: 12px;
 }
 
 .gallery-page-title {
   margin: 0;
-  font-size: var(--text-xl, 20px);
+  font-size: 20px;
   font-weight: 900;
-  color: var(--text-strong);
+  color: #f8fafc;
   letter-spacing: -0.02em;
 }
 
 .photo-count-pill {
   font-size: 12px;
-  color: var(--primary);
-  background: var(--primary-soft);
-  padding: 3px 10px;
-  border-radius: var(--radius-full);
+  color: #a5b4fc;
+  background: rgba(99, 102, 241, 0.15);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  padding: 3px 12px;
+  border-radius: 9999px;
   font-weight: 800;
 }
 
 .gallery-subtitle {
-  font-size: var(--text-xs);
-  color: var(--muted);
+  font-size: 13px;
+  color: #94a3b8;
 }
 
 .gallery-filter-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
+  gap: 8px;
 }
 
 .chip-btn {
   padding: 6px 16px;
-  border-radius: var(--radius-full);
-  border: 1px solid var(--border);
-  background: var(--surface-soft);
-  color: var(--muted);
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: #94a3b8;
   font-size: 12px;
   font-weight: 800;
   cursor: pointer;
-  transition: all var(--motion-fast);
+  transition: all 0.2s ease;
 }
 
 .chip-btn:hover {
-  background: var(--surface);
-  color: var(--text-strong);
+  background: rgba(255, 255, 255, 0.08);
+  color: #f8fafc;
 }
 
 .chip-btn.active {
-  background: var(--primary);
-  color: #fff;
-  border-color: var(--primary);
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+  background: #6366f1;
+  color: #ffffff;
+  border-color: #6366f1;
+  box-shadow: 0 2px 10px rgba(99, 102, 241, 0.4);
 }
 
 /* 照片网格 */
 .gallery-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: var(--space-4);
+  gap: 18px;
 }
 
 .photo-card {
   position: relative;
   aspect-ratio: 1 / 1;
-  border-radius: var(--radius-xl, 18px);
+  border-radius: 18px;
   overflow: hidden;
-  border: 1px solid var(--border);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
   cursor: zoom-in;
   background: var(--surface-soft);
   box-shadow: var(--shadow-sm);

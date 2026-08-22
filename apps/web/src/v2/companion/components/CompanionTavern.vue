@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from "vue";
-import { Edit3, Heart, MessageSquare, Smile, Sparkles, User } from "@lucide/vue";
+import { Check, Edit3, Heart, MessageSquare, Smile, Sparkles, User } from "@lucide/vue";
 import type { V2CompanionRosterResponse } from "@living-network/contracts/v2";
 
 defineProps<{
@@ -49,24 +49,30 @@ function avatarInitial(name: string): string {
     <div class="tavern-topbar">
       <div class="topbar-left">
         <h2 class="tavern-page-title">酒馆 · 伴侣与玩家档案</h2>
-        <span class="tavern-subtitle">管理你的个人外貌与人设，并感知伴侣角色的好感羁绊与情感模型</span>
+        <span class="tavern-subtitle">设定你的个人外貌与人设，并感知伴侣角色的好感羁绊与情感模型</span>
       </div>
     </div>
 
-    <!-- 玩家个人信息档案卡 (对标 TavernView User Card) -->
+    <!-- 玩家个人信息档案卡 -->
     <section class="user-profile-card">
       <div class="card-header-row">
         <div class="card-title-wrap">
-          <User :size="16" class="text-primary" aria-hidden="true" />
-          <h3 class="card-title">玩家自身档案设定</h3>
+          <div class="user-avatar-icon">
+            <User :size="18" class="text-indigo-400" aria-hidden="true" />
+          </div>
+          <div>
+            <h3 class="card-title">玩家自身档案设定</h3>
+            <span class="card-desc">用于 ComfyUI 生图与 AI 对话时的外貌与性格感知</span>
+          </div>
         </div>
         <button
           type="button"
           class="edit-toggle-btn"
           @click="isEditingProfile ? saveProfile() : (isEditingProfile = true)"
         >
-          <Edit3 :size="13" aria-hidden="true" />
-          <span>{{ isEditingProfile ? '保存设定' : '编辑档案' }}</span>
+          <Check v-if="isEditingProfile" :size="14" aria-hidden="true" />
+          <Edit3 v-else :size="14" aria-hidden="true" />
+          <span>{{ isEditingProfile ? '完成保存' : '编辑档案' }}</span>
         </button>
       </div>
 
@@ -81,7 +87,9 @@ function avatarInitial(name: string): string {
             class="field-input"
             placeholder="输入你的称呼…"
           />
-          <span v-else class="field-value">{{ userProfile.nickname }}</span>
+          <div v-else class="field-value-box">
+            <span class="field-val-text highlight">{{ userProfile.nickname }}</span>
+          </div>
         </div>
 
         <!-- 性别 -->
@@ -94,7 +102,9 @@ function avatarInitial(name: string): string {
             class="field-input"
             placeholder="男 / 女 / …"
           />
-          <span v-else class="field-value">{{ userProfile.gender }}</span>
+          <div v-else class="field-value-box">
+            <span class="field-val-text">{{ userProfile.gender }}</span>
+          </div>
         </div>
 
         <!-- 外貌描述 (生图与对话感知) -->
@@ -107,10 +117,12 @@ function avatarInitial(name: string): string {
             rows="2"
             placeholder="描述你的外貌特征…"
           />
-          <p v-else class="field-value text-block">{{ userProfile.appearance }}</p>
+          <div v-else class="field-value-box block">
+            <p class="field-val-text">{{ userProfile.appearance }}</p>
+          </div>
         </div>
 
-        <!-- 其他人设说明 -->
+        <!-- 性格人设说明 -->
         <div class="field-item full-width">
           <span class="field-label">性格与背景人设</span>
           <textarea
@@ -120,7 +132,9 @@ function avatarInitial(name: string): string {
             rows="2"
             placeholder="描述你的性格、习惯与设定…"
           />
-          <p v-else class="field-value text-block">{{ userProfile.persona }}</p>
+          <div v-else class="field-value-box block">
+            <p class="field-val-text">{{ userProfile.persona }}</p>
+          </div>
         </div>
       </div>
     </section>
@@ -128,7 +142,7 @@ function avatarInitial(name: string): string {
     <!-- 伴侣角色羁绊与好感度卡片列表 -->
     <section class="roster-section">
       <div class="section-head-title">
-        <Sparkles :size="16" class="text-primary" aria-hidden="true" />
+        <Sparkles :size="18" class="text-indigo-400" aria-hidden="true" />
         <h3>伴侣角色羁绊与三维情绪状态</h3>
       </div>
 
@@ -168,7 +182,7 @@ function avatarInitial(name: string): string {
           <div class="box-segment">
             <div class="segment-head">
               <div class="affinity-tag">
-                <Heart :size="13" class="fill-current text-danger" aria-hidden="true" />
+                <Heart :size="13" class="fill-current text-rose-500" aria-hidden="true" />
                 <span>Lv.{{ c.affinity.level }} · {{ c.affinity.levelTitle }}</span>
               </div>
               <span class="exp-text">{{ c.affinity.currentExp }} / {{ c.affinity.maxExp }} EXP</span>
@@ -211,7 +225,7 @@ function avatarInitial(name: string): string {
             class="start-chat-btn"
             @click="emit('start-chat', c.characterId)"
           >
-            <MessageSquare :size="14" aria-hidden="true" />
+            <MessageSquare :size="15" aria-hidden="true" />
             <span>进入私聊与 {{ c.name }} 对话</span>
           </button>
         </article>
@@ -224,52 +238,57 @@ function avatarInitial(name: string): string {
 .tavern-view-layout {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
+  gap: 24px;
   width: 100%;
-  max-width: 1080px;
+  max-width: 1120px;
   margin: 0 auto;
+  padding-bottom: 60px;
 }
 
 .tavern-topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-5) var(--space-6);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-2xl, 24px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.03);
+  padding: 20px 28px;
+  background: rgba(26, 23, 40, 0.75);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
 }
 
 .topbar-left {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
 }
 
 .tavern-page-title {
   margin: 0;
-  font-size: var(--text-xl, 20px);
+  font-size: 20px;
   font-weight: 900;
-  color: var(--text-strong);
+  color: #f8fafc;
   letter-spacing: -0.02em;
 }
 
 .tavern-subtitle {
-  font-size: var(--text-xs);
-  color: var(--muted);
+  font-size: 13px;
+  color: #94a3b8;
 }
 
 /* 玩家卡 */
 .user-profile-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-2xl, 24px);
-  padding: var(--space-6) var(--space-7);
+  background: rgba(26, 23, 40, 0.75);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  padding: 24px 28px;
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.03);
+  gap: 20px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
 }
 
 .card-header-row {
@@ -281,144 +300,185 @@ function avatarInitial(name: string): string {
 .card-title-wrap {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 12px;
+}
+
+.user-avatar-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 9999px;
+  background: rgba(99, 102, 241, 0.15);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  display: grid;
+  place-items: center;
 }
 
 .card-title {
   margin: 0;
-  font-size: var(--text-sm);
+  font-size: 16px;
   font-weight: 800;
-  color: var(--text-strong);
+  color: #f8fafc;
+}
+
+.card-desc {
+  font-size: 12px;
+  color: #94a3b8;
 }
 
 .edit-toggle-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 12px;
-  border-radius: var(--radius-full);
-  border: 1px solid var(--border);
-  background: var(--surface-soft);
-  color: var(--primary);
-  font-size: 11px;
-  font-weight: 700;
+  gap: 6px;
+  padding: 8px 18px;
+  border-radius: 9999px;
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  background: rgba(99, 102, 241, 0.15);
+  color: #a5b4fc;
+  font-size: 13px;
+  font-weight: 800;
   cursor: pointer;
-  transition: all var(--motion-fast);
+  transition: all 0.2s ease;
 }
 
 .edit-toggle-btn:hover {
-  background: var(--primary-soft);
+  background: rgba(99, 102, 241, 0.3);
+  color: #ffffff;
+  transform: translateY(-1px);
 }
 
 .profile-fields-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: var(--space-3);
+  gap: 16px;
 }
 
 .field-item {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 6px;
 }
 
 .field-item.full-width {
-  grid-column: 1 / -1;
+  grid-column: span 2;
 }
 
 .field-label {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--muted);
-}
-
-.field-value {
   font-size: 12px;
-  color: var(--text-strong);
-  font-weight: 600;
+  font-weight: 800;
+  color: #94a3b8;
 }
 
-.field-value.text-block {
-  line-height: 1.4;
+.field-value-box {
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+}
+
+.field-value-box.block {
+  align-items: flex-start;
+}
+
+.field-val-text {
+  font-size: 14px;
+  color: #e2e8f0;
   margin: 0;
+  line-height: 1.6;
+}
+
+.field-val-text.highlight {
+  font-weight: 800;
+  color: #f8fafc;
 }
 
 .field-input,
 .field-textarea {
-  padding: 6px 10px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border);
-  background: var(--surface-soft);
-  color: var(--text-strong);
-  font-size: 12px;
+  padding: 10px 14px;
+  background: #141220;
+  border: 1px solid #6366f1;
+  border-radius: 12px;
+  color: #f8fafc;
+  font-size: 14px;
   outline: none;
+  font-family: inherit;
 }
 
-.field-input:focus,
-.field-textarea:focus {
-  border-color: var(--primary);
+.field-textarea {
+  resize: vertical;
 }
 
-/* 伴侣卡 */
+/* 伴侣羁绊列表 */
 .roster-section {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: 16px;
 }
 
 .section-head-title {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  color: #f8fafc;
 }
 
 .section-head-title h3 {
   margin: 0;
-  font-size: var(--text-sm);
-  font-weight: 800;
-  color: var(--text-strong);
+  font-size: 17px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
 }
 
 .characters-roster-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 20px;
 }
 
 .character-tavern-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-5);
+  background: rgba(26, 23, 40, 0.75);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  padding: 24px;
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  box-shadow: var(--shadow-sm);
+  gap: 18px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.character-tavern-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(99, 102, 241, 0.4);
 }
 
 .char-card-header {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: 14px;
 }
 
 .char-avatar-ring {
-  padding: 2px;
-  border-radius: var(--radius-full);
-  background: linear-gradient(135deg, var(--primary), var(--secondary, #8b5cf6));
+  padding: 3px;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, #f43f5e, #6366f1);
   flex-shrink: 0;
 }
 
 .char-avatar-inner {
-  width: 44px;
-  height: 44px;
-  border-radius: var(--radius-full);
-  background: var(--surface);
-  color: var(--primary);
+  width: 48px;
+  height: 48px;
+  border-radius: 9999px;
+  background: #181528;
+  color: #a5b4fc;
   display: grid;
   place-items: center;
-  font-size: var(--text-base);
-  font-weight: 800;
+  font-size: 17px;
+  font-weight: 900;
 }
 
 .char-meta-info {
@@ -426,7 +486,7 @@ function avatarInitial(name: string): string {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 
 .char-name-line {
@@ -437,38 +497,40 @@ function avatarInitial(name: string): string {
 
 .char-name {
   margin: 0;
-  font-size: var(--text-sm);
-  font-weight: 800;
-  color: var(--text-strong);
+  font-size: 17px;
+  font-weight: 900;
+  color: #f8fafc;
 }
 
 .mood-pill {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 2px 7px;
-  border-radius: var(--radius-full);
-  background: var(--primary-soft);
-  color: var(--primary);
-  font-size: 10px;
-  font-weight: 700;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: #fbbf24;
 }
 
 .char-desc {
   margin: 0;
-  font-size: 11px;
-  color: var(--muted);
-  line-height: 1.3;
+  font-size: 12px;
+  color: #94a3b8;
+  line-height: 1.4;
 }
 
+/* 进阶与 VAD */
 .box-segment {
-  background: var(--surface-soft);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: var(--space-3);
+  background: rgba(20, 18, 32, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 14px;
+  padding: 14px 16px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 10px;
 }
 
 .segment-head {
@@ -480,120 +542,139 @@ function avatarInitial(name: string): string {
 .affinity-tag {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--text-strong);
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #fb7185;
 }
 
 .exp-text {
-  font-size: 10px;
-  color: var(--muted);
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 700;
 }
 
 .progress-bar {
-  height: 5px;
-  border-radius: var(--radius-full);
-  background: var(--surface);
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 9999px;
   overflow: hidden;
 }
 
 .progress-fill {
   height: 100%;
-  border-radius: var(--radius-full);
-  background: linear-gradient(90deg, #f43f5e, var(--primary));
+  background: linear-gradient(90deg, #f43f5e, #8b5cf6);
+  border-radius: 9999px;
   transition: width 0.3s ease;
 }
 
 .segment-label {
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  color: #64748b;
 }
 
 .vad-triple-row {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 8px;
 }
 
 .vad-cell {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  font-size: 10px;
-  color: var(--text);
-  gap: 6px;
+  gap: 10px;
+  font-size: 12px;
 }
 
 .vad-name {
-  width: 70px;
+  width: 78px;
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 700;
   flex-shrink: 0;
 }
 
 .vad-bar {
   flex: 1 1 auto;
-  height: 4px;
-  border-radius: var(--radius-full);
-  background: var(--surface);
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 9999px;
   overflow: hidden;
 }
 
-.vad-fill { height: 100%; }
-.fill-v { background: #10b981; }
-.fill-a { background: #f59e0b; }
-.fill-d { background: #6366f1; }
+.vad-fill {
+  height: 100%;
+  border-radius: 9999px;
+}
+
+.fill-v { background: linear-gradient(90deg, #10b981, #34d399); }
+.fill-a { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+.fill-d { background: linear-gradient(90deg, #6366f1, #818cf8); }
 
 .vad-val {
-  width: 32px;
+  width: 36px;
   text-align: right;
+  font-size: 12px;
+  font-weight: 800;
+  color: #e2e8f0;
+  flex-shrink: 0;
 }
 
 .start-chat-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 8px 14px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border);
-  background: var(--surface-soft);
-  color: var(--text-strong);
-  font-size: 12px;
-  font-weight: 700;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  background: rgba(99, 102, 241, 0.15);
+  color: #e0e7ff;
+  font-size: 13px;
+  font-weight: 800;
   cursor: pointer;
-  transition: all var(--motion-fast);
+  transition: all 0.2s ease;
 }
 
 .start-chat-btn:hover {
-  background: var(--primary);
-  color: #fff;
-  border-color: var(--primary);
+  background: #6366f1;
+  color: #ffffff;
+  transform: translateY(-1px);
 }
 
 .tavern-loading,
 .tavern-empty {
-  padding: var(--space-8);
+  padding: 40px;
   text-align: center;
-  color: var(--muted);
+  color: #94a3b8;
+  background: rgba(26, 23, 40, 0.75);
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .spinner-ring {
-  width: 24px;
-  height: 24px;
-  border: 2px solid var(--border);
-  border-top-color: var(--primary);
-  border-radius: var(--radius-full);
+  width: 32px;
+  height: 32px;
+  border: 3px solid rgba(255, 255, 255, 0.1);
+  border-top-color: #6366f1;
+  border-radius: 9999px;
   animation: spin 0.8s linear infinite;
-  margin: 0 auto var(--space-2);
+  margin: 0 auto 12px;
 }
 
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
 
-@media (max-width: 600px) {
+@media (max-width: 768px) {
   .profile-fields-grid {
+    grid-template-columns: 1fr;
+  }
+  .field-item.full-width {
+    grid-column: span 1;
+  }
+  .characters-roster-grid {
     grid-template-columns: 1fr;
   }
 }
