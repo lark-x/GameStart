@@ -12,6 +12,7 @@ const routes = [
   { path: "/creator/:pathMatch(.*)*", redirect: "/v2" },
   { path: "/admin", redirect: "/v2" },
   { path: "/settings", redirect: "/v2" },
+  { path: "/companion", redirect: "/v2/companion" },
   ...v2Routes,
   { path: "/:pathMatch(.*)*", redirect: "/v2" },
 ];

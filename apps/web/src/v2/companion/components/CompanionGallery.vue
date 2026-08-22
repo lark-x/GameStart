@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { Image as ImageIcon } from "@lucide/vue";
+import { Image as ImageIcon, Sparkles } from "@lucide/vue";
 import type { V2CompanionGalleryItemDto } from "@living-network/contracts/v2";
 import type { V2CompanionClient } from "../client.ts";
 
@@ -40,22 +40,29 @@ function formatDate(iso: string): string {
 </script>
 
 <template>
-  <div class="companion-gallery-view">
-    <div class="gallery-header">
-      <div class="gallery-title-row">
-        <h3 class="gallery-title">伴侣自拍与回忆相册</h3>
-        <span class="gallery-count">{{ filteredGallery.length }} 张照片</span>
+  <div class="gallery-view-container">
+    <div class="gallery-view-header">
+      <div class="gallery-header-left">
+        <div class="header-icon-pill">
+          <ImageIcon :size="18" class="text-primary" aria-hidden="true" />
+        </div>
+        <div>
+          <div class="title-counter-row">
+            <h3 class="gallery-view-title">伴侣写真与回忆画廊</h3>
+            <span class="gallery-badge">{{ filteredGallery.length }} 张照片</span>
+          </div>
+          <p class="gallery-view-desc">汇集与伴侣角色在对话、朋友圈互动中生成的所有高清自拍与珍贵插画瞬间</p>
+        </div>
       </div>
-      <p class="gallery-desc">汇集与角色在日常对话和朋友圈中生成的所有精美插画与瞬间</p>
 
-      <!-- 角色分类标签 -->
-      <div v-if="availableCharacters.length > 2" class="gallery-filter-tabs">
+      <!-- 角色分类 -->
+      <div v-if="availableCharacters.length > 2" class="gallery-filter-chips">
         <button
           v-for="char in availableCharacters"
           :key="char"
           type="button"
-          class="filter-tab-btn"
-          :class="{ active: selectedCharacter === char }"
+          class="chip-btn"
+          :class="{ 'is-active-chip': selectedCharacter === char }"
           @click="selectedCharacter = char"
         >
           {{ char === 'ALL' ? '全部角色' : char }}
@@ -63,31 +70,34 @@ function formatDate(iso: string): string {
       </div>
     </div>
 
-    <div v-if="loading && gallery.length === 0" class="gallery-status">
-      正在载入回忆相册…
+    <div v-if="loading && gallery.length === 0" class="gallery-loading">
+      <div class="loading-spinner" />
+      <span>正在载入回忆相册…</span>
     </div>
-    <div v-else-if="filteredGallery.length === 0" class="gallery-empty">
-      <ImageIcon :size="28" class="text-primary" aria-hidden="true" />
-      <p>暂无回忆照片</p>
-      <small>在朋友圈或对话中与角色互动，角色会主动为你生成带有精美配图的生活瞬间！</small>
+
+    <div v-else-if="filteredGallery.length === 0" class="gallery-empty-state">
+      <Sparkles :size="32" class="text-primary" aria-hidden="true" />
+      <h4>暂无写真照片</h4>
+      <p>在朋友圈或故事对话中与角色互动，角色会主动为你生成带有精美配图的生活瞬间！</p>
     </div>
-    <div v-else class="gallery-grid">
+
+    <div v-else class="gallery-photo-grid">
       <div
         v-for="item in filteredGallery"
         :key="item.mediaId"
-        class="gallery-card"
+        class="photo-card"
         @click="emit('preview-image', client.mediaUrl(item.mediaRef))"
       >
         <img
           :src="client.mediaUrl(item.mediaRef)"
           :alt="item.title"
-          class="gallery-image"
+          class="photo-img"
           loading="lazy"
           @error="(e) => (e.target as HTMLElement).style.display = 'none'"
         />
-        <div class="gallery-card-overlay">
-          <span class="gallery-char-badge">{{ item.characterName }}</span>
-          <span class="gallery-card-date">{{ formatDate(item.createdAt) }}</span>
+        <div class="photo-overlay">
+          <span class="photo-char-tag">{{ item.characterName }}</span>
+          <span class="photo-date-tag">{{ formatDate(item.createdAt) }}</span>
         </div>
       </div>
     </div>
@@ -95,36 +105,56 @@ function formatDate(iso: string): string {
 </template>
 
 <style scoped>
-.companion-gallery-view {
+.gallery-view-container {
   display: flex;
   flex-direction: column;
-  height: 100%;
-  overflow-y: auto;
-  padding: var(--space-4) var(--space-3);
+  gap: var(--space-4);
+  width: 100%;
+  max-width: 1080px;
+  margin: 0 auto;
+}
+
+.gallery-view-header {
+  display: flex;
+  flex-direction: column;
   gap: var(--space-3);
-  background: var(--background);
+  padding: var(--space-4) var(--space-5);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
 }
 
-.gallery-header {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.gallery-title-row {
+.gallery-header-left {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: var(--space-3);
 }
 
-.gallery-title {
+.header-icon-pill {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-full);
+  background: var(--primary-soft);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.title-counter-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.gallery-view-title {
   margin: 0;
-  font-size: var(--text-md);
+  font-size: var(--text-base);
   font-weight: 800;
   color: var(--text-strong);
 }
 
-.gallery-count {
+.gallery-badge {
   font-size: 11px;
   color: var(--primary);
   background: var(--primary-soft);
@@ -133,24 +163,23 @@ function formatDate(iso: string): string {
   font-weight: 700;
 }
 
-.gallery-desc {
-  margin: 0;
+.gallery-view-desc {
+  margin: 2px 0 0;
   font-size: var(--text-xs);
   color: var(--muted);
 }
 
-.gallery-filter-tabs {
+.gallery-filter-chips {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
-  margin-top: var(--space-2);
 }
 
-.filter-tab-btn {
-  padding: 4px 10px;
+.chip-btn {
+  padding: 4px 12px;
   border-radius: var(--radius-full);
   border: 1px solid var(--border);
-  background: var(--surface);
+  background: var(--surface-soft);
   color: var(--muted);
   font-size: 12px;
   font-weight: 600;
@@ -158,34 +187,36 @@ function formatDate(iso: string): string {
   transition: all var(--motion-fast);
 }
 
-.filter-tab-btn:hover {
+.chip-btn:hover {
+  background: var(--surface);
   color: var(--text-strong);
-  border-color: var(--border-strong);
 }
 
-.filter-tab-btn.active {
+.chip-btn.is-active-chip {
   background: var(--primary);
-  color: var(--on-primary);
+  color: #fff;
   border-color: var(--primary);
 }
 
-.gallery-grid {
+/* 照片网格 */
+.gallery-photo-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-  gap: var(--space-2);
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--space-3);
 }
 
-.gallery-card {
+.photo-card {
   position: relative;
   aspect-ratio: 1 / 1;
   border-radius: var(--radius-md);
   overflow: hidden;
   border: 1px solid var(--border);
-  cursor: pointer;
+  cursor: zoom-in;
   background: var(--surface-soft);
+  box-shadow: var(--shadow-sm);
 }
 
-.gallery-image {
+.photo-img {
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -193,50 +224,65 @@ function formatDate(iso: string): string {
   transition: transform var(--motion-fast);
 }
 
-.gallery-card:hover .gallery-image {
-  transform: scale(1.05);
+.photo-card:hover .photo-img {
+  transform: scale(1.06);
 }
 
-.gallery-card-overlay {
+.photo-overlay {
   position: absolute;
   inset: auto 0 0 0;
-  padding: var(--space-2);
-  background: linear-gradient(to top, rgb(0 0 0 / 70%), transparent);
+  padding: var(--space-2) var(--space-3);
+  background: linear-gradient(to top, rgb(0 0 0 / 75%), transparent);
   display: flex;
   align-items: center;
   justify-content: space-between;
   color: #fff;
 }
 
-.gallery-char-badge {
-  font-size: 10px;
+.photo-char-tag {
+  font-size: 11px;
   font-weight: 700;
   background: rgb(255 255 255 / 20%);
   backdrop-filter: blur(4px);
-  padding: 1px 6px;
+  padding: 1px 7px;
   border-radius: var(--radius-full);
 }
 
-.gallery-card-date {
+.photo-date-tag {
   font-size: 10px;
-  opacity: 0.85;
+  opacity: 0.9;
 }
 
-.gallery-status,
-.gallery-empty {
-  padding: var(--space-8);
+.gallery-loading,
+.gallery-empty-state {
+  padding: var(--space-12) var(--space-4);
   text-align: center;
   color: var(--muted);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-3);
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
 }
 
-.gallery-empty p {
+.gallery-empty-state h4 {
   margin: 0;
   font-size: var(--text-base);
-  font-weight: 700;
   color: var(--text-strong);
+}
+
+.loading-spinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: var(--radius-full);
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 </style>

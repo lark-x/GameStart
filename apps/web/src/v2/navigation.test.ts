@@ -16,6 +16,7 @@ test("V2 routes structure correctly configures entry points and redirects", () =
   assert.ok(paths.has("start"), "Start view exists");
   assert.ok(paths.has("chat"), "Chat home view exists");
   assert.ok(paths.has("chat/:conversationId"), "Chat view exists");
+  assert.ok(paths.has("companion"), "Companion view exists");
   assert.ok(paths.has("workspace/characters"), "Character center list view exists");
   assert.ok(paths.has("workspace/characters/:characterId"), "Character center detail view exists");
   assert.ok(paths.has("workspace/:area"), "Workspace area view exists");
