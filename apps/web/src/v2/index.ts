@@ -25,7 +25,7 @@ export const v2Routes: readonly RouteRecordRaw[] = [
         path: "companion",
         name: "v2-companion",
         component: () => import("./views/V2CompanionView.vue"),
-        meta: { title: "陪伴社交", pageSize: "full" },
+        meta: { title: "角色陪伴生活", layout: "feature", pageSize: "full" },
       },
       { path: "workspace/review", redirect: "/v2/workspace/ai-scene-review" },
       { path: "workspace/characters", name: "v2-workspace-characters", component: () => import("./views/V2CharactersView.vue"), meta: { title: "角色中心", pageSize: "wide" } },

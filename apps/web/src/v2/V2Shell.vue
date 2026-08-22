@@ -37,7 +37,7 @@ const primaryNavItems: readonly PrimaryNavItem[] = [
     to: "/v2/companion",
     label: "陪伴",
     icon: HeartHandshake,
-    matchPrefixes: ["/v2/companion"],
+    matchPrefixes: ["/v2/companion", "/companion"],
   },
   {
     to: "/v2/workspace/project",

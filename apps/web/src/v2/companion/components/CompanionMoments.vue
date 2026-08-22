@@ -19,9 +19,9 @@ const props = defineProps<{
 const emit = defineEmits<{
   refresh: [];
   "preview-image": [url: string];
+  "create-moment-click": [];
 }>();
 
-// Active comment inputs keyed by momentId
 const commentDrafts = ref<Record<string, string>>({});
 const commentSubmitting = ref<Record<string, boolean>>({});
 const isLiking = ref<Record<string, boolean>>({});
@@ -53,10 +53,10 @@ function formatRelativeTime(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diffMs / 60000);
   if (mins < 1) return "刚刚";
-  if (mins < 60) return `${mins}分钟前`;
+  if (mins < 60) return `${mins} 分钟前`;
   const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}小时前`;
-  return `${Math.floor(hours / 24)}天前`;
+  if (hours < 24) return `${hours} 小时前`;
+  return `${Math.floor(hours / 24)} 天前`;
 }
 
 async function handleLike(moment: V2CompanionMomentDto): Promise<void> {
@@ -106,23 +106,22 @@ async function handleCreateMoment(): Promise<void> {
 </script>
 
 <template>
-  <div class="companion-moments-view">
-    <!-- 朋友圈顶部背景封面 -->
-    <div class="moments-cover">
-      <div class="moments-cover-overlay" />
-      <div class="moments-cover-info">
-        <div class="moments-user-avatar">
-          <span>伴</span>
+  <div class="moments-stream-container">
+    <!-- 动态发布与氛围 Banner -->
+    <div class="moments-publish-card">
+      <div class="publish-card-left">
+        <div class="publish-icon-box">
+          <Sparkles :size="20" class="text-primary" aria-hidden="true" />
         </div>
-        <div class="moments-user-text">
-          <h3 class="moments-user-name">邻舍朋友圈</h3>
-          <p class="moments-user-motto">记录与角色们在虚拟世界中的点滴日常与偶遇 ✨</p>
+        <div class="publish-text">
+          <h3 class="publish-title">邻舍朋友圈</h3>
+          <p class="publish-subtitle">记录你与陪伴角色在日常相伴中的美好瞬间与自拍 ✨</p>
         </div>
       </div>
       <Button
         variant="primary"
         size="sm"
-        class="moments-create-btn"
+        class="publish-trigger-btn"
         @click="createModalOpen = true"
       >
         <Plus :size="15" aria-hidden="true" />
@@ -131,120 +130,142 @@ async function handleCreateMoment(): Promise<void> {
     </div>
 
     <!-- 动态列表 -->
-    <div v-if="loading && moments.length === 0" class="moments-status">
-      正在载入朋友圈动态…
+    <div v-if="loading && moments.length === 0" class="moments-loading-state">
+      <div class="loading-spinner" />
+      <span>正在加载朋友圈动态…</span>
     </div>
-    <div v-else-if="moments.length === 0" class="moments-empty">
-      <Sparkles :size="28" class="text-primary" aria-hidden="true" />
-      <p>暂无朋友圈动态</p>
-      <small>点击右上角「激发新动态」，让心仪的角色为你发布一条生活瞬间吧！</small>
+
+    <div v-else-if="moments.length === 0" class="moments-empty-card">
+      <Sparkles :size="32" class="text-primary" aria-hidden="true" />
+      <h4>暂无生活动态</h4>
+      <p>点击上方「激发新动态」，让心仪的角色为你发布专属的生活朋友圈！</p>
+      <Button variant="primary" size="sm" @click="createModalOpen = true">
+        <Plus :size="14" aria-hidden="true" />
+        <span>立即生成动态</span>
+      </Button>
     </div>
-    <div v-else class="moments-feed">
+
+    <div v-else class="moments-feed-list">
       <article
         v-for="moment in moments"
         :key="moment.momentId"
-        class="moment-card"
+        class="moment-feed-card"
       >
-        <!-- 角色头像 -->
-        <div class="moment-avatar" aria-hidden="true">
-          {{ avatarInitial(moment.characterName) }}
+        <!-- 头部作者信息 -->
+        <div class="moment-card-header">
+          <div class="author-avatar-wrap">
+            <div class="author-avatar">
+              {{ avatarInitial(moment.characterName) }}
+            </div>
+            <div class="author-online-dot" />
+          </div>
+          <div class="author-info">
+            <div class="author-name-row">
+              <span class="author-name">{{ moment.characterName }}</span>
+              <span class="author-badge">AI 伴侣</span>
+            </div>
+            <span class="moment-timestamp">{{ formatRelativeTime(moment.createdAt) }}</span>
+          </div>
         </div>
 
-        <!-- 动态主体内容 -->
-        <div class="moment-body">
-          <div class="moment-header">
-            <h4 class="moment-author">{{ moment.characterName }}</h4>
-            <span class="moment-time">{{ formatRelativeTime(moment.createdAt) }}</span>
-          </div>
+        <!-- 动态文本 -->
+        <p class="moment-text-content">{{ moment.content }}</p>
 
-          <p class="moment-content">{{ moment.content }}</p>
-
-          <!-- ComfyUI 配图 -->
-          <div v-if="moment.mediaRef" class="moment-image-box">
+        <!-- ComfyUI 配图 -->
+        <div v-if="moment.mediaRef" class="moment-media-wrapper">
+          <div
+            class="moment-media-card"
+            @click="emit('preview-image', client.mediaUrl(moment.mediaRef))"
+          >
             <img
               :src="client.mediaUrl(moment.mediaRef)"
               :alt="moment.characterName + '的生活动态图片'"
-              class="moment-image"
+              class="moment-media-image"
               loading="lazy"
               @error="(e) => (e.target as HTMLElement).style.display = 'none'"
-              @click="emit('preview-image', client.mediaUrl(moment.mediaRef))"
             />
-          </div>
-
-          <!-- 交互栏：点赞与评论按钮 -->
-          <div class="moment-actions-bar">
-            <button
-              type="button"
-              class="moment-action-btn"
-              :class="{ 'is-liked': moment.isLiked }"
-              :disabled="isLiking[moment.momentId]"
-              @click="handleLike(moment)"
-            >
-              <Heart
-                :size="15"
-                :class="{ 'fill-current': moment.isLiked }"
-                aria-hidden="true"
-              />
-              <span>{{ moment.likesCount > 0 ? moment.likesCount : '赞' }}</span>
-            </button>
-
-            <button
-              type="button"
-              class="moment-action-btn"
-              @click="commentDrafts[moment.momentId] = commentDrafts[moment.momentId] || ''"
-            >
-              <MessageCircle :size="15" aria-hidden="true" />
-              <span>{{ moment.comments.length > 0 ? moment.comments.length : '评论' }}</span>
-            </button>
-          </div>
-
-          <!-- 评论展示区 -->
-          <div v-if="moment.comments.length > 0" class="moment-comments-box">
-            <div
-              v-for="comment in moment.comments"
-              :key="comment.commentId"
-              class="comment-row"
-            >
-              <span class="comment-author" :class="{ 'is-character': comment.authorType === 'character' }">
-                {{ comment.authorName }}
-                <span v-if="comment.replyToCommentId" class="comment-reply-tag">回复 我:</span>
-                <span v-else>:</span>
-              </span>
-              <span class="comment-text">{{ comment.content }}</span>
+            <div class="media-hover-overlay">
+              <span class="media-zoom-hint">点击查看高清大图 🔍</span>
             </div>
           </div>
-
-          <!-- 快捷评论输入框 -->
-          <form class="moment-comment-form" @submit.prevent="submitComment(moment.momentId)">
-            <input
-              v-model="commentDrafts[moment.momentId]"
-              type="text"
-              class="comment-input"
-              placeholder="评论一下，角色会智能回复你哦…"
-              :disabled="commentSubmitting[moment.momentId] ?? false"
-            />
-            <Button
-              variant="ghost"
-              size="sm"
-              type="submit"
-              class="comment-submit-btn"
-              :loading="commentSubmitting[moment.momentId] ?? false"
-              :disabled="!(commentDrafts[moment.momentId] || '').trim()"
-            >
-              <Send :size="13" aria-hidden="true" />
-              <span>发送</span>
-            </Button>
-          </form>
         </div>
+
+        <!-- 交互工具栏 -->
+        <div class="moment-interaction-bar">
+          <button
+            type="button"
+            class="interact-btn"
+            :class="{ 'is-active-like': moment.isLiked }"
+            :disabled="isLiking[moment.momentId] ?? false"
+            @click="handleLike(moment)"
+          >
+            <Heart
+              :size="16"
+              :class="{ 'fill-current': moment.isLiked }"
+              aria-hidden="true"
+            />
+            <span>{{ moment.likesCount > 0 ? moment.likesCount : '赞' }}</span>
+          </button>
+
+          <button
+            type="button"
+            class="interact-btn"
+            @click="commentDrafts[moment.momentId] = commentDrafts[moment.momentId] || ''"
+          >
+            <MessageCircle :size="16" aria-hidden="true" />
+            <span>{{ moment.comments.length > 0 ? moment.comments.length : '评论' }}</span>
+          </button>
+        </div>
+
+        <!-- 评论列表 -->
+        <div v-if="moment.comments.length > 0" class="moment-comments-panel">
+          <div
+            v-for="comment in moment.comments"
+            :key="comment.commentId"
+            class="comment-entry"
+          >
+            <span
+              class="comment-user"
+              :class="{ 'is-char': comment.authorType === 'character' }"
+            >
+              {{ comment.authorName }}
+              <span v-if="comment.replyToCommentId" class="reply-indicator">回复 我:</span>
+              <span v-else>:</span>
+            </span>
+            <span class="comment-msg">{{ comment.content }}</span>
+          </div>
+        </div>
+
+        <!-- 快捷评论输入 -->
+        <form class="quick-comment-form" @submit.prevent="submitComment(moment.momentId)">
+          <input
+            v-model="commentDrafts[moment.momentId]"
+            type="text"
+            class="quick-comment-input"
+            placeholder="写下你的评论，角色会智能回复你…"
+            :disabled="commentSubmitting[moment.momentId] ?? false"
+          />
+          <Button
+            variant="ghost"
+            size="sm"
+            type="submit"
+            class="quick-comment-btn"
+            :loading="commentSubmitting[moment.momentId] ?? false"
+            :disabled="!(commentDrafts[moment.momentId] || '').trim()"
+          >
+            <Send :size="14" aria-hidden="true" />
+            <span>发送</span>
+          </Button>
+        </form>
       </article>
     </div>
 
     <!-- 激发新动态 Modal -->
-    <div v-if="createModalOpen" class="moments-modal-backdrop" @click="createModalOpen = false" />
-    <div v-if="createModalOpen" class="moments-modal" role="dialog" aria-modal="true" aria-label="激发新动态">
-      <div class="moments-modal-head">
-        <div class="modal-title-row">
-          <Sparkles :size="16" class="text-primary" aria-hidden="true" />
+    <div v-if="createModalOpen" class="modal-backdrop" @click="createModalOpen = false" />
+    <div v-if="createModalOpen" class="modal-container" role="dialog" aria-modal="true">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <Sparkles :size="18" class="text-primary" aria-hidden="true" />
           <h3>激发角色朋友圈动态</h3>
         </div>
         <Button variant="ghost" size="icon" aria-label="关闭" @click="createModalOpen = false">
@@ -252,10 +273,10 @@ async function handleCreateMoment(): Promise<void> {
         </Button>
       </div>
 
-      <div class="moments-modal-body">
-        <label class="modal-label">
-          <span>选择角色</span>
-          <select v-model="createCharacterId" class="modal-select">
+      <div class="modal-content-body">
+        <div class="form-group">
+          <label class="form-label">选择伴侣角色</label>
+          <select v-model="createCharacterId" class="form-select">
             <option
               v-for="c in uniqueCharacters"
               :key="c.characterId"
@@ -264,20 +285,20 @@ async function handleCreateMoment(): Promise<void> {
               {{ c.name }}
             </option>
           </select>
-        </label>
+        </div>
 
-        <label class="modal-label">
-          <span>指定话题（可选）</span>
+        <div class="form-group">
+          <label class="form-label">指定话题或场景（可选）</label>
           <input
             v-model="createTopic"
             type="text"
-            class="modal-input"
-            placeholder="例如：海边的黄昏、新学的烘焙、今天的舞台剧…"
+            class="form-input"
+            placeholder="例如：海边的黄昏、新学的烘焙、舞台剧排练…"
           />
-        </label>
+        </div>
       </div>
 
-      <div class="moments-modal-foot">
+      <div class="modal-footer">
         <Button variant="ghost" @click="createModalOpen = false">取消</Button>
         <Button
           variant="primary"
@@ -293,344 +314,409 @@ async function handleCreateMoment(): Promise<void> {
 </template>
 
 <style scoped>
-.companion-moments-view {
+.moments-stream-container {
   display: flex;
   flex-direction: column;
-  height: 100%;
-  overflow-y: auto;
-  background: var(--background);
+  gap: var(--space-4);
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
 }
 
-.moments-cover {
-  position: relative;
-  height: 140px;
-  background: linear-gradient(135deg, var(--primary), var(--secondary, #8b5cf6));
+/* 发布卡片 */
+.moments-publish-card {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
-  padding: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
-  flex-shrink: 0;
 }
 
-.moments-cover-overlay {
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(circle at 80% 20%, rgb(255 255 255 / 20%), transparent);
-  pointer-events: none;
-}
-
-.moments-cover-info {
+.publish-card-left {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  position: relative;
-  z-index: 1;
 }
 
-.moments-user-avatar {
-  width: 48px;
-  height: 48px;
+.publish-icon-box {
+  width: 44px;
+  height: 44px;
   border-radius: var(--radius-full);
-  background: var(--surface);
-  color: var(--primary);
+  background: var(--primary-soft);
   display: grid;
   place-items: center;
-  font-size: var(--text-lg);
-  font-weight: 900;
-  box-shadow: var(--shadow-md);
-  border: 2px solid var(--surface);
+  flex-shrink: 0;
 }
 
-.moments-user-text {
-  color: #fff;
-  text-shadow: 0 1px 3px rgb(0 0 0 / 40%);
-}
-
-.moments-user-name {
+.publish-title {
   margin: 0;
   font-size: var(--text-base);
   font-weight: 800;
+  color: var(--text-strong);
 }
 
-.moments-user-motto {
+.publish-subtitle {
   margin: 2px 0 0;
-  font-size: 11px;
-  opacity: 0.9;
+  font-size: var(--text-xs);
+  color: var(--muted);
 }
 
-.moments-create-btn {
-  position: relative;
-  z-index: 1;
-  box-shadow: var(--shadow-md);
+.publish-trigger-btn {
+  flex-shrink: 0;
 }
 
-.moments-feed {
+/* 动态列表 */
+.moments-feed-list {
   display: flex;
   flex-direction: column;
-  padding: var(--space-4) var(--space-3);
   gap: var(--space-4);
 }
 
-.moment-card {
+.moment-feed-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4) var(--space-5);
   display: flex;
-  align-items: flex-start;
+  flex-direction: column;
   gap: var(--space-3);
-  padding-bottom: var(--space-4);
-  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--motion-fast);
 }
 
-.moment-avatar {
-  width: 40px;
-  height: 40px;
+.moment-feed-card:hover {
+  border-color: var(--border-strong);
+}
+
+/* 头部 */
+.moment-card-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.author-avatar-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.author-avatar {
+  width: 44px;
+  height: 44px;
   border-radius: var(--radius-full);
-  background: var(--surface);
-  color: var(--primary);
-  border: 1px solid var(--border-strong);
+  background: linear-gradient(135deg, var(--primary), var(--secondary, #8b5cf6));
+  color: #fff;
   display: grid;
   place-items: center;
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
   font-weight: 800;
-  flex-shrink: 0;
   box-shadow: var(--shadow-sm);
 }
 
-.moment-body {
-  flex: 1 1 auto;
-  min-width: 0;
+.author-online-dot {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-full);
+  background: #10b981;
+  border: 2px solid var(--surface);
+}
+
+.author-info {
   display: flex;
   flex-direction: column;
+  gap: 2px;
+}
+
+.author-name-row {
+  display: flex;
+  align-items: center;
   gap: var(--space-2);
 }
 
-.moment-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.moment-author {
-  margin: 0;
+.author-name {
   font-size: var(--text-sm);
-  font-weight: 700;
-  color: var(--primary);
+  font-weight: 800;
+  color: var(--text-strong);
 }
 
-.moment-time {
+.author-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.moment-timestamp {
   font-size: 11px;
   color: var(--muted);
 }
 
-.moment-content {
+/* 文本 */
+.moment-text-content {
   margin: 0;
   font-size: var(--text-sm);
-  line-height: 1.6;
+  line-height: 1.65;
   color: var(--text-strong);
   word-break: break-word;
 }
 
-.moment-image-box {
-  max-width: 320px;
+/* 配图 */
+.moment-media-wrapper {
+  margin-top: 2px;
+}
+
+.moment-media-card {
+  position: relative;
+  max-width: 480px;
   border-radius: var(--radius-md);
   overflow: hidden;
   border: 1px solid var(--border);
-  cursor: pointer;
+  cursor: zoom-in;
+  background: var(--surface-soft);
 }
 
-.moment-image {
+.moment-media-image {
   width: 100%;
-  height: auto;
-  max-height: 260px;
+  max-height: 380px;
   object-fit: cover;
   display: block;
   transition: transform var(--motion-fast);
 }
 
-.moment-image:hover {
+.moment-media-card:hover .moment-media-image {
   transform: scale(1.02);
 }
 
-.moment-actions-bar {
+.media-hover-overlay {
+  position: absolute;
+  inset: auto 0 0 0;
+  padding: 8px 12px;
+  background: linear-gradient(to top, rgb(0 0 0 / 70%), transparent);
+  display: flex;
+  justify-content: flex-end;
+  opacity: 0;
+  transition: opacity var(--motion-fast);
+}
+
+.moment-media-card:hover .media-hover-overlay {
+  opacity: 1;
+}
+
+.media-zoom-hint {
+  font-size: 11px;
+  color: #fff;
+  font-weight: 600;
+}
+
+/* 交互栏 */
+.moment-interaction-bar {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  margin-top: 2px;
+  padding-top: var(--space-1);
 }
 
-.moment-action-btn {
+.interact-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  border: 0;
-  background: transparent;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border);
+  background: var(--surface-soft);
   color: var(--muted);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  padding: 4px 6px;
-  border-radius: var(--radius-sm);
-  transition: color var(--motion-fast), background var(--motion-fast);
+  transition: all var(--motion-fast);
 }
 
-.moment-action-btn:hover {
-  background: var(--surface-soft);
+.interact-btn:hover {
+  background: var(--surface);
   color: var(--text-strong);
+  border-color: var(--border-strong);
 }
 
-.moment-action-btn.is-liked {
-  color: var(--danger);
+.interact-btn.is-active-like {
+  color: var(--danger, #f43f5e);
+  background: rgb(244 63 94 / 10%);
+  border-color: rgb(244 63 94 / 30%);
 }
 
 .fill-current {
   fill: currentColor;
 }
 
-.moment-comments-box {
+/* 评论区 */
+.moment-comments-panel {
   background: var(--surface-soft);
-  border-radius: var(--radius-sm);
-  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   font-size: var(--text-xs);
-  line-height: 1.5;
   border: 1px solid var(--border);
 }
 
-.comment-row {
+.comment-entry {
+  line-height: 1.5;
   word-break: break-word;
 }
 
-.comment-author {
+.comment-user {
   font-weight: 700;
   color: var(--primary);
   margin-right: 4px;
 }
 
-.comment-author.is-character {
-  color: var(--secondary, var(--primary));
+.comment-user.is-char {
+  color: var(--secondary, #8b5cf6);
 }
 
-.comment-reply-tag {
+.reply-indicator {
   color: var(--muted);
-  font-weight: 400;
+  font-weight: normal;
   margin-left: 2px;
 }
 
-.comment-text {
+.comment-msg {
   color: var(--text);
 }
 
-.moment-comment-form {
+/* 评论输入 */
+.quick-comment-form {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  margin-top: 2px;
 }
 
-.comment-input {
+.quick-comment-input {
   flex: 1 1 auto;
   min-width: 0;
-  padding: 6px var(--space-3);
+  padding: 7px 14px;
   border-radius: var(--radius-full);
   border: 1px solid var(--border);
-  background: var(--surface);
+  background: var(--surface-soft);
   color: var(--text-strong);
   font-size: var(--text-xs);
   outline: none;
   transition: border-color var(--motion-fast);
 }
 
-.comment-input:focus {
+.quick-comment-input:focus {
   border-color: var(--primary);
+  background: var(--surface);
 }
 
-.comment-submit-btn {
-  flex-shrink: 0;
-}
-
-.moments-status,
-.moments-empty {
-  padding: var(--space-8) var(--space-4);
+/* Loading & Empty */
+.moments-loading-state,
+.moments-empty-card {
+  padding: var(--space-10) var(--space-4);
   text-align: center;
   color: var(--muted);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-3);
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
 }
 
-.moments-empty p {
+.moments-empty-card h4 {
   margin: 0;
   font-size: var(--text-base);
-  font-weight: 700;
   color: var(--text-strong);
 }
 
-/* Modal */
-.moments-modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgb(0 0 0 / 45%);
-  z-index: 50;
+.loading-spinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: var(--radius-full);
+  animation: spin 0.8s linear infinite;
 }
 
-.moments-modal {
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Modal */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgb(0 0 0 / 50%);
+  backdrop-filter: blur(4px);
+  z-index: 100;
+}
+
+.modal-container {
   position: fixed;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: min(440px, 92vw);
+  width: min(480px, 92vw);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-xl);
-  z-index: 51;
-  display: flex;
-  flex-direction: column;
+  z-index: 101;
   overflow: hidden;
 }
 
-.moments-modal-head {
+.modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-4) var(--space-5);
   border-bottom: 1px solid var(--border);
 }
 
-.modal-title-row {
+.modal-title-group {
   display: flex;
   align-items: center;
   gap: var(--space-2);
 }
 
-.modal-title-row h3 {
+.modal-title-group h3 {
   margin: 0;
   font-size: var(--text-sm);
   font-weight: 800;
   color: var(--text-strong);
 }
 
-.moments-modal-body {
-  padding: var(--space-4);
+.modal-content-body {
+  padding: var(--space-5);
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-4);
 }
 
-.modal-label {
+.form-group {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+}
+
+.form-label {
   font-size: var(--text-xs);
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text);
 }
 
-.modal-select,
-.modal-input {
-  padding: 8px var(--space-3);
+.form-select,
+.form-input {
+  padding: 8px 12px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
   background: var(--surface-soft);
@@ -639,17 +725,18 @@ async function handleCreateMoment(): Promise<void> {
   outline: none;
 }
 
-.modal-select:focus,
-.modal-input:focus {
+.form-select:focus,
+.form-input:focus {
   border-color: var(--primary);
+  background: var(--surface);
 }
 
-.moments-modal-foot {
+.modal-footer {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-3) var(--space-5);
   background: var(--surface-soft);
   border-top: 1px solid var(--border);
 }

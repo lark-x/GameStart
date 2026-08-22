@@ -4,7 +4,6 @@ import { useRouter } from "vue-router";
 import { Clock, Heart, MapPin, MessageSquare, Smile, Sparkles } from "@lucide/vue";
 import type { V2CompanionRosterResponse } from "@living-network/contracts/v2";
 import Button from "../../../components/ui/Button.vue";
-import Card from "../../../components/ui/Card.vue";
 
 defineProps<{
   roster: V2CompanionRosterResponse | null;
@@ -28,236 +27,260 @@ function goToChat(): void {
 </script>
 
 <template>
-  <div class="companion-roster-view">
-    <div class="roster-header">
-      <div class="roster-header-text">
-        <h3 class="roster-title">伴侣名册与生活状态</h3>
-        <p class="roster-desc">实时查看角色的好感度羁绊、三维情绪（VAD）与 24 小时生活日程</p>
+  <div class="roster-view-container">
+    <div class="roster-view-header">
+      <div class="header-icon-pill">
+        <Sparkles :size="18" class="text-primary" aria-hidden="true" />
+      </div>
+      <div>
+        <h3 class="roster-view-title">伴侣名册与生活状态</h3>
+        <p class="roster-view-desc">实时感知角色的好感度羁绊、三维情绪（VAD）与 24 小时真实生活日程</p>
       </div>
     </div>
 
-    <div v-if="loading && (!roster || roster.characters.length === 0)" class="roster-status">
-      正在读取角色生活状态…
+    <div v-if="loading && (!roster || roster.characters.length === 0)" class="roster-loading">
+      <div class="loading-spinner" />
+      <span>正在读取角色伴侣数据…</span>
     </div>
+
     <div v-else-if="!roster || roster.characters.length === 0" class="roster-empty">
-      <Sparkles :size="24" class="text-primary" aria-hidden="true" />
+      <Sparkles :size="28" class="text-primary" aria-hidden="true" />
       <p>暂无角色数据</p>
     </div>
-    <div v-else class="roster-list">
-      <Card
+
+    <div v-else class="roster-grid">
+      <div
         v-for="char in roster.characters"
         :key="char.characterId"
-        class="char-roster-card"
+        class="roster-card"
       >
-        <!-- 角色基础信息 -->
-        <div class="char-top-row">
-          <div class="char-avatar-ring">
-            <div class="char-avatar" aria-hidden="true">
+        <!-- 角色头部 -->
+        <div class="roster-card-top">
+          <div class="avatar-ring-large">
+            <div class="avatar-inner">
               {{ avatarInitial(char.name) }}
             </div>
           </div>
-          <div class="char-meta">
-            <div class="char-name-row">
-              <h4 class="char-name">{{ char.name }}</h4>
-              <span class="char-mood-badge">
-                <Smile :size="12" aria-hidden="true" />
+          <div class="char-details">
+            <div class="name-status-row">
+              <h4 class="char-display-name">{{ char.name }}</h4>
+              <span class="mood-pill">
+                <Smile :size="13" aria-hidden="true" />
                 <span>{{ char.affinity.emotion.moodLabel }}</span>
               </span>
             </div>
-            <p v-if="char.summary" class="char-summary">{{ char.summary }}</p>
+            <p v-if="char.summary" class="char-intro">{{ char.summary }}</p>
           </div>
         </div>
 
-        <!-- 好感度进度条 -->
-        <div class="char-affinity-section">
-          <div class="affinity-title-row">
-            <span class="affinity-level-tag">
-              <Heart :size="12" class="fill-current text-danger" aria-hidden="true" />
+        <!-- 好感度羁绊 -->
+        <div class="section-box">
+          <div class="section-title-row">
+            <div class="affinity-badge">
+              <Heart :size="13" class="fill-current text-danger" aria-hidden="true" />
               <span>Lv.{{ char.affinity.level }} · {{ char.affinity.levelTitle }}</span>
-            </span>
-            <span class="affinity-exp-text">
-              {{ char.affinity.currentExp }} / {{ char.affinity.maxExp }} EXP
-            </span>
+            </div>
+            <span class="exp-counter">{{ char.affinity.currentExp }} / {{ char.affinity.maxExp }} EXP</span>
           </div>
-          <div class="affinity-progress-bar">
+          <div class="exp-bar">
             <div
-              class="affinity-progress-fill"
+              class="exp-bar-fill"
               :style="{ width: `${Math.min(100, Math.round((char.affinity.currentExp / char.affinity.maxExp) * 100))}%` }"
             />
           </div>
         </div>
 
-        <!-- VAD 三维情绪指示器 -->
-        <div class="char-vad-section">
-          <div class="vad-metric">
-            <div class="vad-label-row">
-              <span class="vad-name">积极度 (Valence)</span>
-              <span class="vad-val">{{ Math.round((char.affinity.emotion.valence + 1) * 50) }}%</span>
+        <!-- VAD 情绪仪表 -->
+        <div class="section-box">
+          <div class="vad-title">三维情绪状态 (VAD)</div>
+          <div class="vad-grid">
+            <div class="vad-col">
+              <div class="vad-metric-head">
+                <span>积极度</span>
+                <strong>{{ Math.round((char.affinity.emotion.valence + 1) * 50) }}%</strong>
+              </div>
+              <div class="vad-track">
+                <div
+                  class="vad-thumb thumb-v"
+                  :style="{ width: `${Math.round((char.affinity.emotion.valence + 1) * 50)}%` }"
+                />
+              </div>
             </div>
-            <div class="vad-bar">
-              <div
-                class="vad-bar-fill vad-fill-v"
-                :style="{ width: `${Math.round((char.affinity.emotion.valence + 1) * 50)}%` }"
-              />
-            </div>
-          </div>
 
-          <div class="vad-metric">
-            <div class="vad-label-row">
-              <span class="vad-name">兴奋度 (Arousal)</span>
-              <span class="vad-val">{{ Math.round((char.affinity.emotion.arousal + 1) * 50) }}%</span>
+            <div class="vad-col">
+              <div class="vad-metric-head">
+                <span>兴奋度</span>
+                <strong>{{ Math.round((char.affinity.emotion.arousal + 1) * 50) }}%</strong>
+              </div>
+              <div class="vad-track">
+                <div
+                  class="vad-thumb thumb-a"
+                  :style="{ width: `${Math.round((char.affinity.emotion.arousal + 1) * 50)}%` }"
+                />
+              </div>
             </div>
-            <div class="vad-bar">
-              <div
-                class="vad-bar-fill vad-fill-a"
-                :style="{ width: `${Math.round((char.affinity.emotion.arousal + 1) * 50)}%` }"
-              />
-            </div>
-          </div>
 
-          <div class="vad-metric">
-            <div class="vad-label-row">
-              <span class="vad-name">掌控感 (Dominance)</span>
-              <span class="vad-val">{{ Math.round((char.affinity.emotion.dominance + 1) * 50) }}%</span>
-            </div>
-            <div class="vad-bar">
-              <div
-                class="vad-bar-fill vad-fill-d"
-                :style="{ width: `${Math.round((char.affinity.emotion.dominance + 1) * 50)}%` }"
-              />
+            <div class="vad-col">
+              <div class="vad-metric-head">
+                <span>掌控感</span>
+                <strong>{{ Math.round((char.affinity.emotion.dominance + 1) * 50) }}%</strong>
+              </div>
+              <div class="vad-track">
+                <div
+                  class="vad-thumb thumb-d"
+                  :style="{ width: `${Math.round((char.affinity.emotion.dominance + 1) * 50)}%` }"
+                />
+              </div>
             </div>
           </div>
         </div>
 
-        <!-- 24 小时当前日程与时间表 -->
-        <div class="char-schedule-section">
-          <div class="schedule-head">
-            <div class="schedule-head-left">
+        <!-- 当前生活作息 -->
+        <div class="section-box">
+          <div class="section-title-row">
+            <div class="schedule-label">
               <Clock :size="13" class="text-primary" aria-hidden="true" />
-              <span class="schedule-head-title">当前生活日程</span>
+              <span>当前生活日程</span>
             </div>
             <button
               type="button"
-              class="schedule-toggle-btn"
+              class="expand-btn"
               @click="toggleSchedule(char.characterId)"
             >
               {{ expandedSchedule[char.characterId] ? '收起完整作息' : '查看全天作息' }}
             </button>
           </div>
 
-          <div class="schedule-current-card">
-            <div class="schedule-current-top">
-              <span class="current-badge">🟢 进行中</span>
-              <span class="current-time">{{ char.schedule.currentActivity.timeSlot }}</span>
+          <div class="active-routine-card">
+            <div class="routine-meta-row">
+              <span class="live-status-pill">🟢 进行中</span>
+              <span class="routine-time">{{ char.schedule.currentActivity.timeSlot }}</span>
             </div>
-            <div class="schedule-current-body">
-              <div class="current-act-title">{{ char.schedule.currentActivity.activityName }}</div>
-              <div class="current-act-loc">
+            <div class="routine-body">
+              <span class="routine-name">{{ char.schedule.currentActivity.activityName }}</span>
+              <div class="routine-loc">
                 <MapPin :size="11" aria-hidden="true" />
                 <span>{{ char.schedule.currentActivity.locationName }}</span>
               </div>
-              <p class="current-act-desc">{{ char.schedule.currentActivity.description }}</p>
             </div>
+            <p class="routine-desc">{{ char.schedule.currentActivity.description }}</p>
           </div>
 
-          <!-- 展开全天作息列表 -->
-          <div v-if="expandedSchedule[char.characterId]" class="schedule-timeline">
+          <!-- 全天作息 -->
+          <div v-if="expandedSchedule[char.characterId]" class="timeline-list">
             <div
               v-for="(r, idx) in char.schedule.routines"
               :key="idx"
-              class="timeline-item"
-              :class="{ 'is-current': r.activityName === char.schedule.currentActivity.activityName }"
+              class="timeline-slot"
+              :class="{ 'is-active-slot': r.activityName === char.schedule.currentActivity.activityName }"
             >
-              <div class="timeline-dot" />
-              <div class="timeline-info">
-                <div class="timeline-time">{{ r.timeSlot }} · {{ r.locationName }}</div>
-                <div class="timeline-act">{{ r.activityName }}</div>
+              <div class="slot-dot" />
+              <div class="slot-text">
+                <div class="slot-time">{{ r.timeSlot }} · {{ r.locationName }}</div>
+                <div class="slot-title">{{ r.activityName }}</div>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- 操作区：直达对话 -->
-        <div class="char-card-actions">
-          <Button variant="secondary" size="sm" class="char-chat-btn" @click="goToChat">
-            <MessageSquare :size="14" aria-hidden="true" />
-            <span>进入故事对话与她互动</span>
-          </Button>
-        </div>
-      </Card>
+        <!-- 动作操作 -->
+        <Button variant="secondary" class="chat-action-btn" @click="goToChat">
+          <MessageSquare :size="15" aria-hidden="true" />
+          <span>进入故事对话与她互动</span>
+        </Button>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.companion-roster-view {
+.roster-view-container {
   display: flex;
   flex-direction: column;
-  height: 100%;
-  overflow-y: auto;
-  padding: var(--space-4) var(--space-3);
   gap: var(--space-4);
-  background: var(--background);
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
 }
 
-.roster-header {
-  padding: 0 var(--space-1);
+.roster-view-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
 }
 
-.roster-title {
+.header-icon-pill {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-full);
+  background: var(--primary-soft);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.roster-view-title {
   margin: 0;
-  font-size: var(--text-md);
+  font-size: var(--text-base);
   font-weight: 800;
   color: var(--text-strong);
 }
 
-.roster-desc {
+.roster-view-desc {
   margin: 2px 0 0;
   font-size: var(--text-xs);
   color: var(--muted);
 }
 
-.roster-list {
-  display: flex;
-  flex-direction: column;
+.roster-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: var(--space-4);
 }
 
-.char-roster-card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4);
+.roster-card {
   background: var(--surface);
   border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  box-shadow: var(--shadow-sm);
 }
 
-.char-top-row {
+/* 头部 */
+.roster-card-top {
   display: flex;
   align-items: center;
   gap: var(--space-3);
 }
 
-.char-avatar-ring {
-  padding: 2px;
+.avatar-ring-large {
+  padding: 3px;
   border-radius: var(--radius-full);
   background: linear-gradient(135deg, var(--primary), var(--secondary, #8b5cf6));
   flex-shrink: 0;
 }
 
-.char-avatar {
-  width: 44px;
-  height: 44px;
+.avatar-inner {
+  width: 50px;
+  height: 50px;
   border-radius: var(--radius-full);
   background: var(--surface);
   color: var(--primary);
   display: grid;
   place-items: center;
-  font-size: var(--text-base);
+  font-size: var(--text-lg);
   font-weight: 800;
 }
 
-.char-meta {
+.char-details {
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
@@ -265,24 +288,24 @@ function goToChat(): void {
   gap: 2px;
 }
 
-.char-name-row {
+.name-status-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
-.char-name {
+.char-display-name {
   margin: 0;
   font-size: var(--text-base);
   font-weight: 800;
   color: var(--text-strong);
 }
 
-.char-mood-badge {
+.mood-pill {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 8px;
+  padding: 3px 9px;
   border-radius: var(--radius-full);
   background: var(--primary-soft);
   color: var(--primary);
@@ -290,31 +313,31 @@ function goToChat(): void {
   font-weight: 700;
 }
 
-.char-summary {
+.char-intro {
   margin: 0;
   font-size: var(--text-xs);
   color: var(--muted);
   line-height: 1.4;
 }
 
-/* 好感度 */
-.char-affinity-section {
+/* 模块 Box */
+.section-box {
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  background: var(--surface-soft);
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
+  gap: 6px;
 }
 
-.affinity-title-row {
+.section-title-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
-.affinity-level-tag {
+.affinity-badge {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -323,103 +346,80 @@ function goToChat(): void {
   color: var(--text-strong);
 }
 
-.affinity-exp-text {
+.exp-counter {
   font-size: 11px;
   color: var(--muted);
   font-weight: 600;
 }
 
-.affinity-progress-bar {
+.exp-bar {
   height: 6px;
   border-radius: var(--radius-full);
   background: var(--surface);
   overflow: hidden;
 }
 
-.affinity-progress-fill {
+.exp-bar-fill {
   height: 100%;
   border-radius: var(--radius-full);
-  background: linear-gradient(90deg, var(--danger, #f43f5e), var(--primary));
+  background: linear-gradient(90deg, #f43f5e, var(--primary));
   transition: width 0.3s ease;
 }
 
-/* VAD 情绪指示 */
-.char-vad-section {
+/* VAD */
+.vad-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.vad-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: var(--space-2);
-  background: var(--surface-soft);
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
 }
 
-.vad-metric {
+.vad-col {
   display: flex;
   flex-direction: column;
   gap: 3px;
 }
 
-.vad-label-row {
+.vad-metric-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-}
-
-.vad-name {
   font-size: 10px;
-  color: var(--muted);
+  color: var(--text);
 }
 
-.vad-val {
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--text-strong);
-}
-
-.vad-bar {
+.vad-track {
   height: 4px;
   border-radius: var(--radius-full);
   background: var(--surface);
   overflow: hidden;
 }
 
-.vad-bar-fill {
+.vad-thumb {
   height: 100%;
   border-radius: var(--radius-full);
-  transition: width 0.3s ease;
 }
 
-.vad-fill-v { background: #10b981; }
-.vad-fill-a { background: #f59e0b; }
-.vad-fill-d { background: #6366f1; }
+.thumb-v { background: #10b981; }
+.thumb-a { background: #f59e0b; }
+.thumb-d { background: #6366f1; }
 
 /* 日程 */
-.char-schedule-section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.schedule-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.schedule-head-left {
+.schedule-label {
   display: flex;
   align-items: center;
   gap: 4px;
-}
-
-.schedule-head-title {
   font-size: 12px;
   font-weight: 700;
   color: var(--text-strong);
 }
 
-.schedule-toggle-btn {
+.expand-btn {
   border: 0;
   background: transparent;
   color: var(--primary);
@@ -428,73 +428,73 @@ function goToChat(): void {
   cursor: pointer;
 }
 
-.schedule-current-card {
-  padding: var(--space-3);
-  border-radius: var(--radius-sm);
-  background: var(--surface-soft);
-  border: 1px solid var(--border);
+.active-routine-card {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
-.schedule-current-top {
+.routine-meta-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
-.current-badge {
+.live-status-pill {
   font-size: 11px;
   font-weight: 700;
-  color: var(--success, #10b981);
+  color: #10b981;
 }
 
-.current-time {
+.routine-time {
   font-size: 11px;
   color: var(--muted);
-  font-weight: 600;
 }
 
-.current-act-title {
-  font-size: var(--text-sm);
+.routine-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.routine-name {
+  font-size: var(--text-xs);
   font-weight: 700;
   color: var(--text-strong);
 }
 
-.current-act-loc {
+.routine-loc {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  font-size: 11px;
+  gap: 2px;
+  font-size: 10px;
   color: var(--muted);
 }
 
-.current-act-desc {
-  margin: 2px 0 0;
+.routine-desc {
+  margin: 0;
   font-size: 11px;
-  color: var(--text);
+  color: var(--muted);
   line-height: 1.4;
 }
 
-.schedule-timeline {
+.timeline-list {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-sm);
-  background: var(--surface-soft);
-  border: 1px dashed var(--border);
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px dashed var(--border);
 }
 
-.timeline-item {
+.timeline-slot {
   display: flex;
   align-items: flex-start;
   gap: var(--space-2);
   font-size: 11px;
 }
 
-.timeline-dot {
+.slot-dot {
   width: 6px;
   height: 6px;
   border-radius: var(--radius-full);
@@ -502,43 +502,48 @@ function goToChat(): void {
   margin-top: 4px;
 }
 
-.timeline-item.is-current .timeline-dot {
+.timeline-slot.is-active-slot .slot-dot {
   background: var(--primary);
   box-shadow: 0 0 0 2px var(--primary-soft);
 }
 
-.timeline-info {
-  display: flex;
-  flex-direction: column;
-}
-
-.timeline-time {
-  color: var(--muted);
+.slot-time {
   font-size: 10px;
+  color: var(--muted);
 }
 
-.timeline-act {
+.slot-title {
   color: var(--text);
   font-weight: 600;
 }
 
-.timeline-item.is-current .timeline-act {
+.timeline-slot.is-active-slot .slot-title {
   color: var(--primary);
   font-weight: 700;
 }
 
-.char-card-actions {
-  margin-top: var(--space-1);
-}
-
-.char-chat-btn {
+.chat-action-btn {
   width: 100%;
 }
 
-.roster-status,
+.roster-loading,
 .roster-empty {
-  padding: var(--space-8);
+  padding: var(--space-10);
   text-align: center;
   color: var(--muted);
+}
+
+.loading-spinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: var(--radius-full);
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto var(--space-2);
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 </style>
