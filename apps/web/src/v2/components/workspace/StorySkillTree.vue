@@ -100,7 +100,7 @@ const tier2CharacterNodes = computed<readonly StorySkillNode[]>(() => {
     kind: "character",
     title: c.name,
     subtitle: c.role || "正典角色",
-    description: c.summary || (c.personaText ? `人设：${c.personaText.slice(0, 80)}` : "由用户设定的正典角色。"),
+    description: c.personaText || c.summary || "由用户设定的正典角色。",
     roleImpact: "主线故事推进者、对话交互伙伴及伴侣生活物语主角",
     rawData: c,
   }));
@@ -210,7 +210,7 @@ function openTopology(node: StorySkillNode) {
             <!-- 空白新增插槽 -->
             <button type="button" class="skill-slot-btn" @click="openCreateSlot('location')">
               <Plus :size="14" />
-              <span>+ 新增世界设定 / 地点</span>
+              <span>新增世界设定 / 地点</span>
             </button>
           </div>
         </section>
@@ -261,7 +261,7 @@ function openTopology(node: StorySkillNode) {
             <!-- 空白新增插槽 -->
             <button type="button" class="skill-slot-btn" @click="openCreateSlot('character')">
               <Plus :size="14" />
-              <span>+ 新增正典角色</span>
+              <span>新增正典角色</span>
             </button>
           </div>
         </section>
@@ -430,14 +430,11 @@ function openTopology(node: StorySkillNode) {
 }
 
 .skill-tree-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: var(--space-4);
-  align-items: start;
-}
-
-.skill-tree-layout.with-inspection {
-  grid-template-columns: minmax(0, 1fr) 320px;
+  align-items: stretch;
+  width: 100%;
 }
 
 .skill-tree-matrix {
@@ -445,6 +442,7 @@ function openTopology(node: StorySkillNode) {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-3);
   align-items: start;
+  width: 100%;
 }
 
 .skill-tier-column {
@@ -457,6 +455,7 @@ function openTopology(node: StorySkillNode) {
   background: var(--surface);
   box-shadow: var(--shadow-sm);
   min-width: 0;
+  overflow: hidden;
 }
 
 .tier-column-head {
@@ -466,6 +465,7 @@ function openTopology(node: StorySkillNode) {
   gap: var(--space-2);
   padding-bottom: var(--space-2);
   border-bottom: 1px solid var(--border);
+  min-width: 0;
 }
 
 .tier-badge-wrap {
@@ -475,6 +475,10 @@ function openTopology(node: StorySkillNode) {
   font-size: 13px;
   font-weight: 800;
   color: var(--text-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .tier-1-head .tier-badge-wrap { color: var(--primary); }
@@ -487,12 +491,16 @@ function openTopology(node: StorySkillNode) {
   color: var(--muted);
   font-size: 11px;
   line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tier-nodes-stack {
   display: grid;
   gap: var(--space-2);
   margin-top: var(--space-1);
+  min-width: 0;
 }
 
 .skill-node-card {
@@ -504,6 +512,8 @@ function openTopology(node: StorySkillNode) {
   background: var(--surface-soft);
   cursor: pointer;
   transition: all var(--motion-fast);
+  min-width: 0;
+  overflow: hidden;
 }
 
 .skill-node-card:hover {
@@ -522,6 +532,7 @@ function openTopology(node: StorySkillNode) {
   display: flex;
   align-items: flex-start;
   gap: var(--space-2);
+  min-width: 0;
 }
 
 .skill-node-icon {
@@ -544,6 +555,7 @@ function openTopology(node: StorySkillNode) {
   display: grid;
   gap: 2px;
   min-width: 0;
+  overflow: hidden;
 }
 
 .skill-node-info strong {
@@ -558,6 +570,9 @@ function openTopology(node: StorySkillNode) {
 .skill-node-sub {
   color: var(--muted);
   font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .skill-node-desc {
@@ -566,6 +581,8 @@ function openTopology(node: StorySkillNode) {
   font-size: 12px;
   line-height: 1.4;
   opacity: 0.85;
+  word-break: break-word;
+  overflow-wrap: anywhere;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -579,6 +596,7 @@ function openTopology(node: StorySkillNode) {
   gap: var(--space-1);
   padding-top: var(--space-1);
   border-top: 1px dashed var(--border);
+  min-width: 0;
 }
 
 .skill-impact-tag {
@@ -588,6 +606,8 @@ function openTopology(node: StorySkillNode) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
+  flex: 1;
 }
 
 .node-drilldown-btn {

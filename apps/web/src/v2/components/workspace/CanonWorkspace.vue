@@ -5,7 +5,9 @@ import {
   BookOpen,
   Calendar,
   Clock3,
+  GitFork,
   Globe,
+  LayoutGrid,
   MapPin,
   Pencil,
   Plus,
@@ -25,6 +27,7 @@ import Textarea from "../../../components/ui/Textarea.vue";
 import type { V2WorkspaceSnapshot } from "../../adapters";
 import { useV2WorkspaceStore } from "../../stores/workspace";
 import WorkspaceModuleIntro from "./WorkspaceModuleIntro.vue";
+import StorySkillTree from "./StorySkillTree.vue";
 import StoryNodeDrawer, { type CanonEntityKind } from "./StoryNodeDrawer.vue";
 import type { StorySkillNode } from "./StoryInspectionCard.vue";
 
@@ -47,6 +50,9 @@ const emit = defineEmits<{
   previewCanonDraft: [];
   resetCanonDraft: [];
 }>();
+
+// 🌟 视图切换模式：默认为 RPG 故事技能树视图
+const viewMode = ref<"tree" | "list">("tree");
 
 type CanonCategory = "characters" | "locations" | "rules_facts" | "timeline" | "all";
 const validTabs = new Set<CanonCategory>(["characters", "locations", "rules_facts", "timeline", "all"]);
@@ -88,7 +94,7 @@ function openEditCharacter(char: { readonly characterId: string; readonly name: 
     kind: "character",
     title: char.name,
     subtitle: char.role,
-    description: char.summary ?? "",
+    description: char.personaText || char.summary || "由用户设定的正典角色。",
     roleImpact: "主线故事推进者与对话交互伙伴",
     rawData: char,
   };
@@ -215,414 +221,447 @@ const filteredTimeline = computed(() => {
                 <h2>{{ snapshot.world.name }}</h2>
                 <Badge tone="info">v{{ snapshot.world.revision }} 正典基线</Badge>
               </div>
-              <p class="hero-premise">{{ snapshot.world.premise || "暂无世界观背景描述。" }}</p>
+              <p class="hero-premise">{{ snapshot.world.premise || "统一主线故事世界，包含所有正典角色与生活物语。" }}</p>
             </div>
           </div>
-          <div class="hero-actions">
+
+          <div class="hero-right-actions">
+            <!-- 🌲 视图模式双切换器 -->
+            <div class="view-mode-toggle-group">
+              <button
+                type="button"
+                class="view-toggle-pill"
+                :class="{ active: viewMode === 'tree' }"
+                @click="viewMode = 'tree'"
+              >
+                <GitFork :size="14" aria-hidden="true" />
+                <span>🌲 故事技能树</span>
+              </button>
+              <button
+                type="button"
+                class="view-toggle-pill"
+                :class="{ active: viewMode === 'list' }"
+                @click="viewMode = 'list'"
+              >
+                <LayoutGrid :size="14" aria-hidden="true" />
+                <span>📋 经典卡片列表</span>
+              </button>
+            </div>
+
             <Button variant="secondary" size="md" @click="worldDrawerOpen = true">
               <Settings :size="15" aria-hidden="true" />
-              编辑世界设定
+              编辑设定
             </Button>
           </div>
         </div>
 
         <!-- 统计指标芯片 -->
         <div class="hero-stats-row">
-          <div class="hero-stat-chip" :class="{ active: activeTab === 'characters' }" @click="activeTab = 'characters'">
+          <div class="hero-stat-chip" :class="{ active: viewMode === 'list' && activeTab === 'characters' }" @click="viewMode = 'list'; activeTab = 'characters'">
             <User :size="14" />
             <span>{{ snapshot.world.characters.length }} 位角色</span>
           </div>
-          <div class="hero-stat-chip" :class="{ active: activeTab === 'locations' }" @click="activeTab = 'locations'">
+          <div class="hero-stat-chip" :class="{ active: viewMode === 'list' && activeTab === 'locations' }" @click="viewMode = 'list'; activeTab = 'locations'">
             <MapPin :size="14" />
             <span>{{ snapshot.world.locations.length }} 处地点</span>
           </div>
-          <div class="hero-stat-chip" :class="{ active: activeTab === 'rules_facts' }" @click="activeTab = 'rules_facts'">
+          <div class="hero-stat-chip" :class="{ active: viewMode === 'list' && activeTab === 'rules_facts' }" @click="viewMode = 'list'; activeTab = 'rules_facts'">
             <ShieldAlert :size="14" />
             <span>{{ snapshot.world.rules.length + snapshot.world.facts.length }} 条规则与事实</span>
           </div>
-          <div class="hero-stat-chip" :class="{ active: activeTab === 'timeline' }" @click="activeTab = 'timeline'">
+          <div class="hero-stat-chip" :class="{ active: viewMode === 'list' && activeTab === 'timeline' }" @click="viewMode = 'list'; activeTab = 'timeline'">
             <Clock3 :size="14" />
             <span>{{ snapshot.world.timelineEvents.length }} 项历史事件</span>
           </div>
         </div>
       </Card>
 
-      <!-- 🌟 导航与操作栏 -->
-      <div class="canon-toolbar">
-        <div class="canon-tab-pills">
-          <button
-            type="button"
-            class="tab-pill"
-            :class="{ active: activeTab === 'characters' }"
-            @click="activeTab = 'characters'"
-          >
-            <User :size="15" />
-            <span>正典角色 ({{ snapshot.world.characters.length }})</span>
-          </button>
-          <button
-            type="button"
-            class="tab-pill"
-            :class="{ active: activeTab === 'locations' }"
-            @click="activeTab = 'locations'"
-          >
-            <MapPin :size="15" />
-            <span>舞台地点 ({{ snapshot.world.locations.length }})</span>
-          </button>
-          <button
-            type="button"
-            class="tab-pill"
-            :class="{ active: activeTab === 'rules_facts' }"
-            @click="activeTab = 'rules_facts'"
-          >
-            <ShieldAlert :size="15" />
-            <span>规则与事实 ({{ snapshot.world.rules.length + snapshot.world.facts.length }})</span>
-          </button>
-          <button
-            type="button"
-            class="tab-pill"
-            :class="{ active: activeTab === 'timeline' }"
-            @click="activeTab = 'timeline'"
-          >
-            <Clock3 :size="15" />
-            <span>时间线 ({{ snapshot.world.timelineEvents.length }})</span>
-          </button>
-          <button
-            type="button"
-            class="tab-pill"
-            :class="{ active: activeTab === 'all' }"
-            @click="activeTab = 'all'"
-          >
-            <Sparkles :size="15" />
-            <span>全部正典</span>
-          </button>
-        </div>
+      <!-- 🌟 视图 A: RPG 故事技能树矩阵视图 (4 阶层拓扑与检视看板) -->
+      <StorySkillTree
+        v-if="viewMode === 'tree'"
+        :snapshot="snapshot"
+        :loading="loading"
+        @refreshed="store.loadSnapshot()"
+      />
 
-        <div class="toolbar-right">
-          <div class="search-input-wrap">
-            <Search :size="15" class="search-icon" aria-hidden="true" />
-            <Input
-              v-model="searchQuery"
-              placeholder="搜索角色、地点、规则..."
-              size="sm"
-              class="canon-search-input"
-            />
-          </div>
-
-          <!-- 根据当前 Tab 提供精准的新增主按钮 -->
-          <Button
-            v-if="activeTab === 'characters'"
-            variant="primary"
-            size="md"
-            @click="openAdd('character')"
-          >
-            <Plus :size="16" aria-hidden="true" />
-            新增正典角色
-          </Button>
-          <Button
-            v-else-if="activeTab === 'locations'"
-            variant="primary"
-            size="md"
-            @click="openAdd('location')"
-          >
-            <Plus :size="16" aria-hidden="true" />
-            新增舞台地点
-          </Button>
-          <Button
-            v-else-if="activeTab === 'rules_facts'"
-            variant="primary"
-            size="md"
-            @click="openAdd('rule')"
-          >
-            <Plus :size="16" aria-hidden="true" />
-            新增规则 / 事实
-          </Button>
-          <Button
-            v-else-if="activeTab === 'timeline'"
-            variant="primary"
-            size="md"
-            @click="openAdd('timeline')"
-          >
-            <Plus :size="16" aria-hidden="true" />
-            新增时间线事件
-          </Button>
-          <Button
-            v-else
-            variant="primary"
-            size="md"
-            @click="openAdd('character')"
-          >
-            <Plus :size="16" aria-hidden="true" />
-            新增正典数据
-          </Button>
-        </div>
-      </div>
-
-      <!-- 🌟 内容卡片网格 -->
-      <div class="entities-container">
-        <!-- 1. 角色网格 -->
-        <section v-if="activeTab === 'characters' || activeTab === 'all'" class="entity-section">
-          <div v-if="activeTab === 'all'" class="section-heading">
-            <User :size="16" class="section-heading-icon" />
-            <h3>正典角色 ({{ filteredCharacters.length }})</h3>
-          </div>
-
-          <div v-if="filteredCharacters.length > 0" class="entity-cards-grid">
-            <article
-              v-for="char in filteredCharacters"
-              :key="char.characterId"
-              class="clean-entity-card character-card"
+      <!-- 🌟 视图 B: 经典卡片列表视图 (分类检索与沉浸卡片) -->
+      <template v-else>
+        <!-- 导航与操作栏 -->
+        <div class="canon-toolbar">
+          <div class="canon-tab-pills">
+            <button
+              type="button"
+              class="tab-pill"
+              :class="{ active: activeTab === 'characters' }"
+              @click="activeTab = 'characters'"
             >
-              <div class="card-head">
-                <div class="card-avatar">
-                  <User :size="18" />
-                </div>
-                <div class="card-title-block">
-                  <h4 class="card-name">
-                    <button
-                      type="button"
-                      class="char-link-btn"
-                      @click="router.push(`/v2/workspace/characters/${encodeURIComponent(char.characterId)}`)"
+              <User :size="15" />
+              <span>正典角色 ({{ snapshot.world.characters.length }})</span>
+            </button>
+            <button
+              type="button"
+              class="tab-pill"
+              :class="{ active: activeTab === 'locations' }"
+              @click="activeTab = 'locations'"
+            >
+              <MapPin :size="15" />
+              <span>舞台地点 ({{ snapshot.world.locations.length }})</span>
+            </button>
+            <button
+              type="button"
+              class="tab-pill"
+              :class="{ active: activeTab === 'rules_facts' }"
+              @click="activeTab = 'rules_facts'"
+            >
+              <ShieldAlert :size="15" />
+              <span>规则与事实 ({{ snapshot.world.rules.length + snapshot.world.facts.length }})</span>
+            </button>
+            <button
+              type="button"
+              class="tab-pill"
+              :class="{ active: activeTab === 'timeline' }"
+              @click="activeTab = 'timeline'"
+            >
+              <Clock3 :size="15" />
+              <span>时间线 ({{ snapshot.world.timelineEvents.length }})</span>
+            </button>
+            <button
+              type="button"
+              class="tab-pill"
+              :class="{ active: activeTab === 'all' }"
+              @click="activeTab = 'all'"
+            >
+              <Sparkles :size="15" />
+              <span>全部正典</span>
+            </button>
+          </div>
+
+          <div class="toolbar-right">
+            <div class="search-input-wrap">
+              <Search :size="15" class="search-icon" aria-hidden="true" />
+              <Input
+                v-model="searchQuery"
+                placeholder="搜索角色、地点、规则..."
+                size="sm"
+                class="canon-search-input"
+              />
+            </div>
+
+            <!-- 根据当前 Tab 提供精准的新增主按钮 -->
+            <Button
+              v-if="activeTab === 'characters'"
+              variant="primary"
+              size="md"
+              @click="openAdd('character')"
+            >
+              <Plus :size="16" aria-hidden="true" />
+              新增正典角色
+            </Button>
+            <Button
+              v-else-if="activeTab === 'locations'"
+              variant="primary"
+              size="md"
+              @click="openAdd('location')"
+            >
+              <Plus :size="16" aria-hidden="true" />
+              新增舞台地点
+            </Button>
+            <Button
+              v-else-if="activeTab === 'rules_facts'"
+              variant="primary"
+              size="md"
+              @click="openAdd('rule')"
+            >
+              <Plus :size="16" aria-hidden="true" />
+              新增规则 / 事实
+            </Button>
+            <Button
+              v-else-if="activeTab === 'timeline'"
+              variant="primary"
+              size="md"
+              @click="openAdd('timeline')"
+            >
+              <Plus :size="16" aria-hidden="true" />
+              新增时间线事件
+            </Button>
+            <Button
+              v-else
+              variant="primary"
+              size="md"
+              @click="openAdd('character')"
+            >
+              <Plus :size="16" aria-hidden="true" />
+              新增正典数据
+            </Button>
+          </div>
+        </div>
+
+        <!-- 内容卡片网格 -->
+        <div class="entities-container">
+          <!-- 1. 角色网格 -->
+          <section v-if="activeTab === 'characters' || activeTab === 'all'" class="entity-section">
+            <div v-if="activeTab === 'all'" class="section-heading">
+              <User :size="16" class="section-heading-icon" />
+              <h3>正典角色 ({{ filteredCharacters.length }})</h3>
+            </div>
+
+            <div v-if="filteredCharacters.length > 0" class="entity-cards-grid">
+              <article
+                v-for="char in filteredCharacters"
+                :key="char.characterId"
+                class="clean-entity-card character-card"
+              >
+                <div class="card-head">
+                  <div class="card-avatar">
+                    <User :size="18" />
+                  </div>
+                  <div class="card-title-block">
+                    <h4 class="card-name">
+                      <button
+                        type="button"
+                        class="char-link-btn"
+                        @click="router.push(`/v2/workspace/characters/${encodeURIComponent(char.characterId)}`)"
+                      >
+                        {{ char.name }}
+                      </button>
+                    </h4>
+                    <span class="card-sub">{{ char.role || "正典角色" }}</span>
+                  </div>
+                  <div class="card-head-actions">
+                    <Badge tone="success">角色</Badge>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label="编辑角色"
+                      @click="openEditCharacter(char)"
                     >
-                      {{ char.name }}
-                    </button>
-                  </h4>
-                  <span class="card-sub">{{ char.role || "正典角色" }}</span>
+                      <Pencil :size="14" />
+                    </Button>
+                  </div>
                 </div>
-                <div class="card-head-actions">
-                  <Badge tone="success">角色</Badge>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="编辑角色"
-                    @click="openEditCharacter(char)"
-                  >
-                    <Pencil :size="14" />
-                  </Button>
+
+                <p class="card-body-text">
+                  {{ char.personaText || char.summary || "由用户人设创建的正典 AI 角色。" }}
+                </p>
+
+                <div class="card-foot">
+                  <span class="foot-location">
+                    <MapPin :size="12" />
+                    {{ locationNameById(char.homeLocationId) ? `常驻：${locationNameById(char.homeLocationId)}` : "未绑定常驻地点" }}
+                  </span>
+                  <span class="foot-impact">🎯 对话与剧情角色</span>
                 </div>
-              </div>
+              </article>
+            </div>
 
-              <!-- 描述与人设：仅显示一次，绝不重复 -->
-              <p class="card-body-text">
-                {{ char.personaText || char.summary || "由用户人设创建的正典 AI 角色。" }}
-              </p>
+            <div v-else class="empty-state-card">
+              <User :size="32" class="empty-icon" />
+              <h4>暂无匹配的角色</h4>
+              <p>创建正典角色后，可在伴侣专区发起沉浸对白，并在主线故事中出场。</p>
+              <Button variant="primary" size="md" @click="openAdd('character')">
+                <Plus :size="15" /> 新增正典角色
+              </Button>
+            </div>
+          </section>
 
-              <div class="card-foot">
-                <span class="foot-location">
-                  <MapPin :size="12" />
-                  {{ locationNameById(char.homeLocationId) ? `常驻：${locationNameById(char.homeLocationId)}` : "未绑定常驻地点" }}
-                </span>
-                <span class="foot-impact">🎯 对话与剧情角色</span>
-              </div>
-            </article>
-          </div>
+          <!-- 2. 地点网格 -->
+          <section v-if="activeTab === 'locations' || activeTab === 'all'" class="entity-section">
+            <div v-if="activeTab === 'all'" class="section-heading">
+              <MapPin :size="16" class="section-heading-icon" />
+              <h3>舞台地点 ({{ filteredLocations.length }})</h3>
+            </div>
 
-          <div v-else class="empty-state-card">
-            <User :size="32" class="empty-icon" />
-            <h4>暂无匹配的角色</h4>
-            <p>创建正典角色后，可在伴侣专区发起沉浸对白，并在主线故事中出场。</p>
-            <Button variant="primary" size="md" @click="openAdd('character')">
-              <Plus :size="15" /> 新增正典角色
-            </Button>
-          </div>
-        </section>
-
-        <!-- 2. 地点网格 -->
-        <section v-if="activeTab === 'locations' || activeTab === 'all'" class="entity-section">
-          <div v-if="activeTab === 'all'" class="section-heading">
-            <MapPin :size="16" class="section-heading-icon" />
-            <h3>舞台地点 ({{ filteredLocations.length }})</h3>
-          </div>
-
-          <div v-if="filteredLocations.length > 0" class="entity-cards-grid">
-            <article
-              v-for="loc in filteredLocations"
-              :key="loc.locationId"
-              class="clean-entity-card location-card"
-            >
-              <div class="card-head">
-                <div class="card-avatar location-avatar">
-                  <MapPin :size="18" />
+            <div v-if="filteredLocations.length > 0" class="entity-cards-grid">
+              <article
+                v-for="loc in filteredLocations"
+                :key="loc.locationId"
+                class="clean-entity-card location-card"
+              >
+                <div class="card-head">
+                  <div class="card-avatar location-avatar">
+                    <MapPin :size="18" />
+                  </div>
+                  <div class="card-title-block">
+                    <h4 class="card-name">{{ loc.name }}</h4>
+                    <span class="card-sub">地理舞台</span>
+                  </div>
+                  <div class="card-head-actions">
+                    <Badge tone="info">地点</Badge>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label="编辑地点"
+                      @click="openEditLocation(loc)"
+                    >
+                      <Pencil :size="14" />
+                    </Button>
+                  </div>
                 </div>
-                <div class="card-title-block">
-                  <h4 class="card-name">{{ loc.name }}</h4>
-                  <span class="card-sub">地理舞台</span>
+
+                <p class="card-body-text">
+                  {{ loc.summary || "用于承载主线剧情场景与角色生活场景的核心地理位置。" }}
+                </p>
+
+                <div class="card-foot">
+                  <span class="foot-impact">🎯 场景发生地与角色居所</span>
                 </div>
-                <div class="card-head-actions">
-                  <Badge tone="info">地点</Badge>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="编辑地点"
-                    @click="openEditLocation(loc)"
-                  >
-                    <Pencil :size="14" />
-                  </Button>
+              </article>
+            </div>
+
+            <div v-else-if="activeTab === 'locations'" class="empty-state-card">
+              <MapPin :size="32" class="empty-icon" />
+              <h4>暂无舞台地点</h4>
+              <p>添加地理地点后，角色可以绑定常驻居所，主线场景也可在此地展开。</p>
+              <Button variant="primary" size="md" @click="openAdd('location')">
+                <Plus :size="15" /> 新增舞台地点
+              </Button>
+            </div>
+          </section>
+
+          <!-- 3. 规则与事实网格 -->
+          <section v-if="activeTab === 'rules_facts' || activeTab === 'all'" class="entity-section">
+            <div v-if="activeTab === 'all'" class="section-heading">
+              <ShieldAlert :size="16" class="section-heading-icon" />
+              <h3>规则与事实 ({{ filteredRules.length + filteredFacts.length }})</h3>
+            </div>
+
+            <div v-if="filteredRules.length + filteredFacts.length > 0" class="entity-cards-grid">
+              <!-- 规则卡片 -->
+              <article
+                v-for="rule in filteredRules"
+                :key="rule.ruleId"
+                class="clean-entity-card rule-card"
+              >
+                <div class="card-head">
+                  <div class="card-avatar rule-avatar">
+                    <ShieldAlert :size="18" />
+                  </div>
+                  <div class="card-title-block">
+                    <h4 class="card-name">世界规则</h4>
+                    <span class="card-sub">{{ rule.severity === "hard" ? "硬性必须遵守" : "软性风格指导" }}</span>
+                  </div>
+                  <div class="card-head-actions">
+                    <Badge :tone="rule.severity === 'hard' ? 'warning' : 'neutral'">
+                      {{ rule.severity === "hard" ? "硬约束" : "软指导" }}
+                    </Badge>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label="编辑规则"
+                      @click="openEditRule(rule)"
+                    >
+                      <Pencil :size="14" />
+                    </Button>
+                  </div>
                 </div>
-              </div>
 
-              <p class="card-body-text">
-                {{ loc.summary || "用于承载主线剧情场景与角色生活场景的核心地理位置。" }}
-              </p>
+                <p class="card-body-text">{{ rule.text }}</p>
 
-              <div class="card-foot">
-                <span class="foot-impact">🎯 场景发生地与角色居所</span>
-              </div>
-            </article>
-          </div>
-
-          <div v-else-if="activeTab === 'locations'" class="empty-state-card">
-            <MapPin :size="32" class="empty-icon" />
-            <h4>暂无舞台地点</h4>
-            <p>添加地理地点后，角色可以绑定常驻居所，主线场景也可在此地展开。</p>
-            <Button variant="primary" size="md" @click="openAdd('location')">
-              <Plus :size="15" /> 新增舞台地点
-            </Button>
-          </div>
-        </section>
-
-        <!-- 3. 规则与事实网格 -->
-        <section v-if="activeTab === 'rules_facts' || activeTab === 'all'" class="entity-section">
-          <div v-if="activeTab === 'all'" class="section-heading">
-            <ShieldAlert :size="16" class="section-heading-icon" />
-            <h3>规则与事实 ({{ filteredRules.length + filteredFacts.length }})</h3>
-          </div>
-
-          <div v-if="filteredRules.length + filteredFacts.length > 0" class="entity-cards-grid">
-            <!-- 规则卡片 -->
-            <article
-              v-for="rule in filteredRules"
-              :key="rule.ruleId"
-              class="clean-entity-card rule-card"
-            >
-              <div class="card-head">
-                <div class="card-avatar rule-avatar">
-                  <ShieldAlert :size="18" />
+                <div class="card-foot">
+                  <span class="foot-impact">🎯 AI 扩写与审校硬性门禁</span>
                 </div>
-                <div class="card-title-block">
-                  <h4 class="card-name">世界规则</h4>
-                  <span class="card-sub">{{ rule.severity === "hard" ? "硬性必须遵守" : "软性风格指导" }}</span>
+              </article>
+
+              <!-- 事实卡片 -->
+              <article
+                v-for="fact in filteredFacts"
+                :key="fact.factId"
+                class="clean-entity-card fact-card"
+              >
+                <div class="card-head">
+                  <div class="card-avatar fact-avatar">
+                    <BookOpen :size="18" />
+                  </div>
+                  <div class="card-title-block">
+                    <h4 class="card-name">世界常识事实</h4>
+                    <span class="card-sub">{{ fact.visibility === "player" ? "玩家公开可见" : "创作者隐藏" }}</span>
+                  </div>
+                  <div class="card-head-actions">
+                    <Badge tone="info">{{ fact.visibility === "player" ? "公开事实" : "暗线事实" }}</Badge>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label="编辑事实"
+                      @click="openEditFact(fact)"
+                    >
+                      <Pencil :size="14" />
+                    </Button>
+                  </div>
                 </div>
-                <div class="card-head-actions">
-                  <Badge :tone="rule.severity === 'hard' ? 'warning' : 'neutral'">
-                    {{ rule.severity === "hard" ? "硬约束" : "软指导" }}
-                  </Badge>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="编辑规则"
-                    @click="openEditRule(rule)"
-                  >
-                    <Pencil :size="14" />
-                  </Button>
+
+                <p class="card-body-text">{{ fact.text }}</p>
+
+                <div class="card-foot">
+                  <span class="foot-impact">🎯 全局提示词与对话常识库</span>
                 </div>
-              </div>
+              </article>
+            </div>
 
-              <p class="card-body-text">{{ rule.text }}</p>
+            <div v-else-if="activeTab === 'rules_facts'" class="empty-state-card">
+              <ShieldAlert :size="32" class="empty-icon" />
+              <h4>暂无规则与事实</h4>
+              <p>设定公理事实与行为规则，能够保障大模型在剧情扩写与角色对话时不违背世界观。</p>
+              <Button variant="primary" size="md" @click="openAdd('rule')">
+                <Plus :size="15" /> 新增规则 / 事实
+              </Button>
+            </div>
+          </section>
 
-              <div class="card-foot">
-                <span class="foot-impact">🎯 AI 扩写与审校硬性门禁</span>
-              </div>
-            </article>
+          <!-- 4. 时间线网格 -->
+          <section v-if="activeTab === 'timeline' || activeTab === 'all'" class="entity-section">
+            <div v-if="activeTab === 'all'" class="section-heading">
+              <Clock3 :size="16" class="section-heading-icon" />
+              <h3>时间线历史 ({{ filteredTimeline.length }})</h3>
+            </div>
 
-            <!-- 事实卡片 -->
-            <article
-              v-for="fact in filteredFacts"
-              :key="fact.factId"
-              class="clean-entity-card fact-card"
-            >
-              <div class="card-head">
-                <div class="card-avatar fact-avatar">
-                  <BookOpen :size="18" />
+            <div v-if="filteredTimeline.length > 0" class="entity-cards-grid">
+              <article
+                v-for="ev in filteredTimeline"
+                :key="ev.timelineEventId"
+                class="clean-entity-card timeline-card"
+              >
+                <div class="card-head">
+                  <div class="card-avatar timeline-avatar">
+                    <Calendar :size="18" />
+                  </div>
+                  <div class="card-title-block">
+                    <h4 class="card-name">{{ ev.title }}</h4>
+                    <span class="card-sub">{{ ev.localDate }}</span>
+                  </div>
+                  <div class="card-head-actions">
+                    <Badge tone="neutral">时间线</Badge>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label="编辑时间线事件"
+                      @click="openEditTimeline(ev)"
+                    >
+                      <Pencil :size="14" />
+                    </Button>
+                  </div>
                 </div>
-                <div class="card-title-block">
-                  <h4 class="card-name">世界常识事实</h4>
-                  <span class="card-sub">{{ fact.visibility === "player" ? "玩家公开可见" : "创作者隐藏" }}</span>
+
+                <p class="card-body-text">
+                  {{ ev.summary || "记录在世界观历史中发生的重要标志性事件。" }}
+                </p>
+
+                <div class="card-foot">
+                  <span class="foot-impact">🎯 主线历史前置与背景</span>
                 </div>
-                <div class="card-head-actions">
-                  <Badge tone="info">{{ fact.visibility === "player" ? "公开事实" : "暗线事实" }}</Badge>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="编辑事实"
-                    @click="openEditFact(fact)"
-                  >
-                    <Pencil :size="14" />
-                  </Button>
-                </div>
-              </div>
+              </article>
+            </div>
 
-              <p class="card-body-text">{{ fact.text }}</p>
-
-              <div class="card-foot">
-                <span class="foot-impact">🎯 全局提示词与对话常识库</span>
-              </div>
-            </article>
-          </div>
-
-          <div v-else-if="activeTab === 'rules_facts'" class="empty-state-card">
-            <ShieldAlert :size="32" class="empty-icon" />
-            <h4>暂无规则与事实</h4>
-            <p>设定公理事实与行为规则，能够保障大模型在剧情扩写与角色对话时不违背世界观。</p>
-            <Button variant="primary" size="md" @click="openAdd('rule')">
-              <Plus :size="15" /> 新增规则 / 事实
-            </Button>
-          </div>
-        </section>
-
-        <!-- 4. 时间线网格 -->
-        <section v-if="activeTab === 'timeline' || activeTab === 'all'" class="entity-section">
-          <div v-if="activeTab === 'all'" class="section-heading">
-            <Clock3 :size="16" class="section-heading-icon" />
-            <h3>时间线历史 ({{ filteredTimeline.length }})</h3>
-          </div>
-
-          <div v-if="filteredTimeline.length > 0" class="entity-cards-grid">
-            <article
-              v-for="ev in filteredTimeline"
-              :key="ev.timelineEventId"
-              class="clean-entity-card timeline-card"
-            >
-              <div class="card-head">
-                <div class="card-avatar timeline-avatar">
-                  <Calendar :size="18" />
-                </div>
-                <div class="card-title-block">
-                  <h4 class="card-name">{{ ev.title }}</h4>
-                  <span class="card-sub">{{ ev.localDate }}</span>
-                </div>
-                <div class="card-head-actions">
-                  <Badge tone="neutral">时间线</Badge>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="编辑时间线事件"
-                    @click="openEditTimeline(ev)"
-                  >
-                    <Pencil :size="14" />
-                  </Button>
-                </div>
-              </div>
-
-              <p class="card-body-text">
-                {{ ev.summary || "记录在世界观历史中发生的重要标志性事件。" }}
-              </p>
-
-              <div class="card-foot">
-                <span class="foot-impact">🎯 主线历史前置与背景</span>
-              </div>
-            </article>
-          </div>
-
-          <div v-else-if="activeTab === 'timeline'" class="empty-state-card">
-            <Clock3 :size="32" class="empty-icon" />
-            <h4>暂无时间线事件</h4>
-            <p>记录历史大事件与剧幕节点，梳理宏观编年史。</p>
-            <Button variant="primary" size="md" @click="openAdd('timeline')">
-              <Plus :size="15" /> 新增时间线事件
-            </Button>
-          </div>
-        </section>
-      </div>
+            <div v-else-if="activeTab === 'timeline'" class="empty-state-card">
+              <Clock3 :size="32" class="empty-icon" />
+              <h4>暂无时间线事件</h4>
+              <p>记录历史大事件与剧幕节点，梳理宏观编年史。</p>
+              <Button variant="primary" size="md" @click="openAdd('timeline')">
+                <Plus :size="15" /> 新增时间线事件
+              </Button>
+            </div>
+          </section>
+        </div>
+      </template>
     </template>
 
     <!-- 🌟 影响驱动型数据创建 / 编辑抽屉 -->
@@ -644,6 +683,8 @@ const filteredTimeline = computed(() => {
       <form class="world-edit-form" @submit.prevent="emit('previewCanonDraft'); worldDrawerOpen = false">
         <Field label="故事空间名称" hint="例如：主线故事世界 或 枫丹廷的生活物语">
           <Input
+            id="v2-world-name"
+            aria-label="故事空间名称"
             :model-value="draftWorldName"
             :disabled="loading"
             placeholder="故事空间名称"
@@ -653,6 +694,8 @@ const filteredTimeline = computed(() => {
 
         <Field label="世界观背景前提 / Premise" hint="注入所有下游场景与提示词的最高世界观设定">
           <Textarea
+            id="v2-world-premise"
+            aria-label="故事前提"
             :model-value="draftPremise"
             :disabled="loading"
             :rows="5"
@@ -754,6 +797,50 @@ const filteredTimeline = computed(() => {
   font-size: 13px;
   line-height: 1.5;
   opacity: 0.9;
+}
+
+.hero-right-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* 🌲 视图模式双切换器 */
+.view-mode-toggle-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px;
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+}
+
+.view-toggle-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: var(--radius-sm);
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all var(--motion-fast);
+  white-space: nowrap;
+}
+
+.view-toggle-pill:hover {
+  color: var(--text-strong);
+}
+
+.view-toggle-pill.active {
+  background: var(--surface);
+  color: var(--primary);
+  box-shadow: var(--shadow-sm);
 }
 
 .hero-stats-row {
@@ -1088,12 +1175,9 @@ const filteredTimeline = computed(() => {
     align-items: stretch;
   }
 
-  .hero-actions {
+  .hero-right-actions {
     width: 100%;
-  }
-
-  .hero-actions > * {
-    width: 100%;
+    justify-content: space-between;
   }
 
   .canon-toolbar {
