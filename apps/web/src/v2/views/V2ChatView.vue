@@ -1,7 +1,24 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
-import { Activity, ArrowLeft, BookOpen, Copy, ImagePlus, MoreHorizontal, Send, Smile, Sparkles, Square, Sticker, UserRound, X } from "@lucide/vue";
+import {
+  Activity,
+  ArrowLeft,
+  BookOpen,
+  Copy,
+  ImagePlus,
+  MoreHorizontal,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
+  Send,
+  Smile,
+  Sparkles,
+  Square,
+  Sticker,
+  X,
+} from "@lucide/vue";
 
 import Button from "../../components/ui/Button.vue";
 import Textarea from "../../components/ui/Textarea.vue";
@@ -63,6 +80,36 @@ const modelSummary = computed(() => {
   return `${model.profileName ?? model.model} · ${model.inputModalities.includes("image") ? "文本 · 图片" : "文本"}`;
 });
 
+// Panel collapse state
+const sidebarCollapsed = ref(false);
+const contextCollapsed = ref(false);
+
+function toggleSidebar(): void {
+  sidebarCollapsed.value = !sidebarCollapsed.value;
+}
+
+function toggleContext(): void {
+  if (typeof window !== "undefined" && window.innerWidth <= 1199) {
+    void toggleCharacterPanel();
+  } else {
+    contextCollapsed.value = !contextCollapsed.value;
+  }
+}
+
+const icebreakers = computed(() => {
+  const charName = context.value?.character.name || conversationTitle.value || "你";
+  return [
+    `「${charName}，今天有什么新奇的故事想分享吗？」`,
+    `「跟我聊聊关于这个世界正在发生的事情吧。」`,
+    `「接下来我们该去哪里探险？」`,
+  ];
+});
+
+function applyIcebreaker(text: string): void {
+  input.value = text;
+  void sendMessage();
+}
+
 // Multimodal composer state
 interface PendingAttachment {
   readonly mediaId: string;
@@ -87,6 +134,38 @@ const loadingOlder = ref(false);
 const loadingOlderError = ref("");
 const isNearBottom = ref(true);
 const showScrollHint = ref(false);
+
+async function handlePaste(event: ClipboardEvent): Promise<void> {
+  const items = event.clipboardData?.items;
+  if (!items) return;
+  for (const item of items) {
+    if (item.type.startsWith("image/")) {
+      const file = item.getAsFile();
+      if (file) {
+        event.preventDefault();
+        await uploadImageFile(file);
+        break;
+      }
+    }
+  }
+}
+
+async function uploadImageFile(file: File): Promise<void> {
+  if (pendingAttachments.value.length >= MAX_ATTACHMENTS || imageUploading.value) return;
+  imageUploading.value = true;
+  errorMessage.value = "";
+  try {
+    const media = await client.uploadMedia(file);
+    pendingAttachments.value = [
+      ...pendingAttachments.value,
+      { mediaId: media.mediaId, mediaRef: media.mediaRef, mimeType: media.mimeType },
+    ].slice(0, MAX_ATTACHMENTS);
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : "图片上传失败";
+  } finally {
+    imageUploading.value = false;
+  }
+}
 
 // Diagnostics state
 const showDiagnostics = ref(false);
@@ -436,20 +515,8 @@ async function onImageSelected(event: Event): Promise<void> {
   const inputElement = event.target as HTMLInputElement;
   const files = Array.from(inputElement.files ?? []).slice(0, Math.max(0, MAX_ATTACHMENTS - pendingAttachments.value.length));
   inputElement.value = "";
-  if (files.length === 0 || imageUploading.value) return;
-  imageUploading.value = true;
-  errorMessage.value = "";
-  try {
-    const uploaded: PendingAttachment[] = [];
-    for (const file of files) {
-      const media = await client.uploadMedia(file);
-      uploaded.push({ mediaId: media.mediaId, mediaRef: media.mediaRef, mimeType: media.mimeType });
-    }
-    pendingAttachments.value = [...pendingAttachments.value, ...uploaded].slice(0, MAX_ATTACHMENTS);
-  } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : "图片上传失败";
-  } finally {
-    imageUploading.value = false;
+  for (const file of files) {
+    await uploadImageFile(file);
   }
 }
 
@@ -562,29 +629,51 @@ function openConversation(nextId: string): void {
 </script>
 
 <template>
-  <div class="v2-chat-page">
+  <div
+    class="v2-chat-page"
+    :class="{
+      'sidebar-collapsed': sidebarCollapsed,
+      'context-collapsed': contextCollapsed
+    }"
+  >
     <aside class="v2-chat-conversations" aria-label="会话列表">
       <ChatConversationSidebar :active-conversation-id="conversationId" @select="openConversation" />
     </aside>
 
     <section class="v2-chat-main">
       <header class="v2-chat-header">
-        <Button variant="ghost" size="icon" aria-label="返回聊天" @click="router.push('/v2/chat')">
-          <ArrowLeft :size="18" aria-hidden="true" />
-        </Button>
+        <div class="v2-chat-header-left">
+          <Button
+            variant="ghost"
+            size="icon"
+            :title="sidebarCollapsed ? '展开会话列表' : '折叠会话列表'"
+            :aria-label="sidebarCollapsed ? '展开会话列表' : '折叠会话列表'"
+            @click="toggleSidebar"
+          >
+            <PanelLeftOpen v-if="sidebarCollapsed" :size="18" aria-hidden="true" />
+            <PanelLeftClose v-else :size="18" aria-hidden="true" />
+          </Button>
+          <Button variant="ghost" size="icon" aria-label="返回聊天首页" @click="router.push('/v2/chat')">
+            <ArrowLeft :size="18" aria-hidden="true" />
+          </Button>
+        </div>
+
         <div class="v2-chat-title">
           <h2>{{ conversationTitle }}</h2>
           <small v-if="modelSummary" class="v2-chat-model">{{ modelSummary }}</small>
         </div>
+
         <div class="v2-chat-header-actions">
           <Button
             variant="ghost"
             size="icon"
-            aria-label="角色信息"
-            :aria-expanded="showCharacterPanel"
-            @click="toggleCharacterPanel"
+            :title="contextCollapsed ? '展开角色面板' : '折叠角色面板'"
+            :aria-label="contextCollapsed ? '展开角色面板' : '折叠角色面板'"
+            :class="{ active: !contextCollapsed }"
+            @click="toggleContext"
           >
-            <UserRound :size="18" aria-hidden="true" />
+            <PanelRightClose v-if="!contextCollapsed" :size="18" aria-hidden="true" />
+            <PanelRightOpen v-else :size="18" aria-hidden="true" />
           </Button>
           <Button
             v-if="streaming"
@@ -646,116 +735,139 @@ function openConversation(nextId: string): void {
         aria-live="polite"
         @scroll="handleScroll"
       >
-        <div v-if="loadingOlder" class="v2-chat-pagination-status">正在加载更早的历史记录…</div>
-        <div v-else-if="loadingOlderError" class="v2-chat-pagination-status v2-chat-pagination-error">
-          加载更早消息失败
-          <Button variant="ghost" size="sm" @click="loadOlderMessages">重试</Button>
+        <div class="v2-chat-messages-inner">
+          <div v-if="loadingOlder" class="v2-chat-pagination-status">正在加载更早的历史记录…</div>
+          <div v-else-if="loadingOlderError" class="v2-chat-pagination-status v2-chat-pagination-error">
+            加载更早消息失败
+            <Button variant="ghost" size="sm" @click="loadOlderMessages">重试</Button>
+          </div>
+          <div v-else-if="!hasMore && messages.length >= 50" class="v2-chat-pagination-status">已加载全部历史记录</div>
+
+          <ChatMessageBubble
+            v-for="message in messages"
+            :key="message.messageId"
+            :message="message"
+            :conversation-title="conversationTitle"
+            :media-url="client.mediaUrl"
+            @preview-image="openImagePreview"
+          />
+
+          <button v-if="showScrollHint" type="button" class="v2-chat-scroll-hint" @click="jumpToLatest">
+            ↓ 查看新消息
+          </button>
         </div>
-        <div v-else-if="!hasMore && messages.length >= 50" class="v2-chat-pagination-status">已加载全部历史记录</div>
-
-        <ChatMessageBubble
-          v-for="message in messages"
-          :key="message.messageId"
-          :message="message"
-          :conversation-title="conversationTitle"
-          :media-url="client.mediaUrl"
-          @preview-image="openImagePreview"
-        />
-
-        <button v-if="showScrollHint" type="button" class="v2-chat-scroll-hint" @click="jumpToLatest">
-          ↓ 查看新消息
-        </button>
       </div>
 
       <div class="v2-chat-composer-wrap">
-        <ChatEmojiPicker :open="emojiOpen" @select="insertEmoji" @close="emojiOpen = false" />
-        <ChatStickerPicker :open="stickerOpen" @select="sendSticker" @close="stickerOpen = false" />
-
-        <form class="v2-chat-composer" @submit.prevent="sendMessage()">
-          <p v-if="!modelConfigured" class="v2-chat-composer-notice">
-            尚未配置聊天模型。
-            <RouterLink to="/v2/settings/models">前往模型与能力</RouterLink>
-          </p>
-
-          <div v-if="pendingAttachments.length" class="v2-chat-attachment-preview" aria-label="待发送图片">
-            <div v-for="(attachment, index) in pendingAttachments" :key="attachment.mediaId" class="v2-chat-attachment-chip">
-              <img :src="client.mediaUrl(attachment.mediaRef)" :alt="'待发送图片 ' + (index + 1)" />
-              <button type="button" :aria-label="'移除图片 ' + (index + 1)" @click="removePendingAttachment(index)">×</button>
-            </div>
+        <div class="v2-chat-composer-inner">
+          <!-- 开场破冰建议气泡 -->
+          <div v-if="messages.length <= 1 && modelConfigured" class="v2-chat-icebreakers">
+            <span class="v2-icebreaker-title">
+              <Sparkles :size="12" aria-hidden="true" />
+              <span>开场建议</span>
+            </span>
+            <button
+              v-for="(prompt, idx) in icebreakers"
+              :key="idx"
+              type="button"
+              class="v2-icebreaker-chip"
+              :disabled="sending || streaming"
+              @click="applyIcebreaker(prompt)"
+            >
+              {{ prompt }}
+            </button>
           </div>
 
-          <input
-            ref="fileInput"
-            type="file"
-            accept="image/png,image/jpeg,image/webp,image/gif"
-            multiple
-            class="v2-chat-file-input"
-            aria-hidden="true"
-            tabindex="-1"
-            @change="onImageSelected"
-          />
+          <ChatEmojiPicker :open="emojiOpen" @select="insertEmoji" @close="emojiOpen = false" />
+          <ChatStickerPicker :open="stickerOpen" @select="sendSticker" @close="stickerOpen = false" />
 
-          <div class="v2-chat-composer-row">
-            <div class="v2-chat-composer-actions">
-              <Button
-                variant="ghost"
-                size="icon"
-                type="button"
-                aria-label="表情"
-                :aria-expanded="emojiOpen"
-                @click="emojiOpen = !emojiOpen; stickerOpen = false"
-              >
-                <Smile :size="18" aria-hidden="true" />
-              </Button>
-              <Button
-                v-if="imageEnabled"
-                variant="ghost"
-                size="icon"
-                type="button"
-                :loading="imageUploading"
-                :disabled="sending || streaming || loading || imageUploading"
-                aria-label="发送图片"
-                @click="pickImage"
-              >
-                <ImagePlus :size="18" aria-hidden="true" />
-              </Button>
-              <Button
-                v-if="imageEnabled"
-                variant="ghost"
-                size="icon"
-                type="button"
-                aria-label="表情包"
-                :aria-expanded="stickerOpen"
-                @click="stickerOpen = !stickerOpen; emojiOpen = false"
-              >
-                <Sticker :size="18" aria-hidden="true" />
-              </Button>
+          <form class="v2-chat-composer" @submit.prevent="sendMessage()">
+            <p v-if="!modelConfigured" class="v2-chat-composer-notice">
+              尚未配置聊天模型。
+              <RouterLink to="/v2/settings/models">前往模型与能力</RouterLink>
+            </p>
+
+            <div v-if="pendingAttachments.length" class="v2-chat-attachment-preview" aria-label="待发送图片">
+              <div v-for="(attachment, index) in pendingAttachments" :key="attachment.mediaId" class="v2-chat-attachment-chip">
+                <img :src="client.mediaUrl(attachment.mediaRef)" :alt="'待发送图片 ' + (index + 1)" />
+                <button type="button" :aria-label="'移除图片 ' + (index + 1)" @click="removePendingAttachment(index)">×</button>
+              </div>
             </div>
 
-            <Textarea
-              v-model="input"
-              variant="composer"
-              auto-grow
-              :rows="1"
-              placeholder="输入消息……"
-              :disabled="sending || streaming || loading || !modelConfigured"
-              aria-label="输入消息"
-              @keydown.enter.exact.prevent="sendMessage()"
+            <input
+              ref="fileInput"
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              multiple
+              class="v2-chat-file-input"
+              aria-hidden="true"
+              tabindex="-1"
+              @change="onImageSelected"
             />
 
-            <Button
-              variant="primary"
-              size="md"
-              type="submit"
-              class="v2-chat-send-btn"
-              :loading="sending"
-              :disabled="!canSend"
-            >
-              <Send :size="16" aria-hidden="true" />
-              <span>发送</span>
-            </Button>
-          </div>
-        </form>
+            <div class="v2-chat-composer-row">
+              <div class="v2-chat-composer-actions">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  type="button"
+                  aria-label="表情"
+                  :aria-expanded="emojiOpen"
+                  @click="emojiOpen = !emojiOpen; stickerOpen = false"
+                >
+                  <Smile :size="18" aria-hidden="true" />
+                </Button>
+                <Button
+                  v-if="imageEnabled"
+                  variant="ghost"
+                  size="icon"
+                  type="button"
+                  :loading="imageUploading"
+                  :disabled="sending || streaming || loading || imageUploading"
+                  aria-label="发送图片"
+                  @click="pickImage"
+                >
+                  <ImagePlus :size="18" aria-hidden="true" />
+                </Button>
+                <Button
+                  v-if="imageEnabled"
+                  variant="ghost"
+                  size="icon"
+                  type="button"
+                  aria-label="表情包"
+                  :aria-expanded="stickerOpen"
+                  @click="stickerOpen = !stickerOpen; emojiOpen = false"
+                >
+                  <Sticker :size="18" aria-hidden="true" />
+                </Button>
+              </div>
+
+              <Textarea
+                v-model="input"
+                variant="composer"
+                auto-grow
+                :rows="1"
+                placeholder="输入消息（Enter 发送，Shift + Enter 换行）……"
+                :disabled="sending || streaming || loading || !modelConfigured"
+                aria-label="输入消息"
+                @paste="handlePaste"
+                @keydown.enter.exact.prevent="sendMessage()"
+              />
+
+              <Button
+                variant="primary"
+                size="md"
+                type="submit"
+                class="v2-chat-send-btn"
+                :loading="sending"
+                :disabled="!canSend"
+              >
+                <Send :size="16" aria-hidden="true" />
+                <span>发送</span>
+              </Button>
+            </div>
+          </form>
+        </div>
       </div>
     </section>
 
@@ -790,13 +902,27 @@ function openConversation(nextId: string): void {
 <style scoped>
 .v2-chat-page {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr) 300px;
+  grid-template-columns: 280px minmax(0, 1fr) 320px;
   grid-template-areas: "sidebar main context";
   gap: 0;
+  width: 100%;
   height: 100%;
   min-height: 0;
   position: relative;
   background: var(--surface-soft);
+  transition: grid-template-columns 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.v2-chat-page.sidebar-collapsed {
+  grid-template-columns: 0px minmax(0, 1fr) 320px;
+}
+
+.v2-chat-page.context-collapsed {
+  grid-template-columns: 280px minmax(0, 1fr) 0px;
+}
+
+.v2-chat-page.sidebar-collapsed.context-collapsed {
+  grid-template-columns: 0px minmax(0, 1fr) 0px;
 }
 
 .v2-chat-conversations {
@@ -805,6 +931,14 @@ function openConversation(nextId: string): void {
   min-height: 0;
   border-right: 1px solid var(--border);
   background: var(--surface);
+  overflow: hidden;
+  transition: opacity 0.2s ease;
+}
+
+.sidebar-collapsed .v2-chat-conversations {
+  opacity: 0;
+  pointer-events: none;
+  border-right: 0;
 }
 
 .v2-chat-main {
@@ -824,12 +958,19 @@ function openConversation(nextId: string): void {
   padding: var(--space-4);
   border-left: 1px solid var(--border);
   background: var(--surface);
+  transition: opacity 0.2s ease, padding 0.2s ease;
+}
+
+.context-collapsed .v2-chat-context {
+  opacity: 0;
+  pointer-events: none;
+  padding: 0;
+  border-left: 0;
 }
 
 @media (max-width: 1199px) {
   .v2-chat-page {
-    grid-template-columns: 260px minmax(0, 1fr);
-    grid-template-areas: "sidebar main";
+    grid-template-columns: 260px minmax(0, 1fr) 0px;
   }
 
   .v2-chat-context {
@@ -839,8 +980,7 @@ function openConversation(nextId: string): void {
 
 @media (max-width: 820px) {
   .v2-chat-page {
-    grid-template-columns: 1fr;
-    grid-template-areas: "main";
+    grid-template-columns: 0px minmax(0, 1fr) 0px;
   }
 
   .v2-chat-conversations {
@@ -853,11 +993,17 @@ function openConversation(nextId: string): void {
   align-items: center;
   flex: 0 0 auto;
   gap: var(--space-3);
-  padding: var(--space-3) var(--space-5);
+  padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--border);
   background: var(--surface-glass);
   backdrop-filter: blur(12px);
   z-index: 10;
+}
+
+.v2-chat-header-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
 }
 
 .v2-chat-title {
@@ -954,8 +1100,70 @@ function openConversation(nextId: string): void {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
+  padding: var(--space-4);
+}
+
+.v2-chat-messages-inner {
+  max-width: 900px;
+  width: 100%;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
   gap: var(--space-4);
-  padding: var(--space-4) clamp(16px, 4vw, 36px);
+}
+
+.v2-chat-composer-wrap {
+  flex: 0 0 auto;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  background: var(--surface-glass);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid var(--border);
+}
+
+.v2-chat-composer-inner {
+  max-width: 900px;
+  width: 100%;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.v2-chat-icebreakers {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+}
+
+.v2-icebreaker-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.v2-icebreaker-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-strong);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: border-color var(--motion-fast), background var(--motion-fast), transform var(--motion-fast);
+}
+
+.v2-icebreaker-chip:hover:not(:disabled) {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary);
+  transform: translateY(-1px);
 }
 
 .v2-chat-pagination-status {
@@ -971,188 +1179,6 @@ function openConversation(nextId: string): void {
   justify-content: center;
   gap: var(--space-2);
   color: var(--danger);
-}
-
-.v2-chat-message-row {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-3);
-  max-width: 100%;
-}
-
-.v2-chat-message-user {
-  flex-direction: row-reverse;
-}
-
-.v2-chat-message-assistant {
-  flex-direction: row;
-}
-
-.v2-chat-avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-full);
-  display: grid;
-  place-items: center;
-  font-size: var(--text-sm);
-  font-weight: 700;
-  flex-shrink: 0;
-  user-select: none;
-}
-
-.v2-chat-avatar-assistant {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  color: var(--primary);
-  box-shadow: var(--shadow-sm);
-}
-
-.v2-chat-avatar-user {
-  background: var(--primary-soft);
-  color: var(--primary);
-  border: 1px solid var(--border);
-}
-
-.v2-chat-message-content {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  max-width: min(780px, 82%);
-  min-width: 0;
-}
-
-.v2-chat-message-user .v2-chat-message-content {
-  align-items: flex-end;
-}
-
-.v2-chat-message-assistant .v2-chat-message-content {
-  align-items: flex-start;
-}
-
-.v2-chat-bubble {
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-lg);
-  font-size: var(--text-base);
-  line-height: 1.7;
-  color: var(--text);
-  word-break: break-word;
-}
-
-.v2-chat-message-assistant .v2-chat-bubble {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-sm);
-  border-top-left-radius: var(--radius-xs);
-}
-
-.v2-chat-message-user .v2-chat-bubble {
-  background: var(--primary);
-  color: var(--on-primary);
-  box-shadow: var(--shadow-sm);
-  border-top-right-radius: var(--radius-xs);
-}
-
-.v2-chat-bubble-pending {
-  min-width: 60px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.v2-chat-text {
-  white-space: pre-wrap;
-}
-
-.v2-chat-typing {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 6px;
-}
-
-.v2-chat-typing-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: var(--radius-full);
-  background: var(--primary);
-  opacity: 0.5;
-  animation: typingPulse 1.2s infinite ease-in-out;
-}
-
-.v2-chat-typing-dot:nth-child(2) {
-  animation-delay: 0.2s;
-}
-
-.v2-chat-typing-dot:nth-child(3) {
-  animation-delay: 0.4s;
-}
-
-@keyframes typingPulse {
-  0%, 80%, 100% {
-    transform: scale(0.6);
-    opacity: 0.3;
-  }
-  40% {
-    transform: scale(1.1);
-    opacity: 1;
-  }
-}
-
-.v2-chat-images {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
-}
-
-.v2-chat-image-card {
-  overflow: hidden;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border);
-}
-
-.v2-chat-image {
-  max-width: 200px;
-  max-height: 200px;
-  object-fit: cover;
-  cursor: zoom-in;
-  display: block;
-}
-
-.v2-chat-status-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 8px;
-  border-radius: var(--radius-full);
-  font-size: 11px;
-  color: var(--muted);
-  background: var(--surface-soft);
-  border: 1px solid var(--border);
-}
-
-.v2-chat-status-error {
-  color: var(--danger);
-  background: var(--danger-soft);
-  border-color: var(--danger);
-}
-
-.v2-chat-status-interrupted {
-  color: var(--warning);
-  background: var(--warning-soft);
-  border-color: var(--warning);
-}
-
-.v2-chat-status-pending {
-  color: var(--primary);
-  background: var(--primary-soft);
-}
-
-.v2-chat-status-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: var(--radius-full);
-  background: currentColor;
 }
 
 .v2-chat-scroll-hint {
