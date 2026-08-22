@@ -147,6 +147,9 @@ async function loadConversation(): Promise<void> {
           const instantRes = await chatClient.createInstantStory({
             persona: props.character.summary || props.character.name,
             displayName: props.character.name,
+            storyWorldId: "world:main" as V2StoryWorldId,
+            storyWorldName: "主线故事世界",
+            characterId: props.character.characterId,
             idempotencyKey: `instant:${props.character.characterId}:${Date.now()}` as V2IdempotencyKey,
           });
           conversationId.value = instantRes.conversation.conversationId;

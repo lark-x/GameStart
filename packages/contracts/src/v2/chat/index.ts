@@ -91,6 +91,9 @@ export interface V2ChatMediaDto {
 export interface V2CreateInstantStoryRequest {
   readonly persona: string;
   readonly displayName?: string;
+  readonly storyWorldId?: V2StoryWorldId;
+  readonly storyWorldName?: string;
+  readonly characterId?: V2CharacterId;
   readonly idempotencyKey: V2IdempotencyKey;
 }
 

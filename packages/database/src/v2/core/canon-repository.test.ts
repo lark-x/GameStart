@@ -181,7 +181,7 @@ test("V2 canon repositories map all persisted canon and graph row shapes", async
     const scene = await graph.createScene({ storyWorldId: "world_rows", sceneId: "scene", arcId: arc.arcId, title: "Scene", body: "Body", isEntry: true });
     await graph.createChoice({ storyWorldId: "world_rows", choiceId: "choice", sourceSceneId: scene.sceneId, targetSceneId: scene.sceneId, label: "Choice", gates: [], consequences: [] });
     await graph.createStateVariable({ storyWorldId: "world_rows", key: "Flag", valueType: "boolean", defaultValue: false });
-    assert.equal((await canon.listWorlds())[0]?.summary, "Summary");
+    assert.equal((await canon.getWorld("world_rows" as never))?.summary, "Summary");
     assert.equal((await canon.listLocations("world_rows" as never))[0]?.summary, "Loc summary");
     assert.equal((await canon.listCharacters("world_rows" as never))[0]?.homeLocationId, "loc");
     assert.equal((await canon.listFacts("world_rows" as never))[0]?.visibility, "creator_only");
