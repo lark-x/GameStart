@@ -201,6 +201,7 @@ async function handleSave(): Promise<void> {
     :open="open"
     :title="editingNode ? '编辑故事设定' : '影响驱动型设定录入'"
     :description="editingNode ? '修改设定并同步更新故事下游消费' : '定义新设定的同时指明其在故事流程中的作用与影响'"
+    @close="emit('update:open', false)"
     @update:open="emit('update:open', $event)"
   >
     <div class="story-node-drawer-content">
