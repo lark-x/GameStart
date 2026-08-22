@@ -1,4 +1,4 @@
-﻿﻿<script setup lang="ts">
+﻿<script setup lang="ts">
 import { onBeforeUnmount, onMounted } from "vue";
 import { X } from "@lucide/vue";
 import Button from "./Button.vue";
@@ -9,10 +9,18 @@ const props = withDefaults(defineProps<{
   description?: string;
 }>(), { description: "" });
 
-const emit = defineEmits<{ close: [] }>();
+const emit = defineEmits<{
+  close: [];
+  "update:open": [value: boolean];
+}>();
+
+function handleClose(): void {
+  emit("close");
+  emit("update:open", false);
+}
 
 function onKeydown(event: KeyboardEvent) {
-  if (event.key === "Escape" && props.open) emit("close");
+  if (event.key === "Escape" && props.open) handleClose();
 }
 
 onMounted(() => window.addEventListener("keydown", onKeydown));
@@ -21,7 +29,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
 
 <template>
   <Teleport to="body">
-    <div v-if="open" class="ui-modal-backdrop" role="presentation" @click.self="emit('close')">
+    <div v-if="open" class="ui-modal-backdrop" role="presentation" @click.self="handleClose">
       <section class="ui-modal" role="dialog" aria-modal="true" aria-labelledby="ui-modal-title">
         <header class="ui-modal-header">
           <div>
@@ -29,7 +37,9 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
             <h2 id="ui-modal-title">{{ title }}</h2>
             <p v-if="description">{{ description }}</p>
           </div>
-          <Button variant="ghost" size="icon" aria-label="关闭弹窗" title="关闭" @click="emit('close')"><X :size="18" /></Button>
+          <Button variant="ghost" size="icon" aria-label="关闭弹窗" title="关闭" @click="handleClose">
+            <X :size="18" />
+          </Button>
         </header>
         <div class="ui-modal-body"><slot /></div>
         <footer v-if="$slots.footer" class="ui-modal-footer"><slot name="footer" /></footer>

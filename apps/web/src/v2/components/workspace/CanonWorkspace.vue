@@ -678,6 +678,7 @@ const filteredTimeline = computed(() => {
       :open="worldDrawerOpen"
       title="编辑故事世界设定"
       description="修改故事世界空间名称与世界观背景前提"
+      @close="worldDrawerOpen = false"
       @update:open="worldDrawerOpen = $event"
     >
       <form class="world-edit-form" @submit.prevent="emit('previewCanonDraft'); worldDrawerOpen = false">
@@ -708,8 +709,11 @@ const filteredTimeline = computed(() => {
           <Button variant="primary" size="md" type="submit" :disabled="!hasDraftChanges || loading">
             保存修改
           </Button>
-          <Button variant="secondary" size="md" :disabled="loading" @click="emit('resetCanonDraft')">
+          <Button v-if="hasDraftChanges" variant="secondary" size="md" :disabled="loading" @click="emit('resetCanonDraft')">
             重置草稿
+          </Button>
+          <Button variant="ghost" size="md" type="button" @click="worldDrawerOpen = false">
+            取消
           </Button>
         </div>
       </form>

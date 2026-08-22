@@ -245,6 +245,9 @@ function navigate(path: string): void {
           <Button v-if="selectedNode.actionPath" variant="primary" size="md" @click="navigate(selectedNode.actionPath)">
             前往使用
           </Button>
+          <Button variant="ghost" size="md" @click="closeDrawer">
+            关闭
+          </Button>
         </div>
       </div>
     </Drawer>

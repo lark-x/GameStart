@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import {
   BookOpen,
   GitFork,
@@ -33,6 +33,19 @@ const drawerInitialKind = ref<CanonEntityKind>("character");
 const editingNode = ref<StorySkillNode | null>(null);
 const topologyModalOpen = ref(false);
 const topologyFocusNode = ref<StorySkillNode | null>(null);
+
+function onKeydown(event: KeyboardEvent): void {
+  if (event.key === "Escape") {
+    if (topologyModalOpen.value) {
+      topologyModalOpen.value = false;
+    } else if (selectedNode.value) {
+      selectedNode.value = null;
+    }
+  }
+}
+
+onMounted(() => window.addEventListener("keydown", onKeydown));
+onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
 
 // Transform snapshot into 4-tier node arrays
 const tier1WorldNodes = computed<readonly StorySkillNode[]>(() => {
