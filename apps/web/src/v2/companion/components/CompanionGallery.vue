@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { Image as ImageIcon, Sparkles } from "@lucide/vue";
+import { Image as ImageIcon } from "@lucide/vue";
 import type { V2CompanionGalleryItemDto } from "@living-network/contracts/v2";
 import type { V2CompanionClient } from "../client.ts";
 
@@ -40,29 +40,25 @@ function formatDate(iso: string): string {
 </script>
 
 <template>
-  <div class="gallery-view-container">
-    <div class="gallery-view-header">
-      <div class="gallery-header-left">
-        <div class="header-icon-pill">
-          <ImageIcon :size="18" class="text-primary" aria-hidden="true" />
+  <div class="gallery-view-layout">
+    <!-- 顶栏 -->
+    <div class="gallery-topbar">
+      <div class="topbar-left">
+        <div class="title-row">
+          <h2 class="gallery-page-title">相册</h2>
+          <span class="photo-count-pill">{{ filteredGallery.length }} 张写真</span>
         </div>
-        <div>
-          <div class="title-counter-row">
-            <h3 class="gallery-view-title">伴侣写真与回忆画廊</h3>
-            <span class="gallery-badge">{{ filteredGallery.length }} 张照片</span>
-          </div>
-          <p class="gallery-view-desc">汇集与伴侣角色在对话、朋友圈互动中生成的所有高清自拍与珍贵插画瞬间</p>
-        </div>
+        <span class="gallery-subtitle">伴侣写真回忆相册 · 收集对话与朋友圈生成的高清插画瞬间</span>
       </div>
 
-      <!-- 角色分类 -->
+      <!-- 角色分类筛选 -->
       <div v-if="availableCharacters.length > 2" class="gallery-filter-chips">
         <button
           v-for="char in availableCharacters"
           :key="char"
           type="button"
           class="chip-btn"
-          :class="{ 'is-active-chip': selectedCharacter === char }"
+          :class="{ active: selectedCharacter === char }"
           @click="selectedCharacter = char"
         >
           {{ char === 'ALL' ? '全部角色' : char }}
@@ -70,18 +66,19 @@ function formatDate(iso: string): string {
       </div>
     </div>
 
-    <div v-if="loading && gallery.length === 0" class="gallery-loading">
-      <div class="loading-spinner" />
-      <span>正在载入回忆相册…</span>
+    <!-- 照片网格 -->
+    <div v-if="loading && gallery.length === 0" class="gallery-loading-state">
+      <div class="spinner-ring" />
+      <span>正在载入回忆写真相册…</span>
     </div>
 
     <div v-else-if="filteredGallery.length === 0" class="gallery-empty-state">
-      <Sparkles :size="32" class="text-primary" aria-hidden="true" />
+      <ImageIcon :size="32" class="text-primary" aria-hidden="true" />
       <h4>暂无写真照片</h4>
-      <p>在朋友圈或故事对话中与角色互动，角色会主动为你生成带有精美配图的生活瞬间！</p>
+      <p>在朋友圈或故事对话中与伴侣互动，角色会主动为你生成带有精美配图的生活瞬间！</p>
     </div>
 
-    <div v-else class="gallery-photo-grid">
+    <div v-else class="gallery-grid">
       <div
         v-for="item in filteredGallery"
         :key="item.mediaId"
@@ -95,9 +92,9 @@ function formatDate(iso: string): string {
           loading="lazy"
           @error="(e) => (e.target as HTMLElement).style.display = 'none'"
         />
-        <div class="photo-overlay">
-          <span class="photo-char-tag">{{ item.characterName }}</span>
-          <span class="photo-date-tag">{{ formatDate(item.createdAt) }}</span>
+        <div class="photo-meta-overlay">
+          <span class="char-tag">{{ item.characterName }}</span>
+          <span class="date-tag">{{ formatDate(item.createdAt) }}</span>
         </div>
       </div>
     </div>
@@ -105,16 +102,16 @@ function formatDate(iso: string): string {
 </template>
 
 <style scoped>
-.gallery-view-container {
+.gallery-view-layout {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
   width: 100%;
-  max-width: 1080px;
+  max-width: 1040px;
   margin: 0 auto;
 }
 
-.gallery-view-header {
+.gallery-topbar {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
@@ -125,36 +122,26 @@ function formatDate(iso: string): string {
   box-shadow: var(--shadow-sm);
 }
 
-.gallery-header-left {
+.topbar-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.title-row {
   display: flex;
   align-items: center;
   gap: var(--space-3);
 }
 
-.header-icon-pill {
-  width: 40px;
-  height: 40px;
-  border-radius: var(--radius-full);
-  background: var(--primary-soft);
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-}
-
-.title-counter-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.gallery-view-title {
+.gallery-page-title {
   margin: 0;
-  font-size: var(--text-base);
-  font-weight: 800;
+  font-size: var(--text-lg);
+  font-weight: 900;
   color: var(--text-strong);
 }
 
-.gallery-badge {
+.photo-count-pill {
   font-size: 11px;
   color: var(--primary);
   background: var(--primary-soft);
@@ -163,8 +150,7 @@ function formatDate(iso: string): string {
   font-weight: 700;
 }
 
-.gallery-view-desc {
-  margin: 2px 0 0;
+.gallery-subtitle {
   font-size: var(--text-xs);
   color: var(--muted);
 }
@@ -182,7 +168,7 @@ function formatDate(iso: string): string {
   background: var(--surface-soft);
   color: var(--muted);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
   transition: all var(--motion-fast);
 }
@@ -192,14 +178,14 @@ function formatDate(iso: string): string {
   color: var(--text-strong);
 }
 
-.chip-btn.is-active-chip {
+.chip-btn.active {
   background: var(--primary);
   color: #fff;
   border-color: var(--primary);
 }
 
 /* 照片网格 */
-.gallery-photo-grid {
+.gallery-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: var(--space-3);
@@ -228,18 +214,18 @@ function formatDate(iso: string): string {
   transform: scale(1.06);
 }
 
-.photo-overlay {
+.photo-meta-overlay {
   position: absolute;
   inset: auto 0 0 0;
   padding: var(--space-2) var(--space-3);
-  background: linear-gradient(to top, rgb(0 0 0 / 75%), transparent);
+  background: linear-gradient(to top, rgb(0 0 0 / 80%), transparent);
   display: flex;
   align-items: center;
   justify-content: space-between;
   color: #fff;
 }
 
-.photo-char-tag {
+.char-tag {
   font-size: 11px;
   font-weight: 700;
   background: rgb(255 255 255 / 20%);
@@ -248,12 +234,12 @@ function formatDate(iso: string): string {
   border-radius: var(--radius-full);
 }
 
-.photo-date-tag {
+.date-tag {
   font-size: 10px;
   opacity: 0.9;
 }
 
-.gallery-loading,
+.gallery-loading-state,
 .gallery-empty-state {
   padding: var(--space-12) var(--space-4);
   text-align: center;
@@ -267,15 +253,9 @@ function formatDate(iso: string): string {
   border: 1px solid var(--border);
 }
 
-.gallery-empty-state h4 {
-  margin: 0;
-  font-size: var(--text-base);
-  color: var(--text-strong);
-}
-
-.loading-spinner {
-  width: 24px;
-  height: 24px;
+.spinner-ring {
+  width: 26px;
+  height: 26px;
   border: 2px solid var(--border);
   border-top-color: var(--primary);
   border-radius: var(--radius-full);
