@@ -276,10 +276,10 @@ onUnmounted(() => {
 .v2-sidebar {
   display: flex;
   flex-direction: column;
-  flex: 0 0 232px;
-  width: 232px;
+  flex: 0 0 196px;
+  width: 196px;
   min-width: 0;
-  padding: var(--space-4) var(--space-3);
+  padding: var(--space-3) var(--space-2);
   border-right: 1px solid var(--border);
   background: var(--surface-soft);
   position: sticky;
@@ -293,13 +293,13 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
-  padding: 0 var(--space-2) var(--space-3);
+  padding: 0 var(--space-1) var(--space-2);
 }
 
 .v2-brand {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
   min-width: 0;
   color: var(--text-strong);
   text-decoration: none;
@@ -307,27 +307,28 @@ onUnmounted(() => {
 
 .v2-brand > span:last-child {
   display: grid;
-  gap: 2px;
+  gap: 1px;
   min-width: 0;
 }
 
 .v2-brand strong {
   overflow: hidden;
-  font-size: var(--text-md);
+  font-size: var(--text-sm);
+  font-weight: 800;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .v2-brand small {
   color: var(--muted);
-  font-size: var(--text-xs);
+  font-size: 11px;
 }
 
 .v2-brand-mark {
   display: grid;
   flex: 0 0 auto;
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   place-items: center;
   border-radius: var(--radius-md);
   background: var(--primary);
@@ -510,12 +511,12 @@ onUnmounted(() => {
   position: relative;
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  min-height: 40px;
-  padding: 0 var(--space-3);
+  gap: var(--space-2);
+  min-height: 36px;
+  padding: 0 var(--space-2);
   border-radius: var(--radius-md);
   color: var(--muted);
-  font-size: var(--text-sm);
+  font-size: 13px;
   font-weight: 600;
   text-decoration: none;
   transition: background var(--motion-fast), color var(--motion-fast), transform var(--motion-fast);
@@ -659,7 +660,7 @@ onUnmounted(() => {
 }
 
 .v2-companion-launcher-slot {
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-1);
   margin-top: auto;
 }
 
@@ -667,7 +668,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: 8px 12px;
+  padding: 6px 10px;
   border-radius: var(--radius-md);
   background: var(--surface-soft);
   border: 1px solid var(--border);

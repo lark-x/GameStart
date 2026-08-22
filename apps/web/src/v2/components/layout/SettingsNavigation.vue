@@ -132,10 +132,10 @@ function isItemActive(item: SettingsNavItem): boolean {
 }
 
 .settings-nav-group-label {
-  margin: var(--space-3) 0 var(--space-1);
-  padding: 0 var(--space-3);
+  margin: var(--space-2) 0 var(--space-1);
+  padding: 0 var(--space-2);
   color: var(--muted);
-  font-size: var(--text-xs);
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -148,12 +148,12 @@ function isItemActive(item: SettingsNavItem): boolean {
 .settings-nav-link {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  min-height: 36px;
-  padding: 0 var(--space-3);
+  gap: var(--space-2);
+  min-height: 32px;
+  padding: 0 var(--space-2);
   border-radius: var(--radius-md);
   color: var(--muted);
-  font-size: var(--text-sm);
+  font-size: 13px;
   font-weight: 600;
   text-decoration: none;
   transition: background var(--motion-fast), color var(--motion-fast);

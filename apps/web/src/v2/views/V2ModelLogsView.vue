@@ -106,7 +106,6 @@ onMounted(() => {
 <template>
   <div class="v2-model-logs">
     <PageHeader
-
       title="调用日志"
       description="记录模型请求、响应、耗时、Token 用量和错误上下文。密钥、Bearer 令牌和超长文本会在写入前脱敏或截断，默认保留 30 天。"
     >
@@ -141,13 +140,16 @@ onMounted(() => {
           <option value="interrupted">中断</option>
         </Select>
       </Field>
-      <Button variant="primary" size="md" :loading="loading" @click="load()">
-        <Search :size="16" aria-hidden="true" />
-        查询
-      </Button>
+      <div class="v2-log-filter-btn-wrap">
+        <Button variant="primary" size="md" :loading="loading" @click="load()">
+          <Search :size="16" aria-hidden="true" />
+          查询
+        </Button>
+      </div>
     </section>
 
     <div class="v2-log-layout">
+      <!-- 左侧：日志列表 -->
       <section class="v2-log-list-card" aria-labelledby="v2-log-list-title">
         <div class="v2-log-list-head">
           <div>
@@ -158,7 +160,13 @@ onMounted(() => {
         </div>
         <EmptyState v-if="!hasLogs && !loading" title="暂时没有模型调用" description="模型测试或 Worker 执行过请求后，记录会出现在这里。" />
         <div v-else class="v2-log-items">
-          <article v-for="log in logs" :key="log.id" class="v2-log-item" :class="{ selected: selected?.id === log.id }">
+          <article
+            v-for="log in logs"
+            :key="log.id"
+            class="v2-log-item"
+            :class="{ selected: selected?.id === log.id }"
+            @click="openLog(log)"
+          >
             <div class="v2-log-item-main">
               <div class="v2-log-item-title">
                 <Badge :tone="statusTone(log.status)">{{ statusLabel(log.status) }}</Badge>
@@ -167,7 +175,7 @@ onMounted(() => {
               <p>{{ messagePreview(log) }}</p>
               <small>{{ formatTime(log.startedAt) }} · {{ log.durationMs === undefined ? "耗时未知" : `${log.durationMs} ms` }}</small>
             </div>
-            <Button variant="ghost" size="icon" aria-label="查看日志详情" @click="openLog(log)">
+            <Button variant="ghost" size="icon" aria-label="查看日志详情" @click.stop="openLog(log)">
               <ChevronRight :size="17" aria-hidden="true" />
             </Button>
           </article>
@@ -177,6 +185,7 @@ onMounted(() => {
         </Button>
       </section>
 
+      <!-- 右侧：详情面板 -->
       <section class="v2-log-detail-card" aria-labelledby="v2-log-detail-title">
         <div class="v2-log-list-head">
           <div>
@@ -190,8 +199,8 @@ onMounted(() => {
             <div><dt>状态</dt><dd><Badge :tone="statusTone(selected.status)">{{ statusLabel(selected.status) }}</Badge></dd></div>
             <div><dt>能力</dt><dd>{{ selected.capability }}</dd></div>
             <div><dt>档案</dt><dd>{{ selected.profileName ?? "环境变量兜底" }}</dd></div>
-            <div><dt>关联 ID</dt><dd>{{ selected.correlationId ?? "—" }}</dd></div>
-            <div><dt>任务 ID</dt><dd>{{ selected.jobId ?? "—" }}</dd></div>
+            <div><dt>关联 ID</dt><dd class="mono-text">{{ selected.correlationId ?? "—" }}</dd></div>
+            <div><dt>任务 ID</dt><dd class="mono-text">{{ selected.jobId ?? "—" }}</dd></div>
             <div><dt>Token</dt><dd>{{ selected.totalTokens ?? "—" }}</dd></div>
           </dl>
           <div v-if="selected.errorMessage" class="v2-log-error-box">
@@ -215,54 +224,76 @@ onMounted(() => {
 <style scoped>
 .v2-model-logs {
   display: grid;
-  gap: var(--space-5);
+  gap: var(--space-4);
 }
 
 .v2-log-filters,
 .v2-log-list-card,
 .v2-log-detail-card {
-  padding: var(--space-5);
+  padding: var(--space-4) var(--space-5);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--surface);
   box-shadow: var(--shadow-sm);
+  min-width: 0;
 }
 
 .v2-log-filters {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(160px, 0.85fr) auto;
-  gap: var(--space-4);
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(130px, 0.8fr) auto;
+  gap: var(--space-3);
   align-items: end;
+}
+
+.v2-log-filter-btn-wrap {
+  display: flex;
+  align-items: flex-end;
+  padding-bottom: 2px;
 }
 
 .v2-log-layout {
   display: grid;
-  grid-template-columns: minmax(300px, 0.85fr) minmax(0, 1.15fr);
-  gap: var(--space-5);
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  gap: var(--space-4);
   align-items: start;
-  container-type: inline-size;
 }
 
 .v2-log-list-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: var(--space-4);
-  margin-bottom: var(--space-4);
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
 }
 
 .v2-log-list-head h2 {
   margin: 0;
   color: var(--text-strong);
-  font-size: var(--text-lg);
+  font-size: var(--text-md);
+  font-weight: 800;
 }
 
 .v2-section-kicker {
   margin: 0 0 var(--space-1);
   color: var(--primary);
-  font-size: var(--text-xs);
+  font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.v2-log-list-card {
+  max-height: calc(100vh - 230px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.v2-log-detail-card {
+  position: sticky;
+  top: var(--space-4);
+  max-height: calc(100vh - 230px);
+  overflow-y: auto;
 }
 
 .v2-log-items {
@@ -275,9 +306,16 @@ onMounted(() => {
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-3);
-  border: 1px solid transparent;
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--surface-soft);
+  cursor: pointer;
+  transition: all var(--motion-fast);
+}
+
+.v2-log-item:hover {
+  background: var(--surface);
+  border-color: var(--primary);
 }
 
 .v2-log-item.selected {
@@ -310,14 +348,15 @@ onMounted(() => {
 }
 
 .v2-log-item p {
-  margin: var(--space-2) 0;
+  margin: var(--space-1) 0;
   color: var(--muted);
   font-size: var(--text-xs);
+  line-height: 1.4;
 }
 
 .v2-log-item small {
   color: var(--faint);
-  font-size: var(--text-xs);
+  font-size: 11px;
 }
 
 .v2-log-more {
@@ -327,59 +366,71 @@ onMounted(() => {
 
 .v2-log-detail {
   display: grid;
-  gap: var(--space-4);
+  gap: var(--space-3);
 }
 
 .v2-log-meta {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: var(--space-2) var(--space-3);
   margin: 0;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
 }
 
 .v2-log-meta div {
   display: grid;
-  gap: var(--space-1);
+  gap: 2px;
   min-width: 0;
-  padding-bottom: var(--space-2);
-  border-bottom: 1px solid var(--border);
 }
 
 .v2-log-meta dt {
   color: var(--muted);
-  font-size: var(--text-xs);
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .v2-log-meta dd {
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   margin: 0;
   color: var(--text-strong);
-  font-size: var(--text-sm);
+  font-size: 13px;
   font-weight: 700;
+}
+
+.mono-text {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
 }
 
 .v2-log-content-block {
   display: grid;
-  gap: var(--space-2);
+  gap: var(--space-1);
 }
 
 .v2-log-content-block h3 {
   margin: 0;
   color: var(--text-strong);
-  font-size: var(--text-sm);
+  font-size: 13px;
+  font-weight: 800;
 }
 
 .v2-log-content-block pre {
-  max-height: 260px;
+  max-height: 220px;
   overflow: auto;
   margin: 0;
   padding: var(--space-3);
   border-radius: var(--radius-md);
   background: var(--surface-muted);
+  border: 1px solid var(--border);
   color: var(--text);
-  font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
   white-space: pre-wrap;
-  word-break: break-word;
+  word-break: break-all;
 }
 
 .v2-log-error-box,
@@ -393,36 +444,40 @@ onMounted(() => {
 .v2-log-error {
   background: var(--danger-soft);
   color: var(--danger);
+  border: 1px solid var(--danger);
 }
 
 .v2-log-error-box p {
-  margin: var(--space-2) 0 0;
+  margin: var(--space-1) 0 0;
+  font-size: 12px;
 }
 
 .v2-log-success {
   background: var(--success-soft);
   color: var(--success);
+  border: 1px solid var(--success);
 }
 
-@container (max-width: 700px) {
+@media (max-width: 1040px) {
   .v2-log-layout {
     grid-template-columns: 1fr;
   }
+  .v2-log-list-card,
+  .v2-log-detail-card {
+    position: static;
+    max-height: none;
+  }
 }
 
-@media (max-width: 900px) {
+@media (max-width: 768px) {
   .v2-log-filters {
     grid-template-columns: 1fr;
   }
-
-  .v2-log-filters > .ui-button {
+  .v2-log-filter-btn-wrap {
     width: 100%;
   }
-}
-
-@media (max-width: 560px) {
-  .v2-log-meta {
-    grid-template-columns: 1fr;
+  .v2-log-filter-btn-wrap > .ui-button {
+    width: 100%;
   }
 }
 </style>
