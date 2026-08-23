@@ -15,7 +15,7 @@ import { useNarrativeCandidateStore } from "../stores/useNarrativeCandidateStore
 import NarrativeExplorer from "../components/explorer/NarrativeExplorer.vue";
 import NarrativeOutlineBoard from "../components/outline/NarrativeOutlineBoard.vue";
 import SceneScriptEditor from "../components/script/SceneScriptEditor.vue";
-import NarrativeInspector from "../../story/components/NarrativeInspector.vue";
+import NarrativeInspector from "../components/inspector/NarrativeInspector.vue";
 import NarrativeDiagnosticsPanel from "../../story/components/NarrativeDiagnosticsPanel.vue";
 import Modal from "../../../components/ui/Modal.vue";
 import Button from "../../../components/ui/Button.vue";
