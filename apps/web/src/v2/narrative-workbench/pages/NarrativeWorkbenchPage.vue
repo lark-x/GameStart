@@ -15,6 +15,7 @@ import { useNarrativeRevisionStore } from "../stores/useNarrativeRevisionStore.t
 import { useSceneNavigationGuard } from "../composables/useSceneNavigationGuard.ts";
 import { useNarrativeSceneLoader } from "../composables/useNarrativeSceneLoader.ts";
 import { useNarrativeAutosave } from "../composables/useNarrativeAutosave.ts";
+import { useNarrativeRouteSync } from "../composables/useNarrativeRouteSync.ts";
 import { createNarrativeMutationKey } from "../utils/idempotency.ts";
 import NarrativeExplorer from "../components/explorer/NarrativeExplorer.vue";
 import NarrativeOutlineBoard from "../components/outline/NarrativeOutlineBoard.vue";
@@ -35,8 +36,6 @@ const route = useRoute();
 const router = useRouter();
 
 const storyWorldId = computed(() => (route.params.storyWorldId as string) || "default");
-const mode = ref<NarrativeWorkbenchMode>((route.query.mode as NarrativeWorkbenchMode) || "script");
-const selectedSceneId = ref<string | null>((route.query.scene as string) || null);
 
 const outlineStore = useNarrativeOutlineStore();
 const docStore = useSceneDocumentStore();
@@ -47,21 +46,49 @@ const revisionStore = useNarrativeRevisionStore();
 const choiceStore = useNarrativeChoiceStore();
 const candidateStore = useNarrativeCandidateStore();
 
+// Unified Session State Getters/Setters
+const mode = computed<NarrativeWorkbenchMode>({
+  get: () => sessionStore.mode,
+  set: (m) => sessionStore.setMode(m),
+});
+
+const selectedSceneId = computed<string | null>({
+  get: () => sessionStore.activeSceneId,
+  set: (id) => sessionStore.selectScene(id),
+});
+
+const explorerCollapsed = computed<boolean>({
+  get: () => sessionStore.explorerCollapsed,
+  set: (v) => { sessionStore.explorerCollapsed = v; },
+});
+
+const inspectorCollapsed = computed<boolean>({
+  get: () => sessionStore.inspectorCollapsed,
+  set: (v) => { sessionStore.inspectorCollapsed = v; },
+});
+
+const previewActive = computed<boolean>({
+  get: () => sessionStore.previewActive,
+  set: (v) => { sessionStore.previewActive = v; },
+});
+
+const bottomDrawerOpen = computed<boolean>({
+  get: () => sessionStore.bottomPanelOpen,
+  set: (v) => sessionStore.setBottomPanelOpen(v),
+});
+
+const routeSync = useNarrativeRouteSync(route, router);
+
 const sceneLoader = useNarrativeSceneLoader();
 const navGuard = useSceneNavigationGuard({
   storyWorldId,
   onNavigateScene: (sceneId) => {
-    selectedSceneId.value = sceneId;
+    sessionStore.selectScene(sceneId);
   },
 });
 const autosave = useNarrativeAutosave({
   storyWorldId,
 });
-
-const explorerCollapsed = ref(false);
-const inspectorCollapsed = ref(false);
-const previewActive = ref(false);
-const bottomDrawerOpen = ref(false);
 
 // Template Modal
 const templateModalOpen = ref(false);
@@ -97,42 +124,47 @@ const sceneTitle = computed(() => activeScene.value?.scene?.title || docStore.do
 
 const saveStatus = computed<SaveStatus>(() => autosave.saveStatus.value);
 
-// Sync query params and on-demand mode loading
-watch(mode, (newMode) => {
-  router.replace({ query: { ...route.query, mode: newMode } });
-  if (storyWorldId.value) {
-    if (newMode === "review") {
-      void candidateStore.fetchCandidates(storyWorldId.value);
-    } else if (newMode === "outline" || newMode === "flow") {
-      void choiceStore.fetchChoicesForWorld(storyWorldId.value);
+// On-demand mode data loading
+watch(
+  () => sessionStore.mode,
+  (newMode) => {
+    if (storyWorldId.value) {
+      if (newMode === "review") {
+        void candidateStore.fetchCandidates(storyWorldId.value);
+      } else if (newMode === "outline" || newMode === "flow") {
+        void choiceStore.fetchChoicesForWorld(storyWorldId.value);
+      }
     }
-  }
-}, { immediate: true });
+  },
+  { immediate: true },
+);
 
-watch(selectedSceneId, (newSceneId) => {
-  router.replace({ query: { ...route.query, scene: newSceneId || undefined } });
-  if (newSceneId) {
-    sceneLoader.loadScene(storyWorldId.value, newSceneId);
-  }
-});
+watch(
+  () => sessionStore.activeSceneId,
+  (newSceneId) => {
+    if (newSceneId) {
+      sceneLoader.loadScene(storyWorldId.value, newSceneId);
+    }
+  },
+);
 
 onMounted(async () => {
+  routeSync.syncFromRoute();
   if (storyWorldId.value) {
-    sessionStore.initSession(storyWorldId.value, mode.value, selectedSceneId.value || undefined);
     // On-Demand Initial Load: Only fetch outline & diagnostics
     await Promise.all([
       outlineStore.fetchOutline(storyWorldId.value),
       diagStore.fetchDiagnostics(storyWorldId.value),
     ]);
-    if (!selectedSceneId.value && outlineStore.outline) {
+    if (!sessionStore.activeSceneId && outlineStore.outline) {
       const firstScene = outlineStore.outline.arcs[0]?.chapters[0]?.quests[0]?.scenes[0]
         || outlineStore.outline.arcs[0]?.looseScenes[0]
         || outlineStore.outline.unassignedScenes[0];
       if (firstScene) {
-        selectedSceneId.value = firstScene.sceneId;
+        sessionStore.selectScene(firstScene.sceneId);
       }
-    } else if (selectedSceneId.value) {
-      await sceneLoader.loadScene(storyWorldId.value, selectedSceneId.value);
+    } else if (sessionStore.activeSceneId) {
+      await sceneLoader.loadScene(storyWorldId.value, sessionStore.activeSceneId);
     }
   }
 });
@@ -142,12 +174,9 @@ function handleBack() {
 }
 
 function handleSelectScene(sceneId: string) {
-  if (selectedSceneId.value === sceneId) return;
+  if (sessionStore.activeSceneId === sceneId) return;
   navGuard.requestSceneChange(sceneId, () => {
-    selectedSceneId.value = sceneId;
-    if (mode.value === "outline") {
-      mode.value = "script";
-    }
+    sessionStore.selectScene(sceneId);
   });
 }
 
@@ -155,7 +184,7 @@ async function handleCreateScene(payload?: { arcId?: string; chapterId?: string;
   const title = prompt("请输入新场景名称：", "新场景");
   if (!title) return;
   const sceneId = await outlineStore.createScene(storyWorldId.value, { ...payload, title });
-  selectedSceneId.value = sceneId;
+  sessionStore.selectScene(sceneId);
   mode.value = "script";
 }
 

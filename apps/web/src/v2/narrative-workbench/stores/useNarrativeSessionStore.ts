@@ -1,4 +1,4 @@
-import { defineStore } from "pinia";
+﻿import { defineStore } from "pinia";
 import type { NarrativeWorkbenchMode } from "../components/topbar/NarrativeModeTabs.vue";
 
 export type BottomPanelTab = "problems" | "search" | "jobs" | "candidates";
@@ -10,6 +10,7 @@ export interface NarrativeSessionState {
   activeChapterId: string | null;
   activeQuestId: string | null;
   activeSceneId: string | null;
+  activeBlockId: string | null;
   explorerCollapsed: boolean;
   inspectorCollapsed: boolean;
   inspectorTab: "properties" | "references" | "choices" | "ai";
@@ -26,6 +27,7 @@ export const useNarrativeSessionStore = defineStore("narrativeSession", {
     activeChapterId: null,
     activeQuestId: null,
     activeSceneId: null,
+    activeBlockId: null,
     explorerCollapsed: false,
     inspectorCollapsed: false,
     inspectorTab: "properties",
@@ -35,11 +37,21 @@ export const useNarrativeSessionStore = defineStore("narrativeSession", {
   }),
 
   actions: {
-    initSession(storyWorldId: string, queryMode?: NarrativeWorkbenchMode, sceneId?: string, questId?: string): void {
+    initSession(
+      storyWorldId: string,
+      queryMode?: NarrativeWorkbenchMode,
+      sceneId?: string,
+      questId?: string,
+      panelTab?: BottomPanelTab,
+    ): void {
       this.storyWorldId = storyWorldId;
       if (queryMode) this.mode = queryMode;
-      if (sceneId) this.activeSceneId = sceneId;
-      if (questId) this.activeQuestId = questId;
+      if (sceneId !== undefined) this.activeSceneId = sceneId || null;
+      if (questId !== undefined) this.activeQuestId = questId || null;
+      if (panelTab) {
+        this.bottomPanelTab = panelTab;
+        this.bottomPanelOpen = true;
+      }
     },
 
     setMode(mode: NarrativeWorkbenchMode): void {
@@ -63,6 +75,10 @@ export const useNarrativeSessionStore = defineStore("narrativeSession", {
 
     selectArc(arcId: string | null): void {
       this.activeArcId = arcId;
+    },
+
+    setActiveBlockId(blockId: string | null): void {
+      this.activeBlockId = blockId;
     },
 
     toggleExplorer(): void {
@@ -91,8 +107,33 @@ export const useNarrativeSessionStore = defineStore("narrativeSession", {
       }
     },
 
+    setBottomPanelOpen(open: boolean): void {
+      this.bottomPanelOpen = open;
+    },
+
+    setBottomPanelTab(tab: BottomPanelTab): void {
+      this.bottomPanelTab = tab;
+      this.bottomPanelOpen = true;
+    },
+
     togglePreview(): void {
       this.previewActive = !this.previewActive;
+    },
+
+    resetSession(): void {
+      this.storyWorldId = "";
+      this.mode = "script";
+      this.activeArcId = null;
+      this.activeChapterId = null;
+      this.activeQuestId = null;
+      this.activeSceneId = null;
+      this.activeBlockId = null;
+      this.explorerCollapsed = false;
+      this.inspectorCollapsed = false;
+      this.inspectorTab = "properties";
+      this.bottomPanelOpen = false;
+      this.bottomPanelTab = "problems";
+      this.previewActive = false;
     },
   },
 });
