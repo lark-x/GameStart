@@ -96,8 +96,8 @@ export interface V2CreateChapterRequest {
   readonly title: string;
   readonly summary?: string;
   readonly ordinal?: number;
-  readonly expectedRevision: V2Revision;
-  readonly idempotencyKey: V2IdempotencyKey;
+  readonly expectedRevision?: V2Revision;
+  readonly idempotencyKey?: V2IdempotencyKey;
 }
 
 export interface V2UpdateChapterRequest {
@@ -105,8 +105,8 @@ export interface V2UpdateChapterRequest {
   readonly title?: string;
   readonly summary?: string | null;
   readonly ordinal?: number;
-  readonly expectedRevision: V2Revision;
-  readonly idempotencyKey: V2IdempotencyKey;
+  readonly expectedRevision?: V2Revision;
+  readonly idempotencyKey?: V2IdempotencyKey;
 }
 
 export interface V2CreateQuestRequest {
@@ -117,8 +117,8 @@ export interface V2CreateQuestRequest {
   readonly summary?: string;
   readonly kind?: V2QuestKind;
   readonly ordinal?: number;
-  readonly expectedRevision: V2Revision;
-  readonly idempotencyKey: V2IdempotencyKey;
+  readonly expectedRevision?: V2Revision;
+  readonly idempotencyKey?: V2IdempotencyKey;
 }
 
 export interface V2UpdateQuestRequest {
@@ -128,8 +128,8 @@ export interface V2UpdateQuestRequest {
   readonly summary?: string | null;
   readonly kind?: V2QuestKind;
   readonly ordinal?: number;
-  readonly expectedRevision: V2Revision;
-  readonly idempotencyKey: V2IdempotencyKey;
+  readonly expectedRevision?: V2Revision;
+  readonly idempotencyKey?: V2IdempotencyKey;
 }
 
 export interface V2DeleteHierarchyItemResponse {

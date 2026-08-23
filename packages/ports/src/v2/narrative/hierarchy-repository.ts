@@ -11,10 +11,13 @@ export interface V2NarrativeHierarchyRepository {
   createChapter(chapter: V2NarrativeChapter): Promise<V2NarrativeChapter>;
   updateChapter(chapter: V2NarrativeChapter): Promise<V2NarrativeChapter>;
   deleteChapter(criteria: { readonly storyWorldId: string; readonly chapterId: string }): Promise<void>;
+  countQuestsByChapter(criteria: { readonly storyWorldId: string; readonly chapterId: string }): Promise<number>;
+  countScenesByChapter(criteria: { readonly storyWorldId: string; readonly chapterId: string }): Promise<number>;
 
   getQuest(criteria: { readonly storyWorldId: string; readonly questId: string }): Promise<V2NarrativeQuest | undefined>;
   listQuests(storyWorldId: string, criteria?: { readonly arcId?: string; readonly chapterId?: string }): Promise<readonly V2NarrativeQuest[]>;
   createQuest(quest: V2NarrativeQuest): Promise<V2NarrativeQuest>;
   updateQuest(quest: V2NarrativeQuest): Promise<V2NarrativeQuest>;
   deleteQuest(criteria: { readonly storyWorldId: string; readonly questId: string }): Promise<void>;
+  countScenesByQuest(criteria: { readonly storyWorldId: string; readonly questId: string }): Promise<number>;
 }

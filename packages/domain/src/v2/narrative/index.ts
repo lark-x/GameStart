@@ -8,3 +8,4 @@ export * from "./timeline.ts";
 export * from "./template.ts";
 export * from "./context-fingerprint.ts";
 export * from "./diagnostics.ts";
+export * from "./hierarchy-validation.ts";

@@ -29,8 +29,8 @@ export function parseCreateChapterRequest(body: unknown): V2CreateChapterRequest
     title: b.title.trim(),
     ...(typeof b.summary === "string" && b.summary.trim() ? { summary: b.summary.trim() } : {}),
     ...(typeof b.ordinal === "number" ? { ordinal: b.ordinal } : {}),
-    expectedRevision: typeof b.expectedRevision === "number" ? (b.expectedRevision as any) : 1 as any,
-    idempotencyKey: typeof b.idempotencyKey === "string" && b.idempotencyKey.trim() ? (b.idempotencyKey.trim() as any) : `ch:${Date.now()}` as any,
+    ...(typeof b.expectedRevision === "number" ? { expectedRevision: b.expectedRevision as any } : {}),
+    ...(typeof b.idempotencyKey === "string" && b.idempotencyKey.trim() ? { idempotencyKey: b.idempotencyKey.trim() as any } : {}),
   };
 }
 
@@ -44,8 +44,8 @@ export function parseUpdateChapterRequest(body: unknown): V2UpdateChapterRequest
     ...(typeof b.title === "string" && b.title.trim() ? { title: b.title.trim() } : {}),
     ...(b.summary === null ? { summary: null } : typeof b.summary === "string" ? { summary: b.summary.trim() } : {}),
     ...(typeof b.ordinal === "number" ? { ordinal: b.ordinal } : {}),
-    expectedRevision: typeof b.expectedRevision === "number" ? (b.expectedRevision as any) : (typeof b.revision === "number" ? (b.revision as any) : 1 as any),
-    idempotencyKey: typeof b.idempotencyKey === "string" && b.idempotencyKey.trim() ? (b.idempotencyKey.trim() as any) : `ch_upd:${Date.now()}` as any,
+    ...(typeof b.expectedRevision === "number" ? { expectedRevision: b.expectedRevision as any } : {}),
+    ...(typeof b.idempotencyKey === "string" && b.idempotencyKey.trim() ? { idempotencyKey: b.idempotencyKey.trim() as any } : {}),
   };
 }
 
@@ -65,8 +65,8 @@ export function parseCreateQuestRequest(body: unknown): V2CreateQuestRequest {
     ...(typeof b.summary === "string" && b.summary.trim() ? { summary: b.summary.trim() } : {}),
     ...(typeof b.kind === "string" && b.kind.trim() ? { kind: b.kind.trim() as any } : {}),
     ...(typeof b.ordinal === "number" ? { ordinal: b.ordinal } : {}),
-    expectedRevision: typeof b.expectedRevision === "number" ? (b.expectedRevision as any) : 1 as any,
-    idempotencyKey: typeof b.idempotencyKey === "string" && b.idempotencyKey.trim() ? (b.idempotencyKey.trim() as any) : `q:${Date.now()}` as any,
+    ...(typeof b.expectedRevision === "number" ? { expectedRevision: b.expectedRevision as any } : {}),
+    ...(typeof b.idempotencyKey === "string" && b.idempotencyKey.trim() ? { idempotencyKey: b.idempotencyKey.trim() as any } : {}),
   };
 }
 
@@ -82,8 +82,8 @@ export function parseUpdateQuestRequest(body: unknown): V2UpdateQuestRequest {
     ...(b.summary === null ? { summary: null } : typeof b.summary === "string" ? { summary: b.summary.trim() } : {}),
     ...(typeof b.kind === "string" && b.kind.trim() ? { kind: b.kind.trim() as any } : {}),
     ...(typeof b.ordinal === "number" ? { ordinal: b.ordinal } : {}),
-    expectedRevision: typeof b.expectedRevision === "number" ? (b.expectedRevision as any) : (typeof b.revision === "number" ? (b.revision as any) : 1 as any),
-    idempotencyKey: typeof b.idempotencyKey === "string" && b.idempotencyKey.trim() ? (b.idempotencyKey.trim() as any) : `q_upd:${Date.now()}` as any,
+    ...(typeof b.expectedRevision === "number" ? { expectedRevision: b.expectedRevision as any } : {}),
+    ...(typeof b.idempotencyKey === "string" && b.idempotencyKey.trim() ? { idempotencyKey: b.idempotencyKey.trim() as any } : {}),
   };
 }
 
@@ -122,9 +122,9 @@ export function parseSaveSceneDocumentRequest(body: unknown): V2SaveSceneDocumen
     ...(typeof b.isEntry === "boolean" ? { isEntry: b.isEntry } : {}),
     ...(typeof b.ordinal === "number" ? { ordinal: b.ordinal } : {}),
     ...(blocks !== undefined ? { blocks } : {}),
-    expectedSceneRevision: typeof b.expectedSceneRevision === "number" ? b.expectedSceneRevision : (typeof b.revision === "number" ? b.revision : 1),
-    expectedRevision: typeof b.expectedRevision === "number" ? (b.expectedRevision as any) : 1 as any,
-    idempotencyKey: typeof b.idempotencyKey === "string" && b.idempotencyKey.trim() ? (b.idempotencyKey.trim() as any) : `doc:${Date.now()}` as any,
+    ...(typeof b.expectedSceneRevision === "number" ? { expectedSceneRevision: b.expectedSceneRevision } : typeof b.revision === "number" ? { expectedSceneRevision: b.revision } : {}),
+    ...(typeof b.expectedRevision === "number" ? { expectedRevision: b.expectedRevision as any } : {}),
+    ...(typeof b.idempotencyKey === "string" && b.idempotencyKey.trim() ? { idempotencyKey: b.idempotencyKey.trim() as any } : {}),
   };
 }
 
@@ -154,8 +154,8 @@ export function parseReplaceSceneReferencesRequest(body: unknown): V2ReplaceScen
     ...(b.mainLocationId === null ? { mainLocationId: null } : typeof b.mainLocationId === "string" && b.mainLocationId.trim() ? { mainLocationId: b.mainLocationId.trim() as any } : {}),
     ...(Array.isArray(b.participantCharacterIds) ? { participantCharacterIds: b.participantCharacterIds.map(String) as any } : {}),
     ...(references !== undefined ? { references } : {}),
-    expectedRevision: typeof b.expectedRevision === "number" ? (b.expectedRevision as any) : 1 as any,
-    idempotencyKey: typeof b.idempotencyKey === "string" && b.idempotencyKey.trim() ? (b.idempotencyKey.trim() as any) : `ref:${Date.now()}` as any,
+    ...(typeof b.expectedRevision === "number" ? { expectedRevision: b.expectedRevision as any } : {}),
+    ...(typeof b.idempotencyKey === "string" && b.idempotencyKey.trim() ? { idempotencyKey: b.idempotencyKey.trim() as any } : {}),
   };
 }
 
@@ -178,8 +178,8 @@ export function parseCreateLoreEntryRequest(body: unknown): V2CreateLoreEntryReq
     ...(typeof b.summary === "string" && b.summary.trim() ? { summary: b.summary.trim() } : {}),
     ...(typeof b.body === "string" ? { body: b.body } : {}),
     ...(Array.isArray(b.tags) ? { tags: b.tags.map(String) } : {}),
-    expectedRevision: typeof b.expectedRevision === "number" ? (b.expectedRevision as any) : 1 as any,
-    idempotencyKey: typeof b.idempotencyKey === "string" && b.idempotencyKey.trim() ? (b.idempotencyKey.trim() as any) : `lore:${Date.now()}` as any,
+    ...(typeof b.expectedRevision === "number" ? { expectedRevision: b.expectedRevision as any } : {}),
+    ...(typeof b.idempotencyKey === "string" && b.idempotencyKey.trim() ? { idempotencyKey: b.idempotencyKey.trim() as any } : {}),
   };
 }
 
@@ -195,8 +195,8 @@ export function parseUpdateLoreEntryRequest(body: unknown): V2UpdateLoreEntryReq
     ...(b.summary === null ? { summary: null } : typeof b.summary === "string" ? { summary: b.summary.trim() } : {}),
     ...(b.body === null ? { body: null } : typeof b.body === "string" ? { body: b.body } : {}),
     ...(Array.isArray(b.tags) ? { tags: b.tags.map(String) } : {}),
-    expectedRevision: typeof b.expectedRevision === "number" ? (b.expectedRevision as any) : (typeof b.revision === "number" ? (b.revision as any) : 1 as any),
-    idempotencyKey: typeof b.idempotencyKey === "string" && b.idempotencyKey.trim() ? (b.idempotencyKey.trim() as any) : `lore_upd:${Date.now()}` as any,
+    ...(typeof b.expectedRevision === "number" ? { expectedRevision: b.expectedRevision as any } : {}),
+    ...(typeof b.idempotencyKey === "string" && b.idempotencyKey.trim() ? { idempotencyKey: b.idempotencyKey.trim() as any } : {}),
   };
 }
 
@@ -211,8 +211,8 @@ export function parseApplyNarrativeTemplateRequest(body: unknown): V2ApplyNarrat
   return {
     templateId: b.templateId as any,
     mode: b.mode === "replace_empty" ? "replace_empty" : "append",
-    expectedRevision: typeof b.expectedRevision === "number" ? (b.expectedRevision as any) : 1 as any,
-    idempotencyKey: typeof b.idempotencyKey === "string" && b.idempotencyKey.trim() ? (b.idempotencyKey.trim() as any) : `tpl:${Date.now()}` as any,
+    ...(typeof b.expectedRevision === "number" ? { expectedRevision: b.expectedRevision as any } : {}),
+    ...(typeof b.idempotencyKey === "string" && b.idempotencyKey.trim() ? { idempotencyKey: b.idempotencyKey.trim() as any } : {}),
   };
 }
 

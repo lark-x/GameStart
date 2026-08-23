@@ -267,12 +267,13 @@ test("V2 Narrative API - End-to-end Hierarchy, Scene Documents, References, Lore
   assert.equal(listTemplatesRes.statusCode, 200);
   assert(listTemplatesRes.json().templates.length >= 5);
 
+  const currentWorld = (await canonRepo.getWorld("world_test" as any))!;
   const applyTemplateRes = await app.inject({
     method: "POST",
     url: "/api/v2/worlds/world_test/narrative/templates/apply",
     payload: {
       templateId: "three-act",
-      expectedRevision: 1,
+      expectedRevision: currentWorld.revision,
     },
   });
   assert.equal(applyTemplateRes.statusCode, 200);

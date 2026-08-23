@@ -283,6 +283,20 @@ export class SqliteNarrativeHierarchyRepository implements V2NarrativeHierarchyR
       .run(criteria.storyWorldId, criteria.chapterId);
   }
 
+  public async countQuestsByChapter(criteria: { readonly storyWorldId: string; readonly chapterId: string }): Promise<number> {
+    const row = this.db
+      .prepare("SELECT COUNT(*) as cnt FROM v2_narrative_quests WHERE story_world_id = ? AND chapter_id = ?")
+      .get(criteria.storyWorldId, criteria.chapterId) as { cnt: number } | undefined;
+    return Number(row?.cnt ?? 0);
+  }
+
+  public async countScenesByChapter(criteria: { readonly storyWorldId: string; readonly chapterId: string }): Promise<number> {
+    const row = this.db
+      .prepare("SELECT COUNT(*) as cnt FROM v2_scenes WHERE story_world_id = ? AND chapter_id = ?")
+      .get(criteria.storyWorldId, criteria.chapterId) as { cnt: number } | undefined;
+    return Number(row?.cnt ?? 0);
+  }
+
   public async getQuest(criteria: { readonly storyWorldId: string; readonly questId: string }): Promise<V2NarrativeQuest | undefined> {
     const row = this.db
       .prepare(
@@ -358,6 +372,13 @@ export class SqliteNarrativeHierarchyRepository implements V2NarrativeHierarchyR
     this.db
       .prepare("DELETE FROM v2_narrative_quests WHERE story_world_id = ? AND quest_id = ?")
       .run(criteria.storyWorldId, criteria.questId);
+  }
+
+  public async countScenesByQuest(criteria: { readonly storyWorldId: string; readonly questId: string }): Promise<number> {
+    const row = this.db
+      .prepare("SELECT COUNT(*) as cnt FROM v2_scenes WHERE story_world_id = ? AND quest_id = ?")
+      .get(criteria.storyWorldId, criteria.questId) as { cnt: number } | undefined;
+    return Number(row?.cnt ?? 0);
   }
 }
 

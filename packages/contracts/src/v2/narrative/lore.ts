@@ -40,8 +40,8 @@ export interface V2CreateLoreEntryRequest {
   readonly summary?: string;
   readonly body?: string;
   readonly tags?: readonly string[];
-  readonly expectedRevision: V2Revision;
-  readonly idempotencyKey: V2IdempotencyKey;
+  readonly expectedRevision?: V2Revision;
+  readonly idempotencyKey?: V2IdempotencyKey;
 }
 
 export interface V2UpdateLoreEntryRequest {
@@ -51,8 +51,8 @@ export interface V2UpdateLoreEntryRequest {
   readonly summary?: string | null;
   readonly body?: string | null;
   readonly tags?: readonly string[];
-  readonly expectedRevision: V2Revision;
-  readonly idempotencyKey: V2IdempotencyKey;
+  readonly expectedRevision?: V2Revision;
+  readonly idempotencyKey?: V2IdempotencyKey;
 }
 
 export interface V2LoreEntryWriteResponse {
