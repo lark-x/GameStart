@@ -18,11 +18,19 @@ export const useNarrativeChoiceStore = defineStore("narrativeChoice", {
     getChoicesForScene: (state) => (sceneId: string): readonly V2ChoiceDto[] => {
       return state.choicesBySourceSceneId[sceneId] ?? [];
     },
+
+    choicesForScene: (state) => (sceneId: string): readonly V2ChoiceDto[] => {
+      return state.choicesBySourceSceneId[sceneId] ?? [];
+    },
   },
 
   actions: {
     setChoicesForScene(sceneId: string, choices: V2ChoiceDto[]): void {
       this.choicesBySourceSceneId[sceneId] = choices;
+    },
+
+    async fetchChoices(storyWorldId: string, _sceneId?: string): Promise<void> {
+      return this.fetchChoicesForWorld(storyWorldId);
     },
 
     async fetchChoicesForWorld(storyWorldId: string): Promise<void> {

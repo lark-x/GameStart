@@ -4,15 +4,11 @@ import {
   Settings,
   MapPin,
   Users,
+  User,
   BookOpen,
   Sparkles,
-  Plus,
   Trash2,
-  Check,
   RefreshCw,
-  ExternalLink,
-  ChevronRight,
-  Info,
 } from "@lucide/vue";
 import { useSceneDocumentStore } from "../../../story/stores/useSceneDocumentStore.ts";
 import { useNarrativeReferenceStore } from "../../../story/stores/useNarrativeReferenceStore.ts";
@@ -21,8 +17,6 @@ import { useNarrativeChoiceStore } from "../../stores/useNarrativeChoiceStore.ts
 import CanonEntityPicker, { type EntityType } from "./CanonEntityPicker.vue";
 import type { V2CharacterSummary, V2LocationSummary } from "../../../adapters/types.ts";
 import type {
-  V2CharacterId,
-  V2LocationId,
   V2NarrativeGenerationContextResponse,
   V2StoryWorldId,
 } from "@living-network/contracts/v2";
@@ -121,7 +115,6 @@ const participatingCharacters = computed(() => {
     return {
       characterId: id,
       name: found?.name || id,
-      avatarUrl: found?.avatarUrl,
       isSpeaker: docStore.speakerCharacterIds.includes(id),
     };
   });
@@ -318,10 +311,9 @@ const participatingCharacters = computed(() => {
               >
                 <div class="flex items-center gap-2 min-w-0">
                   <div
-                    v-if="char.avatarUrl"
-                    class="w-6 h-6 rounded-full overflow-hidden shrink-0 border border-stone-200 dark:border-stone-700"
+                    class="w-6 h-6 rounded-full flex items-center justify-center shrink-0 border border-stone-200 dark:border-stone-700 bg-stone-100 dark:bg-stone-800 text-sky-500"
                   >
-                    <img :src="char.avatarUrl" :alt="char.name" class="w-full h-full object-cover" />
+                    <User class="h-3.5 w-3.5" />
                   </div>
                   <div class="min-w-0">
                     <div class="flex items-center gap-1.5">

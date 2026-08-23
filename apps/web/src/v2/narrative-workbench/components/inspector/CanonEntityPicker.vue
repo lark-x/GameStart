@@ -2,7 +2,7 @@
 import { computed, ref } from "vue";
 import { Search, User, MapPin, BookOpen, X, Check } from "@lucide/vue";
 import type { V2CharacterSummary, V2LocationSummary } from "../../../adapters/types.ts";
-import type { V2NarrativeLoreItem } from "@living-network/contracts/v2";
+import type { V2CanonLoreEntry } from "@living-network/contracts/v2";
 
 export type EntityType = "character" | "location" | "lore";
 
@@ -11,7 +11,6 @@ export interface EntityOption {
   type: EntityType;
   title: string;
   subtitle?: string;
-  avatarUrl?: string;
 }
 
 const props = defineProps<{
@@ -19,7 +18,7 @@ const props = defineProps<{
   title?: string;
   characters?: readonly V2CharacterSummary[];
   locations?: readonly V2LocationSummary[];
-  loreItems?: readonly V2NarrativeLoreItem[];
+  loreItems?: readonly V2CanonLoreEntry[];
   selectedIds?: readonly string[];
 }>();
 
@@ -36,8 +35,7 @@ const allOptions = computed<EntityOption[]>(() => {
       id: c.characterId,
       type: "character" as const,
       title: c.name,
-      subtitle: c.tagline || c.summary || c.characterId,
-      avatarUrl: c.avatarUrl,
+      subtitle: c.role ? `[${c.role}] ${c.summary || ""}` : c.summary || c.characterId,
     }));
   }
   if (props.type === "location" && props.locations) {
@@ -53,7 +51,7 @@ const allOptions = computed<EntityOption[]>(() => {
       id: item.loreId,
       type: "lore" as const,
       title: item.title,
-      subtitle: item.category ? `[${item.category}] ${item.summary || ""}` : item.summary || item.loreId,
+      subtitle: item.type ? `[${item.type}] ${item.summary || ""}` : item.summary || item.loreId,
     }));
   }
   return [];
@@ -130,18 +128,11 @@ function isSelected(id: string): boolean {
           >
             <div class="flex items-center gap-3 min-w-0">
               <div
-                v-if="option.avatarUrl"
-                class="w-8 h-8 rounded-full overflow-hidden shrink-0 border border-stone-200 dark:border-stone-700 bg-stone-100"
-              >
-                <img :src="option.avatarUrl" :alt="option.title" class="w-full h-full object-cover" />
-              </div>
-              <div
-                v-else
                 class="w-8 h-8 rounded-full flex items-center justify-center shrink-0 border border-stone-200 dark:border-stone-700 bg-stone-100 dark:bg-stone-800 text-stone-500"
               >
-                <User v-if="option.type === 'character'" class="h-4 w-4" />
-                <MapPin v-else-if="option.type === 'location'" class="h-4 w-4" />
-                <BookOpen v-else class="h-4 w-4" />
+                <User v-if="option.type === 'character'" class="h-4 w-4 text-sky-500" />
+                <MapPin v-else-if="option.type === 'location'" class="h-4 w-4 text-amber-500" />
+                <BookOpen v-else class="h-4 w-4 text-purple-500" />
               </div>
 
               <div class="min-w-0">
