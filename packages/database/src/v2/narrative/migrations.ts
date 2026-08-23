@@ -67,7 +67,8 @@ export const v2NarrativeHierarchyMigration: V2SqliteMigration = {
       db.exec("ALTER TABLE v2_scenes ADD COLUMN document_mode TEXT NOT NULL DEFAULT 'legacy_body';");
     }
     if (!names.has("updated_at")) {
-      db.exec("ALTER TABLE v2_scenes ADD COLUMN updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));");
+      db.exec("ALTER TABLE v2_scenes ADD COLUMN updated_at TEXT;");
+      db.exec("UPDATE v2_scenes SET updated_at = created_at WHERE updated_at IS NULL;");
     }
 
     db.exec(`
