@@ -49,9 +49,18 @@ test("rejects invalid V2 scene candidate JSON", () => {
   assert.throws(() => parseV2SceneCandidateText(JSON.stringify({ choices: [] })), /include scene/);
   assert.throws(
     () => parseV2SceneCandidateText(JSON.stringify({
-      scene: { sceneId: "scene", title: "Title", body: "Body", participantCharacterIds: [] },
+      scene: { sceneId: "scene", title: "Title", participantCharacterIds: [] },
       choices: [],
     })),
-    /choices/,
+    /body or at least one document block/,
   );
+});
+
+test("accepts blocks-only terminal candidates", () => {
+  const parsed = parseV2SceneCandidateText(JSON.stringify({
+    scene: { sceneId: "ending", title: "The End", document: { mode: "blocks", blocks: [{ kind: "narration", text: "Dawn arrives." }] }, participantCharacterIds: [] },
+    choices: [],
+  }));
+  assert.equal(parsed.payload.scene.body, undefined);
+  assert.equal(parsed.payload.choices.length, 0);
 });

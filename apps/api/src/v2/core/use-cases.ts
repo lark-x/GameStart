@@ -45,7 +45,6 @@ import type {
   V2GraphValidationDto,
   V2GraphDiagnosticDto,
   V2LocationId,
-  V2NarrativeReference,
   V2LoadRuntimeSaveRequest,
   V2Revision,
   V2LocationDto,
@@ -82,7 +81,7 @@ import type {
   V2UpdateSceneRequest, V2UpdateStateVariableRequest, V2UpdateStoryWorldRequest,
   V2UpdateTimelineEventRequest,
 } from "@living-network/contracts/v2";
-import type { V2CoreSceneCandidatePayload } from "@living-network/domain/v2";
+import type { V2CoreSceneCandidatePayload, V2NarrativeReference as V2DomainNarrativeReference } from "@living-network/domain/v2";
 import {
   buildV2CoreExportMarkdown,
   buildV2ReleaseExportJson,
@@ -102,6 +101,8 @@ import {
   createV2CanonWorld,
   createV2GraphArc,
   createV2NarrativeScene,
+  createV2NarrativeReferenceFromValues,
+  V2DomainError,
   createV2SceneBlock,
   createV2GraphChoice,
   createV2GraphScene,
@@ -118,6 +119,7 @@ import {
   validateV2Graph,
   validateBlockSpeakers,
   validateSceneHierarchy,
+  validateReferenceTargets,
   buildV2CharacterContext,
   deriveV2ContextSourceRevision,
 } from "@living-network/domain/v2";
@@ -786,67 +788,81 @@ export function createV2CoreUseCases(
           }, candidateQuest?.arcId
             ? { questId: candidateQuest.questId, arcId: candidateQuest.arcId, ...(candidateQuest.chapterId ? { chapterId: candidateQuest.chapterId } : {}) }
             : undefined, candidateChapter, candidateArc);
-          const renderedBody = plan.scene.body ?? renderSceneBlocksToPlainText(candidateBlocks.map((block) => ({
-            kind: block.kind,
-            ...(block.speakerCharacterId ? { speakerCharacterId: block.speakerCharacterId } : {}),
-            ...(block.text !== undefined ? { text: block.text } : {}),
-            payload: block.payload ?? {},
-          })));
           const existingTargetScene = await graphState.getScene({ storyWorldId, sceneId: plan.scene.sceneId as V2SceneDto["sceneId"] });
-          const graphScene = createV2GraphScene({
-            storyWorldId,
-            sceneId: plan.scene.sceneId as V2SceneDto["sceneId"],
-            ...(plan.scene.arcId ? { arcId: plan.scene.arcId } : {}),
-            title: plan.scene.title,
-            ...(renderedBody ? { body: renderedBody } : {}),
-          });
-          const createdScene = existingTargetScene
-            ? await graphState.updateScene(graphScene)
-            : await graphState.createScene(graphScene);
-          if (sceneDocument) {
-            const characterIds = new Set((await canon.listCharacters(storyWorldId)).map((character) => character.characterId));
-            validateBlockSpeakers(candidateBlocks, characterIds);
-            const domainBlocks = candidateBlocks.map((block, ordinal) => createV2SceneBlock({
-              blockId: block.blockId || `b_${randomUUID().slice(0, 8)}`,
+          const existingNarrativeDocument = sceneDocument
+            ? await sceneDocument.getSceneDocument({ storyWorldId, sceneId: plan.scene.sceneId })
+            : undefined;
+          const characterNameMap: Record<string, string> = {};
+          for (const character of await canon.listCharacters(storyWorldId)) characterNameMap[character.characterId] = character.name;
+          const characterIds = new Set(Object.keys(characterNameMap));
+          validateBlockSpeakers(candidateBlocks, characterIds);
+          const existingBlocks = new Map((existingNarrativeDocument?.blocks ?? []).map((block) => [block.blockId, block]));
+          const domainBlocks = candidateBlocks.map((block, ordinal) => {
+            const blockId = block.blockId || `b_${randomUUID().slice(0, 8)}`;
+            const previous = existingBlocks.get(blockId);
+            const unchanged = previous !== undefined &&
+              previous.kind === block.kind &&
+              previous.text === block.text &&
+              previous.speakerCharacterId === block.speakerCharacterId &&
+              hashV2CanonPayload(previous.payload) === hashV2CanonPayload(block.payload ?? {});
+            return createV2SceneBlock({
+              blockId,
               storyWorldId,
-              sceneId: createdScene.sceneId,
+              sceneId: plan.scene.sceneId,
               ordinal,
               kind: block.kind,
               ...(block.speakerCharacterId ? { speakerCharacterId: block.speakerCharacterId } : {}),
               ...(block.text !== undefined ? { text: block.text } : {}),
               payload: block.payload ?? {},
-              revision: 1,
-            }));
+              revision: previous ? (unchanged ? previous.revision : previous.revision + 1) : 1,
+              ...(previous?.createdAt ? { createdAt: previous.createdAt } : {}),
+              ...(unchanged && previous.updatedAt ? { updatedAt: previous.updatedAt } : {}),
+            });
+          });
+          const renderedBody = plan.scene.body ?? renderSceneBlocksToPlainText(domainBlocks, characterNameMap);
+          const graphScene = createV2GraphScene({
+            storyWorldId,
+            sceneId: plan.scene.sceneId as V2SceneDto["sceneId"],
+            ...(normalizedHierarchy.arcId ? { arcId: normalizedHierarchy.arcId } : {}),
+            title: plan.scene.title,
+            ...(renderedBody ? { body: renderedBody } : {}),
+            isEntry: existingTargetScene?.isEntry ?? false,
+          });
+          const createdScene = existingTargetScene
+            ? await graphState.updateScene(graphScene)
+            : await graphState.createScene(graphScene);
+          if (sceneDocument) {
+            const existingScene = existingNarrativeDocument?.scene;
             await sceneDocument.saveSceneDocument({
               scene: createV2NarrativeScene({
                 sceneId: createdScene.sceneId,
                 storyWorldId,
-                ...(plan.scene.arcId ? { arcId: plan.scene.arcId } : {}),
-                ...(plan.scene.chapterId ? { chapterId: plan.scene.chapterId } : {}),
-                ...(plan.scene.questId ? { questId: plan.scene.questId } : {}),
+                ...(normalizedHierarchy.arcId ? { arcId: normalizedHierarchy.arcId } : {}),
+                ...(normalizedHierarchy.chapterId ? { chapterId: normalizedHierarchy.chapterId } : {}),
+                ...(normalizedHierarchy.questId ? { questId: normalizedHierarchy.questId } : {}),
                 title: createdScene.title,
                 ...(createdScene.body ? { body: createdScene.body } : {}),
-                isEntry: false,
-                ordinal: 0,
-                revision: 1,
-                documentMode: plan.scene.documentMode ?? "legacy_body",
+                isEntry: existingScene?.isEntry ?? existingTargetScene?.isEntry ?? false,
+                ordinal: existingScene?.ordinal ?? 0,
+                revision: existingScene ? existingScene.revision + 1 : 1,
+                documentMode: plan.scene.documentMode ?? existingScene?.documentMode ?? (domainBlocks.length > 0 ? "blocks" : "legacy_body"),
               }),
               blocks: domainBlocks,
             });
           }
           if (references) {
-            const narrativeRefs: V2NarrativeReference[] = [];
+            const narrativeRefs: V2DomainNarrativeReference[] = [];
             if (plan.references && plan.references.length > 0) {
               for (const r of plan.references) {
-                narrativeRefs.push({
+                narrativeRefs.push(createV2NarrativeReferenceFromValues({
                   referenceId: r.referenceId || `${existing.candidateId}:ref:${r.role}:${r.targetId}`,
                   storyWorldId,
                   sourceType: "scene",
                   sourceId: createdScene.sceneId,
-                  targetType: r.targetType as V2NarrativeReference["targetType"],
+                  targetType: r.targetType,
                   targetId: r.targetId,
-                  role: r.role as V2NarrativeReference["role"],
-                });
+                  role: r.role,
+                }));
               }
             } else {
               if (plan.scene.locationId) {
@@ -871,6 +887,27 @@ export function createV2CoreUseCases(
                   role: "participant",
                 });
               }
+            }
+            const [referenceCharacters, referenceLocations, referenceLoreEntries, referenceTimelineEvents, referenceFacts, referenceRules] = await Promise.all([
+              canon.listCharacters(storyWorldId),
+              canon.listLocations(storyWorldId),
+              lore ? lore.listLoreEntries(storyWorldId) : Promise.resolve([]),
+              canon.listTimelineEvents(storyWorldId),
+              canon.listFacts(storyWorldId),
+              canon.listRules(storyWorldId),
+            ]);
+            try {
+              validateReferenceTargets(narrativeRefs, {
+                characterIds: new Set(referenceCharacters.map((value) => value.characterId)),
+                locationIds: new Set(referenceLocations.map((value) => value.locationId)),
+                loreEntryIds: new Set(referenceLoreEntries.map((value) => value.loreEntryId)),
+                timelineEventIds: new Set(referenceTimelineEvents.map((value) => value.timelineEventId)),
+                factIds: new Set(referenceFacts.map((value) => value.factId)),
+                ruleIds: new Set(referenceRules.map((value) => value.ruleId)),
+              });
+            } catch (err: unknown) {
+              if (err instanceof V2DomainError) throw new V2HttpError(422, err.code, err.message);
+              throw err;
             }
             for (const reference of narrativeRefs) {
               if (reference.targetType === "character") await requireCharacter(canon, storyWorldId, reference.targetId as V2CharacterDto["characterId"]);

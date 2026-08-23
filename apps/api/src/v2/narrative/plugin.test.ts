@@ -257,7 +257,7 @@ test("V2 Narrative API - End-to-end Hierarchy, Scene Documents, References, Lore
   const contextData = contextRes.json();
   assert(contextData.sections.length >= 3);
   assert.equal(contextData.fingerprint.hash.length, 64);
-  assert.equal(contextData.contextHash.length, 64);
+  assert.match(contextData.contextHash, /^sha256:[a-f0-9]{64}$/);
 
   // 11. Templates Listing and Apply API
   const listTemplatesRes = await app.inject({

@@ -17,6 +17,11 @@ export type V2NarrativeDiagnosticCode =
   | "QUEST_SCENE_CROSS_WORLD"
   | "CHAPTER_ARC_MISMATCH"
   | "QUEST_CHAPTER_MISMATCH"
+  | "QUEST_ARC_MISMATCH"
+  | "SCENE_ARC_MISMATCH"
+  | "SCENE_CHAPTER_MISMATCH"
+  | "SCENE_QUEST_MISMATCH"
+  | "MISSING_REFERENCE_SOURCE"
   | "UNREACHABLE_SCENE"
   | "MISSING_ENTRY_SCENE"
   | "MULTIPLE_ENTRY_SCENES"
@@ -78,7 +83,8 @@ export function runNarrativeDiagnostics(context: V2NarrativeDiagnosticsContext):
 
   const arcIdSet = new Set(context.arcs.map((a) => a.arcId));
   const chapterIdSet = new Set(context.chapters.map((c) => c.chapterId));
-  const questIdSet = new Set(context.quests.map((q) => q.questId));
+  const questIdSet = new Set(context.quests.map((q) => q.questId));  const chapterById = new Map(context.chapters.map((chapter) => [chapter.chapterId, chapter]));
+  const questById = new Map(context.quests.map((quest) => [quest.questId, quest]));
   const sceneIdSet = new Set(context.scenes.map((s) => s.sceneId));
   const characterIdSet = new Set(context.characters.map((c) => c.characterId));
   const locationIdSet = new Set(context.locations.map((l) => l.locationId));
@@ -114,7 +120,12 @@ export function runNarrativeDiagnostics(context: V2NarrativeDiagnosticsContext):
         targetId: quest.chapterId,
       });
     }
-    if (quest.arcId && !arcIdSet.has(quest.arcId)) {
+    if (quest.chapterId) {
+      const parentChapter = chapterById.get(quest.chapterId);
+      if (parentChapter && parentChapter.arcId !== quest.arcId) {
+        diagnostics.push({ code: "QUEST_ARC_MISMATCH", severity: "error", message: `Quest "${quest.title}" arcId does not match parent Chapter`, entityType: "quest", entityId: quest.questId, targetId: quest.chapterId });
+      }
+    }    if (quest.arcId && !arcIdSet.has(quest.arcId)) {
       diagnostics.push({
         code: "QUEST_SCENE_CROSS_WORLD",
         severity: "error",
@@ -162,6 +173,13 @@ export function runNarrativeDiagnostics(context: V2NarrativeDiagnosticsContext):
     }
   }
 
+  for (const scene of context.scenes) {
+    const chapter = scene.chapterId ? chapterById.get(scene.chapterId) : undefined;
+    const quest = scene.questId ? questById.get(scene.questId) : undefined;
+    if (chapter && scene.arcId && chapter.arcId !== scene.arcId) diagnostics.push({ code: "SCENE_ARC_MISMATCH", severity: "error", message: `Scene "${scene.title}" arcId does not match Chapter`, entityType: "scene", entityId: scene.sceneId, targetId: chapter.chapterId });
+    if (quest && scene.arcId && quest.arcId !== scene.arcId) diagnostics.push({ code: "SCENE_ARC_MISMATCH", severity: "error", message: `Scene "${scene.title}" arcId does not match Quest`, entityType: "scene", entityId: scene.sceneId, targetId: quest.questId });
+    if (quest && scene.chapterId && quest.chapterId !== scene.chapterId) diagnostics.push({ code: "SCENE_CHAPTER_MISMATCH", severity: "error", message: `Scene "${scene.title}" chapterId does not match Quest`, entityType: "scene", entityId: scene.sceneId, targetId: quest.questId });
+  }
   const firstScene = context.scenes[0];
   if (firstScene !== undefined && entryCount === 0) {
     diagnostics.push({
@@ -180,7 +198,9 @@ export function runNarrativeDiagnostics(context: V2NarrativeDiagnosticsContext):
     list.push(block);
     blocksByScene.set(block.sceneId, list);
 
-    if (block.kind === "dialogue" && block.speakerCharacterId) {
+    if (block.kind === "dialogue" && !block.speakerCharacterId) {
+      diagnostics.push({ code: "INVALID_BLOCK_SPEAKER", severity: "error", message: "Dialogue blocks must declare a speaker character", entityType: "block", entityId: block.blockId });
+    } else if (block.kind === "dialogue" && block.speakerCharacterId) {
       if (!characterIdSet.has(block.speakerCharacterId)) {
         diagnostics.push({
           code: "INVALID_BLOCK_SPEAKER",
@@ -227,6 +247,13 @@ export function runNarrativeDiagnostics(context: V2NarrativeDiagnosticsContext):
     }
     seenRefs.add(refKey);
 
+    const sourceExists = ref.sourceType === "arc" ? arcIdSet.has(ref.sourceId)
+      : ref.sourceType === "chapter" ? chapterIdSet.has(ref.sourceId)
+      : ref.sourceType === "quest" ? questIdSet.has(ref.sourceId)
+      : ref.sourceType === "scene" ? sceneIdSet.has(ref.sourceId)
+      : ref.sourceType === "scene_block" ? context.blocks.some((block) => block.blockId === ref.sourceId)
+      : false;
+    if (!sourceExists) diagnostics.push({ code: "MISSING_REFERENCE_SOURCE", severity: "error", message: `Reference source ${ref.sourceType} "${ref.sourceId}" does not exist`, entityType: "reference", entityId: ref.referenceId, targetId: ref.sourceId });
     let targetExists = false;
     if (ref.targetType === "character") targetExists = characterIdSet.has(ref.targetId);
     else if (ref.targetType === "location") targetExists = locationIdSet.has(ref.targetId);
