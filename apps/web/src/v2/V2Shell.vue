@@ -94,6 +94,7 @@ const storyMenuOpen = ref(false);
 const storySwitcherRef = ref<HTMLElement | null>(null);
 
 const isFeatureRoute = computed(() => route.meta.layout === "feature");
+const isFocusRoute = computed(() => route.meta.layout === "focus");
 const pageSize = computed(() => {
   const size = route.meta.pageSize;
   return size === "narrow" || size === "standard" || size === "wide" || size === "full" ? size : "standard";
@@ -121,10 +122,15 @@ function handleClickOutside(event: MouseEvent): void {
 watch(() => route.path, () => {
   mobileOpen.value = false;
   storyMenuOpen.value = false;
+  if (!isFocusRoute.value && !store.snapshot && !store.loading) {
+    void store.loadSnapshot();
+  }
 });
 
 onMounted(() => {
-  void store.loadSnapshot();
+  if (!isFocusRoute.value) {
+    void store.loadSnapshot();
+  }
   document.addEventListener("click", handleClickOutside);
 });
 
@@ -134,8 +140,11 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="page v2-shell-page">
-    <section class="v2-shell-layout" aria-label="Living Network V2 创作平台">
+  <div class="page v2-shell-page" :class="{ 'v2-focus-shell': isFocusRoute }">
+    <template v-if="isFocusRoute">
+      <RouterView />
+    </template>
+    <section v-else class="v2-shell-layout" aria-label="Living Network V2 创作平台">
       <!-- 移动端汉堡菜单：在 Chat Feature 视图下不重复渲染，避免与 Chat Header 冲突 -->
       <Button
         v-if="!isFeatureRoute"
@@ -200,9 +209,16 @@ onUnmounted(() => {
                 :aria-selected="world.storyWorldId === store.activeStoryWorldId"
                 @click="selectStoryWorld(world.storyWorldId)"
               >
-                <span class="v2-story-popover-dot" />
-                <span class="v2-story-popover-title">{{ world.name }}</span>
-                <Check v-if="world.storyWorldId === store.activeStoryWorldId" :size="14" class="v2-story-popover-check" aria-hidden="true" />
+                <div class="v2-story-popover-item-info">
+                  <span class="v2-story-popover-item-name">{{ world.name }}</span>
+                  <small class="v2-story-popover-item-desc">{{ world.description || "暂无描述" }}</small>
+                </div>
+                <Check
+                  v-if="world.storyWorldId === store.activeStoryWorldId"
+                  :size="16"
+                  aria-hidden="true"
+                  class="v2-story-popover-item-check"
+                />
               </button>
             </div>
             <div class="v2-story-popover-footer">
@@ -215,7 +231,7 @@ onUnmounted(() => {
         </div>
 
         <!-- 一级导航列表（仅 6 个主要入口） -->
-        <nav class="v2-nav" aria-label="核心模块">
+        <nav class="v2-primary-nav" aria-label="工作区主导航">
           <RouterLink
             v-for="item in primaryNavItems"
             :key="item.to"
@@ -223,8 +239,8 @@ onUnmounted(() => {
             class="v2-nav-link"
             :class="{ 'v2-nav-link-active': isItemActive(item) }"
           >
-            <component :is="item.icon" :size="17" stroke-width="2" aria-hidden="true" />
-            <span>{{ item.label }}</span>
+            <component :is="item.icon" :size="16" aria-hidden="true" class="v2-nav-icon" />
+            <span class="v2-nav-label">{{ item.label }}</span>
           </RouterLink>
         </nav>
 
@@ -265,6 +281,12 @@ onUnmounted(() => {
   margin: 0;
   padding: 0;
   z-index: 3;
+}
+
+.v2-focus-shell {
+  min-height: 100dvh;
+  height: 100dvh;
+  overflow: hidden;
 }
 
 .v2-shell-layout {

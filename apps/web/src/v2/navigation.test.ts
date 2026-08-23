@@ -64,4 +64,10 @@ test("V2 routes structure correctly configures entry points and redirects", () =
   // Workspace redirect
   const reviewRedirect = paths.get("workspace/review");
   assert.equal(reviewRedirect?.redirect, "/v2/workspace/ai-scene-review");
+
+  // Focus layout narrative workbench route
+  const narrativeRoute = paths.get("worlds/:storyWorldId/narrative");
+  assert.ok(narrativeRoute, "Narrative workbench route exists");
+  assert.equal(narrativeRoute.meta?.layout, "focus");
+  assert.equal(narrativeRoute.meta?.pageSize, "full");
 });
