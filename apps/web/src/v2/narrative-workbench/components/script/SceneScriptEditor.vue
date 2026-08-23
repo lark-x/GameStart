@@ -54,7 +54,7 @@ function handleMoveDown(index: number): void {
 }
 
 function handleAddBlock(kind: V2SceneBlockKind, index?: number): void {
-  docStore.addBlock(kind, index);
+  docStore.addBlock(index, kind);
 }
 
 function handleActivateBlock(blockId: string): void {

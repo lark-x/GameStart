@@ -13,6 +13,7 @@ import {
   User,
 } from "@lucide/vue";
 import type {
+  V2CharacterId,
   V2SceneBlock,
   V2SceneBlockKind,
 } from "@living-network/contracts/v2";
@@ -67,7 +68,9 @@ function handleTextChange(e: Event) {
 
 function handleSpeakerChange(e: Event) {
   const target = e.target as HTMLSelectElement;
-  emit("update", props.block.blockId, { speakerCharacterId: target.value || undefined });
+  emit("update", props.block.blockId, {
+    speakerCharacterId: target.value ? (target.value as V2CharacterId) : undefined,
+  });
 }
 </script>
 
