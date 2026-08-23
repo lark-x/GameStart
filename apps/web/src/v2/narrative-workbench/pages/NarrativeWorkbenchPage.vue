@@ -310,9 +310,11 @@ async function handlePublishRelease() {
           <QuestFlowView
             :story-world-id="storyWorldId"
             :selected-scene-id="selectedSceneId"
+            :active-quest-id="sessionStore.activeQuestId"
             @select-scene="handleSelectScene"
+            @select-quest="(qId) => sessionStore.selectQuest(qId)"
             @open-script="(id) => { selectedSceneId = id; mode = 'script'; }"
-            @create-scene="() => handleCreateScene()"
+            @create-scene="(qId) => handleCreateScene({ questId: qId })"
           />
         </template>
         <template v-else-if="mode === 'review'">
