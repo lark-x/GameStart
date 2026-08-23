@@ -12,6 +12,8 @@ import { useNarrativeCanonLookupStore } from "../stores/useNarrativeCanonLookupS
 import { useNarrativeSessionStore } from "../stores/useNarrativeSessionStore.ts";
 import { useNarrativeChoiceStore } from "../stores/useNarrativeChoiceStore.ts";
 import { useNarrativeCandidateStore } from "../stores/useNarrativeCandidateStore.ts";
+import { useNarrativeRevisionStore } from "../stores/useNarrativeRevisionStore.ts";
+import { createNarrativeMutationKey } from "../utils/idempotency.ts";
 import NarrativeExplorer from "../components/explorer/NarrativeExplorer.vue";
 import NarrativeOutlineBoard from "../components/outline/NarrativeOutlineBoard.vue";
 import QuestFlowView from "../components/flow/QuestFlowView.vue";
@@ -23,11 +25,8 @@ import Modal from "../../../components/ui/Modal.vue";
 import Button from "../../../components/ui/Button.vue";
 import { V2NarrativeClient } from "../../story/client.ts";
 import type {
-  V2ArcId,
-  V2IdempotencyKey,
   V2NarrativeTemplate,
   V2NarrativeTemplateId,
-  V2Revision,
 } from "@living-network/contracts/v2";
 
 const route = useRoute();
@@ -43,6 +42,7 @@ const refStore = useNarrativeReferenceStore();
 const diagStore = useNarrativeDiagnosticsStore();
 const canonLookupStore = useNarrativeCanonLookupStore();
 const sessionStore = useNarrativeSessionStore();
+const revisionStore = useNarrativeRevisionStore();
 const choiceStore = useNarrativeChoiceStore();
 const candidateStore = useNarrativeCandidateStore();
 
@@ -152,23 +152,7 @@ function handleSelectScene(sceneId: string) {
 async function handleCreateScene(payload?: { arcId?: string; chapterId?: string; questId?: string }) {
   const title = prompt("请输入新场景名称：", "新场景");
   if (!title) return;
-
-  const sceneId = `scene_${Date.now().toString(36)}`;
-  const client = new V2NarrativeClient();
-  await client.saveSceneDocument(storyWorldId.value, sceneId, {
-    title,
-    documentMode: "blocks",
-    ...(payload?.arcId ? { arcId: payload.arcId as V2ArcId } : {}),
-    ...(payload?.chapterId ? { chapterId: payload.chapterId } : {}),
-    ...(payload?.questId ? { questId: payload.questId } : {}),
-    blocks: [
-      {
-        kind: "narration",
-        text: `${title} 场景开幕。`,
-      },
-    ],
-  });
-  await outlineStore.fetchOutline(storyWorldId.value);
+  const sceneId = await outlineStore.createScene(storyWorldId.value, { ...payload, title });
   selectedSceneId.value = sceneId;
   mode.value = "script";
 }
@@ -193,8 +177,6 @@ async function handleApplyTemplate() {
   try {
     await outlineStore.applyTemplate(storyWorldId.value, {
       templateId: selectedTemplateId.value,
-      expectedRevision: 1 as V2Revision,
-      idempotencyKey: `tpl_app_${Date.now()}` as V2IdempotencyKey,
     });
     templateModalOpen.value = false;
     await Promise.all([
@@ -223,15 +205,15 @@ async function handlePublishRelease() {
   if (!version) return;
 
   try {
-    const releaseId = `rel_${Date.now()}`;
+    const releaseId = `rel_${Math.random().toString(36).slice(2, 9)}`;
     const res = await fetch(`/api/v2/core/worlds/${storyWorldId.value}/releases`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         releaseId,
         version: version.trim(),
-        sourceRevision: 1,
-        idempotencyKey: `rel_create_${Date.now()}`,
+        sourceRevision: revisionStore.requireRevision(),
+        idempotencyKey: createNarrativeMutationKey("create_release"),
       }),
     });
 

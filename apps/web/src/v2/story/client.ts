@@ -5,6 +5,8 @@ import type {
   V2CreateChapterRequest,
   V2CreateQuestRequest,
   V2CreateLoreEntryRequest,
+  V2DeleteHierarchyItemResponse,
+  V2NarrativeBootstrapDto,
   V2NarrativeChapter,
   V2NarrativeDiagnosticsReport,
   V2NarrativeGenerationContextRequest,
@@ -14,6 +16,7 @@ import type {
   V2NarrativeSearchResultItem,
   V2NarrativeTemplate,
   V2ReplaceSceneReferencesRequest,
+  V2ReplaceSceneReferencesResponse,
   V2SceneDocument,
   V2SceneReferencesDto,
   V2SaveSceneDocumentRequest,
@@ -25,6 +28,10 @@ import type {
 export interface V2NarrativeClientOptions {
   readonly baseUrl?: string;
   readonly fetchImpl?: typeof fetch;
+}
+
+export interface V2RequestOptions {
+  readonly signal?: AbortSignal | undefined;
 }
 
 export class V2NarrativeClientError extends Error {
@@ -63,15 +70,27 @@ export class V2NarrativeClient {
     this.fetchImpl = options.fetchImpl ?? fetch.bind(globalThis);
   }
 
+  // Bootstrap
+  public async getBootstrap(storyWorldId: string, options?: V2RequestOptions): Promise<V2NarrativeBootstrapDto> {
+    const res = await this.fetchImpl(`${this.baseUrl}/api/v2/worlds/${storyWorldId}/narrative/bootstrap`, {
+      ...(options?.signal ? { signal: options.signal } : {}),
+    });
+    return readJson<V2NarrativeBootstrapDto>(res);
+  }
+
   // Outline
-  public async getOutline(storyWorldId: string): Promise<V2NarrativeOutline> {
-    const res = await this.fetchImpl(`${this.baseUrl}/api/v2/worlds/${storyWorldId}/narrative/outline`);
+  public async getOutline(storyWorldId: string, options?: V2RequestOptions): Promise<V2NarrativeOutline> {
+    const res = await this.fetchImpl(`${this.baseUrl}/api/v2/worlds/${storyWorldId}/narrative/outline`, {
+      ...(options?.signal ? { signal: options.signal } : {}),
+    });
     return readJson<V2NarrativeOutline>(res);
   }
 
   // Chapter
-  public async getChapter(storyWorldId: string, chapterId: string): Promise<V2NarrativeChapter> {
-    const res = await this.fetchImpl(`${this.baseUrl}/api/v2/worlds/${storyWorldId}/narrative/chapters/${chapterId}`);
+  public async getChapter(storyWorldId: string, chapterId: string, options?: V2RequestOptions): Promise<V2NarrativeChapter> {
+    const res = await this.fetchImpl(`${this.baseUrl}/api/v2/worlds/${storyWorldId}/narrative/chapters/${chapterId}`, {
+      ...(options?.signal ? { signal: options.signal } : {}),
+    });
     return readJson<V2NarrativeChapter>(res);
   }
 
@@ -93,16 +112,18 @@ export class V2NarrativeClient {
     return readJson<V2NarrativeChapter>(res);
   }
 
-  public async deleteChapter(storyWorldId: string, chapterId: string): Promise<{ success: true }> {
+  public async deleteChapter(storyWorldId: string, chapterId: string): Promise<V2DeleteHierarchyItemResponse> {
     const res = await this.fetchImpl(`${this.baseUrl}/api/v2/worlds/${storyWorldId}/narrative/chapters/${chapterId}`, {
       method: "DELETE",
     });
-    return readJson<{ success: true }>(res);
+    return readJson<V2DeleteHierarchyItemResponse>(res);
   }
 
   // Quest
-  public async getQuest(storyWorldId: string, questId: string): Promise<V2NarrativeQuest> {
-    const res = await this.fetchImpl(`${this.baseUrl}/api/v2/worlds/${storyWorldId}/narrative/quests/${questId}`);
+  public async getQuest(storyWorldId: string, questId: string, options?: V2RequestOptions): Promise<V2NarrativeQuest> {
+    const res = await this.fetchImpl(`${this.baseUrl}/api/v2/worlds/${storyWorldId}/narrative/quests/${questId}`, {
+      ...(options?.signal ? { signal: options.signal } : {}),
+    });
     return readJson<V2NarrativeQuest>(res);
   }
 
@@ -124,16 +145,18 @@ export class V2NarrativeClient {
     return readJson<V2NarrativeQuest>(res);
   }
 
-  public async deleteQuest(storyWorldId: string, questId: string): Promise<{ success: true }> {
+  public async deleteQuest(storyWorldId: string, questId: string): Promise<V2DeleteHierarchyItemResponse> {
     const res = await this.fetchImpl(`${this.baseUrl}/api/v2/worlds/${storyWorldId}/narrative/quests/${questId}`, {
       method: "DELETE",
     });
-    return readJson<{ success: true }>(res);
+    return readJson<V2DeleteHierarchyItemResponse>(res);
   }
 
   // Scene Document
-  public async getSceneDocument(storyWorldId: string, sceneId: string): Promise<V2SceneDocument> {
-    const res = await this.fetchImpl(`${this.baseUrl}/api/v2/worlds/${storyWorldId}/narrative/scenes/${sceneId}/document`);
+  public async getSceneDocument(storyWorldId: string, sceneId: string, options?: V2RequestOptions): Promise<V2SceneDocument> {
+    const res = await this.fetchImpl(`${this.baseUrl}/api/v2/worlds/${storyWorldId}/narrative/scenes/${sceneId}/document`, {
+      ...(options?.signal ? { signal: options.signal } : {}),
+    });
     return readJson<V2SceneDocument>(res);
   }
 
@@ -147,32 +170,38 @@ export class V2NarrativeClient {
   }
 
   // Scene References
-  public async getSceneReferences(storyWorldId: string, sceneId: string): Promise<V2SceneReferencesDto> {
-    const res = await this.fetchImpl(`${this.baseUrl}/api/v2/worlds/${storyWorldId}/narrative/scenes/${sceneId}/references`);
+  public async getSceneReferences(storyWorldId: string, sceneId: string, options?: V2RequestOptions): Promise<V2SceneReferencesDto> {
+    const res = await this.fetchImpl(`${this.baseUrl}/api/v2/worlds/${storyWorldId}/narrative/scenes/${sceneId}/references`, {
+      ...(options?.signal ? { signal: options.signal } : {}),
+    });
     return readJson<V2SceneReferencesDto>(res);
   }
 
-  public async replaceSceneReferences(storyWorldId: string, sceneId: string, request: V2ReplaceSceneReferencesRequest): Promise<V2SceneReferencesDto> {
+  public async replaceSceneReferences(storyWorldId: string, sceneId: string, request: V2ReplaceSceneReferencesRequest): Promise<V2ReplaceSceneReferencesResponse> {
     const res = await this.fetchImpl(`${this.baseUrl}/api/v2/worlds/${storyWorldId}/narrative/scenes/${sceneId}/references`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(request),
     });
-    return readJson<V2SceneReferencesDto>(res);
+    return readJson<V2ReplaceSceneReferencesResponse>(res);
   }
 
   // Lore
-  public async listLore(storyWorldId: string, filter?: { type?: string; tag?: string }): Promise<readonly V2CanonLoreEntry[]> {
+  public async listLore(storyWorldId: string, filter?: { type?: string; tag?: string }, options?: V2RequestOptions): Promise<readonly V2CanonLoreEntry[]> {
     const params = new URLSearchParams();
     if (filter?.type) params.set("type", filter.type);
     if (filter?.tag) params.set("tag", filter.tag);
     const qs = params.toString() ? `?${params.toString()}` : "";
-    const res = await this.fetchImpl(`${this.baseUrl}/api/v2/worlds/${storyWorldId}/narrative/lore${qs}`);
+    const res = await this.fetchImpl(`${this.baseUrl}/api/v2/worlds/${storyWorldId}/narrative/lore${qs}`, {
+      ...(options?.signal ? { signal: options.signal } : {}),
+    });
     return readJson<readonly V2CanonLoreEntry[]>(res);
   }
 
-  public async getLore(storyWorldId: string, loreEntryId: string): Promise<V2CanonLoreEntry> {
-    const res = await this.fetchImpl(`${this.baseUrl}/api/v2/worlds/${storyWorldId}/narrative/lore/${loreEntryId}`);
+  public async getLore(storyWorldId: string, loreEntryId: string, options?: V2RequestOptions): Promise<V2CanonLoreEntry> {
+    const res = await this.fetchImpl(`${this.baseUrl}/api/v2/worlds/${storyWorldId}/narrative/lore/${loreEntryId}`, {
+      ...(options?.signal ? { signal: options.signal } : {}),
+    });
     return readJson<V2CanonLoreEntry>(res);
   }
 
@@ -202,16 +231,20 @@ export class V2NarrativeClient {
   }
 
   // Search
-  public async search(storyWorldId: string, query: string, limit?: number): Promise<{ readonly query: string; readonly items: readonly V2NarrativeSearchResultItem[] }> {
+  public async search(storyWorldId: string, query: string, limit?: number, options?: V2RequestOptions): Promise<{ readonly query: string; readonly items: readonly V2NarrativeSearchResultItem[] }> {
     const params = new URLSearchParams({ q: query });
     if (limit) params.set("limit", String(limit));
-    const res = await this.fetchImpl(`${this.baseUrl}/api/v2/worlds/${storyWorldId}/narrative/search?${params.toString()}`);
+    const res = await this.fetchImpl(`${this.baseUrl}/api/v2/worlds/${storyWorldId}/narrative/search?${params.toString()}`, {
+      ...(options?.signal ? { signal: options.signal } : {}),
+    });
     return readJson<{ readonly query: string; readonly items: readonly V2NarrativeSearchResultItem[] }>(res);
   }
 
   // Templates
-  public async listTemplates(): Promise<{ readonly templates: readonly V2NarrativeTemplate[] }> {
-    const res = await this.fetchImpl(`${this.baseUrl}/api/v2/narrative/templates`);
+  public async listTemplates(options?: V2RequestOptions): Promise<{ readonly templates: readonly V2NarrativeTemplate[] }> {
+    const res = await this.fetchImpl(`${this.baseUrl}/api/v2/narrative/templates`, {
+      ...(options?.signal ? { signal: options.signal } : {}),
+    });
     return readJson<{ readonly templates: readonly V2NarrativeTemplate[] }>(res);
   }
 
@@ -225,17 +258,20 @@ export class V2NarrativeClient {
   }
 
   // Diagnostics
-  public async getDiagnostics(storyWorldId: string): Promise<V2NarrativeDiagnosticsReport> {
-    const res = await this.fetchImpl(`${this.baseUrl}/api/v2/worlds/${storyWorldId}/narrative/diagnostics`);
+  public async getDiagnostics(storyWorldId: string, options?: V2RequestOptions): Promise<V2NarrativeDiagnosticsReport> {
+    const res = await this.fetchImpl(`${this.baseUrl}/api/v2/worlds/${storyWorldId}/narrative/diagnostics`, {
+      ...(options?.signal ? { signal: options.signal } : {}),
+    });
     return readJson<V2NarrativeDiagnosticsReport>(res);
   }
 
   // Context Preview
-  public async previewContext(storyWorldId: string, request: V2NarrativeGenerationContextRequest): Promise<V2NarrativeGenerationContextResponse> {
+  public async previewContext(storyWorldId: string, request: V2NarrativeGenerationContextRequest, options?: V2RequestOptions): Promise<V2NarrativeGenerationContextResponse> {
     const res = await this.fetchImpl(`${this.baseUrl}/api/v2/worlds/${storyWorldId}/narrative/context/preview`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(request),
+      ...(options?.signal ? { signal: options.signal } : {}),
     });
     return readJson<V2NarrativeGenerationContextResponse>(res);
   }

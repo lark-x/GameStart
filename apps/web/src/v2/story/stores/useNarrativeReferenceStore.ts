@@ -1,15 +1,15 @@
 import { defineStore } from "pinia";
 import type {
   V2CharacterId,
-  V2IdempotencyKey,
   V2LocationId,
   V2NarrativeReference,
   V2NarrativeReferenceRole,
   V2NarrativeReferenceTargetType,
-  V2Revision,
   V2SceneReferencesDto,
 } from "@living-network/contracts/v2";
 import { V2NarrativeClient } from "../client.ts";
+import { useNarrativeRevisionStore } from "../../narrative-workbench/stores/useNarrativeRevisionStore.ts";
+import { createNarrativeMutationKey } from "../../narrative-workbench/utils/idempotency.ts";
 
 export interface NarrativeReferenceState {
   sceneReferences: V2SceneReferencesDto | null;
@@ -84,6 +84,7 @@ export const useNarrativeReferenceStore = defineStore("narrativeReference", {
 
     async removeLoreItem(storyWorldId: string, sceneId: string, loreId: string): Promise<void> {
       const client = this.getClient();
+      const revisionStore = useNarrativeRevisionStore();
       const current = this.sceneReferences;
       const refs = (current?.references ?? [])
         .filter((r) => !(r.targetId === loreId && r.targetType === "lore"))
@@ -95,13 +96,15 @@ export const useNarrativeReferenceStore = defineStore("narrativeReference", {
 
       this.saving = true;
       try {
-        this.sceneReferences = await client.replaceSceneReferences(storyWorldId, sceneId, {
+        const response = await client.replaceSceneReferences(storyWorldId, sceneId, {
           ...(current?.mainLocationId ? { mainLocationId: current.mainLocationId } : {}),
           ...(current?.participantCharacterIds ? { participantCharacterIds: current.participantCharacterIds } : {}),
           references: refs,
-          expectedRevision: 1 as V2Revision,
-          idempotencyKey: `ref_del_lore:${Date.now()}` as V2IdempotencyKey,
+          expectedRevision: revisionStore.requireRevision(),
+          idempotencyKey: createNarrativeMutationKey("ref_del_lore"),
         });
+        this.sceneReferences = response.references;
+        revisionStore.setRevision(response.revision);
       } finally {
         this.saving = false;
       }
@@ -109,6 +112,7 @@ export const useNarrativeReferenceStore = defineStore("narrativeReference", {
 
     async setMainLocation(storyWorldId: string, sceneId: string, locationId: string | null): Promise<void> {
       const client = this.getClient();
+      const revisionStore = useNarrativeRevisionStore();
       const current = this.sceneReferences;
       this.saving = true;
       try {
@@ -120,13 +124,15 @@ export const useNarrativeReferenceStore = defineStore("narrativeReference", {
             }))
           : undefined;
 
-        this.sceneReferences = await client.replaceSceneReferences(storyWorldId, sceneId, {
+        const response = await client.replaceSceneReferences(storyWorldId, sceneId, {
           mainLocationId: (locationId as V2LocationId) ?? null,
           ...(current?.participantCharacterIds ? { participantCharacterIds: current.participantCharacterIds } : {}),
           ...(filteredRefs ? { references: filteredRefs } : {}),
-          expectedRevision: 1 as V2Revision,
-          idempotencyKey: `ref_loc:${Date.now()}` as V2IdempotencyKey,
+          expectedRevision: revisionStore.requireRevision(),
+          idempotencyKey: createNarrativeMutationKey("ref_loc"),
         });
+        this.sceneReferences = response.references;
+        revisionStore.setRevision(response.revision);
       } finally {
         this.saving = false;
       }
@@ -134,6 +140,7 @@ export const useNarrativeReferenceStore = defineStore("narrativeReference", {
 
     async toggleParticipant(storyWorldId: string, sceneId: string, characterId: string): Promise<void> {
       const client = this.getClient();
+      const revisionStore = useNarrativeRevisionStore();
       const current = this.sceneReferences;
       const currentParticipants = [...(current?.participantCharacterIds ?? [])];
       const idx = currentParticipants.indexOf(characterId as V2CharacterId);
@@ -153,13 +160,15 @@ export const useNarrativeReferenceStore = defineStore("narrativeReference", {
             }))
           : undefined;
 
-        this.sceneReferences = await client.replaceSceneReferences(storyWorldId, sceneId, {
+        const response = await client.replaceSceneReferences(storyWorldId, sceneId, {
           ...(current?.mainLocationId ? { mainLocationId: current.mainLocationId } : {}),
           participantCharacterIds: currentParticipants,
           ...(filteredRefs ? { references: filteredRefs } : {}),
-          expectedRevision: 1 as V2Revision,
-          idempotencyKey: `ref_part:${Date.now()}` as V2IdempotencyKey,
+          expectedRevision: revisionStore.requireRevision(),
+          idempotencyKey: createNarrativeMutationKey("ref_part"),
         });
+        this.sceneReferences = response.references;
+        revisionStore.setRevision(response.revision);
       } finally {
         this.saving = false;
       }
@@ -173,6 +182,7 @@ export const useNarrativeReferenceStore = defineStore("narrativeReference", {
       role: V2NarrativeReferenceRole,
     ): Promise<void> {
       const client = this.getClient();
+      const revisionStore = useNarrativeRevisionStore();
       const current = this.sceneReferences;
       const refs = [
         ...(current?.references ?? []).map((r) => ({
@@ -185,13 +195,15 @@ export const useNarrativeReferenceStore = defineStore("narrativeReference", {
 
       this.saving = true;
       try {
-        this.sceneReferences = await client.replaceSceneReferences(storyWorldId, sceneId, {
+        const response = await client.replaceSceneReferences(storyWorldId, sceneId, {
           ...(current?.mainLocationId ? { mainLocationId: current.mainLocationId } : {}),
           ...(current?.participantCharacterIds ? { participantCharacterIds: current.participantCharacterIds } : {}),
           references: refs,
-          expectedRevision: 1 as V2Revision,
-          idempotencyKey: `ref_add:${Date.now()}` as V2IdempotencyKey,
+          expectedRevision: revisionStore.requireRevision(),
+          idempotencyKey: createNarrativeMutationKey("ref_add"),
         });
+        this.sceneReferences = response.references;
+        revisionStore.setRevision(response.revision);
       } finally {
         this.saving = false;
       }

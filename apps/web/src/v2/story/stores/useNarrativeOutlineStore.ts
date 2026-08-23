@@ -11,8 +11,15 @@ import type {
   V2UpdateQuestRequest,
   V2ApplyNarrativeTemplateRequest,
   V2ApplyNarrativeTemplateResponse,
+  V2NarrativeTemplateId,
+  V2CreateSceneRequest,
+  V2Revision,
+  V2SceneId,
+  V2ArcId,
 } from "@living-network/contracts/v2";
 import { V2NarrativeClient } from "../client.ts";
+import { useNarrativeRevisionStore } from "../../narrative-workbench/stores/useNarrativeRevisionStore.ts";
+import { createNarrativeMutationKey } from "../../narrative-workbench/utils/idempotency.ts";
 
 export interface NarrativeOutlineState {
   outline: V2NarrativeOutline | null;
@@ -228,9 +235,13 @@ export const useNarrativeOutlineStore = defineStore("narrativeOutline", {
     async fetchOutline(storyWorldId: string): Promise<void> {
       this.loading = true;
       this.error = null;
+      const revisionStore = useNarrativeRevisionStore();
       try {
         const client = this.getClient();
         this.outline = await client.getOutline(storyWorldId);
+        if (this.outline.worldRevision !== undefined) {
+          revisionStore.initialize(storyWorldId, this.outline.worldRevision);
+        }
         // Expand top level nodes by default if empty
         if (this.expandedNodeIds.length === 0 && this.outline) {
           this.expandedNodeIds = this.outline.arcs.map((a) => a.arcId);
@@ -246,51 +257,210 @@ export const useNarrativeOutlineStore = defineStore("narrativeOutline", {
       }
     },
 
-    async createChapter(storyWorldId: string, request: V2CreateChapterRequest): Promise<void> {
+    async createChapter(
+      storyWorldId: string,
+      request: {
+        arcId: string;
+        title: string;
+        summary?: string | undefined;
+        expectedRevision?: number | undefined;
+      },
+    ): Promise<void> {
       const client = this.getClient();
-      await client.createChapter(storyWorldId, request);
+      const revisionStore = useNarrativeRevisionStore();
+      const payload: V2CreateChapterRequest = {
+        arcId: request.arcId as V2ArcId,
+        title: request.title,
+        ...(request.summary ? { summary: request.summary } : {}),
+        expectedRevision: (request.expectedRevision ?? revisionStore.requireRevision()) as V2Revision,
+        idempotencyKey: createNarrativeMutationKey("create_chapter"),
+      };
+      const chapter = await client.createChapter(storyWorldId, payload);
+      if (chapter.revision !== undefined) {
+        revisionStore.setRevision(chapter.revision);
+      }
       await this.fetchOutline(storyWorldId);
     },
 
-    async updateChapter(storyWorldId: string, chapterId: string, request: V2UpdateChapterRequest): Promise<void> {
+    async updateChapter(
+      storyWorldId: string,
+      chapterId: string,
+      request: {
+        title?: string | undefined;
+        summary?: string | null | undefined;
+        expectedRevision?: number | undefined;
+      },
+    ): Promise<void> {
       const client = this.getClient();
-      await client.updateChapter(storyWorldId, chapterId, request);
+      const revisionStore = useNarrativeRevisionStore();
+      const payload: V2UpdateChapterRequest = {
+        ...(request.title !== undefined ? { title: request.title } : {}),
+        ...(request.summary !== undefined ? { summary: request.summary } : {}),
+        expectedRevision: (request.expectedRevision ?? revisionStore.requireRevision()) as V2Revision,
+        idempotencyKey: createNarrativeMutationKey("update_chapter"),
+      };
+      const chapter = await client.updateChapter(storyWorldId, chapterId, payload);
+      if (chapter.revision !== undefined) {
+        revisionStore.setRevision(chapter.revision);
+      }
       await this.fetchOutline(storyWorldId);
     },
 
     async deleteChapter(storyWorldId: string, chapterId: string): Promise<void> {
       const client = this.getClient();
-      await client.deleteChapter(storyWorldId, chapterId);
+      const revisionStore = useNarrativeRevisionStore();
+      const res = await client.deleteChapter(storyWorldId, chapterId);
+      if (res.revision !== undefined) {
+        revisionStore.setRevision(res.revision);
+      }
       if (this.activeChapterId === chapterId) {
         this.activeChapterId = null;
       }
       await this.fetchOutline(storyWorldId);
     },
 
-    async createQuest(storyWorldId: string, request: V2CreateQuestRequest): Promise<void> {
+    async createQuest(
+      storyWorldId: string,
+      request: {
+        arcId?: string | undefined;
+        chapterId?: string | undefined;
+        title: string;
+        summary?: string | undefined;
+        expectedRevision?: number | undefined;
+      },
+    ): Promise<void> {
       const client = this.getClient();
-      await client.createQuest(storyWorldId, request);
+      const revisionStore = useNarrativeRevisionStore();
+      const payload: V2CreateQuestRequest = {
+        ...(request.arcId ? { arcId: request.arcId as V2ArcId } : {}),
+        ...(request.chapterId ? { chapterId: request.chapterId } : {}),
+        title: request.title,
+        ...(request.summary ? { summary: request.summary } : {}),
+        expectedRevision: (request.expectedRevision ?? revisionStore.requireRevision()) as V2Revision,
+        idempotencyKey: createNarrativeMutationKey("create_quest"),
+      };
+      const quest = await client.createQuest(storyWorldId, payload);
+      if (quest.revision !== undefined) {
+        revisionStore.setRevision(quest.revision);
+      }
       await this.fetchOutline(storyWorldId);
     },
 
-    async updateQuest(storyWorldId: string, questId: string, request: V2UpdateQuestRequest): Promise<void> {
+    async updateQuest(
+      storyWorldId: string,
+      questId: string,
+      request: {
+        title?: string | undefined;
+        summary?: string | null | undefined;
+        expectedRevision?: number | undefined;
+      },
+    ): Promise<void> {
       const client = this.getClient();
-      await client.updateQuest(storyWorldId, questId, request);
+      const revisionStore = useNarrativeRevisionStore();
+      const payload: V2UpdateQuestRequest = {
+        ...(request.title !== undefined ? { title: request.title } : {}),
+        ...(request.summary !== undefined ? { summary: request.summary } : {}),
+        expectedRevision: (request.expectedRevision ?? revisionStore.requireRevision()) as V2Revision,
+        idempotencyKey: createNarrativeMutationKey("update_quest"),
+      };
+      const quest = await client.updateQuest(storyWorldId, questId, payload);
+      if (quest.revision !== undefined) {
+        revisionStore.setRevision(quest.revision);
+      }
       await this.fetchOutline(storyWorldId);
     },
 
     async deleteQuest(storyWorldId: string, questId: string): Promise<void> {
       const client = this.getClient();
-      await client.deleteQuest(storyWorldId, questId);
+      const revisionStore = useNarrativeRevisionStore();
+      const res = await client.deleteQuest(storyWorldId, questId);
+      if (res.revision !== undefined) {
+        revisionStore.setRevision(res.revision);
+      }
       if (this.activeQuestId === questId) {
         this.activeQuestId = null;
       }
       await this.fetchOutline(storyWorldId);
     },
 
-    async applyTemplate(storyWorldId: string, request: V2ApplyNarrativeTemplateRequest): Promise<V2ApplyNarrativeTemplateResponse> {
+    async createScene(
+      storyWorldId: string,
+      payload?: {
+        arcId?: string | undefined;
+        chapterId?: string | undefined;
+        questId?: string | undefined;
+        title?: string | undefined;
+      },
+    ): Promise<string> {
       const client = this.getClient();
-      const res = await client.applyTemplate(storyWorldId, request);
+      const revisionStore = useNarrativeRevisionStore();
+      const sceneId = `scene_${Math.random().toString(36).slice(2, 9)}`;
+      const title = payload?.title || `新场景 ${(this.allScenes.length || 0) + 1}`;
+
+      const body: V2CreateSceneRequest = {
+        sceneId: sceneId as V2SceneId,
+        title,
+        ...(payload?.arcId ? { arcId: payload.arcId as V2ArcId } : {}),
+        expectedRevision: revisionStore.requireRevision(),
+        idempotencyKey: createNarrativeMutationKey("create_scene"),
+      };
+
+      const res = await fetch(`/api/v2/core/worlds/${storyWorldId}/scenes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.message || `创建场景失败 (${res.status})`);
+      }
+
+      const data = (await res.json()) as { item?: { revision?: number }; revision?: number };
+      if (data.revision !== undefined) {
+        revisionStore.setRevision(data.revision);
+      }
+
+      // Save initial document with chapter/quest bindings
+      await client.saveSceneDocument(storyWorldId, sceneId, {
+        documentMode: "blocks",
+        title,
+        ...(payload?.arcId ? { arcId: payload.arcId as V2ArcId } : {}),
+        ...(payload?.chapterId ? { chapterId: payload.chapterId } : {}),
+        ...(payload?.questId ? { questId: payload.questId } : {}),
+        blocks: [
+          {
+            kind: "narration",
+            text: `${title} 场景开幕。`,
+          },
+        ],
+        expectedRevision: revisionStore.requireRevision(),
+        idempotencyKey: createNarrativeMutationKey("init_scene_doc"),
+      });
+
+      await this.fetchOutline(storyWorldId);
+      this.selectScene(sceneId);
+      return sceneId;
+    },
+
+    async applyTemplate(
+      storyWorldId: string,
+      request: {
+        templateId: string;
+        expectedRevision?: number | undefined;
+      },
+    ): Promise<V2ApplyNarrativeTemplateResponse> {
+      const client = this.getClient();
+      const revisionStore = useNarrativeRevisionStore();
+      const payload: V2ApplyNarrativeTemplateRequest = {
+        templateId: request.templateId as V2NarrativeTemplateId,
+        expectedRevision: (request.expectedRevision ?? revisionStore.requireRevision()) as V2Revision,
+        idempotencyKey: createNarrativeMutationKey("apply_template"),
+      };
+      const res = await client.applyTemplate(storyWorldId, payload);
+      if (res.revision !== undefined) {
+        revisionStore.setRevision(res.revision);
+      }
       await this.fetchOutline(storyWorldId);
       this.expandAll();
       return res;

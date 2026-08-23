@@ -86,8 +86,23 @@ export interface V2NarrativeOutlineArc {
 
 export interface V2NarrativeOutline {
   readonly storyWorldId: V2StoryWorldId;
+  readonly worldRevision?: V2Revision;
   readonly arcs: readonly V2NarrativeOutlineArc[];
   readonly unassignedScenes: readonly V2NarrativeOutlineScene[];
+}
+
+export interface V2NarrativeDiagnosticSummary {
+  readonly errorCount: number;
+  readonly warningCount: number;
+  readonly infoCount: number;
+  readonly valid: boolean;
+}
+
+export interface V2NarrativeBootstrapDto {
+  readonly storyWorldId: V2StoryWorldId;
+  readonly worldRevision: V2Revision;
+  readonly outline: V2NarrativeOutline;
+  readonly diagnosticSummary: V2NarrativeDiagnosticSummary;
 }
 
 export interface V2CreateChapterRequest {

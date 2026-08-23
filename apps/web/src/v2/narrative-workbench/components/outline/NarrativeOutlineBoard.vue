@@ -12,11 +12,7 @@ import {
 } from "@lucide/vue";
 import { useNarrativeOutlineStore } from "../../../story/stores/useNarrativeOutlineStore.ts";
 import { useNarrativeDiagnosticsStore } from "../../../story/stores/useNarrativeDiagnosticsStore.ts";
-import type {
-  V2ArcId,
-  V2IdempotencyKey,
-  V2Revision,
-} from "@living-network/contracts/v2";
+
 
 const props = defineProps<{
   storyWorldId: string;
@@ -51,10 +47,8 @@ function handleAddChapter(arcId: string): void {
   const title = prompt("请输入新章节名称：", "新章节");
   if (!title) return;
   outlineStore.createChapter(props.storyWorldId, {
-    arcId: arcId as V2ArcId,
+    arcId,
     title,
-    expectedRevision: 1 as V2Revision,
-    idempotencyKey: `ch_create_${Date.now()}` as V2IdempotencyKey,
   });
 }
 
@@ -62,12 +56,9 @@ function handleAddQuest(arcId?: string, chapterId?: string): void {
   const title = prompt("请输入新任务名称：", "新任务");
   if (!title) return;
   outlineStore.createQuest(props.storyWorldId, {
-    ...(arcId ? { arcId: arcId as V2ArcId } : {}),
+    ...(arcId ? { arcId } : {}),
     ...(chapterId ? { chapterId } : {}),
     title,
-    kind: "main",
-    expectedRevision: 1 as V2Revision,
-    idempotencyKey: `q_create_${Date.now()}` as V2IdempotencyKey,
   });
 }
 

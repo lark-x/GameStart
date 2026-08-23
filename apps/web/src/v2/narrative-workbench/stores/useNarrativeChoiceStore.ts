@@ -3,11 +3,12 @@ import type {
   V2ChoiceDto,
   V2ChoiceId,
   V2CreateChoiceRequest,
-  V2IdempotencyKey,
   V2Revision,
   V2SceneId,
   V2UpdateChoiceRequest,
 } from "@living-network/contracts/v2";
+import { useNarrativeRevisionStore } from "./useNarrativeRevisionStore.ts";
+import { createNarrativeMutationKey } from "../utils/idempotency.ts";
 
 export interface NarrativeChoiceState {
   choicesBySourceSceneId: Record<string, V2ChoiceDto[]>;
@@ -27,26 +28,18 @@ export const useNarrativeChoiceStore = defineStore("narrativeChoice", {
   }),
 
   getters: {
-    allChoices(state): readonly V2ChoiceDto[] {
-      const list: V2ChoiceDto[] = [];
-      for (const choices of Object.values(state.choicesBySourceSceneId)) {
-        list.push(...choices);
-      }
-      return list;
-    },
-
-    getChoicesForScene: (state) => (sceneId: string): readonly V2ChoiceDto[] => {
+    choicesForScene: (state) => (sceneId: string): V2ChoiceDto[] => {
       return state.choicesBySourceSceneId[sceneId] ?? [];
     },
 
-    choicesForScene: (state) => (sceneId: string): readonly V2ChoiceDto[] => {
-      return state.choicesBySourceSceneId[sceneId] ?? [];
+    allChoices(state): V2ChoiceDto[] {
+      return Object.values(state.choicesBySourceSceneId).flat();
     },
 
     activeChoice(state): V2ChoiceDto | null {
       if (!state.activeChoiceId) return null;
-      for (const choices of Object.values(state.choicesBySourceSceneId)) {
-        const found = choices.find((c) => c.choiceId === state.activeChoiceId);
+      for (const list of Object.values(state.choicesBySourceSceneId)) {
+        const found = list.find((c) => c.choiceId === state.activeChoiceId);
         if (found) return found;
       }
       return null;
@@ -54,12 +47,8 @@ export const useNarrativeChoiceStore = defineStore("narrativeChoice", {
   },
 
   actions: {
-    setActiveChoiceId(choiceId: string | null): void {
+    setActiveChoice(choiceId: string | null): void {
       this.activeChoiceId = choiceId;
-    },
-
-    setChoicesForScene(sceneId: string, choices: V2ChoiceDto[]): void {
-      this.choicesBySourceSceneId[sceneId] = choices;
     },
 
     async fetchChoices(storyWorldId: string): Promise<void> {
@@ -70,22 +59,29 @@ export const useNarrativeChoiceStore = defineStore("narrativeChoice", {
       this.loading = true;
       this.error = null;
       try {
-        const res = await fetch(`/api/v2/core/worlds/${storyWorldId}/graph`).then((r) => r.ok ? r.json() : null).catch(() => null);
-        if (res && res.choices && Array.isArray(res.choices)) {
-          const map: Record<string, V2ChoiceDto[]> = {};
-          for (const choice of res.choices as V2ChoiceDto[]) {
-            if (!map[choice.sourceSceneId]) {
-              map[choice.sourceSceneId] = [];
-            }
-            map[choice.sourceSceneId]!.push(choice);
-          }
-          this.choicesBySourceSceneId = map;
+        const res = await fetch(`/api/v2/core/worlds/${storyWorldId}/graph`);
+        if (!res.ok) {
+          throw new Error(`Failed to load graph: ${res.statusText}`);
         }
-      } catch (err) {
-        this.error = err instanceof Error ? err.message : "获取分支选项失败";
+        const data = (await res.json()) as { choices?: readonly V2ChoiceDto[] };
+        const map: Record<string, V2ChoiceDto[]> = {};
+        for (const choice of data.choices ?? []) {
+          if (!map[choice.sourceSceneId]) {
+            map[choice.sourceSceneId] = [];
+          }
+          map[choice.sourceSceneId]!.push(choice);
+        }
+        this.choicesBySourceSceneId = map;
+      } catch (err: unknown) {
+        this.error = err instanceof Error ? err.message : "Failed to load choices";
       } finally {
         this.loading = false;
       }
+    },
+
+    async fetchChoicesForScene(storyWorldId: string, _sceneId?: string): Promise<void> {
+      void _sceneId;
+      return this.fetchChoicesForWorld(storyWorldId);
     },
 
     async createChoice(
@@ -100,6 +96,7 @@ export const useNarrativeChoiceStore = defineStore("narrativeChoice", {
     ): Promise<V2ChoiceDto | null> {
       this.saving = true;
       this.error = null;
+      const revisionStore = useNarrativeRevisionStore();
       try {
         const body: V2CreateChoiceRequest = {
           choiceId: request.choiceId as V2ChoiceId,
@@ -108,8 +105,8 @@ export const useNarrativeChoiceStore = defineStore("narrativeChoice", {
           label: request.label,
           gates: [],
           consequences: [],
-          expectedRevision: (request.expectedRevision ?? 1) as V2Revision,
-          idempotencyKey: `create_choice:${Date.now()}` as V2IdempotencyKey,
+          expectedRevision: (request.expectedRevision ?? revisionStore.requireRevision()) as V2Revision,
+          idempotencyKey: createNarrativeMutationKey("create_choice"),
         };
 
         const res = await fetch(`/api/v2/core/worlds/${storyWorldId}/choices`, {
@@ -123,8 +120,11 @@ export const useNarrativeChoiceStore = defineStore("narrativeChoice", {
           throw new Error(errData.message || `创建分支失败 (${res.status})`);
         }
 
-        const created = (await res.json()) as { choice?: V2ChoiceDto; item?: V2ChoiceDto } & Partial<V2ChoiceDto>;
-        const choice: V2ChoiceDto = created.choice ?? created.item ?? (created as V2ChoiceDto);
+        const data = (await res.json()) as { item?: V2ChoiceDto; choice?: V2ChoiceDto; revision?: number };
+        const choice: V2ChoiceDto = data.item ?? data.choice ?? (data as unknown as V2ChoiceDto);
+        if (data.revision !== undefined) {
+          revisionStore.setRevision(data.revision);
+        }
         if (!this.choicesBySourceSceneId[request.sourceSceneId]) {
           this.choicesBySourceSceneId[request.sourceSceneId] = [];
         }
@@ -152,6 +152,7 @@ export const useNarrativeChoiceStore = defineStore("narrativeChoice", {
     ): Promise<void> {
       this.saving = true;
       this.error = null;
+      const revisionStore = useNarrativeRevisionStore();
       try {
         const body: V2UpdateChoiceRequest = {
           sourceSceneId: update.sourceSceneId as V2SceneId,
@@ -159,8 +160,8 @@ export const useNarrativeChoiceStore = defineStore("narrativeChoice", {
           label: update.label,
           ...(update.gates ? { gates: update.gates } : {}),
           ...(update.consequences ? { consequences: update.consequences } : {}),
-          expectedRevision: (update.expectedRevision ?? 1) as V2Revision,
-          idempotencyKey: `update_choice:${Date.now()}` as V2IdempotencyKey,
+          expectedRevision: (update.expectedRevision ?? revisionStore.requireRevision()) as V2Revision,
+          idempotencyKey: createNarrativeMutationKey("update_choice"),
         };
 
         const res = await fetch(`/api/v2/core/worlds/${storyWorldId}/choices/${choiceId}`, {
@@ -174,6 +175,11 @@ export const useNarrativeChoiceStore = defineStore("narrativeChoice", {
           throw new Error(errData.message || `更新分支失败 (${res.status})`);
         }
 
+        const data = (await res.json()) as { item?: V2ChoiceDto; revision?: number };
+        if (data.revision !== undefined) {
+          revisionStore.setRevision(data.revision);
+        }
+
         await this.fetchChoicesForWorld(storyWorldId);
       } catch (err) {
         this.error = err instanceof Error ? err.message : "更新分支失败";
@@ -181,6 +187,12 @@ export const useNarrativeChoiceStore = defineStore("narrativeChoice", {
       } finally {
         this.saving = false;
       }
+    },
+
+    clear(): void {
+      this.choicesBySourceSceneId = {};
+      this.activeChoiceId = null;
+      this.error = null;
     },
   },
 });

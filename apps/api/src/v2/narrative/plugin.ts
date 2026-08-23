@@ -21,6 +21,26 @@ export interface V2NarrativePluginOptions {
 export const v2NarrativePlugin: FastifyPluginAsync<V2NarrativePluginOptions> = async (app, options) => {
   const useCases = createV2NarrativeUseCases(options.narrativeUnitOfWork);
 
+  // Bootstrap
+  app.get<{ Params: { storyWorldId: string } }>(
+    "/worlds/:storyWorldId/narrative/bootstrap",
+    async (request) => {
+      const outline = await useCases.listOutline(request.params.storyWorldId);
+      const diagnostics = await useCases.getDiagnostics(request.params.storyWorldId);
+      return {
+        storyWorldId: request.params.storyWorldId,
+        worldRevision: outline.worldRevision ?? 1,
+        outline,
+        diagnosticSummary: {
+          errorCount: diagnostics.errorCount,
+          warningCount: diagnostics.warningCount,
+          infoCount: diagnostics.infoCount,
+          valid: diagnostics.valid,
+        },
+      };
+    },
+  );
+
   // Outline
   app.get<{ Params: { storyWorldId: string } }>(
     "/worlds/:storyWorldId/narrative/outline",

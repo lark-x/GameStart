@@ -1,11 +1,12 @@
 import { defineStore } from "pinia";
 import type {
   V2CandidateReviewAction,
-  V2IdempotencyKey,
-  V2Revision,
   V2ReviewCandidateRequest,
+  V2Revision,
   V2SceneCandidateDto,
 } from "@living-network/contracts/v2";
+import { useNarrativeRevisionStore } from "./useNarrativeRevisionStore.ts";
+import { createNarrativeMutationKey } from "../utils/idempotency.ts";
 
 export interface NarrativeCandidateState {
   candidates: V2SceneCandidateDto[];
@@ -27,49 +28,52 @@ export const useNarrativeCandidateStore = defineStore("narrativeCandidate", {
   }),
 
   getters: {
-    selectedCandidate(state): V2SceneCandidateDto | null {
-      return state.candidates.find((c) => c.candidateId === state.selectedCandidateId) ?? null;
+    pendingCandidates(state): V2SceneCandidateDto[] {
+      return state.candidates.filter((c) => c.status === "pending");
     },
 
-    filteredCandidates(state): readonly V2SceneCandidateDto[] {
+    filteredCandidates(state): V2SceneCandidateDto[] {
       if (state.statusFilter === "all") return state.candidates;
       return state.candidates.filter((c) => c.status === state.statusFilter);
     },
 
-    pendingCandidates(state): readonly V2SceneCandidateDto[] {
-      return state.candidates.filter((c) => c.status === "pending");
+    selectedCandidate(state): V2SceneCandidateDto | null {
+      if (!state.selectedCandidateId) return null;
+      return state.candidates.find((c) => c.candidateId === state.selectedCandidateId) ?? null;
     },
   },
 
   actions: {
-    setStatusFilter(filter: "all" | "pending" | "approved" | "rejected"): void {
-      this.statusFilter = filter;
+    selectCandidate(candidateId: string | null): void {
+      this.selectedCandidateId = candidateId;
     },
 
-    selectCandidate(candidateId: string): void {
+    setSelectedCandidate(candidateId: string | null): void {
       this.selectedCandidateId = candidateId;
+    },
+
+    setStatusFilter(filter: "all" | "pending" | "approved" | "rejected"): void {
+      this.statusFilter = filter;
     },
 
     async fetchCandidates(storyWorldId: string): Promise<void> {
       this.loading = true;
       this.error = null;
       try {
-        const url = `/api/v2/core/worlds/${storyWorldId}/candidates/scenes`;
-        const res = await fetch(url).then((r) => r.ok ? r.json() : null).catch(() => null);
-        if (res) {
-          const list: V2SceneCandidateDto[] = Array.isArray(res)
-            ? res
-            : Array.isArray((res as { candidates?: V2SceneCandidateDto[] }).candidates)
-            ? (res as { candidates: V2SceneCandidateDto[] }).candidates
-            : [];
-          this.candidates = list;
-          if ((!this.selectedCandidateId || !this.candidates.some((c) => c.candidateId === this.selectedCandidateId)) && this.candidates.length > 0) {
-            const firstPending = this.candidates.find((c) => c.status === "pending");
-            this.selectedCandidateId = firstPending ? firstPending.candidateId : this.candidates[0]!.candidateId;
+        const res = await fetch(`/api/v2/core/worlds/${storyWorldId}/candidates/scenes`);
+        if (!res.ok) {
+          throw new Error(`Failed to load candidates: ${res.statusText}`);
+        }
+        const data = (await res.json()) as V2SceneCandidateDto[];
+        this.candidates = Array.isArray(data) ? data : [];
+        if (this.candidates.length > 0 && !this.selectedCandidateId) {
+          const firstPending = this.candidates.find((c) => c.status === "pending") ?? this.candidates[0];
+          if (firstPending) {
+            this.selectedCandidateId = firstPending.candidateId;
           }
         }
-      } catch (err) {
-        this.error = err instanceof Error ? err.message : "获取候选列表失败";
+      } catch (err: unknown) {
+        this.error = err instanceof Error ? err.message : "Failed to load candidates";
       } finally {
         this.loading = false;
       }
@@ -83,14 +87,15 @@ export const useNarrativeCandidateStore = defineStore("narrativeCandidate", {
     ): Promise<boolean> {
       this.applying = true;
       this.error = null;
+      const revisionStore = useNarrativeRevisionStore();
       try {
         const candidate = this.candidates.find((c) => c.candidateId === candidateId);
         const body: V2ReviewCandidateRequest = {
           action,
           reviewer: "creator",
           ...(reason ? { reason } : {}),
-          expectedRevision: (candidate?.baseCanonRevision ?? 1) as V2Revision,
-          idempotencyKey: `review_${candidateId}_${Date.now()}` as V2IdempotencyKey,
+          expectedRevision: (candidate?.baseCanonRevision ?? revisionStore.requireRevision()) as V2Revision,
+          idempotencyKey: createNarrativeMutationKey("review_candidate"),
         };
 
         const res = await fetch(`/api/v2/core/worlds/${storyWorldId}/candidates/scenes/${candidateId}/review`, {
@@ -102,6 +107,11 @@ export const useNarrativeCandidateStore = defineStore("narrativeCandidate", {
         if (!res.ok) {
           const errData = (await res.json().catch(() => ({}))) as { error?: { message?: string }; message?: string };
           throw new Error(errData.error?.message || errData.message || `HTTP ${res.status}`);
+        }
+
+        const data = (await res.json()) as { revision?: number };
+        if (data.revision !== undefined) {
+          revisionStore.setRevision(data.revision);
         }
 
         await this.fetchCandidates(storyWorldId);

@@ -3,7 +3,6 @@ import {
   renderSceneBlocksToPlainText,
   type V2CharacterId,
   type V2IdempotencyKey,
-  type V2Revision,
   type V2SceneBlock,
   type V2SceneBlockKind,
   type V2SceneDocument,
@@ -11,6 +10,7 @@ import {
 } from "@living-network/contracts/v2";
 import { V2NarrativeClient } from "../client.ts";
 import { randomUuid } from "../../random.ts";
+import { useNarrativeRevisionStore } from "../../narrative-workbench/stores/useNarrativeRevisionStore.ts";
 
 export interface SceneDocumentState {
   document: V2SceneDocument | null;
@@ -205,6 +205,7 @@ export const useSceneDocumentStore = defineStore("sceneDocument", {
 
       try {
         const client = this.getClient();
+        const revisionStore = useNarrativeRevisionStore();
         const idempotencyKey = this.saveIdempotencyKey ?? `save_doc:${randomUuid()}` as V2IdempotencyKey;
         this.saveIdempotencyKey = idempotencyKey;
         const saved = await client.saveSceneDocument(storyWorldId, this.document.sceneId, {
@@ -224,12 +225,15 @@ export const useSceneDocumentStore = defineStore("sceneDocument", {
             payload: b.payload,
           })),
           expectedSceneRevision: this.document.revision,
-          ...(this.document.worldRevision !== undefined ? { expectedRevision: this.document.worldRevision as V2Revision } : {}),
+          expectedRevision: revisionStore.requireRevision(),
           idempotencyKey,
         });
 
         this.document = saved;
         this.blocks = [...saved.blocks];
+        if (saved.worldRevision !== undefined) {
+          revisionStore.setRevision(saved.worldRevision);
+        }
         this.isDirty = false;
         this.hasConflict = false;
         this.conflictError = null;
