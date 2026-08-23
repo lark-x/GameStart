@@ -1,5 +1,5 @@
-<script setup lang="ts">
-import { computed, ref } from "vue";
+﻿<script setup lang="ts">
+import { computed, ref, watch } from "vue";
 import {
   GitFork,
   ArrowRight,
@@ -8,21 +8,42 @@ import {
   Zap,
   Edit3,
   FileText,
+  Compass,
 } from "@lucide/vue";
 import { useNarrativeOutlineStore } from "../../../story/stores/useNarrativeOutlineStore.ts";
 import { useNarrativeChoiceStore } from "../../stores/useNarrativeChoiceStore.ts";
 import ChoiceInspector from "./ChoiceInspector.vue";
 import type { V2ChoiceDto } from "@living-network/contracts/v2";
 
+interface SceneOptionItem {
+  sceneId: string;
+  title: string;
+  arcTitle?: string;
+  questTitle?: string;
+  questId?: string;
+  ordinal?: number;
+  isEntry?: boolean;
+}
+
+interface QuestOptionItem {
+  questId: string;
+  title: string;
+  arcTitle?: string;
+  chapterTitle?: string;
+  sceneCount: number;
+}
+
 const props = defineProps<{
   storyWorldId: string;
   selectedSceneId: string | null;
+  activeQuestId?: string | null;
 }>();
 
 const emit = defineEmits<{
   selectScene: [sceneId: string];
   openScript: [sceneId: string];
   createScene: [questId?: string];
+  selectQuest: [questId: string];
 }>();
 
 const outlineStore = useNarrativeOutlineStore();
@@ -31,16 +52,80 @@ const choiceStore = useNarrativeChoiceStore();
 // Selected Choice for Inspection
 const selectedChoice = ref<V2ChoiceDto | null>(null);
 
+// Active Quest state
+const currentQuestId = ref<string>(props.activeQuestId || "");
+
 // New choice modal state
 const creatingChoice = ref(false);
 const newChoiceSourceSceneId = ref<string>("");
 const newChoiceLabel = ref("");
 const newChoiceTargetSceneId = ref("");
 
-// Flattened list of all scenes in the current narrative hierarchy
-const allScenes = computed(() => {
+// List of all Quests available in outline
+const availableQuests = computed<QuestOptionItem[]>(() => {
   if (!outlineStore.outline) return [];
-  const scenes: { sceneId: string; title: string; arcTitle?: string; questTitle?: string; ordinal?: number; isEntry?: boolean }[] = [];
+  const quests: QuestOptionItem[] = [];
+  for (const arc of outlineStore.outline.arcs) {
+    for (const chapter of arc.chapters) {
+      for (const q of chapter.quests) {
+        quests.push({
+          questId: q.questId,
+          title: q.title,
+          arcTitle: arc.title,
+          chapterTitle: chapter.title,
+          sceneCount: q.scenes.length,
+        });
+      }
+    }
+    for (const q of arc.looseQuests) {
+      quests.push({
+        questId: q.questId,
+        title: q.title,
+        arcTitle: arc.title,
+        sceneCount: q.scenes.length,
+      });
+    }
+  }
+  return quests;
+});
+
+// Auto-select quest based on selectedScene or first quest
+watch(
+  () => [props.selectedSceneId, props.activeQuestId, availableQuests.value],
+  () => {
+    if (props.activeQuestId) {
+      currentQuestId.value = props.activeQuestId;
+      return;
+    }
+    if (props.selectedSceneId && outlineStore.outline) {
+      for (const arc of outlineStore.outline.arcs) {
+        for (const chapter of arc.chapters) {
+          for (const q of chapter.quests) {
+            if (q.scenes.some((s) => s.sceneId === props.selectedSceneId)) {
+              currentQuestId.value = q.questId;
+              return;
+            }
+          }
+        }
+        for (const q of arc.looseQuests) {
+          if (q.scenes.some((s) => s.sceneId === props.selectedSceneId)) {
+            currentQuestId.value = q.questId;
+            return;
+          }
+        }
+      }
+    }
+    if (!currentQuestId.value && availableQuests.value.length > 0) {
+      currentQuestId.value = availableQuests.value[0]?.questId || "";
+    }
+  },
+  { immediate: true },
+);
+
+// All scenes in world for cross-linking
+const allScenes = computed<SceneOptionItem[]>(() => {
+  if (!outlineStore.outline) return [];
+  const scenes: SceneOptionItem[] = [];
   for (const arc of outlineStore.outline.arcs) {
     for (const chapter of arc.chapters) {
       for (const quest of chapter.quests) {
@@ -50,6 +135,7 @@ const allScenes = computed(() => {
             title: scene.title,
             arcTitle: arc.title,
             questTitle: quest.title,
+            questId: quest.questId,
             ordinal: scene.ordinal,
             isEntry: scene.isEntry,
           });
@@ -72,6 +158,7 @@ const allScenes = computed(() => {
           title: scene.title,
           arcTitle: arc.title,
           questTitle: quest.title,
+          questId: quest.questId,
           ordinal: scene.ordinal,
           isEntry: scene.isEntry,
         });
@@ -87,7 +174,25 @@ const allScenes = computed(() => {
       });
     }
   }
+  for (const scene of outlineStore.outline.unassignedScenes) {
+    scenes.push({
+      sceneId: scene.sceneId,
+      title: scene.title,
+      ordinal: scene.ordinal,
+      isEntry: scene.isEntry,
+    });
+  }
   return scenes;
+});
+
+// Quest-Local Scenes only
+const questLocalScenes = computed<SceneOptionItem[]>(() => {
+  if (!currentQuestId.value) return allScenes.value;
+  return allScenes.value.filter((s) => s.questId === currentQuestId.value);
+});
+
+const currentQuestInfo = computed(() => {
+  return availableQuests.value.find((q) => q.questId === currentQuestId.value);
 });
 
 function getOutgoingChoices(sceneId: string): readonly V2ChoiceDto[] {
@@ -96,6 +201,12 @@ function getOutgoingChoices(sceneId: string): readonly V2ChoiceDto[] {
 
 function handleSelectChoice(choice: V2ChoiceDto) {
   selectedChoice.value = choice;
+}
+
+function handleQuestChange(e: Event) {
+  const qId = (e.target as HTMLSelectElement).value;
+  currentQuestId.value = qId;
+  emit("selectQuest", qId);
 }
 
 function openCreateChoiceModal(sourceSceneId: string) {
@@ -126,23 +237,48 @@ async function submitCreateChoice() {
   <div class="h-full flex flex-row overflow-hidden bg-stone-50/50 dark:bg-stone-950/20 text-xs">
     <!-- Flow Graph Visual Area -->
     <div class="flex-1 overflow-y-auto p-6 space-y-6">
-      <!-- Toolbar Header -->
-      <div class="p-4 bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-800 shadow-sm flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <div class="p-1.5 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400">
+      <!-- Toolbar Header with Quest-Local Selector -->
+      <div class="p-4 bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-800 shadow-sm flex flex-wrap items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+          <div class="p-2 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
             <GitFork class="h-4 w-4" />
           </div>
           <div>
-            <h2 class="font-bold text-stone-900 dark:text-stone-100 text-sm">剧情分支图 (Story Flow & Choices)</h2>
-            <p class="text-[11px] text-stone-400">查看并管理场景流向、出口选项与状态门禁条件</p>
+            <div class="flex items-center gap-2">
+              <h2 class="font-bold text-stone-900 dark:text-stone-100 text-sm">任务分支流图 (Quest Flow)</h2>
+              <span v-if="currentQuestInfo" class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300">
+                {{ questLocalScenes.length }} 场景
+              </span>
+            </div>
+            <p class="text-[11px] text-stone-400">
+              <span v-if="currentQuestInfo">
+                {{ currentQuestInfo.arcTitle }} / {{ currentQuestInfo.chapterTitle || '' }} / {{ currentQuestInfo.title }}
+              </span>
+              <span v-else>查看并管理当前任务下的场景流向、出口选项与状态门禁条件</span>
+            </p>
           </div>
         </div>
 
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-3">
+          <!-- Quest Selector Dropdown -->
+          <div v-if="availableQuests.length > 0" class="flex items-center gap-1.5 bg-stone-50 dark:bg-stone-800/80 px-2.5 py-1.5 rounded-lg border border-stone-200 dark:border-stone-700">
+            <Compass class="h-3.5 w-3.5 text-stone-400" />
+            <label class="text-stone-500 font-medium text-[11px]">当前任务:</label>
+            <select
+              :value="currentQuestId"
+              class="bg-transparent text-stone-900 dark:text-stone-100 font-semibold outline-none text-xs cursor-pointer"
+              @change="handleQuestChange"
+            >
+              <option v-for="q in availableQuests" :key="q.questId" :value="q.questId">
+                {{ q.title }} ({{ q.sceneCount }} 场景)
+              </option>
+            </select>
+          </div>
+
           <button
             type="button"
             class="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white font-semibold rounded-lg shadow-sm flex items-center gap-1.5 transition-all"
-            @click="emit('createScene')"
+            @click="emit('createScene', currentQuestId || undefined)"
           >
             <Plus class="h-3.5 w-3.5" />
             <span>新建场景</span>
@@ -150,10 +286,10 @@ async function submitCreateChoice() {
         </div>
       </div>
 
-      <!-- Scenes & Choices Grid Flow -->
-      <div v-if="allScenes.length > 0" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+      <!-- Scenes & Choices Grid Flow (Quest-Local) -->
+      <div v-if="questLocalScenes.length > 0" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
         <div
-          v-for="scene in allScenes"
+          v-for="scene in questLocalScenes"
           :key="scene.sceneId"
           class="p-4 rounded-xl border transition-all duration-150 flex flex-col justify-between"
           :class="[
@@ -239,13 +375,13 @@ async function submitCreateChoice() {
 
       <div v-else class="p-12 text-center text-stone-400 bg-white dark:bg-stone-900 rounded-xl border border-dashed border-stone-200 dark:border-stone-800 space-y-3">
         <FileText class="h-8 w-8 mx-auto text-stone-300" />
-        <p>当前故事大纲中尚未创建任何场景</p>
+        <p>当前任务下尚未创建任何场景</p>
         <button
           type="button"
           class="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-lg text-xs"
-          @click="emit('createScene')"
+          @click="emit('createScene', currentQuestId || undefined)"
         >
-          创建第一个场景
+          创建任务第一个场景
         </button>
       </div>
     </div>
@@ -287,9 +423,20 @@ async function submitCreateChoice() {
               class="w-full px-3 py-1.5 rounded-xl bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 outline-none text-stone-900 dark:text-stone-100"
             >
               <option value="">(无目标场景 / 结束)</option>
-              <option v-for="s in allScenes" :key="s.sceneId" :value="s.sceneId">
-                {{ s.title }} ({{ s.sceneId }})
-              </option>
+              <optgroup v-if="currentQuestInfo" :label="`本任务场景 (${currentQuestInfo.title})`">
+                <option v-for="s in questLocalScenes" :key="s.sceneId" :value="s.sceneId">
+                  {{ s.title }} ({{ s.sceneId }})
+                </option>
+              </optgroup>
+              <optgroup label="全部其他场景">
+                <option
+                  v-for="s in allScenes.filter((s) => s.questId !== currentQuestId)"
+                  :key="s.sceneId"
+                  :value="s.sceneId"
+                >
+                  {{ s.title }} ({{ s.sceneId }})
+                </option>
+              </optgroup>
             </select>
           </div>
         </div>
