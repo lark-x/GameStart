@@ -28,6 +28,7 @@ import type { V2WorkspaceSnapshot } from "../../adapters";
 import { useV2WorkspaceStore } from "../../stores/workspace";
 import WorkspaceModuleIntro from "./WorkspaceModuleIntro.vue";
 import StoryActFlowTree from "./StoryActFlowTree.vue";
+import StoryWorkspace from "../../story/components/StoryWorkspace.vue";
 import StoryNodeDrawer, { type CanonEntityKind } from "./StoryNodeDrawer.vue";
 import type { StorySkillNode } from "./StoryInspectionCard.vue";
 
@@ -51,8 +52,8 @@ const emit = defineEmits<{
   resetCanonDraft: [];
 }>();
 
-// 🌟 视图切换模式：默认为 RPG 故事技能树视图
-const viewMode = ref<"tree" | "list">("tree");
+// 🌟 视图切换模式：默认为剧本创作工作台
+const viewMode = ref<"story" | "tree" | "list">("story");
 
 type CanonCategory = "characters" | "locations" | "rules_facts" | "timeline" | "all";
 const validTabs = new Set<CanonCategory>(["characters", "locations", "rules_facts", "timeline", "all"]);
@@ -226,8 +227,17 @@ const filteredTimeline = computed(() => {
           </div>
 
           <div class="hero-right-actions">
-            <!-- 🌲 视图模式双切换器 -->
+            <!-- 🌲 视图模式三切换器 -->
             <div class="view-mode-toggle-group">
+              <button
+                type="button"
+                class="view-toggle-pill"
+                :class="{ active: viewMode === 'story' }"
+                @click="viewMode = 'story'"
+              >
+                <BookOpen :size="14" aria-hidden="true" />
+                <span>📖 剧本创作台</span>
+              </button>
               <button
                 type="button"
                 class="view-toggle-pill"
@@ -235,7 +245,7 @@ const filteredTimeline = computed(() => {
                 @click="viewMode = 'tree'"
               >
                 <GitFork :size="14" aria-hidden="true" />
-                <span>🌲 篇章剧情树</span>
+                <span>🌲 篇章泳道</span>
               </button>
               <button
                 type="button"
@@ -244,7 +254,7 @@ const filteredTimeline = computed(() => {
                 @click="viewMode = 'list'"
               >
                 <LayoutGrid :size="14" aria-hidden="true" />
-                <span>📋 实体资产列表</span>
+                <span>📋 资产列表</span>
               </button>
             </div>
 
@@ -276,9 +286,18 @@ const filteredTimeline = computed(() => {
         </div>
       </Card>
 
-      <!-- 🌟 视图 A: 篇章剧幕与分支剧情树 (Act Flow Swimlanes) -->
+      <!-- 🌟 视图 A: 结构化剧本创作工作台 (Narrative Authoring System) -->
+      <StoryWorkspace
+        v-if="viewMode === 'story'"
+        :story-world-id="snapshot.world.storyWorldId"
+        :snapshot="snapshot"
+        :loading="loading"
+        @refreshed="store.loadSnapshot()"
+      />
+
+      <!-- 🌟 视图 B: 篇章剧幕与分支剧情树 (Act Flow Swimlanes) -->
       <StoryActFlowTree
-        v-if="viewMode === 'tree'"
+        v-else-if="viewMode === 'tree'"
         :snapshot="snapshot"
         :loading="loading"
         @refreshed="store.loadSnapshot()"

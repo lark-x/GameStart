@@ -24,6 +24,12 @@ export interface V2ReleaseManifest {
     readonly choices: readonly V2GraphChoice[];
   };
   readonly stateSchema: readonly V2TypedStateVariable[];
+  readonly narrative?: {
+    readonly chapters?: readonly any[];
+    readonly quests?: readonly any[];
+    readonly loreEntries?: readonly any[];
+    readonly references?: readonly any[];
+  };
   readonly createdAt?: string;
 }
 
@@ -101,6 +107,12 @@ export function createV2ReleaseManifest(input: {
     readonly choices: readonly V2GraphChoice[];
   };
   readonly stateSchema: readonly V2TypedStateVariable[];
+  readonly narrative?: {
+    readonly chapters?: readonly any[];
+    readonly quests?: readonly any[];
+    readonly loreEntries?: readonly any[];
+    readonly references?: readonly any[];
+  };
 }): V2ReleaseManifest {
   if (input.releaseId.trim().length === 0 || input.releaseId.length > 128) {
     throw new V2DomainError("INVALID_INPUT", "releaseId must be a non-empty id up to 128 characters");
@@ -119,6 +131,7 @@ export function createV2ReleaseManifest(input: {
     canon: input.canon,
     graph: input.graph,
     stateSchema: input.stateSchema,
+    ...(input.narrative ? { narrative: input.narrative } : {}),
   };
   return {
     releaseId: input.releaseId,
@@ -129,6 +142,7 @@ export function createV2ReleaseManifest(input: {
     canon: input.canon,
     graph: input.graph,
     stateSchema: input.stateSchema,
+    ...(input.narrative ? { narrative: input.narrative } : {}),
   };
 }
 

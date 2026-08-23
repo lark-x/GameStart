@@ -36,6 +36,8 @@ import { createV2ApiMemoryRuntime } from "../memory-runtime/index.ts";
 import { createV2MemoryPlugin } from "../memory-runtime/plugin.ts";
 import { createV2GenerationPlugin } from "../generation/index.ts";
 import { createV2CoreUseCases } from "../core/use-cases.ts";
+import { v2NarrativePlugin } from "../narrative/index.ts";
+import { SqliteNarrativeUnitOfWork } from "@living-network/database/v2";
 import { createV2FastifyApp } from "./app.ts";
 import { createV2PlatformPlugin, getV2PlatformCapabilities } from "./plugin.ts";
 
@@ -187,6 +189,8 @@ export function createV2ApiRuntime(options: {
   const app = createV2FastifyApp({
     coreOptions: { useCases: coreUseCases },
     companionPlugin: createV2CompanionPlugin({ useCases: companionUseCases }),
+    narrativePlugin: v2NarrativePlugin,
+    narrativeOptions: { narrativeUnitOfWork: new SqliteNarrativeUnitOfWork(db) },
     chatPlugin: createV2ChatPlugin({
       useCases: chatUseCases,
       resolveModel,

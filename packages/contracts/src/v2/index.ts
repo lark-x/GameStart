@@ -6,3 +6,4 @@ export * from "./chat/index.ts";
 export * from "./fact/index.ts";
 export * from "./memory-engine/index.ts";
 export * from "./companion/index.ts";
+export * from "./narrative/index.ts";

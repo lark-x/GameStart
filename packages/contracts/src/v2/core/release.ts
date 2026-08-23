@@ -18,6 +18,7 @@ export interface V2ReleaseManifestDto {
   readonly canon: V2CanonSnapshotDto;
   readonly graph: V2GraphSnapshotDto;
   readonly stateSchema: readonly V2StateVariableDto[];
+  readonly narrative?: Record<string, unknown>;
   readonly createdAt: string;
 }
 

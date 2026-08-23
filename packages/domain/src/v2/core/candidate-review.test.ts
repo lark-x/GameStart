@@ -35,6 +35,7 @@ test("V2 candidate review creates pending scene candidates and deterministic app
       sceneId: "scene_new",
       title: "New Scene",
       body: "A newly proposed scene.",
+      participantCharacterIds: ["char_a"],
     },
     choices: [
       {
