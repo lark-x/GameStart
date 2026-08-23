@@ -35,6 +35,12 @@ export const useNarrativeReferenceStore = defineStore("narrativeReference", {
       return state.sceneReferences?.participantCharacterIds ?? [];
     },
 
+    loreItemIds(state): readonly string[] {
+      return (state.sceneReferences?.references ?? [])
+        .filter((r) => r.targetType === "lore")
+        .map((r) => r.targetId);
+    },
+
     allReferences(state): readonly V2NarrativeReference[] {
       return state.sceneReferences?.references ?? [];
     },
@@ -55,6 +61,49 @@ export const useNarrativeReferenceStore = defineStore("narrativeReference", {
         this.error = err instanceof Error ? err.message : "Failed to load scene references";
       } finally {
         this.loading = false;
+      }
+    },
+
+    async fetchReferences(storyWorldId: string, sceneId: string): Promise<void> {
+      return this.fetchSceneReferences(storyWorldId, sceneId);
+    },
+
+    async addParticipant(storyWorldId: string, sceneId: string, characterId: string): Promise<void> {
+      if (this.participantCharacterIds.includes(characterId)) return;
+      return this.toggleParticipant(storyWorldId, sceneId, characterId);
+    },
+
+    async removeParticipant(storyWorldId: string, sceneId: string, characterId: string): Promise<void> {
+      if (!this.participantCharacterIds.includes(characterId)) return;
+      return this.toggleParticipant(storyWorldId, sceneId, characterId);
+    },
+
+    async addLoreItem(storyWorldId: string, sceneId: string, loreId: string): Promise<void> {
+      return this.addCustomReference(storyWorldId, sceneId, "lore", loreId, "related");
+    },
+
+    async removeLoreItem(storyWorldId: string, sceneId: string, loreId: string): Promise<void> {
+      const client = this.getClient();
+      const current = this.sceneReferences;
+      const refs = (current?.references ?? [])
+        .filter((r) => !(r.targetId === loreId && r.targetType === "lore"))
+        .map((r) => ({
+          targetType: r.targetType,
+          targetId: r.targetId,
+          role: r.role,
+        }));
+
+      this.saving = true;
+      try {
+        this.sceneReferences = await client.replaceSceneReferences(storyWorldId, sceneId, {
+          ...(current?.mainLocationId ? { mainLocationId: current.mainLocationId } : {}),
+          ...(current?.participantCharacterIds ? { participantCharacterIds: current.participantCharacterIds } : {}),
+          references: refs,
+          expectedRevision: 1 as V2Revision,
+          idempotencyKey: `ref_del_lore:${Date.now()}` as V2IdempotencyKey,
+        });
+      } finally {
+        this.saving = false;
       }
     },
 
