@@ -59,18 +59,19 @@ export interface V2SceneBlockInput {
 }
 
 export interface V2SaveSceneDocumentRequest {
-  readonly title?: string;
-  readonly body?: string | null;
-  readonly documentMode?: V2SceneDocumentMode;
-  readonly arcId?: V2ArcId | null;
-  readonly chapterId?: V2ChapterId | null;
-  readonly questId?: V2QuestId | null;
-  readonly isEntry?: boolean;
-  readonly ordinal?: number;
-  readonly blocks?: readonly V2SceneBlockInput[];
-  readonly expectedSceneRevision?: number;
-  readonly expectedRevision?: V2Revision;
-  readonly idempotencyKey?: V2IdempotencyKey;
+  readonly title?: string | undefined;
+  readonly summary?: string | null | undefined;
+  readonly body?: string | null | undefined;
+  readonly documentMode?: V2SceneDocumentMode | undefined;
+  readonly arcId?: V2ArcId | null | undefined;
+  readonly chapterId?: V2ChapterId | null | undefined;
+  readonly questId?: V2QuestId | null | undefined;
+  readonly isEntry?: boolean | undefined;
+  readonly ordinal?: number | undefined;
+  readonly blocks?: readonly V2SceneBlockInput[] | undefined;
+  readonly expectedSceneRevision?: number | undefined;
+  readonly expectedRevision?: V2Revision | undefined;
+  readonly idempotencyKey?: V2IdempotencyKey | undefined;
 }
 
 export interface V2SaveSceneDocumentResponse {
