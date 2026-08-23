@@ -97,6 +97,8 @@ export class V2SqliteGraphStateUnitOfWork implements V2GraphStateUnitOfWork {
 import {
   SqliteNarrativeReferenceRepository,
   SqliteSceneDocumentRepository,
+  SqliteNarrativeHierarchyRepository,
+  SqliteCanonLoreRepository,
 } from "../narrative/index.ts";
 
 export class V2SqliteCandidateReviewUnitOfWork implements V2CandidateReviewUnitOfWork {
@@ -113,6 +115,8 @@ export class V2SqliteCandidateReviewUnitOfWork implements V2CandidateReviewUnitO
       readonly candidateReview: V2CandidateReviewRepository;
       readonly references?: SqliteNarrativeReferenceRepository;
       readonly sceneDocument?: SqliteSceneDocumentRepository;
+      readonly hierarchy?: SqliteNarrativeHierarchyRepository;
+      readonly lore?: SqliteCanonLoreRepository;
     }) => Promise<T>,
   ): Promise<T> {
     return withV2SqliteAsyncTransaction(this.db, () => fn({
@@ -121,6 +125,8 @@ export class V2SqliteCandidateReviewUnitOfWork implements V2CandidateReviewUnitO
       candidateReview: new V2SqliteCandidateReviewRepository(this.db),
       references: new SqliteNarrativeReferenceRepository(this.db),
       sceneDocument: new SqliteSceneDocumentRepository(this.db),
+      hierarchy: new SqliteNarrativeHierarchyRepository(this.db),
+      lore: new SqliteCanonLoreRepository(this.db),
     }));
   }
 }

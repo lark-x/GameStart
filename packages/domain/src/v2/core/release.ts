@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
-import type { V2CanonWorld } from "./canon.ts";
+import type { V2CanonTimelineEvent, V2CanonWorld } from "./canon.ts";
+import type { V2CanonLoreEntry, V2NarrativeChapter, V2NarrativeQuest, V2NarrativeReference, V2NarrativeScene, V2SceneBlock } from "../narrative/index.ts";
 import type {
   V2GraphArc,
   V2GraphChoice,
@@ -25,12 +26,15 @@ export interface V2ReleaseManifest {
   };
   readonly stateSchema: readonly V2TypedStateVariable[];
   readonly narrative?: {
-    readonly chapters?: readonly any[];
-    readonly quests?: readonly any[];
-    readonly loreEntries?: readonly any[];
-    readonly references?: readonly any[];
-  };
-  readonly createdAt?: string;
+    readonly schemaVersion: 1;
+    readonly chapters: readonly V2NarrativeChapter[];
+    readonly quests: readonly V2NarrativeQuest[];
+    readonly sceneDocuments: readonly V2NarrativeScene[];
+    readonly sceneBlocks: readonly V2SceneBlock[];
+    readonly loreEntries: readonly V2CanonLoreEntry[];
+    readonly references: readonly V2NarrativeReference[];
+    readonly timelineEvents: readonly V2CanonTimelineEvent[];
+  };  readonly createdAt?: string;
 }
 
 export function buildV2ReleasePreflight(input: {
@@ -108,12 +112,15 @@ export function createV2ReleaseManifest(input: {
   };
   readonly stateSchema: readonly V2TypedStateVariable[];
   readonly narrative?: {
-    readonly chapters?: readonly any[];
-    readonly quests?: readonly any[];
-    readonly loreEntries?: readonly any[];
-    readonly references?: readonly any[];
-  };
-}): V2ReleaseManifest {
+    readonly schemaVersion: 1;
+    readonly chapters: readonly V2NarrativeChapter[];
+    readonly quests: readonly V2NarrativeQuest[];
+    readonly sceneDocuments: readonly V2NarrativeScene[];
+    readonly sceneBlocks: readonly V2SceneBlock[];
+    readonly loreEntries: readonly V2CanonLoreEntry[];
+    readonly references: readonly V2NarrativeReference[];
+    readonly timelineEvents: readonly V2CanonTimelineEvent[];
+  };}): V2ReleaseManifest {
   if (input.releaseId.trim().length === 0 || input.releaseId.length > 128) {
     throw new V2DomainError("INVALID_INPUT", "releaseId must be a non-empty id up to 128 characters");
   }

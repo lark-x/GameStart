@@ -43,6 +43,8 @@ export interface V2SceneDocument {
   readonly isEntry: boolean;
   readonly ordinal: number;
   readonly revision: number;
+  /** Version of the story world that contained this document when it was read. */
+  readonly worldRevision?: V2Revision;
   readonly blocks: readonly V2SceneBlock[];
   readonly createdAt?: string;
   readonly updatedAt?: string;

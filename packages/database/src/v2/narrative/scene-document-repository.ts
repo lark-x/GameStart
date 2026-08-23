@@ -107,19 +107,23 @@ export class SqliteSceneDocumentRepository implements V2SceneDocumentRepository 
         scene.sceneId,
       );
 
-    // Replace blocks atomically
-    this.db
-      .prepare("DELETE FROM v2_scene_blocks WHERE story_world_id = ? AND scene_id = ?")
-      .run(scene.storyWorldId, scene.sceneId);
-
-    const insertBlock = this.db.prepare(`
+    const saveBlock = this.db.prepare(`
       INSERT INTO v2_scene_blocks (block_id, story_world_id, scene_id, ordinal, kind, speaker_character_id, text, payload_json, revision, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(block_id) DO UPDATE SET
+        story_world_id = excluded.story_world_id,
+        scene_id = excluded.scene_id,
+        ordinal = excluded.ordinal,
+        kind = excluded.kind,
+        speaker_character_id = excluded.speaker_character_id,
+        text = excluded.text,
+        payload_json = excluded.payload_json,
+        revision = excluded.revision,
+        updated_at = excluded.updated_at
     `);
-
     for (let i = 0; i < blocks.length; i++) {
       const b = blocks[i]!;
-      insertBlock.run(
+      saveBlock.run(
         b.blockId,
         b.storyWorldId,
         b.sceneId,
@@ -132,6 +136,15 @@ export class SqliteSceneDocumentRepository implements V2SceneDocumentRepository 
         b.createdAt ?? now,
         b.updatedAt ?? now,
       );
+    }
+
+    if (blocks.length === 0) {
+      this.db.prepare("DELETE FROM v2_scene_blocks WHERE story_world_id = ? AND scene_id = ?")
+        .run(scene.storyWorldId, scene.sceneId);
+    } else {
+      const placeholders = blocks.map(() => "?").join(", ");
+      this.db.prepare(`DELETE FROM v2_scene_blocks WHERE story_world_id = ? AND scene_id = ? AND block_id NOT IN (${placeholders})`)
+        .run(scene.storyWorldId, scene.sceneId, ...blocks.map((block) => block.blockId));
     }
 
     return (await this.getSceneDocument({

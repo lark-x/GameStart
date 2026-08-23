@@ -11,8 +11,13 @@ export interface V2SceneCandidatePayload {
     readonly title: string;
     readonly body: string;
     readonly locationId?: string;
+    readonly arcId?: string;
+    readonly chapterId?: string;
+    readonly questId?: string;
+    readonly document?: { readonly mode: "legacy_body" | "blocks"; readonly blocks?: readonly { readonly blockId?: string; readonly kind: "dialogue" | "narration" | "stage_direction" | "action" | "command"; readonly speakerCharacterId?: string; readonly text?: string; readonly payload?: Readonly<Record<string, unknown>> }[] };
     readonly participantCharacterIds: readonly string[];
   };
+  readonly references?: readonly { readonly referenceId?: string; readonly targetType: string; readonly targetId: string; readonly role: string }[];
   readonly choices: readonly {
     readonly label: string;
     readonly targetSceneId?: string;
@@ -42,6 +47,40 @@ function stringArray(value: unknown, field: string): readonly string[] {
   return value.map((item, index) => nonEmptyString(item, `${field}[${index}]`));
 }
 
+function parseDocument(value: unknown): V2SceneCandidatePayload["scene"]["document"] | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value) || (value.mode !== "legacy_body" && value.mode !== "blocks")) throw new V2DomainError("INVALID_INPUT", "scene.document.mode must be legacy_body or blocks");
+  if (value.blocks === undefined) return { mode: value.mode };
+  if (!Array.isArray(value.blocks)) throw new V2DomainError("INVALID_INPUT", "scene.document.blocks must be an array");
+  return {
+    mode: value.mode,
+    blocks: value.blocks.map((block, index) => {
+      if (!isRecord(block)) throw new V2DomainError("INVALID_INPUT", `scene.document.blocks[${index}] must be an object`);
+      const kind = block.kind;
+      if (kind !== "dialogue" && kind !== "narration" && kind !== "stage_direction" && kind !== "action" && kind !== "command") throw new V2DomainError("INVALID_INPUT", `scene.document.blocks[${index}].kind is invalid`);
+      return {
+        ...(block.blockId === undefined ? {} : { blockId: nonEmptyString(block.blockId, `scene.document.blocks[${index}].blockId`) }),
+        kind,
+        ...(block.speakerCharacterId === undefined ? {} : { speakerCharacterId: nonEmptyString(block.speakerCharacterId, `scene.document.blocks[${index}].speakerCharacterId`) }),
+        ...(block.text === undefined ? {} : { text: nonEmptyString(block.text, `scene.document.blocks[${index}].text`) }),
+        ...(block.payload === undefined ? {} : { payload: isRecord(block.payload) ? block.payload : (() => { throw new V2DomainError("INVALID_INPUT", `scene.document.blocks[${index}].payload must be an object`); })() }),
+      };
+    }),
+  };
+}
+function parseReferences(value: unknown): V2SceneCandidatePayload["references"] {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) throw new V2DomainError("INVALID_INPUT", "references must be an array");
+  return value.map((reference, index) => {
+    if (!isRecord(reference)) throw new V2DomainError("INVALID_INPUT", `references[${index}] must be an object`);
+    return {
+      ...(reference.referenceId === undefined ? {} : { referenceId: nonEmptyString(reference.referenceId, `references[${index}].referenceId`) }),
+      targetType: nonEmptyString(reference.targetType, `references[${index}].targetType`),
+      targetId: nonEmptyString(reference.targetId, `references[${index}].targetId`),
+      role: nonEmptyString(reference.role, `references[${index}].role`),
+    };
+  });
+}
 function parseChoices(value: unknown): V2SceneCandidatePayload["choices"] {
   if (!Array.isArray(value) || value.length === 0) {
     throw new V2DomainError("INVALID_INPUT", "choices must be a non-empty array");
@@ -70,14 +109,24 @@ export function parseV2SceneCandidateText(rawText: string): V2ParsedSceneCandida
   }
   const scene = parsed.scene;
   const locationId = optionalNonEmptyString(scene.locationId, "scene.locationId");
+  const arcId = optionalNonEmptyString(scene.arcId, "scene.arcId");
+  const chapterId = optionalNonEmptyString(scene.chapterId, "scene.chapterId");
+  const questId = optionalNonEmptyString(scene.questId, "scene.questId");
+  const document = parseDocument(scene.document);
+  const references = parseReferences(parsed.references);
   const payload: V2SceneCandidatePayload = {
     scene: {
       sceneId: nonEmptyString(scene.sceneId, "scene.sceneId"),
       title: nonEmptyString(scene.title, "scene.title"),
       body: nonEmptyString(scene.body, "scene.body"),
       ...(locationId === undefined ? {} : { locationId }),
+      ...(arcId === undefined ? {} : { arcId }),
+      ...(chapterId === undefined ? {} : { chapterId }),
+      ...(questId === undefined ? {} : { questId }),
+      ...(document === undefined ? {} : { document }),
       participantCharacterIds: stringArray(scene.participantCharacterIds, "scene.participantCharacterIds"),
     },
+    ...(references === undefined ? {} : { references }),
     choices: parseChoices(parsed.choices),
     validationNotes: parsed.validationNotes === undefined
       ? []

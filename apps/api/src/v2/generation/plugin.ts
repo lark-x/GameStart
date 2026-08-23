@@ -30,6 +30,8 @@ import type {
   V2SceneGenerationPrepareApiResponse,
   V2StoryWorldId,
   V2CandidateId,
+  V2NarrativeGenerationContextRequest,
+  V2NarrativeGenerationContextResponse,
 } from "@living-network/contracts/v2";
 import { buildV2GenerationContextSnapshot } from "@living-network/domain/v2";
 import type {
@@ -44,8 +46,14 @@ export const v2GenerationPlugin: FastifyPluginAsync = async () => {
   // Gate 0 freezes the module hook. AI-2 owns generation routes after bootstrap approval.
 };
 
+export interface V2NarrativeGenerationContextProvider {
+  buildContext(storyWorldId: string, request: V2NarrativeGenerationContextRequest): Promise<V2NarrativeGenerationContextResponse>;
+}
+
 export interface V2GenerationPluginDependencies {
   readonly canonSnapshots: CanonSnapshotReaderPort;
+  /** Optional V2 narrative provider; when configured it becomes the generation prompt source. */
+  readonly narrativeContext?: V2NarrativeGenerationContextProvider;
   readonly characterVisuals?: CharacterVisualProfileReaderPort;
   readonly jobs: V2GenerationJobRepository;
   readonly assetJobs?: V2AssetGenerationJobRepository;
@@ -121,9 +129,26 @@ function revision(value: unknown): V2Revision {
   return value as V2Revision;
 }
 
+const narrativeTasks = new Set([
+  "create_scene",
+  "continue_scene",
+  "rewrite_scene",
+  "expand_dialogue",
+  "generate_choices",
+  "create_quest_outline",
+] as const);
+
+function parseNarrativeTask(value: unknown): V2NarrativeGenerationContextRequest["task"] | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || !narrativeTasks.has(value as never)) {
+    throw new TypeError("task must be a supported narrative generation task");
+  }
+  return value as V2NarrativeGenerationContextRequest["task"];
+}
 function parseContextPreviewRequest(value: unknown): V2GenerationContextPreviewApiRequest {
   if (!isRecord(value)) throw new TypeError("request body must be an object");
   const tokenBudget = optionalPositiveInteger(value.tokenBudget, "tokenBudget");
+  const task = parseNarrativeTask(value.task);
   return {
     storyWorldId: nonEmptyString(value.storyWorldId, "storyWorldId") as V2StoryWorldId,
     baseCanonRevision: revision(value.baseCanonRevision),
@@ -133,6 +158,9 @@ function parseContextPreviewRequest(value: unknown): V2GenerationContextPreviewA
     ...(value.locationId === undefined ? {} : { locationId: nonEmptyString(value.locationId, "locationId") as never }),
     ...(value.conversationId === undefined ? {} : { conversationId: nonEmptyString(value.conversationId, "conversationId") as never }),
     ...(value.runId === undefined ? {} : { runId: nonEmptyString(value.runId, "runId") as never }),
+    ...(task === undefined ? {} : { task }),
+    ...(value.targetSceneId === undefined ? {} : { targetSceneId: nonEmptyString(value.targetSceneId, "targetSceneId") as never }),
+    ...(value.targetQuestId === undefined ? {} : { targetQuestId: nonEmptyString(value.targetQuestId, "targetQuestId") as never }),
   } as unknown as V2GenerationContextPreviewApiRequest;
 }
 
@@ -146,6 +174,33 @@ function buildGenerationContext(input: V2GenerationContextPreviewApiRequest, sna
   return buildV2GenerationContextSnapshot({ snapshot: filtered, prompt: input.prompt, requestedAt, tokenBudget: input.tokenBudget ?? defaultTokenBudget }) as V2GenerationContextSnapshot;
 }
 
+async function buildSceneGenerationContext(
+  dependencies: V2GenerationPluginDependencies,
+  input: V2GenerationContextPreviewApiRequest,
+  requestedAt: V2IsoDateTime,
+  defaultTokenBudget: number,
+): Promise<V2GenerationContextSnapshot> {
+  const snapshot = await dependencies.canonSnapshots.getCanonSnapshot({
+    storyWorldId: input.storyWorldId,
+    revision: input.baseCanonRevision,
+  });
+  const base = buildGenerationContext(input, snapshot, requestedAt, defaultTokenBudget);
+  if (dependencies.narrativeContext === undefined) return base;
+  const narrative = await dependencies.narrativeContext.buildContext(input.storyWorldId, {
+    storyWorldId: input.storyWorldId,
+    task: input.task ?? "create_scene",
+    ...(input.targetSceneId === undefined ? {} : { targetSceneId: input.targetSceneId }),
+    ...(input.targetQuestId === undefined ? {} : { targetQuestId: input.targetQuestId }),
+    prompt: input.prompt,
+    ...(input.tokenBudget === undefined ? {} : { tokenBudget: input.tokenBudget }),
+  });
+  return {
+    ...base,
+    contextHash: narrative.contextHash,
+    narrativeSections: narrative.sections.map((section) => ({ title: section.title, content: section.content })),
+    narrativeSourceRevisions: narrative.fingerprint.sources,
+  };
+}
 function parseCreateJobRequest(value: unknown): V2CreateSceneGenerationJobApiRequest {
   if (!isRecord(value)) throw new TypeError("request body must be an object");
   const preview = parseContextPreviewRequest(value);
@@ -424,11 +479,7 @@ export function createV2GenerationPlugin(
     app.post("/context-preview", async (request, reply) => {
       try {
         const input = parseContextPreviewRequest(request.body);
-        const snapshot = await dependencies.canonSnapshots.getCanonSnapshot({
-          storyWorldId: input.storyWorldId,
-          revision: input.baseCanonRevision,
-        });
-        const context = buildGenerationContext(input, snapshot, now().toISOString() as V2IsoDateTime, defaultTokenBudget);
+        const context = await buildSceneGenerationContext(dependencies, input, now().toISOString() as V2IsoDateTime, defaultTokenBudget);
         return { context } satisfies V2GenerationContextPreviewApiResponse;
       } catch (error) {
         return replyWithError(reply, error);
@@ -438,11 +489,7 @@ export function createV2GenerationPlugin(
     app.post("/scene/prepare", async (request, reply) => {
       try {
         const input = parseContextPreviewRequest(request.body);
-        const snapshot = await dependencies.canonSnapshots.getCanonSnapshot({
-          storyWorldId: input.storyWorldId,
-          revision: input.baseCanonRevision,
-        });
-        const context = buildGenerationContext(input, snapshot, now().toISOString() as V2IsoDateTime, defaultTokenBudget);
+        const context = await buildSceneGenerationContext(dependencies, input, now().toISOString() as V2IsoDateTime, defaultTokenBudget);
         const providerRequest = buildV2SceneGenerationProviderRequest({ context });
         if (providerRequest.responseFormat !== "json_object") throw new TypeError("scene generation prepare must request JSON output");
         const messages = providerRequest.messages.map((message) => {
@@ -471,15 +518,7 @@ export function createV2GenerationPlugin(
         if (!state.configured) return replyCapabilityUnconfigured(reply, "scene generation");
         const input = parseCreateJobRequest(request.body);
         const requestedAt = now().toISOString() as V2IsoDateTime;
-        const context = input.preparedContext ?? buildV2GenerationContextSnapshot({
-          snapshot: await dependencies.canonSnapshots.getCanonSnapshot({
-            storyWorldId: input.storyWorldId,
-            revision: input.baseCanonRevision,
-          }),
-          prompt: input.prompt,
-          requestedAt,
-          tokenBudget: input.tokenBudget ?? defaultTokenBudget,
-        }) as V2GenerationContextSnapshot;
+        const context = input.preparedContext ?? await buildSceneGenerationContext(dependencies, input, requestedAt, defaultTokenBudget);
         if (
           context.storyWorldId !== input.storyWorldId ||
           context.baseCanonRevision !== input.baseCanonRevision ||

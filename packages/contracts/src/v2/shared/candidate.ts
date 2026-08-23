@@ -7,6 +7,7 @@ import type {
   V2SceneId,
   V2StoryWorldId,
 } from "./primitives.ts";
+import type { V2ContextSourceRevision } from "../narrative/context.ts";
 
 export type V2CandidateStatus =
   | "pending"
@@ -35,6 +36,8 @@ export interface V2CandidateProvenance {
   readonly jobId?: string;
   readonly contextHash?: string;
   readonly summary?: string;
+  /** Content revisions of the precise narrative sources used to generate this candidate. */
+  readonly sourceRevisionSet?: readonly V2ContextSourceRevision[];
 }
 
 export interface V2SceneCandidateBlock {

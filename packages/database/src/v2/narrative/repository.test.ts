@@ -179,6 +179,21 @@ test("V2 Database Narrative Hierarchy, Document, Reference, Lore, and Search Rep
   assert.equal(savedDoc.blocks.length, 4);
   assert.equal(savedDoc.blocks[0]!.speakerCharacterId, "char_paimon");
 
+  const savedAgain = await docRepo.saveSceneDocument({
+    scene: { ...savedDoc.scene, revision: 3 },
+    blocks: savedDoc.blocks,
+  });
+  assert.equal(savedAgain.blocks.length, 4);
+  assert.equal(savedAgain.blocks[0]!.createdAt, savedDoc.blocks[0]!.createdAt);
+  assert.equal(savedAgain.blocks[0]!.updatedAt, savedDoc.blocks[0]!.updatedAt);
+
+  const afterExplicitRemoval = await docRepo.saveSceneDocument({
+    scene: { ...savedAgain.scene, revision: 4 },
+    blocks: [savedAgain.blocks[0]!],
+  });
+  assert.equal(afterExplicitRemoval.blocks.length, 1);
+  assert.equal(afterExplicitRemoval.blocks[0]!.blockId, "b1");
+
   // 5. Test Narrative References
   await refRepo.replaceReferencesForSource(
     { storyWorldId: "world_test", sourceType: "scene", sourceId: "scene_confrontation" },
@@ -203,7 +218,7 @@ test("V2 Database Narrative Hierarchy, Document, Reference, Lore, and Search Rep
   assert.equal(questScenes[0]!.sceneId, "scene_confrontation");
   assert.equal(questScenes[0]!.locationId, "loc_golden_house");
   assert.deepEqual([...questScenes[0]!.participantCharacterIds].sort(), ["char_childe", "char_paimon", "char_traveler"]);
-  assert.equal(questScenes[0]!.blockCount, 4);
+  assert.equal(questScenes[0]!.blockCount, 1);
 
   // 7. Test Lore CRUD and Search
   const loreEntry = await loreRepo.createLoreEntry({

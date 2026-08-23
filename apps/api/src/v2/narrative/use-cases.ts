@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type {
   V2ApplyNarrativeTemplateRequest,
+  V2Revision,
   V2ApplyNarrativeTemplateResponse,
   V2CanonLoreEntry,
   V2CreateChapterRequest,
@@ -241,6 +242,7 @@ export function createV2NarrativeUseCases(uow: V2NarrativeUnitOfWork): V2Narrati
         }
 
         await ctx.hierarchy.deleteChapter({ storyWorldId, chapterId });
+        await advanceWorldRevision(ctx.canon, storyWorldId);
         return { success: true };
       });
     },
@@ -378,17 +380,20 @@ export function createV2NarrativeUseCases(uow: V2NarrativeUnitOfWork): V2Narrati
         }
 
         await ctx.hierarchy.deleteQuest({ storyWorldId, questId });
+        await advanceWorldRevision(ctx.canon, storyWorldId);
         return { success: true };
       });
     },
 
     async getSceneDocument(storyWorldId: string, sceneId: string): Promise<V2SceneDocument> {
       return uow.withNarrativeTransaction(async (ctx) => {
+        const world = await ctx.canon.getWorld(storyWorldId as any);
+        if (!world) throw new V2HttpError(404, "NOT_FOUND", `Story world ${storyWorldId} not found`);
         const doc = await ctx.sceneDocument.getSceneDocument({ storyWorldId, sceneId });
         if (!doc) {
           throw new V2HttpError(404, "NOT_FOUND", `Scene ${sceneId} not found`);
         }
-        return toSceneDocumentContract(doc.scene, doc.blocks);
+        return { ...toSceneDocumentContract(doc.scene, doc.blocks), worldRevision: world.revision as V2Revision };
       });
     },
 
@@ -430,8 +435,9 @@ export function createV2NarrativeUseCases(uow: V2NarrativeUnitOfWork): V2Narrati
               ? await ctx.graphState.getArc({ storyWorldId: storyWorldId as any, arcId: targetArcId as any })
               : undefined;
 
+            let normalizedHierarchy: { arcId?: string; chapterId?: string; questId?: string };
             try {
-              validateSceneHierarchy(
+              normalizedHierarchy = validateSceneHierarchy(
                 {
                   ...(targetArcId ? { arcId: targetArcId } : {}),
                   ...(targetChapterId ? { chapterId: targetChapterId } : {}),
@@ -449,7 +455,13 @@ export function createV2NarrativeUseCases(uow: V2NarrativeUnitOfWork): V2Narrati
             // Validate speakers
             const worldChars = await ctx.canon.listCharacters(storyWorldId as any);
             const charIdSet = new Set(worldChars.map((c) => c.characterId));
-            const incomingBlocks = request.blocks ?? [];
+            const incomingBlocks = request.blocks ?? existingDoc.blocks.map((block) => ({
+              blockId: block.blockId,
+              kind: block.kind,
+              ...(block.speakerCharacterId ? { speakerCharacterId: block.speakerCharacterId } : {}),
+              ...(block.text !== undefined ? { text: block.text } : {}),
+              payload: block.payload,
+            }));
 
             try {
               validateBlockSpeakers(
@@ -470,11 +482,13 @@ export function createV2NarrativeUseCases(uow: V2NarrativeUnitOfWork): V2Narrati
               const bId = b.blockId || `b_${randomUUID().slice(0, 8)}`;
               const existingBlock = existingBlockMap.get(bId);
               let blockRevision = 1;
+              let isUnchanged = false;
               if (existingBlock) {
-                const isUnchanged =
+                isUnchanged =
                   existingBlock.kind === b.kind &&
                   existingBlock.text === b.text &&
-                  existingBlock.speakerCharacterId === b.speakerCharacterId;
+                  existingBlock.speakerCharacterId === b.speakerCharacterId &&
+                  hashPayload(existingBlock.payload) === hashPayload(b.payload ?? {});
                 blockRevision = isUnchanged ? existingBlock.revision : existingBlock.revision + 1;
               }
 
@@ -488,6 +502,8 @@ export function createV2NarrativeUseCases(uow: V2NarrativeUnitOfWork): V2Narrati
                 ...(b.text ? { text: b.text } : {}),
                 payload: b.payload ?? {},
                 revision: blockRevision,
+                ...(isUnchanged && existingBlock?.createdAt ? { createdAt: existingBlock.createdAt } : {}),
+                ...(isUnchanged && existingBlock?.updatedAt ? { updatedAt: existingBlock.updatedAt } : {}),
               });
             });
 
@@ -506,16 +522,12 @@ export function createV2NarrativeUseCases(uow: V2NarrativeUnitOfWork): V2Narrati
                     : undefined
                   : existingDoc.scene.body;
 
-            const arcId = request.arcId === null ? undefined : request.arcId !== undefined ? request.arcId : existingDoc.scene.arcId;
-            const chapterId = request.chapterId === null ? undefined : request.chapterId !== undefined ? request.chapterId : existingDoc.scene.chapterId;
-            const questId = request.questId === null ? undefined : request.questId !== undefined ? request.questId : existingDoc.scene.questId;
-
             const updatedScene = createV2NarrativeScene({
               sceneId,
               storyWorldId,
-              ...(arcId ? { arcId } : {}),
-              ...(chapterId ? { chapterId } : {}),
-              ...(questId ? { questId } : {}),
+              ...(normalizedHierarchy.arcId ? { arcId: normalizedHierarchy.arcId } : {}),
+              ...(normalizedHierarchy.chapterId ? { chapterId: normalizedHierarchy.chapterId } : {}),
+              ...(normalizedHierarchy.questId ? { questId: normalizedHierarchy.questId } : {}),
               title: request.title ?? existingDoc.scene.title,
               ...(renderedBody ? { body: renderedBody } : {}),
               documentMode: docMode,
@@ -529,8 +541,8 @@ export function createV2NarrativeUseCases(uow: V2NarrativeUnitOfWork): V2Narrati
               blocks: domainBlocks,
             });
 
-            await advanceWorldRevision(ctx.canon, storyWorldId, request.expectedRevision);
-            return toSceneDocumentContract(saved.scene, saved.blocks);
+            const worldRevision = await advanceWorldRevision(ctx.canon, storyWorldId, request.expectedRevision);
+            return { ...toSceneDocumentContract(saved.scene, saved.blocks), worldRevision: worldRevision as V2Revision };
           },
         );
       });
@@ -783,6 +795,7 @@ export function createV2NarrativeUseCases(uow: V2NarrativeUnitOfWork): V2Narrati
         }
 
         await ctx.lore.deleteLoreEntry({ storyWorldId, loreEntryId });
+        await advanceWorldRevision(ctx.canon, storyWorldId);
         return { success: true };
       });
     },
@@ -978,13 +991,14 @@ export function createV2NarrativeUseCases(uow: V2NarrativeUnitOfWork): V2Narrati
 
     async getDiagnostics(storyWorldId: string): Promise<V2NarrativeDiagnosticsReport> {
       return uow.withNarrativeTransaction(async (ctx) => {
-        const [arcs, chapters, quests, scenes, allBlocks, choices, refs, chars, locs, lores, timelineEvents, facts, rules] = await Promise.all([
+        const [arcs, chapters, quests, scenes, allBlocks, choices, stateVariables, refs, chars, locs, lores, timelineEvents, facts, rules] = await Promise.all([
           ctx.graphState.listArcs(storyWorldId as any),
           ctx.hierarchy.listChapters(storyWorldId),
           ctx.hierarchy.listQuests(storyWorldId),
           ctx.sceneDocument.listAllScenes(storyWorldId),
           ctx.sceneDocument.listAllSceneBlocks(storyWorldId),
           ctx.graphState.listChoices(storyWorldId as any),
+          ctx.graphState.listStateVariables(storyWorldId as any),
           ctx.references.listAllReferences(storyWorldId),
           ctx.canon.listCharacters(storyWorldId as any),
           ctx.canon.listLocations(storyWorldId as any),
@@ -1014,7 +1028,8 @@ export function createV2NarrativeUseCases(uow: V2NarrativeUnitOfWork): V2Narrati
           characters: chars.map((c) => ({ characterId: c.characterId, name: c.name })),
           locations: locs.map((l) => ({ locationId: l.locationId, name: l.name })),
           loreEntries: lores,
-          timelineEvents: timelineEvents.map((t) => ({ timelineEventId: t.timelineEventId, title: t.title })),
+          timelineEvents: timelineEvents.map((t) => ({ timelineEventId: t.timelineEventId, title: t.title, ...(t.summary ? { summary: t.summary } : {}), ...(t.localDate ? { localDate: t.localDate } : {}) })),
+          stateVariables: stateVariables.map((state) => ({ key: state.key, valueType: state.valueType, defaultValue: state.defaultValue })),
           facts: facts.map((f) => ({ factId: f.factId, text: f.text })),
           rules: rules.map((r) => ({ ruleId: r.ruleId, text: r.text })),
         });
@@ -1026,13 +1041,14 @@ export function createV2NarrativeUseCases(uow: V2NarrativeUnitOfWork): V2Narrati
         const world = await ctx.canon.getWorld(storyWorldId as any);
         if (!world) throw new V2HttpError(404, "NOT_FOUND", `Story world ${storyWorldId} not found`);
 
-        const [arcs, chapters, quests, scenes, allBlocks, choices, refs, chars, locs, lores, timelineEvents, facts, rules] = await Promise.all([
+        const [arcs, chapters, quests, scenes, allBlocks, choices, stateVariables, refs, chars, locs, lores, timelineEvents, facts, rules] = await Promise.all([
           ctx.graphState.listArcs(storyWorldId as any),
           ctx.hierarchy.listChapters(storyWorldId),
           ctx.hierarchy.listQuests(storyWorldId),
           ctx.sceneDocument.listAllScenes(storyWorldId),
           ctx.sceneDocument.listAllSceneBlocks(storyWorldId),
           ctx.graphState.listChoices(storyWorldId as any),
+          ctx.graphState.listStateVariables(storyWorldId as any),
           ctx.references.listAllReferences(storyWorldId),
           ctx.canon.listCharacters(storyWorldId as any),
           ctx.canon.listLocations(storyWorldId as any),
@@ -1062,6 +1078,8 @@ export function createV2NarrativeUseCases(uow: V2NarrativeUnitOfWork): V2Narrati
             sourceSceneId: c.sourceSceneId,
             ...(c.targetSceneId ? { targetSceneId: c.targetSceneId } : {}),
             label: c.label,
+            ...(c.gates.length === 0 ? {} : { gates: c.gates }),
+            ...(c.consequences.length === 0 ? {} : { consequences: c.consequences }),
           })),
           references: refs,
           characters: chars.map((c) => ({
@@ -1078,7 +1096,8 @@ export function createV2NarrativeUseCases(uow: V2NarrativeUnitOfWork): V2Narrati
           loreEntries: lores,
           facts: facts.map((f) => ({ factId: f.factId, text: f.text })),
           rules: rules.map((r) => ({ ruleId: r.ruleId, text: r.text })),
-          timelineEvents: timelineEvents.map((t) => ({ timelineEventId: t.timelineEventId, title: t.title })),
+          timelineEvents: timelineEvents.map((t) => ({ timelineEventId: t.timelineEventId, title: t.title, ...(t.summary ? { summary: t.summary } : {}), ...(t.localDate ? { localDate: t.localDate } : {}) })),
+          stateVariables: stateVariables.map((state) => ({ key: state.key, valueType: state.valueType, defaultValue: state.defaultValue })),
         }) as unknown as V2NarrativeGenerationContextResponse;
       });
     },

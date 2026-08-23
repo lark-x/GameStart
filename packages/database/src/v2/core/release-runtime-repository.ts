@@ -26,6 +26,7 @@ import {
   V2SqliteGraphStateRepository,
 } from "./canon-repository.ts";
 import { withV2SqliteAsyncTransaction } from "../platform/index.ts";
+import { SqliteNarrativeHierarchyRepository, SqliteSceneDocumentRepository, SqliteNarrativeReferenceRepository, SqliteCanonLoreRepository } from "../narrative/index.ts";
 
 export class V2SqliteReleaseRuntimeUnitOfWork implements V2ReleaseRuntimeUnitOfWork {
   private readonly db: DatabaseSync;
@@ -40,6 +41,10 @@ export class V2SqliteReleaseRuntimeUnitOfWork implements V2ReleaseRuntimeUnitOfW
       readonly graphState: V2GraphStateRepository;
       readonly candidateReview: V2CandidateReviewRepository;
       readonly releaseRuntime: V2ReleaseRuntimeRepository;
+      readonly hierarchy?: SqliteNarrativeHierarchyRepository;
+      readonly sceneDocument?: SqliteSceneDocumentRepository;
+      readonly references?: SqliteNarrativeReferenceRepository;
+      readonly lore?: SqliteCanonLoreRepository;
     }) => Promise<T>,
   ): Promise<T> {
     return withV2SqliteAsyncTransaction(this.db, () => fn({
@@ -47,6 +52,10 @@ export class V2SqliteReleaseRuntimeUnitOfWork implements V2ReleaseRuntimeUnitOfW
       graphState: new V2SqliteGraphStateRepository(this.db),
       candidateReview: new V2SqliteCandidateReviewRepository(this.db),
       releaseRuntime: new V2SqliteReleaseRuntimeRepository(this.db),
+      hierarchy: new SqliteNarrativeHierarchyRepository(this.db),
+      sceneDocument: new SqliteSceneDocumentRepository(this.db),
+      references: new SqliteNarrativeReferenceRepository(this.db),
+      lore: new SqliteCanonLoreRepository(this.db),
     }));
   }
 }

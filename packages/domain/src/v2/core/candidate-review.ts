@@ -10,11 +10,18 @@ export type V2CoreCandidateStoryWorldId = string;
 export type V2CoreCandidateRevision = number;
 export type V2CoreCandidateSource = "human" | "llm" | "comfyui" | "import";
 
+export interface V2CoreCandidateSourceRevision {
+  readonly kind: string;
+  readonly id: string;
+  readonly revision: number;
+}
+
 export interface V2CoreCandidateProvenance {
   readonly source: V2CoreCandidateSource;
   readonly jobId?: string;
   readonly contextHash?: string;
   readonly summary?: string;
+  readonly sourceRevisionSet?: readonly V2CoreCandidateSourceRevision[];
 }
 
 export interface V2CoreSceneCandidateBlock {
@@ -74,6 +81,8 @@ export interface V2CoreCandidateReview {
   readonly reviewer: string;
   readonly reason?: string;
   readonly expectedRevision: V2CoreCandidateRevision;
+  /** When a candidate has exact source revisions, freshness is evaluated against them instead of the global world revision. */
+  readonly sourceRevisionSetFresh?: boolean;
 }
 
 export interface V2CoreCandidateApplyPlan {
@@ -132,7 +141,13 @@ export function reviewV2SceneCandidate(input: V2CoreCandidateReview): V2CoreScen
   assertPositiveRevision(input.expectedRevision, "expectedRevision");
   const nextStatus = assertV2ReviewTransition(input.candidate.status, input.action);
   if (input.action === "approve") {
-    assertV2CandidateIsFresh(input.candidate.baseCanonRevision, input.expectedRevision);
+    if (input.candidate.provenance.sourceRevisionSet !== undefined) {
+      if (input.sourceRevisionSetFresh !== true) {
+        throw new V2DomainError("STALE_REVISION", "Candidate source revisions no longer match the current narrative context");
+      }
+    } else {
+      assertV2CandidateIsFresh(input.candidate.baseCanonRevision, input.expectedRevision);
+    }
   }
   return {
     ...input.candidate,
@@ -227,9 +242,22 @@ function assertCandidateProvenance(input: V2CoreCandidateProvenance): V2CoreCand
     ...(input.jobId === undefined ? {} : { jobId: assertNonEmptyId(input.jobId, "provenance.jobId") }),
     ...(input.contextHash === undefined ? {} : { contextHash: assertOptionalText(input.contextHash, "provenance.contextHash", 256) }),
     ...(input.summary === undefined ? {} : { summary: assertOptionalText(input.summary, "provenance.summary", 1200) }),
+    ...(input.sourceRevisionSet === undefined ? {} : { sourceRevisionSet: assertSourceRevisionSet(input.sourceRevisionSet) }),
   };
 }
 
+function assertSourceRevisionSet(values: readonly V2CoreCandidateSourceRevision[]): readonly V2CoreCandidateSourceRevision[] {
+  const seen = new Set<string>();
+  return values.map((value, index) => {
+    const kind = assertNonEmptyId(value.kind, `sourceRevisionSet[${index}].kind`);
+    const id = assertNonEmptyId(value.id, `sourceRevisionSet[${index}].id`);
+    if (!Number.isSafeInteger(value.revision) || value.revision < 1) throw new V2DomainError("INVALID_INPUT", `sourceRevisionSet[${index}].revision must be positive`);
+    const key = `${kind}:${id}`;
+    if (seen.has(key)) throw new V2DomainError("INVALID_INPUT", "sourceRevisionSet must not contain duplicate sources");
+    seen.add(key);
+    return { kind, id, revision: value.revision };
+  });
+}
 function assertUniqueIds(values: readonly string[], field: string): readonly string[] {
   const seen = new Set<string>();
   return values.map((value, index) => {

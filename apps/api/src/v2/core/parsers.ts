@@ -684,7 +684,7 @@ function requiredSceneCandidatePayload(value: unknown): V2SceneCandidatePayload 
 
 function requiredCandidateProvenance(value: unknown): V2SubmitSceneCandidateRequest["provenance"] {
   const provenance = requiredRecord(value, "provenance");
-  assertKeys(provenance, ["source", "jobId", "contextHash", "summary"]);
+  assertKeys(provenance, ["source", "jobId", "contextHash", "summary", "sourceRevisionSet"]);
   const source = provenance.source;
   if (source !== "human" && source !== "llm" && source !== "comfyui" && source !== "import") {
     throw new V2HttpError(400, "BAD_REQUEST", "provenance.source is not supported");
@@ -694,9 +694,25 @@ function requiredCandidateProvenance(value: unknown): V2SubmitSceneCandidateRequ
     ...(provenance.jobId === undefined ? {} : { jobId: requiredString(provenance.jobId, "provenance.jobId") }),
     ...(provenance.contextHash === undefined ? {} : { contextHash: requiredString(provenance.contextHash, "provenance.contextHash") }),
     ...(provenance.summary === undefined ? {} : { summary: requiredString(provenance.summary, "provenance.summary") }),
+    ...(provenance.sourceRevisionSet === undefined ? {} : { sourceRevisionSet: requiredSourceRevisionSet(provenance.sourceRevisionSet) }),
   };
 }
 
+function requiredSourceRevisionSet(value: unknown): readonly { readonly kind: string; readonly id: string; readonly revision: number }[] {
+  return requiredArray(value, "provenance.sourceRevisionSet").map((entry, index) => {
+    const source = requiredRecord(entry, `provenance.sourceRevisionSet[${index}]`);
+    assertKeys(source, ["kind", "id", "revision"]);
+    const revision = source.revision;
+    if (typeof revision !== "number" || !Number.isSafeInteger(revision) || revision < 1) {
+      throw new V2HttpError(400, "BAD_REQUEST", `provenance.sourceRevisionSet[${index}].revision must be a positive integer`);
+    }
+    return {
+      kind: requiredString(source.kind, `provenance.sourceRevisionSet[${index}].kind`),
+      id: requiredString(source.id, `provenance.sourceRevisionSet[${index}].id`),
+      revision,
+    };
+  });
+}
 function requiredReviewAction(value: unknown): V2ReviewCandidateRequest["action"] {
   if (value !== "approve" && value !== "reject" && value !== "request_changes") {
     throw new V2HttpError(400, "BAD_REQUEST", "review action is not supported");

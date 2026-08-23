@@ -66,9 +66,11 @@ Story World (世界正典，具备全局单调递增 revision)
   5. `登场角色正典档案` (Relevant Characters Persona & Taboos)
   6. `当前场景剧本` (Current Scene Blocks)
   7. `分支选项` (Outgoing Choices)
-  8. `关联设定词条` (Lore Entries，超出预算时优先动态裁剪并记录 `omittedSources`)
-  9. `正典规则与事实` (Canon Invariants & Facts)
-  10. `创作任务与作者指令` (Author Prompt)
+  8. `相邻场景` (入边与出边相邻 Scene，最多三项)
+  9. `关联设定词条` (Lore Entries，超出预算时优先动态裁剪并记录 `omittedSources`)
+  10. `正典规则与事实` (Canon Invariants & Facts)
+  11. `时间线` 与 `剧情状态` (Timeline、Typed State、分支 Gate/Consequence)
+  12. `创作任务与作者指令` (Author Prompt)
 - **确定性指纹 (Context Fingerprint)**：计算入选依赖实体版本的 SHA-256 摘要，实现跨进程与前后端上下文同构。
 
 ---
@@ -76,15 +78,15 @@ Story World (世界正典，具备全局单调递增 revision)
 ## 4. 结构化候选审核与版本新鲜度 (Structured Candidate Review & Freshness)
 
 1. **结构化 Candidate Payload**：AI 生成的候选场景原生支持 `document.blocks` 剧本分块与 `references` 正典引用。
-2. **原子审核合并**：审核通过时，在单事务内同时完成场景图节点创建、分块保存入 `v2_scene_blocks`、多态引用批量替换与世界版本递增。
+2. **原子审核合并**：审核通过时按 Scene 是否存在执行创建或重写，在单事务内完成层级归一化、说话人/引用校验、图节点写入、Blocks 保存、多态引用替换与世界版本递增。
 3. **精细化新鲜度检验**：基于候选上下文关联实体（而非仅全局版本号）判断是否发生核心冲突，避免无关 NPC 修改导致候选被意外废弃。
 
 ---
 
 ## 5. 发布快照与运行时离线支持 (Release Snapshot & Player Runtime)
 
-1. **不可变 Release Manifest**：发布时快照化全量结构化剧本、章节任务层级、世界观词条与引用，生成确定性 Content Hash。
-2. **Player Runtime 纯离线游玩**：玩家运行时直接读取快照化结构并响应分支选项与状态门禁，对未知指令采用容错降级策略。
+1. **不可变 Release Manifest**：发布时快照化章节、任务、场景文档、Blocks、引用、Lore 与时间线，生成确定性 Content Hash。
+2. **联合发布预检与运行时回退**：发布预检同时执行图谱和 Narrative Diagnostics；玩家运行时优先读取 Release 中的 Blocks 并渲染正文，旧 Release 或无 Blocks 时回退 Graph Scene.body。
 3. **多格式全量导出**：
    - **Markdown 导出**：自动渲染层级标题（`# Arc` $\to$ `## Chapter` $\to$ `### Quest` $\to$ `#### Scene`）、分块台词、角色姓名加粗与选项勾选列表。
    - **JSON 导出**：导出完备的结构化正典数据字典。

@@ -10,6 +10,7 @@ import {
   type V2SceneDocumentMode,
 } from "@living-network/contracts/v2";
 import { V2NarrativeClient } from "../client.ts";
+import { randomUuid } from "../../random.ts";
 
 export interface SceneDocumentState {
   document: V2SceneDocument | null;
@@ -22,6 +23,7 @@ export interface SceneDocumentState {
   loading: boolean;
   error: string | null;
   lastSavedAt: string | null;
+  saveIdempotencyKey: V2IdempotencyKey | null;
 }
 
 export const useSceneDocumentStore = defineStore("sceneDocument", {
@@ -36,6 +38,7 @@ export const useSceneDocumentStore = defineStore("sceneDocument", {
     loading: false,
     error: null,
     lastSavedAt: null,
+    saveIdempotencyKey: null,
   }),
 
   getters: {
@@ -79,6 +82,7 @@ export const useSceneDocumentStore = defineStore("sceneDocument", {
         this.plainBody = doc.body ?? "";
         this.activeBlockId = this.blocks.length > 0 ? this.blocks[0]!.blockId : null;
         this.isDirty = false;
+        this.saveIdempotencyKey = null;
         this.lastSavedAt = doc.updatedAt ?? doc.createdAt ?? null;
       } catch (err: unknown) {
         this.error = err instanceof Error ? err.message : "Failed to load scene document";
@@ -98,11 +102,13 @@ export const useSceneDocumentStore = defineStore("sceneDocument", {
       }
       this.documentMode = mode;
       this.isDirty = true;
+      this.saveIdempotencyKey = null;
     },
 
     setPlainBody(text: string): void {
       this.plainBody = text;
       this.isDirty = true;
+      this.saveIdempotencyKey = null;
     },
 
     addBlock(
@@ -136,6 +142,7 @@ export const useSceneDocumentStore = defineStore("sceneDocument", {
 
       this.activeBlockId = newBlockId;
       this.isDirty = true;
+      this.saveIdempotencyKey = null;
       return newBlock;
     },
 
@@ -148,6 +155,7 @@ export const useSceneDocumentStore = defineStore("sceneDocument", {
         ...partial,
       };
       this.isDirty = true;
+      this.saveIdempotencyKey = null;
     },
 
     removeBlock(blockId: string): void {
@@ -171,6 +179,7 @@ export const useSceneDocumentStore = defineStore("sceneDocument", {
       }
 
       this.isDirty = true;
+      this.saveIdempotencyKey = null;
     },
 
     reorderBlocks(fromIndex: number, toIndex: number): void {
@@ -182,6 +191,7 @@ export const useSceneDocumentStore = defineStore("sceneDocument", {
         (b as { ordinal: number }).ordinal = idx;
       });
       this.isDirty = true;
+      this.saveIdempotencyKey = null;
     },
 
     async saveDocument(storyWorldId: string): Promise<void> {
@@ -191,6 +201,8 @@ export const useSceneDocumentStore = defineStore("sceneDocument", {
 
       try {
         const client = this.getClient();
+        const idempotencyKey = this.saveIdempotencyKey ?? `save_doc:${randomUuid()}` as V2IdempotencyKey;
+        this.saveIdempotencyKey = idempotencyKey;
         const saved = await client.saveSceneDocument(storyWorldId, this.document.sceneId, {
           title: this.document.title,
           documentMode: this.documentMode,
@@ -208,13 +220,14 @@ export const useSceneDocumentStore = defineStore("sceneDocument", {
             payload: b.payload,
           })),
           expectedSceneRevision: this.document.revision,
-          expectedRevision: 1 as V2Revision,
-          idempotencyKey: `save_doc:${Date.now()}` as V2IdempotencyKey,
+          ...(this.document.worldRevision !== undefined ? { expectedRevision: this.document.worldRevision as V2Revision } : {}),
+          idempotencyKey,
         });
 
         this.document = saved;
         this.blocks = [...saved.blocks];
         this.isDirty = false;
+        this.saveIdempotencyKey = null;
         this.lastSavedAt = new Date().toISOString();
       } catch (err: unknown) {
         this.error = err instanceof Error ? err.message : "Failed to save scene document";

@@ -27,7 +27,7 @@ V1 的 PostgreSQL、旧 API、旧 Worker 和旧 Web 功能已经冻结，不参�
 
 ```text
 World Canon
-  → Narrative Graph
+  → Narrative Authoring (Arc / Chapter / Quest / Scene / Blocks / References / Lore)
   → Typed State
   → AI Candidate
   → Review
@@ -38,13 +38,13 @@ World Canon
 | 模块 | 当前能力 |
 | --- | --- |
 | Canon | 世界、角色、地点、事实、规则、时间线、修订号和幂等写入 |
-| Narrative Graph | Arc、Scene、Choice、入口场景、可达性和引用诊断 |
+| Narrative Authoring | Arc、Chapter、Quest、Scene、SceneBlock、Reference、Lore、Choice、入口场景、层级与引用诊断 |
 | Typed State | 类型化变量、初始状态、状态差异预览、gate/consequence 校验 |
-| Candidate Review | 场景/资产候选、approve、reject、request changes、审核审计和原子应用 |
-| Generation | 上下文快照、来源追踪、场景 Job、有限重试和候选提交 |
+| Candidate Review | 结构化场景/资产候选、Blocks、References、层级归一化、精确来源新鲜度、审核审计和原子应用 |
+| Generation | 任务级 Narrative Context、相邻场景/状态/时间线/规则来源追踪、结构化场景 Job、有限重试和候选提交 |
 | Assets | ComfyUI 适配器、内容哈希媒体、资产候选和批准资产库 |
-| Release | preflight、不可变 manifest、content hash、JSON/Markdown 导出 |
-| Player | Release 绑定运行、选择、条件、Save/Restore 和版本校验 |
+| Release | 图谱与叙事联合 preflight、不可变结构化 manifest、content hash、JSON/Markdown 导出 |
+| Player | Release 绑定运行、Blocks 优先/正文回退、选择、条件、Save/Restore 和版本校验 |
 | Worker | SQLite outbox、BullMQ 派发、租约恢复、幂等消费和错误终态 |
 | Web | Canon、Graph、Review、Assets、Release、Player 和 Operations 工作区 |
 

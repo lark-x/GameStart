@@ -100,6 +100,20 @@ test("V2 candidate review enforces transitions and stale approvals", () => {
   );
 });
 
+test("V2 candidate review accepts unrelated world revisions only when exact sources remain fresh", () => {
+  const candidate = createV2SceneCandidate({
+    candidateId: "candidate_precise",
+    storyWorldId: "world_a",
+    baseCanonRevision: 2,
+    provenance: { source: "llm", sourceRevisionSet: [{ kind: "character", id: "char_a", revision: 7 }] },
+    payload: { scene: { sceneId: "scene_new", title: "New Scene", participantCharacterIds: [] }, choices: [], validationNotes: [] },
+  });
+  assert.equal(reviewV2SceneCandidate({ candidate, action: "approve", reviewer: "creator", expectedRevision: 3, sourceRevisionSetFresh: true }).status, "approved");
+  assert.throws(
+    () => reviewV2SceneCandidate({ candidate, action: "approve", reviewer: "creator", expectedRevision: 3, sourceRevisionSetFresh: false }),
+    (error) => error instanceof V2DomainError && error.code === "STALE_REVISION",
+  );
+});
 test("V2 candidate domain rejects malformed provenance, payload, and revisions", () => {
   const base = {
     candidateId: "candidate_invalid",

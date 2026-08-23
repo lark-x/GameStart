@@ -162,6 +162,7 @@ test("V2 Context Fingerprint produces deterministic sorted sha256 hash", () => {
   });
 
   assert.equal(fp1.hash, fp2.hash);
+  assert.equal(fp1.hash, buildV2NarrativeContextFingerprint({ storyWorldId: "world_1", worldRevision: 6, sources: fp1.sources }).hash);
   assert.equal(fp1.sources[0]?.id, "char_a");
   assert.equal(fp1.sources[1]?.id, "char_b");
   assert.equal(fp1.sources[2]?.id, "lore_1");
