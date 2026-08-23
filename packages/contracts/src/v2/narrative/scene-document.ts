@@ -66,9 +66,9 @@ export interface V2SaveSceneDocumentRequest {
   readonly isEntry?: boolean;
   readonly ordinal?: number;
   readonly blocks?: readonly V2SceneBlockInput[];
-  readonly expectedSceneRevision: number;
-  readonly expectedRevision: V2Revision;
-  readonly idempotencyKey: V2IdempotencyKey;
+  readonly expectedSceneRevision?: number;
+  readonly expectedRevision?: V2Revision;
+  readonly idempotencyKey?: V2IdempotencyKey;
 }
 
 export interface V2SaveSceneDocumentResponse {

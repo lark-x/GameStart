@@ -61,8 +61,8 @@ export interface V2ReplaceSceneReferencesRequest {
   readonly mainLocationId?: V2LocationId | null;
   readonly participantCharacterIds?: readonly V2CharacterId[];
   readonly references?: readonly V2NarrativeReferenceItemInput[];
-  readonly expectedRevision: V2Revision;
-  readonly idempotencyKey: V2IdempotencyKey;
+  readonly expectedRevision?: V2Revision;
+  readonly idempotencyKey?: V2IdempotencyKey;
 }
 
 export interface V2ReplaceSceneReferencesResponse {

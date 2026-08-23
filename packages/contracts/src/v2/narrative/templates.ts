@@ -71,8 +71,8 @@ export interface V2NarrativeTemplate {
 export interface V2ApplyNarrativeTemplateRequest {
   readonly templateId: V2NarrativeTemplateId;
   readonly mode?: "append" | "replace_empty";
-  readonly expectedRevision: V2Revision;
-  readonly idempotencyKey: V2IdempotencyKey;
+  readonly expectedRevision?: V2Revision;
+  readonly idempotencyKey?: V2IdempotencyKey;
 }
 
 export interface V2ApplyNarrativeTemplateResponse {
