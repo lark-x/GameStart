@@ -123,8 +123,8 @@ export const useNarrativeChoiceStore = defineStore("narrativeChoice", {
           throw new Error(errData.message || `创建分支失败 (${res.status})`);
         }
 
-        const created = await res.json() as { choice?: V2ChoiceDto; item?: V2ChoiceDto } | V2ChoiceDto;
-        const choice = (created as any).choice || (created as any).item || created;
+        const created = (await res.json()) as { choice?: V2ChoiceDto; item?: V2ChoiceDto } & Partial<V2ChoiceDto>;
+        const choice: V2ChoiceDto = created.choice ?? created.item ?? (created as V2ChoiceDto);
         if (!this.choicesBySourceSceneId[request.sourceSceneId]) {
           this.choicesBySourceSceneId[request.sourceSceneId] = [];
         }
