@@ -1,4 +1,4 @@
-﻿import assert from "node:assert/strict";
+import assert from "node:assert/strict";
 import test from "node:test";
 import { createPinia, setActivePinia } from "pinia";
 import { useNarrativeCanonLookupStore } from "./useNarrativeCanonLookupStore.ts";
@@ -38,26 +38,26 @@ test("useNarrativeCanonLookupStore searchCanon queries and caches entities", asy
       query,
       items: [
         {
-          kind: "character",
+          kind: "character" as const,
           id: "char-zhongli",
           title: "钟离",
           snippet: "岩王帝君",
         },
         {
-          kind: "location",
+          kind: "location" as const,
           id: "loc-liyue",
           title: "璃月港",
           snippet: "契约之港",
         },
         {
-          kind: "lore",
+          kind: "lore" as const,
           id: "lore-contract",
           title: "岩神契约",
           snippet: "食言者当受食岩之罚",
         },
       ],
     }),
-  } as any);
+  } as unknown as import("../../story/client.ts").V2NarrativeClient);
 
   const results = await store.searchCanon("world-1", "钟离", "character");
   assert.equal(results.length, 1);

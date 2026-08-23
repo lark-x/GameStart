@@ -1,5 +1,5 @@
-﻿import { defineStore } from "pinia";
-import type { V2CanonLoreEntry, V2NarrativeSearchResultItem } from "@living-network/contracts/v2";
+import { defineStore } from "pinia";
+import type { V2CanonLoreEntry } from "@living-network/contracts/v2";
 import type { V2CharacterSummary, V2LocationSummary } from "../../adapters/types.ts";
 import { V2NarrativeClient } from "../../story/client.ts";
 
