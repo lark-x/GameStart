@@ -42,8 +42,12 @@ export const useNarrativeDiagnosticsStore = defineStore("narrativeDiagnostics", 
     issuesBySceneId(state): Readonly<Record<string, V2NarrativeDiagnostic[]>> {
       const map: Record<string, V2NarrativeDiagnostic[]> = {};
       for (const issue of state.report?.diagnostics ?? []) {
-        if (issue.entityType === "scene" || issue.entityType === "block") {
+        if (issue.entityType === "scene") {
           const sid = issue.entityId;
+          if (!map[sid]) map[sid] = [];
+          map[sid]!.push(issue);
+        } else if (issue.entityType === "block" || issue.entityType === "reference") {
+          const sid = issue.targetId || issue.entityId;
           if (!map[sid]) map[sid] = [];
           map[sid]!.push(issue);
         }

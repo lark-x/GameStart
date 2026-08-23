@@ -1,5 +1,5 @@
-<script setup lang="ts">
-import { computed, ref } from "vue";
+﻿<script setup lang="ts">
+import { computed, ref, watch } from "vue";
 import {
   AlertTriangle,
   AlertCircle,
@@ -12,25 +12,50 @@ import {
   ShieldCheck,
   History,
   RefreshCw,
+  Search as SearchIcon,
+  Loader2,
+  FileText,
+  User,
+  MapPin,
+  BookOpen,
 } from "@lucide/vue";
 import { useNarrativeDiagnosticsStore } from "../../../story/stores/useNarrativeDiagnosticsStore.ts";
-import type { V2NarrativeDiagnostic } from "@living-network/contracts/v2";
+import { useNarrativeSearchStore } from "../../stores/useNarrativeSearchStore.ts";
+import { useNarrativeSessionStore, type BottomPanelTab } from "../../stores/useNarrativeSessionStore.ts";
+import type { V2NarrativeDiagnostic, V2NarrativeSearchResultItem } from "@living-network/contracts/v2";
 
-defineProps<{
+const props = defineProps<{
   storyWorldId: string;
   open: boolean;
 }>();
 
 const emit = defineEmits<{
   close: [];
-  openScene: [sceneId: string];
+  openScene: [sceneId: string, blockId?: string];
 }>();
 
 const diagStore = useNarrativeDiagnosticsStore();
+const searchStore = useNarrativeSearchStore();
+const sessionStore = useNarrativeSessionStore();
 
-const activeTab = ref<"problems" | "preflight" | "audits">("problems");
+const activeTab = computed<BottomPanelTab | "preflight" | "audits">({
+  get: () => sessionStore.bottomPanelTab,
+  set: (t) => {
+    if (t === "problems" || t === "search" || t === "jobs" || t === "candidates") {
+      sessionStore.setBottomPanelTab(t);
+    }
+  },
+});
+
+const localTab = ref<string>(sessionStore.bottomPanelTab);
+watch(() => sessionStore.bottomPanelTab, (newTab) => {
+  localTab.value = newTab;
+});
+
 const severityFilter = ref<"all" | "error" | "warning" | "info">("all");
 const isExpandedHeight = ref(false);
+const searchInput = ref("");
+let searchTimer: ReturnType<typeof setTimeout> | null = null;
 
 const filteredIssues = computed(() => {
   if (severityFilter.value === "all") return diagStore.issues;
@@ -38,8 +63,33 @@ const filteredIssues = computed(() => {
 });
 
 function handleJumpToEntity(diag: V2NarrativeDiagnostic) {
-  if (diag.entityType === "scene" || diag.entityType === "block") {
+  if (diag.entityType === "scene") {
     emit("openScene", diag.entityId);
+  } else if (diag.entityType === "block") {
+    const sceneId = diag.targetId || diag.entityId;
+    sessionStore.setActiveBlockId(diag.entityId);
+    emit("openScene", sceneId, diag.entityId);
+  }
+}
+
+function handleSearchInput(e: Event) {
+  const val = (e.target as HTMLInputElement).value;
+  searchInput.value = val;
+  if (searchTimer) clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    void searchStore.search(props.storyWorldId, val);
+  }, 200);
+}
+
+function handleSelectSearchResult(item: V2NarrativeSearchResultItem) {
+  if (item.kind === "scene") {
+    emit("openScene", item.id);
+  } else if (item.kind === "scene_block") {
+    const sceneId = item.sceneId || item.parentPath || item.id;
+    sessionStore.setActiveBlockId(item.id);
+    emit("openScene", sceneId, item.id);
+  } else if (item.sceneId) {
+    emit("openScene", item.sceneId);
   }
 }
 </script>
@@ -58,7 +108,7 @@ function handleJumpToEntity(diag: V2NarrativeDiagnostic) {
           type="button"
           class="px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
           :class="[
-            activeTab === 'problems'
+            localTab === 'problems'
               ? 'bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 shadow-sm'
               : 'text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
           ]"
@@ -83,11 +133,26 @@ function handleJumpToEntity(diag: V2NarrativeDiagnostic) {
           type="button"
           class="px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
           :class="[
-            activeTab === 'preflight'
+            localTab === 'search'
               ? 'bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 shadow-sm'
               : 'text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
           ]"
-          @click="activeTab = 'preflight'"
+          @click="activeTab = 'search'"
+        >
+          <SearchIcon class="h-3.5 w-3.5 text-amber-500" />
+          <span>全局检索</span>
+          <kbd class="hidden sm:inline-block px-1 py-0.2 text-[9px] font-mono bg-stone-100 dark:bg-stone-800 text-stone-400 rounded">⌘K</kbd>
+        </button>
+
+        <button
+          type="button"
+          class="px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
+          :class="[
+            localTab === 'preflight'
+              ? 'bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 shadow-sm'
+              : 'text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
+          ]"
+          @click="localTab = 'preflight'"
         >
           <ShieldCheck class="h-3.5 w-3.5 text-emerald-500" />
           <span>发布预检</span>
@@ -97,11 +162,11 @@ function handleJumpToEntity(diag: V2NarrativeDiagnostic) {
           type="button"
           class="px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
           :class="[
-            activeTab === 'audits'
+            localTab === 'audits'
               ? 'bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 shadow-sm'
               : 'text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
           ]"
-          @click="activeTab = 'audits'"
+          @click="localTab = 'audits'"
         >
           <History class="h-3.5 w-3.5 text-sky-500" />
           <span>审计记录</span>
@@ -143,7 +208,7 @@ function handleJumpToEntity(diag: V2NarrativeDiagnostic) {
     <!-- Panel Content Body -->
     <div class="flex-1 overflow-y-auto p-3 text-xs">
       <!-- 1. Problems Tab -->
-      <template v-if="activeTab === 'problems'">
+      <template v-if="localTab === 'problems'">
         <div class="space-y-3">
           <!-- Severity Filter Pills -->
           <div class="flex items-center gap-2 pb-2 border-b border-stone-100 dark:border-stone-800">
@@ -226,7 +291,7 @@ function handleJumpToEntity(diag: V2NarrativeDiagnostic) {
                 v-if="issue.entityType === 'scene' || issue.entityType === 'block'"
                 type="button"
                 class="px-2 py-1 rounded-lg bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 hover:border-amber-500 text-stone-700 dark:text-stone-300 flex items-center gap-1 shrink-0 transition-colors"
-                title="在编辑器中定位场景"
+                title="在编辑器中定位"
                 @click="handleJumpToEntity(issue)"
               >
                 <ExternalLink class="h-3 w-3 text-amber-500" />
@@ -242,8 +307,67 @@ function handleJumpToEntity(diag: V2NarrativeDiagnostic) {
         </div>
       </template>
 
-      <!-- 2. Release Preflight Tab -->
-      <template v-else-if="activeTab === 'preflight'">
+      <!-- 2. Search Tab (⌘K) -->
+      <template v-else-if="localTab === 'search'">
+        <div class="space-y-3">
+          <div class="relative flex items-center">
+            <Loader2 v-if="searchStore.loading" class="absolute left-3 h-4 w-4 text-amber-500 animate-spin" />
+            <SearchIcon v-else class="absolute left-3 h-4 w-4 text-stone-400 pointer-events-none" />
+            <input
+              :value="searchInput"
+              type="text"
+              placeholder="全局搜索场景、对白文本、角色、地点与设定..."
+              class="w-full pl-9 pr-3 py-1.5 text-xs rounded-xl bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 text-stone-800 dark:text-stone-200 placeholder-stone-400 outline-none focus:border-amber-500 transition-colors"
+              autoFocus
+              @input="handleSearchInput"
+            />
+          </div>
+
+          <div v-if="searchStore.results.length > 0" class="space-y-1.5">
+            <button
+              v-for="item in searchStore.results"
+              :key="item.id + item.kind"
+              type="button"
+              class="w-full p-2 rounded-xl text-left border border-stone-200/60 dark:border-stone-800 hover:border-amber-500 bg-stone-50/40 dark:bg-stone-950/30 flex items-center justify-between gap-3 transition-colors"
+              @click="handleSelectSearchResult(item)"
+            >
+              <div class="flex items-center gap-2.5 min-w-0">
+                <div class="p-1.5 rounded-lg bg-stone-100 dark:bg-stone-800 text-stone-500 shrink-0">
+                  <FileText v-if="item.kind === 'scene' || item.kind === 'scene_block'" class="h-3.5 w-3.5 text-amber-500" />
+                  <User v-else-if="item.kind === 'character'" class="h-3.5 w-3.5 text-sky-500" />
+                  <MapPin v-else-if="item.kind === 'location'" class="h-3.5 w-3.5 text-emerald-500" />
+                  <BookOpen v-else class="h-3.5 w-3.5 text-purple-500" />
+                </div>
+                <div class="min-w-0">
+                  <div class="flex items-center gap-1.5">
+                    <span class="font-semibold text-stone-900 dark:text-stone-100 truncate">{{ item.title }}</span>
+                    <span class="text-[9px] font-mono text-stone-400 px-1 py-0.2 bg-stone-200/60 dark:bg-stone-800 rounded">
+                      {{ item.kind }}
+                    </span>
+                  </div>
+                  <p v-if="item.snippet" class="text-[11px] text-stone-400 truncate mt-0.5">
+                    {{ item.snippet }}
+                  </p>
+                </div>
+              </div>
+
+              <div class="text-stone-400 flex items-center gap-1 text-[11px] shrink-0 font-mono">
+                <ExternalLink class="h-3.5 w-3.5 text-amber-500" />
+                <span>跳转</span>
+              </div>
+            </button>
+          </div>
+          <div v-else-if="searchInput && !searchStore.loading" class="p-8 text-center text-stone-400">
+            未找到与 "{{ searchInput }}" 匹配的正典记录
+          </div>
+          <div v-else class="p-8 text-center text-stone-400">
+            输入关键词以检索全篇剧本、角色与世界观正典
+          </div>
+        </div>
+      </template>
+
+      <!-- 3. Release Preflight Tab -->
+      <template v-else-if="localTab === 'preflight'">
         <div class="space-y-4 max-w-2xl">
           <div class="p-3 rounded-xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/60 flex items-center justify-between">
             <div class="flex items-center gap-2">
@@ -284,7 +408,7 @@ function handleJumpToEntity(diag: V2NarrativeDiagnostic) {
         </div>
       </template>
 
-      <!-- 3. Audits Tab -->
+      <!-- 4. Audits Tab -->
       <template v-else>
         <div class="space-y-2">
           <p class="text-stone-400 italic">暂无最近的原子回写或审核审计记录</p>

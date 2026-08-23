@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import NarrativeWorkbenchLayout from "../layouts/NarrativeWorkbenchLayout.vue";
 import type { NarrativeWorkbenchMode } from "../components/topbar/NarrativeModeTabs.vue";
@@ -148,7 +148,16 @@ watch(
   },
 );
 
+function handleGlobalKeydown(e: KeyboardEvent) {
+  if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
+    e.preventDefault();
+    sessionStore.setBottomPanelTab("search");
+    bottomDrawerOpen.value = true;
+  }
+}
+
 onMounted(async () => {
+  window.addEventListener("keydown", handleGlobalKeydown);
   routeSync.syncFromRoute();
   if (storyWorldId.value) {
     // On-Demand Initial Load: Only fetch outline & diagnostics
@@ -169,6 +178,10 @@ onMounted(async () => {
   }
 });
 
+onUnmounted(() => {
+  window.removeEventListener("keydown", handleGlobalKeydown);
+});
+
 function handleBack() {
   router.push(`/v2/workspace/story`);
 }
@@ -178,6 +191,13 @@ function handleSelectScene(sceneId: string) {
   navGuard.requestSceneChange(sceneId, () => {
     sessionStore.selectScene(sceneId);
   });
+}
+
+function handleOpenSceneFromPanel(sceneId: string, blockId?: string) {
+  if (blockId) {
+    sessionStore.setActiveBlockId(blockId);
+  }
+  handleSelectScene(sceneId);
 }
 
 async function handleCreateScene(payload?: { arcId?: string | undefined; chapterId?: string | undefined; questId?: string | undefined }) {
@@ -381,7 +401,7 @@ async function handlePublishRelease() {
         :story-world-id="storyWorldId"
         :open="bottomDrawerOpen"
         @close="bottomDrawerOpen = false"
-        @open-scene="handleSelectScene"
+        @open-scene="handleOpenSceneFromPanel"
       />
     </template>
 
