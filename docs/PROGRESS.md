@@ -14,7 +14,7 @@ V2 进入六阶段创作闭环集成期：前端信息架构已按“项目、�
 
 | 能力 | 状态 | 当前证据与边界 |
 | --- | --- | --- |
-| Narrative Authoring V2 | 已实现 | 四级层级(Arc/Chapter/Quest/Scene)、Blocks分块剧本、多态引用、CAS版本并发控制、幂等Replay、Bulk静态诊断与任务级AI上下文引擎已全量集成；见 [narrative-authoring.md](./narrative-authoring.md) |
+| Narrative Authoring V2 | 已实现 | 四级层级(Arc/Chapter/Quest/Scene)、Blocks分块剧本编辑器(dialogue/narration/action/command)、CAS并发保护与本地草稿挽救、多态正典引用选择器、Quest分支流与Choice Inspector、AI候选审核Diff与原子合并、底部诊断抽屉面板与发布预检、按需加载模块化Store已全量集成；见 [narrative-authoring.md](./narrative-authoring.md) |
 | World Canon | 已实现 | SQLite、revision/idempotency、世界/地点/角色/事实/规则/时间线与 FTS5 |
 | Narrative Graph | 已实现 | Arc/Scene/Choice、入口/可达性/引用校验和图诊断 |
 | Typed State | 已实现 | 类型化 schema、初始状态、delta preview、gate/consequence 校验 |

@@ -37,7 +37,7 @@ API 负责向上迁移和组装数据库；Worker 等待 API readiness，不执�
 
 | 模块 | 当前职责 |
 | --- | --- |
-| `apps/web` | `/v2` 分组侧栏、创作工作区、模型/图片/外观配置、模型调用日志和触发器占位页 |
+| `apps/web` | `/v2` 独立剧情工作台(`/v2/worlds/:storyWorldId/narrative`)、分组侧栏、创作工作区、模型/图片/外观配置、模型调用日志和触发器占位页 |
 | `apps/api` | Fastify 路由、Parser、Use Case、Platform 配置 API、readiness/capabilities、Core/Generation/Media API |
 | `apps/worker` | V2 任务派发、按能力绑定动态解析模型和图片服务、场景/资产 Worker、调用日志、有限重试、租约恢复和本地媒体落盘 |
 | `packages/contracts` | V2 请求、响应、错误、Job、Candidate、Release、Runtime、平台配置和模型日志共享契约 |
