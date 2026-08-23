@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed } from "vue";
 import {
   Layers,
@@ -12,7 +12,6 @@ import {
 } from "@lucide/vue";
 import { useNarrativeOutlineStore } from "../../../story/stores/useNarrativeOutlineStore.ts";
 import { useNarrativeDiagnosticsStore } from "../../../story/stores/useNarrativeDiagnosticsStore.ts";
-
 
 const props = defineProps<{
   storyWorldId: string;
@@ -91,49 +90,37 @@ const stats = computed(() => {
 </script>
 
 <template>
-  <div class="h-full flex flex-col space-y-6 select-none">
-    <!-- Outline Stats Summary Banner -->
-    <div class="p-4 bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-800 shadow-sm flex items-center justify-between">
-      <div>
-        <h2 class="text-base font-bold text-stone-900 dark:text-stone-100 flex items-center gap-2">
-          <Layers class="h-5 w-5 text-amber-500" />
-          故事全局大纲全景 (Story Outline Overview)
-        </h2>
-        <p class="text-xs text-stone-500 mt-0.5">以故事篇章 (Arc)、章节 (Chapter) 和任务 (Quest) 组织的全局情节脉络。双击场景卡片直接进入剧本编辑器。</p>
+  <div class="h-full flex flex-col space-y-5 select-none text-sm max-w-5xl mx-auto w-full">
+    <!-- Compact Outline Header Banner -->
+    <div class="px-4 py-3 bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-800 shadow-xs flex items-center justify-between">
+      <div class="flex items-center gap-2.5">
+        <Layers class="h-4.5 w-4.5 text-amber-500" />
+        <h2 class="font-bold text-stone-900 dark:text-stone-100">故事全局大纲</h2>
+        <span class="text-xs text-stone-400">
+          {{ stats.arcs }} 篇章 · {{ stats.chapters }} 章节 · {{ stats.quests }} 任务 · {{ stats.scenes }} 场景
+        </span>
       </div>
 
-      <div class="flex items-center gap-4 text-xs">
-        <div class="text-center px-3 py-1.5 bg-stone-50 dark:bg-stone-800/80 rounded-lg border border-stone-200 dark:border-stone-700">
-          <span class="block text-[10px] text-stone-400 font-medium">篇章 (Arcs)</span>
-          <span class="font-bold text-stone-800 dark:text-stone-200 text-sm">{{ stats.arcs }}</span>
-        </div>
-        <div class="text-center px-3 py-1.5 bg-stone-50 dark:bg-stone-800/80 rounded-lg border border-stone-200 dark:border-stone-700">
-          <span class="block text-[10px] text-stone-400 font-medium">章节 (Chapters)</span>
-          <span class="font-bold text-stone-800 dark:text-stone-200 text-sm">{{ stats.chapters }}</span>
-        </div>
-        <div class="text-center px-3 py-1.5 bg-stone-50 dark:bg-stone-800/80 rounded-lg border border-stone-200 dark:border-stone-700">
-          <span class="block text-[10px] text-stone-400 font-medium">任务 (Quests)</span>
-          <span class="font-bold text-stone-800 dark:text-stone-200 text-sm">{{ stats.quests }}</span>
-        </div>
-        <div class="text-center px-3 py-1.5 bg-amber-50 dark:bg-amber-950/30 rounded-lg border border-amber-200 dark:border-amber-900/50">
-          <span class="block text-[10px] text-amber-600 dark:text-amber-400 font-medium">总场景 (Scenes)</span>
-          <span class="font-bold text-amber-700 dark:text-amber-300 text-sm">{{ stats.scenes }}</span>
-        </div>
+      <div class="text-xs text-stone-400">
+        双击场景卡片直接进入剧本
       </div>
     </div>
 
     <!-- Main Arc Boards -->
     <template v-if="outlineStore.outline && outlineStore.outline.arcs.length > 0">
-      <div v-for="arc in outlineStore.outline.arcs" :key="arc.arcId" class="p-5 bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-800 shadow-sm space-y-4">
+      <div
+        v-for="arc in outlineStore.outline.arcs"
+        :key="arc.arcId"
+        class="p-5 bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-800 shadow-xs space-y-4"
+      >
         <!-- Arc Header -->
         <div class="flex items-center justify-between pb-3 border-b border-stone-100 dark:border-stone-800">
-          <div class="space-y-1">
+          <div class="space-y-0.5">
             <div class="flex items-center gap-2">
-              <span class="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-900/60">
+              <span class="px-2 py-0.5 rounded text-xs font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300">
                 篇章
               </span>
-              <h3 class="text-sm font-bold text-stone-900 dark:text-stone-100">{{ arc.title }}</h3>
-              <span class="text-xs text-stone-400 font-mono">({{ arc.arcId }})</span>
+              <h3 class="text-base font-bold text-stone-900 dark:text-stone-100">{{ arc.title }}</h3>
             </div>
             <p v-if="arc.summary" class="text-xs text-stone-500 leading-relaxed">{{ arc.summary }}</p>
           </div>
@@ -145,34 +132,49 @@ const stats = computed(() => {
               @click="handleAddChapter(arc.arcId)"
             >
               <Plus class="h-3.5 w-3.5" />
-              <span>新增章节</span>
+              <span>新建章节</span>
+            </button>
+            <button
+              type="button"
+              class="px-2.5 py-1 text-xs font-medium rounded-lg border border-stone-200 dark:border-stone-700 hover:bg-stone-50 dark:hover:bg-stone-800 text-stone-700 dark:text-stone-300 flex items-center gap-1 transition-colors"
+              @click="handleAddScene(arc.arcId)"
+            >
+              <Plus class="h-3.5 w-3.5" />
+              <span>新建场景</span>
             </button>
           </div>
         </div>
 
-        <!-- Chapters List inside Arc -->
-        <div class="space-y-4">
+        <!-- 1. Chapters inside Arc -->
+        <div v-if="arc.chapters.length > 0" class="space-y-4">
           <div
             v-for="ch in arc.chapters"
             :key="ch.chapterId"
-            class="p-4 bg-stone-50/60 dark:bg-stone-950/40 rounded-lg border border-stone-200/80 dark:border-stone-800 space-y-3"
+            class="p-4 bg-stone-50/70 dark:bg-stone-950/40 rounded-xl border border-stone-200/80 dark:border-stone-800 space-y-3"
           >
             <!-- Chapter Title -->
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-2">
                 <Folder class="h-4 w-4 text-sky-500 shrink-0" />
-                <h4 class="text-xs font-bold text-stone-800 dark:text-stone-200">{{ ch.title }}</h4>
-                <span class="text-[10px] text-stone-400 font-mono">({{ ch.chapterId }})</span>
+                <h4 class="text-sm font-bold text-stone-800 dark:text-stone-200">{{ ch.title }}</h4>
               </div>
 
               <div class="flex items-center gap-2">
                 <button
                   type="button"
-                  class="px-2 py-0.5 text-[11px] font-medium rounded border border-stone-200 dark:border-stone-700 hover:bg-white dark:hover:bg-stone-800 text-stone-600 dark:text-stone-400 flex items-center gap-1 transition-colors"
+                  class="px-2 py-0.5 text-xs font-medium rounded border border-stone-200 dark:border-stone-700 hover:bg-white dark:hover:bg-stone-800 text-stone-600 dark:text-stone-400 flex items-center gap-1 transition-colors"
                   @click="handleAddQuest(arc.arcId, ch.chapterId)"
                 >
                   <Plus class="h-3 w-3" />
-                  <span>新增任务</span>
+                  <span>新建任务</span>
+                </button>
+                <button
+                  type="button"
+                  class="px-2 py-0.5 text-xs font-medium rounded border border-stone-200 dark:border-stone-700 hover:bg-white dark:hover:bg-stone-800 text-stone-600 dark:text-stone-400 flex items-center gap-1 transition-colors"
+                  @click="handleAddScene(arc.arcId, ch.chapterId)"
+                >
+                  <Plus class="h-3 w-3" />
+                  <span>新建场景</span>
                 </button>
               </div>
             </div>
@@ -187,27 +189,27 @@ const stats = computed(() => {
                 <div class="flex items-center justify-between pb-1.5 border-b border-stone-100 dark:border-stone-800">
                   <div class="flex items-center gap-1.5 min-w-0">
                     <BookOpen class="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-                    <span class="text-xs font-semibold text-stone-800 dark:text-stone-200 truncate">{{ quest.title }}</span>
+                    <span class="font-semibold text-stone-800 dark:text-stone-200 truncate">{{ quest.title }}</span>
                   </div>
                   <button
                     type="button"
                     class="p-1 rounded hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-500"
-                    title="在此任务下新增场景"
+                    title="在此任务下新建场景"
                     @click="handleAddScene(arc.arcId, ch.chapterId, quest.questId)"
                   >
                     <Plus class="h-3 w-3" />
                   </button>
                 </div>
 
-                <!-- Scene Cards -->
+                <!-- Scenes in Quest -->
                 <div class="space-y-1.5">
                   <div
                     v-for="sc in quest.scenes"
                     :key="sc.sceneId"
-                    class="p-2 rounded border cursor-pointer transition-all flex items-center justify-between text-xs group"
+                    class="p-2.5 rounded-lg border cursor-pointer transition-all flex items-center justify-between group"
                     :class="[
                       selectedSceneId === sc.sceneId
-                        ? 'border-amber-500 bg-amber-50/40 dark:bg-amber-950/20 shadow-sm'
+                        ? 'border-amber-500 bg-amber-50/50 dark:bg-amber-950/30 shadow-xs'
                         : 'border-stone-200 dark:border-stone-800 hover:border-stone-300 dark:hover:border-stone-700 bg-stone-50/40 dark:bg-stone-900'
                     ]"
                     @click="handleSceneClick(sc.sceneId)"
@@ -225,25 +227,25 @@ const stats = computed(() => {
                     </div>
                   </div>
 
-                  <div v-if="quest.scenes.length === 0" class="text-center py-2 text-[11px] text-stone-400">
-                    暂无场景，点击右上角 + 创建
+                  <div v-if="quest.scenes.length === 0" class="text-center py-2 text-xs text-stone-400">
+                    暂无场景
                   </div>
                 </div>
               </div>
 
               <!-- Loose Scenes in Chapter -->
               <div v-if="ch.looseScenes.length > 0" class="p-3 bg-white dark:bg-stone-900 rounded-lg border border-dashed border-stone-200 dark:border-stone-800 space-y-2">
-                <div class="text-[11px] font-semibold text-stone-500 pb-1 border-b border-stone-100 dark:border-stone-800">
+                <div class="text-xs font-semibold text-stone-500 pb-1 border-b border-stone-100 dark:border-stone-800">
                   章节直接附属场景
                 </div>
                 <div class="space-y-1.5">
                   <div
                     v-for="sc in ch.looseScenes"
                     :key="sc.sceneId"
-                    class="p-2 rounded border cursor-pointer transition-all flex items-center justify-between text-xs group"
+                    class="p-2.5 rounded-lg border cursor-pointer transition-all flex items-center justify-between group"
                     :class="[
                       selectedSceneId === sc.sceneId
-                        ? 'border-amber-500 bg-amber-50/40 dark:bg-amber-950/20'
+                        ? 'border-amber-500 bg-amber-50/50 dark:bg-amber-950/30'
                         : 'border-stone-200 dark:border-stone-800 hover:border-stone-300 dark:hover:border-stone-700'
                     ]"
                     @click="handleSceneClick(sc.sceneId)"
@@ -257,6 +259,78 @@ const stats = computed(() => {
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. Loose Quests under Arc -->
+        <div v-if="arc.looseQuests.length > 0" class="space-y-2">
+          <div class="text-xs font-semibold text-stone-500">篇章直接附属任务</div>
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div
+              v-for="quest in arc.looseQuests"
+              :key="quest.questId"
+              class="p-3 bg-stone-50/60 dark:bg-stone-950/40 rounded-lg border border-stone-200/80 dark:border-stone-800 space-y-2"
+            >
+              <div class="flex items-center justify-between pb-1 border-b border-stone-100 dark:border-stone-800">
+                <span class="font-semibold text-stone-800 dark:text-stone-200">{{ quest.title }}</span>
+                <button
+                  type="button"
+                  class="p-1 rounded hover:bg-white dark:hover:bg-stone-800 text-stone-500"
+                  @click="handleAddScene(arc.arcId, undefined, quest.questId)"
+                >
+                  <Plus class="h-3 w-3" />
+                </button>
+              </div>
+              <div class="space-y-1">
+                <div
+                  v-for="sc in quest.scenes"
+                  :key="sc.sceneId"
+                  class="p-2 rounded border cursor-pointer flex items-center justify-between"
+                  :class="[selectedSceneId === sc.sceneId ? 'border-amber-500 bg-amber-50/40' : 'border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900']"
+                  @click="handleSceneClick(sc.sceneId)"
+                  @dblclick="handleSceneDoubleClick(sc.sceneId)"
+                >
+                  <span class="truncate">{{ sc.title }}</span>
+                  <ArrowRight class="h-3.5 w-3.5 text-stone-300" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. Direct Loose Scenes under Arc (Crucial Fix: displayed when scenes are attached directly to Arc) -->
+        <div v-if="arc.looseScenes.length > 0" class="p-4 bg-stone-50/60 dark:bg-stone-950/30 rounded-xl border border-stone-200/60 dark:border-stone-800 space-y-3">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-stone-600 dark:text-stone-400">篇章直接附属场景 ({{ arc.looseScenes.length }})</span>
+            <button
+              type="button"
+              class="px-2 py-0.5 text-xs rounded border border-stone-200 dark:border-stone-700 hover:bg-white dark:hover:bg-stone-800 text-stone-600 dark:text-stone-300 flex items-center gap-1"
+              @click="handleAddScene(arc.arcId)"
+            >
+              <Plus class="h-3 w-3" />
+              <span>新建场景</span>
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
+            <div
+              v-for="sc in arc.looseScenes"
+              :key="sc.sceneId"
+              class="p-3 rounded-lg border cursor-pointer transition-all flex items-center justify-between group"
+              :class="[
+                selectedSceneId === sc.sceneId
+                  ? 'border-amber-500 bg-amber-50/60 dark:bg-amber-950/40 shadow-xs'
+                  : 'border-stone-200 dark:border-stone-700 hover:border-stone-300 dark:hover:border-stone-600 bg-white dark:bg-stone-900'
+              ]"
+              @click="handleSceneClick(sc.sceneId)"
+              @dblclick="handleSceneDoubleClick(sc.sceneId)"
+            >
+              <div class="flex items-center gap-2 min-w-0">
+                <FileText class="h-4 w-4 text-amber-500 shrink-0" />
+                <span class="font-medium text-stone-800 dark:text-stone-200 truncate">{{ sc.title }}</span>
+              </div>
+              <ArrowRight class="h-3.5 w-3.5 text-stone-300 group-hover:text-amber-500 transition-colors" />
             </div>
           </div>
         </div>

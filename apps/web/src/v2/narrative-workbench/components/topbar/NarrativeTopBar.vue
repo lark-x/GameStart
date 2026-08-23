@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { ref } from "vue";
 import {
   ArrowLeft,
@@ -63,6 +63,7 @@ const moreMenuOpen = ref(false);
 
       <NarrativeBreadcrumb
         :world-name="worldName"
+        :mode="mode"
         :arc-title="arcTitle"
         :chapter-title="chapterTitle"
         :quest-title="questTitle"
@@ -82,7 +83,7 @@ const moreMenuOpen = ref(false);
     <!-- Right: Status, AI, Search, Actions -->
     <div class="flex items-center gap-2">
       <!-- Save Status Indicator -->
-      <div class="flex items-center gap-1.5 text-xs mr-2">
+      <div v-if="mode === 'script'" class="flex items-center gap-1.5 text-xs mr-2">
         <template v-if="saveStatus === 'saving'">
           <RefreshCw class="w-3.5 h-3.5 animate-spin text-amber-500" />
           <span class="text-stone-500">保存中...</span>
@@ -109,34 +110,36 @@ const moreMenuOpen = ref(false);
       <Button
         variant="ghost"
         size="sm"
-        class="h-8 px-2 text-stone-600 dark:text-stone-300 border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800"
+        class="h-8 px-2 text-stone-600 dark:text-stone-300 border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 hover:border-amber-500"
         @click="emit('search')"
       >
         <Search class="w-3.5 h-3.5 mr-1.5 text-stone-400" />
-        <span class="text-xs mr-1 text-stone-500">搜索</span>
-        <kbd class="text-[10px] px-1 py-0.2 rounded bg-stone-200 dark:bg-stone-700 text-stone-600 dark:text-stone-300">⌘K</kbd>
+        <span class="text-xs mr-1 text-stone-600 dark:text-stone-300">搜索</span>
+        <kbd class="text-[10px] px-1 py-0.2 rounded bg-stone-200 dark:bg-stone-700 text-stone-600 dark:text-stone-300 font-mono">⌘K</kbd>
       </Button>
 
-      <!-- AI Assist Button -->
+      <!-- AI Assist Button (Subtle secondary button, hidden in review mode) -->
       <Button
+        v-if="mode !== 'review'"
         variant="secondary"
         size="sm"
-        class="h-8 px-2.5 text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/60 border border-amber-200 dark:border-amber-800"
+        class="h-8 px-2.5 text-xs text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/60 border border-amber-200/80 dark:border-amber-800/80"
         @click="emit('aiAssist')"
       >
         <Sparkles class="w-3.5 h-3.5 mr-1 text-amber-500" />
         <span>AI 创作</span>
       </Button>
 
-      <!-- Preview Button -->
+      <!-- Preview Button (only in script mode) -->
       <Button
+        v-if="mode === 'script'"
         :variant="previewActive ? 'primary' : 'ghost'"
         size="sm"
         class="h-8 px-2 text-xs"
         @click="emit('preview')"
       >
         <Eye class="w-3.5 h-3.5 mr-1" />
-        <span>预览</span>
+        <span>纯文本预览</span>
       </Button>
 
       <!-- More Menu / Actions -->
@@ -152,7 +155,7 @@ const moreMenuOpen = ref(false);
 
         <div
           v-if="moreMenuOpen"
-          class="absolute right-0 mt-1 w-44 rounded-lg bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 shadow-lg py-1 z-30 text-xs text-stone-700 dark:text-stone-200"
+          class="absolute right-0 mt-1 w-44 rounded-xl bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 shadow-xl py-1 z-30 text-xs text-stone-700 dark:text-stone-200"
           @click="moreMenuOpen = false"
         >
           <button
@@ -169,7 +172,7 @@ const moreMenuOpen = ref(false);
             @click="emit('publish')"
           >
             <ShieldCheck class="w-3.5 h-3.5" />
-            <span>发布正典版本 (Release)</span>
+            <span>发布正典版本</span>
           </button>
           <button
             type="button"

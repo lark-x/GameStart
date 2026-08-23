@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import NarrativeWorkbenchLayout from "../layouts/NarrativeWorkbenchLayout.vue";
@@ -20,14 +20,18 @@ import { createNarrativeMutationKey } from "../utils/idempotency.ts";
 import NarrativeExplorer from "../components/explorer/NarrativeExplorer.vue";
 import NarrativeOutlineBoard from "../components/outline/NarrativeOutlineBoard.vue";
 import QuestFlowView from "../components/flow/QuestFlowView.vue";
+import ChoiceInspector from "../components/flow/ChoiceInspector.vue";
 import CandidateReviewView from "../components/review/CandidateReviewView.vue";
 import SceneScriptEditor from "../components/script/SceneScriptEditor.vue";
 import NarrativeInspector from "../components/inspector/NarrativeInspector.vue";
 import NarrativeBottomPanel from "../components/problems/NarrativeBottomPanel.vue";
+import NarrativeCommandPalette from "../components/search/NarrativeCommandPalette.vue";
 import Modal from "../../../components/ui/Modal.vue";
 import Button from "../../../components/ui/Button.vue";
 import { V2NarrativeClient } from "../../story/client.ts";
 import type {
+  V2ChoiceDto,
+  V2NarrativeSearchResultItem,
   V2NarrativeTemplate,
   V2NarrativeTemplateId,
 } from "@living-network/contracts/v2";
@@ -46,6 +50,12 @@ const revisionStore = useNarrativeRevisionStore();
 const choiceStore = useNarrativeChoiceStore();
 const candidateStore = useNarrativeCandidateStore();
 
+// Command Palette State
+const commandPaletteOpen = ref(false);
+
+// Flow Mode selected choice for Inspector
+const activeFlowChoice = ref<V2ChoiceDto | null>(null);
+
 // Unified Session State Getters/Setters
 const mode = computed<NarrativeWorkbenchMode>({
   get: () => sessionStore.mode,
@@ -57,14 +67,16 @@ const selectedSceneId = computed<string | null>({
   set: (id) => sessionStore.selectScene(id),
 });
 
-const explorerCollapsed = computed<boolean>({
-  get: () => sessionStore.explorerCollapsed,
-  set: (v) => { sessionStore.explorerCollapsed = v; },
+// Mode-aware Left/Right Sidebar collapse state
+const isExplorerCollapsed = computed<boolean>(() => {
+  if (mode.value === "review") return true;
+  return sessionStore.explorerCollapsed;
 });
 
-const inspectorCollapsed = computed<boolean>({
-  get: () => sessionStore.inspectorCollapsed,
-  set: (v) => { sessionStore.inspectorCollapsed = v; },
+const isInspectorCollapsed = computed<boolean>(() => {
+  if (mode.value === "outline" || mode.value === "review") return true;
+  if (mode.value === "flow") return !activeFlowChoice.value;
+  return sessionStore.inspectorCollapsed;
 });
 
 const previewActive = computed<boolean>({
@@ -116,7 +128,13 @@ const activeScene = computed(() => {
   return null;
 });
 
-const worldName = computed(() => "提瓦特故事正典");
+const worldName = computed(() => {
+  if (storyWorldId.value && storyWorldId.value !== "default") {
+    return storyWorldId.value;
+  }
+  return "故事世界正典";
+});
+
 const arcTitle = computed(() => activeScene.value?.arc?.title);
 const chapterTitle = computed(() => activeScene.value?.chapter?.title);
 const questTitle = computed(() => activeScene.value?.quest?.title);
@@ -151,8 +169,7 @@ watch(
 function handleGlobalKeydown(e: KeyboardEvent) {
   if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
     e.preventDefault();
-    sessionStore.setBottomPanelTab("search");
-    bottomDrawerOpen.value = true;
+    commandPaletteOpen.value = true;
   }
 }
 
@@ -160,7 +177,6 @@ onMounted(async () => {
   window.addEventListener("keydown", handleGlobalKeydown);
   routeSync.syncFromRoute();
   if (storyWorldId.value) {
-    // On-Demand Initial Load: Only fetch outline & diagnostics
     await Promise.all([
       outlineStore.fetchOutline(storyWorldId.value),
       diagStore.fetchDiagnostics(storyWorldId.value),
@@ -197,7 +213,23 @@ function handleOpenSceneFromPanel(sceneId: string, blockId?: string) {
   if (blockId) {
     sessionStore.setActiveBlockId(blockId);
   }
+  mode.value = "script";
   handleSelectScene(sceneId);
+}
+
+function handleSelectSearchResult(item: V2NarrativeSearchResultItem) {
+  if (item.kind === "scene") {
+    mode.value = "script";
+    handleSelectScene(item.id);
+  } else if (item.kind === "scene_block") {
+    mode.value = "script";
+    const sceneId = item.sceneId || item.parentPath || item.id;
+    sessionStore.setActiveBlockId(item.id);
+    handleSelectScene(sceneId);
+  } else if (item.sceneId) {
+    mode.value = "script";
+    handleSelectScene(item.sceneId);
+  }
 }
 
 async function handleCreateScene(payload?: { arcId?: string | undefined; chapterId?: string | undefined; questId?: string | undefined }) {
@@ -238,14 +270,13 @@ async function handleApplyTemplate() {
       selectedSceneId.value = outlineStore.allScenes[0]!.sceneId;
     }
   } catch (err) {
-    console.error("Failed to apply template:", err);
+    alert(err instanceof Error ? err.message : "套用模版失败");
   } finally {
     templateApplying.value = false;
   }
 }
 
 async function handlePublishRelease() {
-  await diagStore.fetchDiagnostics(storyWorldId.value);
   if (diagStore.errorCount > 0) {
     bottomDrawerOpen.value = true;
     alert(`无法发布：当前存在 ${diagStore.errorCount} 项阻碍发布的正典错误，请在下方问题面板中修复后重试。`);
@@ -291,20 +322,22 @@ async function handlePublishRelease() {
     :mode="mode"
     :save-status="saveStatus"
     :preview-active="previewActive"
-    :explorer-collapsed="explorerCollapsed"
-    :inspector-collapsed="inspectorCollapsed"
+    :explorer-collapsed="isExplorerCollapsed"
+    :inspector-collapsed="isInspectorCollapsed"
     @update:mode="mode = $event"
+    @toggle:explorer="sessionStore.toggleExplorer()"
+    @toggle:inspector="sessionStore.toggleInspector()"
     @back="handleBack"
-    @search="bottomDrawerOpen = true"
+    @search="commandPaletteOpen = true"
     @preview="previewActive = !previewActive"
     @ai-assist="mode = 'review'"
     @template="openTemplateModal"
     @publish="handlePublishRelease"
     @refresh="outlineStore.fetchOutline(storyWorldId)"
   >
-    <!-- Left Column: Explorer -->
+    <!-- Left Column: Mode-Aware Explorer -->
     <template #explorer>
-      <div class="h-full flex flex-col">
+      <div v-if="mode !== 'review'" class="h-full flex flex-col">
         <NarrativeExplorer
           :story-world-id="storyWorldId"
           :selected-scene-id="selectedSceneId"
@@ -317,6 +350,7 @@ async function handlePublishRelease() {
     <!-- Center Column: Primary Work Surface -->
     <template #main>
       <div class="h-full flex flex-col p-4 overflow-y-auto">
+        <!-- 1. Outline Mode -->
         <template v-if="mode === 'outline'">
           <NarrativeOutlineBoard
             :story-world-id="storyWorldId"
@@ -326,23 +360,31 @@ async function handlePublishRelease() {
             @create-scene="handleCreateScene"
           />
         </template>
+
+        <!-- 2. Flow Mode (Scoped Flow) -->
         <template v-else-if="mode === 'flow'">
           <QuestFlowView
             :story-world-id="storyWorldId"
             :selected-scene-id="selectedSceneId"
             :active-quest-id="sessionStore.activeQuestId"
+            :selected-choice-id="activeFlowChoice?.choiceId ?? null"
             @select-scene="handleSelectScene"
+            @select-choice="(c) => { activeFlowChoice = c; }"
             @select-quest="(qId) => sessionStore.selectQuest(qId)"
             @open-script="(id) => { selectedSceneId = id; mode = 'script'; }"
-            @create-scene="(qId) => handleCreateScene(qId ? { questId: qId } : undefined)"
+            @create-scene="(payload) => handleCreateScene(payload)"
           />
         </template>
+
+        <!-- 3. Review Mode (AI Review Workspace) -->
         <template v-else-if="mode === 'review'">
           <CandidateReviewView
             :story-world-id="storyWorldId"
             @merged="(id) => { selectedSceneId = id; mode = 'script'; }"
           />
         </template>
+
+        <!-- 4. Script Mode (Scene Script Document) -->
         <template v-else-if="selectedSceneId">
           <SceneScriptEditor
             :story-world-id="storyWorldId"
@@ -351,23 +393,39 @@ async function handlePublishRelease() {
             :is-preview="previewActive"
           />
         </template>
+
+        <!-- Script Empty State -->
         <template v-else>
-          <div class="flex-1 flex flex-col items-center justify-center text-stone-500">
-            <p class="text-sm">请在左侧大纲树中选择一个场景开始编写剧本</p>
+          <div class="flex-1 flex flex-col items-center justify-center text-stone-400 space-y-2">
+            <p class="text-sm font-medium">请在左侧故事大纲树中选择一个场景开始编写剧本</p>
           </div>
         </template>
       </div>
     </template>
 
-    <!-- Right Column: Inspector -->
+    <!-- Right Column: Mode-Aware Inspector -->
     <template #inspector>
       <div class="h-full flex flex-col overflow-y-auto">
-        <template v-if="selectedSceneId">
+        <!-- Flow Mode Inspector: ChoiceInspector when choice is selected -->
+        <template v-if="mode === 'flow' && activeFlowChoice">
+          <ChoiceInspector
+            :story-world-id="storyWorldId"
+            :choice="activeFlowChoice"
+            :available-scenes="outlineStore.allScenes"
+            @close="activeFlowChoice = null"
+            @updated="choiceStore.fetchChoicesForWorld(storyWorldId)"
+            @deleted="() => { activeFlowChoice = null; choiceStore.fetchChoicesForWorld(storyWorldId); }"
+          />
+        </template>
+
+        <!-- Script Mode Inspector: NarrativeInspector (References / Choices / AI Context) -->
+        <template v-else-if="mode === 'script' && selectedSceneId">
           <NarrativeInspector
             :story-world-id="storyWorldId"
             :scene-id="selectedSceneId"
             :characters="canonLookupStore.characters"
             :locations="canonLookupStore.locations"
+            @open-flow="mode = 'flow'"
           />
         </template>
       </div>
@@ -390,9 +448,7 @@ async function handlePublishRelease() {
         </div>
 
         <div class="flex items-center gap-3 text-[11px]">
-          <span>模式: {{ mode }}</span>
-          <span>•</span>
-          <span>大纲节点: {{ outlineStore.allScenes.length }} 场景</span>
+          <span>大纲场景: {{ outlineStore.allScenes.length }} 篇</span>
         </div>
       </div>
 
@@ -405,8 +461,17 @@ async function handlePublishRelease() {
       />
     </template>
 
-    <!-- Template Modal Overlay -->
+    <!-- Overlays: Modals & Command Palette -->
     <template #overlays>
+      <!-- Command Palette Search Overlay -->
+      <NarrativeCommandPalette
+        :story-world-id="storyWorldId"
+        :open="commandPaletteOpen"
+        @close="commandPaletteOpen = false"
+        @select-item="handleSelectSearchResult"
+      />
+
+      <!-- Template Modal Overlay -->
       <Modal :open="templateModalOpen" title="套用故事大纲模版" @close="templateModalOpen = false">
         <div class="space-y-4">
           <p class="text-xs text-stone-600 dark:text-stone-400 leading-relaxed">
@@ -420,7 +485,7 @@ async function handlePublishRelease() {
               class="p-3 rounded-lg border cursor-pointer transition-all flex items-start gap-3"
               :class="[
                 selectedTemplateId === tpl.templateId
-                  ? 'border-amber-500 bg-amber-50/50 dark:bg-amber-950/20 shadow-sm'
+                  ? 'border-amber-500 bg-amber-50/50 dark:bg-amber-950/20 shadow-xs'
                   : 'border-stone-200 dark:border-stone-800 hover:border-stone-300'
               ]"
               @click="selectedTemplateId = tpl.templateId"
