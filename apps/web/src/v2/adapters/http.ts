@@ -449,7 +449,7 @@ export function createV2HttpAdapter(options: V2HttpAdapterOptions): V2WorkspaceA
           diff: {
             title: candidate?.payload.scene.title ?? "No generated candidate",
             scope: candidate ? ["scene", `${candidate.payload.choices.length} choices`] : [],
-            additions: candidate ? [candidate.payload.scene.body] : [],
+            additions: candidate ? [candidate.payload.scene.body ?? ""] : [],
             warnings: candidate?.payload.validationNotes ?? [],
           },
         },

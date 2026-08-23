@@ -730,7 +730,7 @@ export function createV2CoreUseCases(
       await requireWorld(canon, storyWorldId);
       return toSceneCandidateDto(await requireSceneCandidate(candidateReview, storyWorldId, candidateId));
     }),
-    reviewSceneCandidate: (storyWorldId, candidateId, input) => requireCandidateReview().withCandidateReviewTransaction(async ({ canon, graphState, candidateReview, references }) =>
+    reviewSceneCandidate: (storyWorldId, candidateId, input) => requireCandidateReview().withCandidateReviewTransaction(async ({ canon, graphState, candidateReview, references, sceneDocument }) =>
       withIdempotency(canon, "reviewSceneCandidate", input.idempotencyKey, { storyWorldId, candidateId, ...input }, async () => {
         await requireWorld(canon, storyWorldId);
         const existing = await requireSceneCandidate(candidateReview, storyWorldId, candidateId);
@@ -750,29 +750,69 @@ export function createV2CoreUseCases(
             title: plan.scene.title,
             body: plan.scene.body ?? "",
           }));
+          if (sceneDocument && plan.scene.blocks && plan.scene.blocks.length > 0) {
+            const domainBlocks = plan.scene.blocks.map((b, idx) => ({
+              blockId: b.blockId || `b_${randomUUID().slice(0, 8)}`,
+              storyWorldId,
+              sceneId: createdScene.sceneId,
+              ordinal: idx,
+              kind: b.kind,
+              ...(b.speakerCharacterId ? { speakerCharacterId: b.speakerCharacterId } : {}),
+              ...(b.text ? { text: b.text } : {}),
+              payload: (b.payload ?? {}) as Record<string, unknown>,
+              revision: 1,
+            }));
+            await sceneDocument.saveSceneDocument({
+              scene: {
+                sceneId: createdScene.sceneId,
+                storyWorldId,
+                title: createdScene.title,
+                ...(createdScene.body ? { body: createdScene.body } : {}),
+                isEntry: false,
+                ordinal: 0,
+                revision: 1,
+                documentMode: "blocks",
+              },
+              blocks: domainBlocks,
+            });
+          }
           if (references) {
             const narrativeRefs: any[] = [];
-            if (plan.scene.locationId) {
-              narrativeRefs.push({
-                referenceId: `${existing.candidateId}:ref:loc`,
-                storyWorldId,
-                sourceType: "scene",
-                sourceId: createdScene.sceneId,
-                targetType: "location",
-                targetId: plan.scene.locationId,
-                role: "location",
-              });
-            }
-            for (const pId of plan.scene.participantCharacterIds) {
-              narrativeRefs.push({
-                referenceId: `${existing.candidateId}:ref:p:${pId}`,
-                storyWorldId,
-                sourceType: "scene",
-                sourceId: createdScene.sceneId,
-                targetType: "character",
-                targetId: pId,
-                role: "participant",
-              });
+            if (plan.references && plan.references.length > 0) {
+              for (const r of plan.references) {
+                narrativeRefs.push({
+                  referenceId: r.referenceId || `${existing.candidateId}:ref:${r.role}:${r.targetId}`,
+                  storyWorldId,
+                  sourceType: "scene",
+                  sourceId: createdScene.sceneId,
+                  targetType: r.targetType,
+                  targetId: r.targetId,
+                  role: r.role,
+                });
+              }
+            } else {
+              if (plan.scene.locationId) {
+                narrativeRefs.push({
+                  referenceId: `${existing.candidateId}:ref:loc`,
+                  storyWorldId,
+                  sourceType: "scene",
+                  sourceId: createdScene.sceneId,
+                  targetType: "location",
+                  targetId: plan.scene.locationId,
+                  role: "location",
+                });
+              }
+              for (const pId of plan.scene.participantCharacterIds) {
+                narrativeRefs.push({
+                  referenceId: `${existing.candidateId}:ref:p:${pId}`,
+                  storyWorldId,
+                  sourceType: "scene",
+                  sourceId: createdScene.sceneId,
+                  targetType: "character",
+                  targetId: pId,
+                  role: "participant",
+                });
+              }
             }
             if (narrativeRefs.length > 0) {
               await references.replaceReferencesForSource(
@@ -1583,12 +1623,17 @@ function toSceneCandidatePayloadDto(payload: V2CoreSceneCandidatePayload): V2Sce
     scene: {
       sceneId: payload.scene.sceneId as V2SceneCandidatePayload["scene"]["sceneId"],
       title: payload.scene.title,
-      body: payload.scene.body,
+      ...(payload.scene.body !== undefined ? { body: payload.scene.body } : {}),
+      ...(payload.scene.document ? { document: payload.scene.document } : {}),
+      ...(payload.scene.arcId ? { arcId: payload.scene.arcId } : {}),
+      ...(payload.scene.chapterId ? { chapterId: payload.scene.chapterId } : {}),
+      ...(payload.scene.questId ? { questId: payload.scene.questId } : {}),
       ...(payload.scene.locationId === undefined ? {} : { locationId: payload.scene.locationId as NonNullable<V2SceneCandidatePayload["scene"]["locationId"]> }),
       participantCharacterIds: payload.scene.participantCharacterIds.map((characterId) =>
         characterId as V2SceneCandidatePayload["scene"]["participantCharacterIds"][number]
       ),
     },
+    ...(payload.references ? { references: payload.references } : {}),
     choices: payload.choices.map((choice) => ({
       label: choice.label,
       ...(choice.targetSceneId === undefined ? {} : { targetSceneId: choice.targetSceneId as NonNullable<V2SceneCandidatePayload["choices"][number]["targetSceneId"]> }),
