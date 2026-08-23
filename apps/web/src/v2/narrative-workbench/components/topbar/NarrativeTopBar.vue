@@ -10,6 +10,7 @@ import {
   Sparkles,
   TriangleAlert,
   Wand2,
+  ShieldCheck,
 } from "@lucide/vue";
 import Button from "../../../../components/ui/Button.vue";
 import NarrativeBreadcrumb from "./NarrativeBreadcrumb.vue";
@@ -37,6 +38,7 @@ const emit = defineEmits<{
   preview: [];
   aiAssist: [];
   template: [];
+  publish: [];
   refresh: [];
 }>();
 
@@ -160,6 +162,14 @@ const moreMenuOpen = ref(false);
           >
             <Wand2 class="w-3.5 h-3.5 text-stone-500" />
             <span>套用故事大纲模板</span>
+          </button>
+          <button
+            type="button"
+            class="w-full text-left px-3 py-1.5 hover:bg-stone-100 dark:hover:bg-stone-800 flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-medium"
+            @click="emit('publish')"
+          >
+            <ShieldCheck class="w-3.5 h-3.5" />
+            <span>发布正典版本 (Release)</span>
           </button>
           <button
             type="button"
