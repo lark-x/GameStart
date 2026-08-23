@@ -1,4 +1,4 @@
-﻿import assert from "node:assert/strict";
+import assert from "node:assert/strict";
 import test from "node:test";
 import { createPinia, setActivePinia } from "pinia";
 import { reactive } from "vue";
@@ -58,7 +58,7 @@ test("useNarrativeRouteSync syncs route queries with sessionStore", async () => 
   });
 
   const mockRouter = {
-    replace: async (_opt: { query: Record<string, string | undefined> }) => Promise.resolve(),
+    replace: async () => Promise.resolve(),
   };
 
   const sync = useNarrativeRouteSync(
