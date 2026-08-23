@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, type Component } from "vue";
 import {
   MessageSquare,
   FileText,
@@ -36,7 +36,7 @@ const emit = defineEmits<{
   activate: [blockId: string];
 }>();
 
-const blockKindOptions: { label: string; value: V2SceneBlockKind; icon: any }[] = [
+const blockKindOptions: { label: string; value: V2SceneBlockKind; icon: Component }[] = [
   { label: "台词 (Dialogue)", value: "dialogue", icon: MessageSquare },
   { label: "旁白 (Narration)", value: "narration", icon: FileText },
   { label: "舞台指示 (Stage)", value: "stage_direction", icon: Compass },
