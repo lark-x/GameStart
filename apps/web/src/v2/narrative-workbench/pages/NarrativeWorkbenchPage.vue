@@ -136,7 +136,7 @@ function handleSelectScene(sceneId: string) {
   }
 }
 
-async function handleCreateScene(payload: { arcId?: string; chapterId?: string; questId?: string }) {
+async function handleCreateScene(payload?: { arcId?: string; chapterId?: string; questId?: string }) {
   const title = prompt("请输入新场景名称：", "新场景");
   if (!title) return;
 
@@ -145,9 +145,9 @@ async function handleCreateScene(payload: { arcId?: string; chapterId?: string; 
   await client.saveSceneDocument(storyWorldId.value, sceneId, {
     title,
     documentMode: "blocks",
-    ...(payload.arcId ? { arcId: payload.arcId as V2ArcId } : {}),
-    ...(payload.chapterId ? { chapterId: payload.chapterId } : {}),
-    ...(payload.questId ? { questId: payload.questId } : {}),
+    ...(payload?.arcId ? { arcId: payload.arcId as V2ArcId } : {}),
+    ...(payload?.chapterId ? { chapterId: payload.chapterId } : {}),
+    ...(payload?.questId ? { questId: payload.questId } : {}),
     blocks: [
       {
         kind: "narration",

@@ -93,9 +93,9 @@ export const useNarrativeChoiceStore = defineStore("narrativeChoice", {
       request: {
         choiceId: string;
         sourceSceneId: string;
-        targetSceneId?: string;
+        targetSceneId?: string | undefined;
         label: string;
-        expectedRevision?: number;
+        expectedRevision?: number | undefined;
       },
     ): Promise<V2ChoiceDto | null> {
       this.saving = true;
@@ -143,11 +143,11 @@ export const useNarrativeChoiceStore = defineStore("narrativeChoice", {
       choiceId: string,
       update: {
         sourceSceneId: string;
-        targetSceneId?: string;
+        targetSceneId?: string | undefined;
         label: string;
-        gates?: V2ChoiceDto["gates"];
-        consequences?: V2ChoiceDto["consequences"];
-        expectedRevision?: number;
+        gates?: V2ChoiceDto["gates"] | undefined;
+        consequences?: V2ChoiceDto["consequences"] | undefined;
+        expectedRevision?: number | undefined;
       },
     ): Promise<void> {
       this.saving = true;
