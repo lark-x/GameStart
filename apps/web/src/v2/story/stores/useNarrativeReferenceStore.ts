@@ -51,21 +51,24 @@ export const useNarrativeReferenceStore = defineStore("narrativeReference", {
       return new V2NarrativeClient();
     },
 
-    async fetchSceneReferences(storyWorldId: string, sceneId: string): Promise<void> {
+    async fetchSceneReferences(storyWorldId: string, sceneId: string, options?: { signal?: AbortSignal }): Promise<void> {
       this.loading = true;
       this.error = null;
       try {
         const client = this.getClient();
-        this.sceneReferences = await client.getSceneReferences(storyWorldId, sceneId);
+        this.sceneReferences = await client.getSceneReferences(storyWorldId, sceneId, options);
       } catch (err: unknown) {
+        if (err instanceof DOMException && err.name === "AbortError") {
+          return;
+        }
         this.error = err instanceof Error ? err.message : "Failed to load scene references";
       } finally {
         this.loading = false;
       }
     },
 
-    async fetchReferences(storyWorldId: string, sceneId: string): Promise<void> {
-      return this.fetchSceneReferences(storyWorldId, sceneId);
+    async fetchReferences(storyWorldId: string, sceneId: string, options?: { signal?: AbortSignal }): Promise<void> {
+      return this.fetchSceneReferences(storyWorldId, sceneId, options);
     },
 
     async addParticipant(storyWorldId: string, sceneId: string, characterId: string): Promise<void> {

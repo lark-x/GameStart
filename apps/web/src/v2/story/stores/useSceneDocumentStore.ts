@@ -74,12 +74,12 @@ export const useSceneDocumentStore = defineStore("sceneDocument", {
       return new V2NarrativeClient();
     },
 
-    async fetchDocument(storyWorldId: string, sceneId: string): Promise<void> {
+    async fetchDocument(storyWorldId: string, sceneId: string, options?: { signal?: AbortSignal }): Promise<void> {
       this.loading = true;
       this.error = null;
       try {
         const client = this.getClient();
-        const doc = await client.getSceneDocument(storyWorldId, sceneId);
+        const doc = await client.getSceneDocument(storyWorldId, sceneId, options);
         this.document = doc;
         this.blocks = [...doc.blocks];
         this.documentMode = doc.documentMode;
@@ -89,10 +89,17 @@ export const useSceneDocumentStore = defineStore("sceneDocument", {
         this.saveIdempotencyKey = null;
         this.lastSavedAt = doc.updatedAt ?? doc.createdAt ?? null;
       } catch (err: unknown) {
+        if (err instanceof DOMException && err.name === "AbortError") {
+          return;
+        }
         this.error = err instanceof Error ? err.message : "Failed to load scene document";
       } finally {
         this.loading = false;
       }
+    },
+
+    async fetchSceneDocument(storyWorldId: string, sceneId: string, options?: { signal?: AbortSignal }): Promise<void> {
+      return this.fetchDocument(storyWorldId, sceneId, options);
     },
 
     setActiveBlockId(blockId: string | null): void {
@@ -273,6 +280,18 @@ export const useSceneDocumentStore = defineStore("sceneDocument", {
       this.hasConflict = false;
       this.conflictError = null;
       this.isDirty = false;
+    },
+
+    discardChanges(): void {
+      if (this.document) {
+        this.blocks = [...this.document.blocks];
+        this.documentMode = this.document.documentMode;
+        this.plainBody = this.document.body ?? "";
+      }
+      this.isDirty = false;
+      this.hasConflict = false;
+      this.conflictError = null;
+      this.saveIdempotencyKey = null;
     },
 
     clearConflict(): void {
