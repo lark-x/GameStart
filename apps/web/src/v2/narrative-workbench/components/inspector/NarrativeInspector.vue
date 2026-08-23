@@ -432,6 +432,7 @@ const participatingCharacters = computed(() => {
     <CanonEntityPicker
       v-if="pickerOpen"
       :type="pickerType"
+      :story-world-id="storyWorldId"
       :characters="characters"
       :locations="locations"
       :lore-items="canonStore.loreItems"

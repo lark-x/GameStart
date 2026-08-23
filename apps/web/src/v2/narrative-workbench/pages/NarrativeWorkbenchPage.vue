@@ -97,10 +97,17 @@ const sceneTitle = computed(() => activeScene.value?.scene?.title || docStore.do
 
 const saveStatus = computed<SaveStatus>(() => autosave.saveStatus.value);
 
-// Sync query params
+// Sync query params and on-demand mode loading
 watch(mode, (newMode) => {
   router.replace({ query: { ...route.query, mode: newMode } });
-});
+  if (storyWorldId.value) {
+    if (newMode === "review") {
+      void candidateStore.fetchCandidates(storyWorldId.value);
+    } else if (newMode === "outline" || newMode === "flow") {
+      void choiceStore.fetchChoicesForWorld(storyWorldId.value);
+    }
+  }
+}, { immediate: true });
 
 watch(selectedSceneId, (newSceneId) => {
   router.replace({ query: { ...route.query, scene: newSceneId || undefined } });
@@ -112,12 +119,10 @@ watch(selectedSceneId, (newSceneId) => {
 onMounted(async () => {
   if (storyWorldId.value) {
     sessionStore.initSession(storyWorldId.value, mode.value, selectedSceneId.value || undefined);
+    // On-Demand Initial Load: Only fetch outline & diagnostics
     await Promise.all([
       outlineStore.fetchOutline(storyWorldId.value),
       diagStore.fetchDiagnostics(storyWorldId.value),
-      canonLookupStore.fetchWorldCanon(storyWorldId.value),
-      choiceStore.fetchChoicesForWorld(storyWorldId.value),
-      candidateStore.fetchCandidates(storyWorldId.value),
     ]);
     if (!selectedSceneId.value && outlineStore.outline) {
       const firstScene = outlineStore.outline.arcs[0]?.chapters[0]?.quests[0]?.scenes[0]

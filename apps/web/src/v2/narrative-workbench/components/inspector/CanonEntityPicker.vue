@@ -1,8 +1,9 @@
-<script setup lang="ts">
-import { computed, ref } from "vue";
-import { Search, User, MapPin, BookOpen, X, Check } from "@lucide/vue";
+﻿<script setup lang="ts">
+import { computed, onUnmounted, ref, watch } from "vue";
+import { Search, User, MapPin, BookOpen, X, Check, Loader2 } from "@lucide/vue";
 import type { V2CharacterSummary, V2LocationSummary } from "../../../adapters/types.ts";
 import type { V2CanonLoreEntry } from "@living-network/contracts/v2";
+import { useNarrativeCanonLookupStore } from "../../stores/useNarrativeCanonLookupStore.ts";
 
 export type EntityType = "character" | "location" | "lore";
 
@@ -10,16 +11,17 @@ export interface EntityOption {
   id: string;
   type: EntityType;
   title: string;
-  subtitle?: string;
+  subtitle?: string | undefined;
 }
 
 const props = defineProps<{
   type: EntityType;
-  title?: string;
-  characters?: readonly V2CharacterSummary[];
-  locations?: readonly V2LocationSummary[];
-  loreItems?: readonly V2CanonLoreEntry[];
-  selectedIds?: readonly string[];
+  storyWorldId?: string | undefined;
+  title?: string | undefined;
+  characters?: readonly V2CharacterSummary[] | undefined;
+  locations?: readonly V2LocationSummary[] | undefined;
+  loreItems?: readonly V2CanonLoreEntry[] | undefined;
+  selectedIds?: readonly string[] | undefined;
 }>();
 
 const emit = defineEmits<{
@@ -27,9 +29,14 @@ const emit = defineEmits<{
   close: [];
 }>();
 
+const canonStore = useNarrativeCanonLookupStore();
 const searchQuery = ref("");
+const remoteResults = ref<EntityOption[]>([]);
+const searching = ref(false);
 
-const allOptions = computed<EntityOption[]>(() => {
+let searchTimer: ReturnType<typeof setTimeout> | null = null;
+
+const localOptions = computed<EntityOption[]>(() => {
   if (props.type === "character" && props.characters) {
     return props.characters.map((c) => ({
       id: c.characterId,
@@ -57,15 +64,65 @@ const allOptions = computed<EntityOption[]>(() => {
   return [];
 });
 
+const mergedOptions = computed<EntityOption[]>(() => {
+  const map = new Map<string, EntityOption>();
+  for (const opt of localOptions.value) {
+    map.set(opt.id, opt);
+  }
+  for (const opt of remoteResults.value) {
+    if (!map.has(opt.id)) {
+      map.set(opt.id, opt);
+    }
+  }
+  return Array.from(map.values());
+});
+
 const filteredOptions = computed(() => {
   const q = searchQuery.value.trim().toLowerCase();
-  if (!q) return allOptions.value;
-  return allOptions.value.filter(
+  if (!q) return mergedOptions.value;
+  return mergedOptions.value.filter(
     (opt) =>
       opt.title.toLowerCase().includes(q) ||
       opt.id.toLowerCase().includes(q) ||
-      (opt.subtitle && opt.subtitle.toLowerCase().includes(q))
+      (opt.subtitle && opt.subtitle.toLowerCase().includes(q)),
   );
+});
+
+watch(searchQuery, (newQuery) => {
+  if (searchTimer) {
+    clearTimeout(searchTimer);
+    searchTimer = null;
+  }
+
+  const q = newQuery.trim();
+  if (!q || !props.storyWorldId) {
+    remoteResults.value = [];
+    searching.value = false;
+    return;
+  }
+
+  searching.value = true;
+  searchTimer = setTimeout(async () => {
+    try {
+      const results = await canonStore.searchCanon(props.storyWorldId!, q, props.type);
+      remoteResults.value = results.map((r) => ({
+        id: r.id,
+        type: r.type,
+        title: r.title,
+        ...(r.subtitle ? { subtitle: r.subtitle } : {}),
+      }));
+    } catch {
+      remoteResults.value = [];
+    } finally {
+      searching.value = false;
+    }
+  }, 250);
+});
+
+onUnmounted(() => {
+  if (searchTimer) {
+    clearTimeout(searchTimer);
+  }
 });
 
 function isSelected(id: string): boolean {
@@ -100,7 +157,8 @@ function isSelected(id: string): boolean {
       <!-- Search Box -->
       <div class="p-3 border-b border-stone-100 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-950/20">
         <div class="relative flex items-center">
-          <Search class="absolute left-3 h-4 w-4 text-stone-400 pointer-events-none" />
+          <Loader2 v-if="searching" class="absolute left-3 h-4 w-4 text-amber-500 animate-spin" />
+          <Search v-else class="absolute left-3 h-4 w-4 text-stone-400 pointer-events-none" />
           <input
             v-model="searchQuery"
             type="text"
@@ -153,7 +211,7 @@ function isSelected(id: string): boolean {
         </template>
 
         <div v-else class="p-8 text-center text-xs text-stone-400">
-          未找到匹配的实体
+          {{ searching ? '正在搜索正典...' : '未找到匹配的实体' }}
         </div>
       </div>
 
