@@ -76,7 +76,8 @@
         "packages/ports/src/v2/narrative/**",
         "packages/database/src/v2/narrative/**",
         "apps/api/src/v2/narrative/**",
-        "apps/web/src/v2/story/**"
+        "apps/web/src/v2/story/**",
+        "apps/web/src/v2/narrative-workbench/**"
       ]
     },
     "chat": {
