@@ -33,7 +33,7 @@ export function useNarrativeAutosave(options: NarrativeAutosaveOptions) {
   const saveStatus = computed<SaveStatus>(() => {
     if (docStore.hasConflict) return "conflict";
     if (isSaving.value || docStore.saving) return "saving";
-    if (docStore.isDirty) return "unsaved";
+    if (docStore.isDirty) return "dirty";
     if (docStore.error || saveError.value) return "error";
     return "saved";
   });

@@ -96,7 +96,7 @@ test("useNarrativeAutosave reflects store dirty, saving, and conflict statuses",
   assert.equal(autosave.saveStatus.value, "saved");
 
   docStore.isDirty = true;
-  assert.equal(autosave.saveStatus.value, "unsaved");
+  assert.equal(autosave.saveStatus.value, "dirty");
 
   docStore.hasConflict = true;
   assert.equal(autosave.saveStatus.value, "conflict");
