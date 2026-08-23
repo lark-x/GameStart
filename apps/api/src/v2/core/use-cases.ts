@@ -730,7 +730,7 @@ export function createV2CoreUseCases(
       await requireWorld(canon, storyWorldId);
       return toSceneCandidateDto(await requireSceneCandidate(candidateReview, storyWorldId, candidateId));
     }),
-    reviewSceneCandidate: (storyWorldId, candidateId, input) => requireCandidateReview().withCandidateReviewTransaction(async ({ canon, graphState, candidateReview }) =>
+    reviewSceneCandidate: (storyWorldId, candidateId, input) => requireCandidateReview().withCandidateReviewTransaction(async ({ canon, graphState, candidateReview, references }) =>
       withIdempotency(canon, "reviewSceneCandidate", input.idempotencyKey, { storyWorldId, candidateId, ...input }, async () => {
         await requireWorld(canon, storyWorldId);
         const existing = await requireSceneCandidate(candidateReview, storyWorldId, candidateId);
@@ -744,15 +744,43 @@ export function createV2CoreUseCases(
           for (const characterId of existing.payload.scene.participantCharacterIds) {
             await requireCharacter(canon, storyWorldId, characterId);
           }
-          for (const choice of plan.choices) {
-            if (choice.targetSceneId !== undefined) await requireScene(graphState, storyWorldId, choice.targetSceneId);
-          }
           const createdScene = await graphState.createScene(createV2GraphScene({
             storyWorldId,
             sceneId: plan.scene.sceneId as V2SceneDto["sceneId"],
             title: plan.scene.title,
-            body: plan.scene.body,
+            body: plan.scene.body ?? "",
           }));
+          if (references) {
+            const narrativeRefs: any[] = [];
+            if (plan.scene.locationId) {
+              narrativeRefs.push({
+                referenceId: `${existing.candidateId}:ref:loc`,
+                storyWorldId,
+                sourceType: "scene",
+                sourceId: createdScene.sceneId,
+                targetType: "location",
+                targetId: plan.scene.locationId,
+                role: "location",
+              });
+            }
+            for (const pId of plan.scene.participantCharacterIds) {
+              narrativeRefs.push({
+                referenceId: `${existing.candidateId}:ref:p:${pId}`,
+                storyWorldId,
+                sourceType: "scene",
+                sourceId: createdScene.sceneId,
+                targetType: "character",
+                targetId: pId,
+                role: "participant",
+              });
+            }
+            if (narrativeRefs.length > 0) {
+              await references.replaceReferencesForSource(
+                { storyWorldId, sourceType: "scene", sourceId: createdScene.sceneId },
+                narrativeRefs,
+              );
+            }
+          }
           const createdChoices = [];
           for (const choice of plan.choices) {
             createdChoices.push(await graphState.createChoice(createV2GraphChoice({

@@ -23,6 +23,7 @@ import {
 } from "../chat/migrations.ts";
 import { v2CharacterLivingMigrations } from "../core/character-living-migrations.ts";
 import { v2CompanionMigrations } from "../companion/migrations.ts";
+import { v2NarrativeMigrations } from "../narrative/migrations.ts";
 
 export interface V2SqliteMigration {
   readonly id: string;
@@ -231,6 +232,7 @@ export function getV2Migrations(): readonly V2SqliteMigration[] {
     v2MemoryRetrievalTracesMigration,
     ...v2CharacterLivingMigrations,
     ...v2CompanionMigrations,
+    ...v2NarrativeMigrations,
   ].sort((a, b) => a.id.localeCompare(b.id));
 }
 

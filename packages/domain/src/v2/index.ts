@@ -4,3 +4,4 @@ export * from "./generation/index.ts";
 export * from "./chat/index.ts";
 export * from "./fact/index.ts";
 export * from "./companion/index.ts";
+export * from "./narrative/index.ts";

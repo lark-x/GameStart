@@ -27,7 +27,7 @@ function characterSceneAppearances(char: V2CharacterSummary): number {
   if (!props.snapshot) return 0;
   let count = 0;
   for (const scene of props.snapshot.sceneGraph.scenes) {
-    if (scene.body && (scene.body.includes(char.name) || (char.summary && scene.body.includes(char.summary.slice(0, 10))))) {
+    if (scene.body && scene.body.includes(char.name)) {
       count++;
     }
   }
@@ -35,9 +35,7 @@ function characterSceneAppearances(char: V2CharacterSummary): number {
 }
 
 const sortedCharacters = computed(() => {
-  return [...characters.value].sort((a, b) => {
-    return characterSceneAppearances(b) - characterSceneAppearances(a);
-  });
+  return [...characters.value];
 });
 </script>
 

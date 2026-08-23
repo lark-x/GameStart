@@ -12,6 +12,8 @@ import type {
 
 import type { V2CanonRepository } from "./canon-repository.ts";
 import type { V2GraphStateRepository } from "./graph-state-repository.ts";
+import type { V2NarrativeReferenceRepository } from "../narrative/reference-repository.ts";
+import type { V2SceneDocumentRepository } from "../narrative/scene-document-repository.ts";
 
 export interface V2CandidateReviewAuditRecord {
   readonly auditId?: number;
@@ -50,6 +52,8 @@ export interface V2CandidateReviewUnitOfWork {
       readonly canon: V2CanonRepository;
       readonly graphState: V2GraphStateRepository;
       readonly candidateReview: V2CandidateReviewRepository;
+      readonly references?: V2NarrativeReferenceRepository;
+      readonly sceneDocument?: V2SceneDocumentRepository;
     }) => Promise<T>,
   ): Promise<T>;
 }

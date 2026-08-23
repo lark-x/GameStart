@@ -94,6 +94,11 @@ export class V2SqliteGraphStateUnitOfWork implements V2GraphStateUnitOfWork {
   }
 }
 
+import {
+  SqliteNarrativeReferenceRepository,
+  SqliteSceneDocumentRepository,
+} from "../narrative/index.ts";
+
 export class V2SqliteCandidateReviewUnitOfWork implements V2CandidateReviewUnitOfWork {
   private readonly db: DatabaseSync;
 
@@ -106,12 +111,16 @@ export class V2SqliteCandidateReviewUnitOfWork implements V2CandidateReviewUnitO
       readonly canon: V2CanonRepository;
       readonly graphState: V2GraphStateRepository;
       readonly candidateReview: V2CandidateReviewRepository;
+      readonly references?: SqliteNarrativeReferenceRepository;
+      readonly sceneDocument?: SqliteSceneDocumentRepository;
     }) => Promise<T>,
   ): Promise<T> {
     return withV2SqliteAsyncTransaction(this.db, () => fn({
       canon: new V2SqliteCanonRepository(this.db),
       graphState: new V2SqliteGraphStateRepository(this.db),
       candidateReview: new V2SqliteCandidateReviewRepository(this.db),
+      references: new SqliteNarrativeReferenceRepository(this.db),
+      sceneDocument: new SqliteSceneDocumentRepository(this.db),
     }));
   }
 }

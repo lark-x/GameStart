@@ -59,7 +59,17 @@ export interface V2CoreCandidateApplyPlan {
   readonly scene: {
     readonly sceneId: string;
     readonly title: string;
-    readonly body: string;
+    readonly body?: string;
+    readonly locationId?: string;
+    readonly participantCharacterIds: readonly string[];
+    readonly documentMode?: "legacy_body" | "blocks";
+    readonly blocks?: readonly {
+      readonly blockId?: string;
+      readonly kind: "dialogue" | "narration" | "stage_direction" | "action" | "command";
+      readonly speakerCharacterId?: string;
+      readonly text?: string;
+      readonly payload?: Readonly<Record<string, unknown>>;
+    }[];
   };
   readonly choices: readonly {
     readonly choiceId: string;
@@ -116,7 +126,9 @@ export function buildV2SceneCandidateApplyPlan(candidate: V2CoreSceneCandidate):
     scene: {
       sceneId: candidate.payload.scene.sceneId,
       title: candidate.payload.scene.title,
-      body: candidate.payload.scene.body,
+      ...(candidate.payload.scene.body !== undefined ? { body: candidate.payload.scene.body } : {}),
+      ...(candidate.payload.scene.locationId !== undefined ? { locationId: candidate.payload.scene.locationId } : {}),
+      participantCharacterIds: candidate.payload.scene.participantCharacterIds ?? [],
     },
     choices: candidate.payload.choices.map((choice, index) => ({
       choiceId: `${candidate.candidateId}:choice:${index + 1}`,

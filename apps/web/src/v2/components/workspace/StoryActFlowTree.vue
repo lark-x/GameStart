@@ -18,6 +18,7 @@ import Field from "../../../components/ui/Field.vue";
 import Input from "../../../components/ui/Input.vue";
 import Textarea from "../../../components/ui/Textarea.vue";
 import { useV2WorkspaceStore } from "../../stores/workspace.ts";
+import { V2NarrativeClient } from "../../story/client.ts";
 import StoryCastPool from "./StoryCastPool.vue";
 import StorySceneInspectorDrawer from "./StorySceneInspectorDrawer.vue";
 import StoryNodeDrawer, { type CanonEntityKind, type StoryEditingNode } from "./StoryNodeDrawer.vue";
@@ -256,95 +257,22 @@ function handleAddLocation() {
   nodeDrawerOpen.value = true;
 }
 
-// Smart 3-Act Skeleton Generator
+// Standard 3-Act Template Generator via Narrative Authoring API
 async function generateThreeActSkeleton() {
   generatingSkeleton.value = true;
   try {
-    // 1. Create Arc 1
-    await store.createGraphEntity({
-      kind: "arc",
-      input: { title: "序章 · 初入与启程", summary: "踏入未知的世界，在核心舞台邂逅关键同伴。" },
-    });
-    const arc1 = store.snapshot?.sceneGraph.arcs.find((a) => a.title === "序章 · 初入与启程");
-
-    // 2. Create Arc 2
-    await store.createGraphEntity({
-      kind: "arc",
-      input: { title: "第一幕 · 冲突与暗流", summary: "暗中涌动的矛盾浮出水面，面临重大抉择。" },
-    });
-    const arc2 = store.snapshot?.sceneGraph.arcs.find((a) => a.title === "第一幕 · 冲突与暗流");
-
-    // 3. Create Arc 3
-    await store.createGraphEntity({
-      kind: "arc",
-      input: { title: "第二幕 · 抉择与终局", summary: "分支决战与命运交汇，迎来属于你的故事结局。" },
-    });
-    const arc3 = store.snapshot?.sceneGraph.arcs.find((a) => a.title === "第二幕 · 抉择与终局");
-
-    // 4. Create Scene 1 (in Arc 1)
-    await store.createGraphEntity({
-      kind: "scene",
-      input: {
-        title: "歌剧院初遇",
-        body: "在宏伟的歌剧院舞台前，与正典伙伴第一次展开命定对话。",
-        ...(arc1?.arcId ? { arcId: arc1.arcId as V2ArcId } : {}),
-        isEntry: true,
-      },
-    });
-    const scene1 = store.snapshot?.sceneGraph.scenes.find((s) => s.title === "歌剧院初遇");
-
-    // 5. Create Scene 2 (in Arc 2)
-    await store.createGraphEntity({
-      kind: "scene",
-      input: {
-        title: "审判席上的对峙",
-        body: "冲突爆发，双方在审判席前据理力争，寻求真相。",
-        ...(arc2?.arcId ? { arcId: arc2.arcId as V2ArcId } : {}),
-        isEntry: false,
-      },
-    });
-    const scene2 = store.snapshot?.sceneGraph.scenes.find((s) => s.title === "审判席上的对峙");
-
-    // 6. Create Scene 3 (in Arc 3)
-    await store.createGraphEntity({
-      kind: "scene",
-      input: {
-        title: "破晓之光 (结局 A)",
-        body: "真相大白，黎明之光重新普照大地，与同伴共同守护正义。",
-        ...(arc3?.arcId ? { arcId: arc3.arcId as V2ArcId } : {}),
-        isEntry: false,
-      },
-    });
-    const scene3 = store.snapshot?.sceneGraph.scenes.find((s) => s.title === "破晓之光 (结局 A)");
-
-    // 7. Create Choices connecting them
-    if (scene1 && scene2) {
-      await store.createGraphEntity({
-        kind: "choice",
-        input: {
-          sourceSceneId: scene1.sceneId as V2SceneId,
-          targetSceneId: scene2.sceneId as V2SceneId,
-          label: "挺身而出，介入这场突如其来的纷争",
-          gates: [],
-          consequences: [],
-        },
+    const worldId = store.snapshot?.world.storyWorldId;
+    if (worldId) {
+      const client = new V2NarrativeClient();
+      await client.applyTemplate(worldId, {
+        templateId: "three-act",
+        expectedRevision: 1 as any,
+        idempotencyKey: `act_skeleton_${Date.now()}` as any,
       });
+      emit("refreshed");
     }
-    if (scene2 && scene3) {
-      await store.createGraphEntity({
-        kind: "choice",
-        input: {
-          sourceSceneId: scene2.sceneId as V2SceneId,
-          targetSceneId: scene3.sceneId as V2SceneId,
-          label: "出示决定性证据，彻底终结审判",
-          gates: [],
-          consequences: [],
-        },
-      });
-    }
-    emit("refreshed");
   } catch (err) {
-    console.error("Failed to generate skeleton:", err);
+    console.error("Failed to generate skeleton via template:", err);
   } finally {
     generatingSkeleton.value = false;
   }
