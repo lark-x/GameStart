@@ -49,7 +49,7 @@ async function handleApprove() {
   const cand = selectedCandidate.value;
   const success = await candidateStore.reviewCandidate(props.storyWorldId, cand.candidateId, "approve");
   if (success) {
-    await outlineStore.fetchOutline(props.storyWorldId, true);
+    await outlineStore.fetchOutline(props.storyWorldId);
     if (cand.payload.scene.sceneId) {
       await docStore.fetchDocument(props.storyWorldId, cand.payload.scene.sceneId);
       emit("merged", cand.payload.scene.sceneId);
