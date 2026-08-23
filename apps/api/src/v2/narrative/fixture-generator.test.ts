@@ -238,8 +238,9 @@ describe("Narrative V2 Fixture & Performance Stress Suite", () => {
     // 6. Measure Task-Scoped Context Generation
     const contextStart = performance.now();
     const context = await useCases.buildContext(storyWorldId, {
+      storyWorldId: storyWorldId as any,
       task: "continue_scene",
-      targetSceneId: "scene_42",
+      targetSceneId: "scene_42" as any,
       prompt: "Continue the dialogue with more dramatic tension",
       tokenBudget: 3000,
     });
