@@ -16,7 +16,7 @@ import {
 import { useNarrativeDiagnosticsStore } from "../../../story/stores/useNarrativeDiagnosticsStore.ts";
 import type { V2NarrativeDiagnostic } from "@living-network/contracts/v2";
 
-const props = defineProps<{
+defineProps<{
   storyWorldId: string;
   open: boolean;
 }>();
