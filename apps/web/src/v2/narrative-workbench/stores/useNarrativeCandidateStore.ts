@@ -1,5 +1,6 @@
 import { defineStore } from "pinia";
 import type {
+  V2CandidateReviewAction,
   V2SceneCandidateDto,
 } from "@living-network/contracts/v2";
 
@@ -26,7 +27,7 @@ export const useNarrativeCandidateStore = defineStore("narrativeCandidate", {
     },
 
     pendingCandidates(state): readonly V2SceneCandidateDto[] {
-      return state.candidates.filter((c) => c.reviewState === "pending");
+      return state.candidates.filter((c) => c.status === "pending");
     },
   },
 
@@ -59,8 +60,8 @@ export const useNarrativeCandidateStore = defineStore("narrativeCandidate", {
     async reviewCandidate(
       storyWorldId: string,
       candidateId: string,
-      reviewState: "approved" | "rejected" | "changes_requested",
-      feedback?: string,
+      action: V2CandidateReviewAction,
+      reason?: string,
     ): Promise<boolean> {
       this.applying = true;
       this.error = null;
@@ -68,7 +69,7 @@ export const useNarrativeCandidateStore = defineStore("narrativeCandidate", {
         const res = await fetch(`/api/v2/worlds/${storyWorldId}/candidates/${candidateId}/review`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ reviewState, feedback }),
+          body: JSON.stringify({ action, reason }),
         });
         if (!res.ok) {
           const errData = (await res.json().catch(() => ({}))) as { error?: { message?: string } };

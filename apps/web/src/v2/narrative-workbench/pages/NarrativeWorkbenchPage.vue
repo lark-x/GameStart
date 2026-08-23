@@ -107,6 +107,7 @@ onMounted(async () => {
       diagStore.fetchDiagnostics(storyWorldId.value),
       canonLookupStore.fetchWorldCanon(storyWorldId.value),
       choiceStore.fetchChoicesForWorld(storyWorldId.value),
+      candidateStore.fetchCandidates(storyWorldId.value),
     ]);
     if (!selectedSceneId.value && outlineStore.outline) {
       const firstScene = outlineStore.outline.arcs[0]?.chapters[0]?.quests[0]?.scenes[0]
