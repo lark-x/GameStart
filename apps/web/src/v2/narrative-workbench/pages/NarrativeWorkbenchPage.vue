@@ -14,6 +14,7 @@ import { useNarrativeChoiceStore } from "../stores/useNarrativeChoiceStore.ts";
 import { useNarrativeCandidateStore } from "../stores/useNarrativeCandidateStore.ts";
 import NarrativeExplorer from "../components/explorer/NarrativeExplorer.vue";
 import NarrativeOutlineBoard from "../components/outline/NarrativeOutlineBoard.vue";
+import QuestFlowView from "../components/flow/QuestFlowView.vue";
 import SceneScriptEditor from "../components/script/SceneScriptEditor.vue";
 import NarrativeInspector from "../components/inspector/NarrativeInspector.vue";
 import NarrativeDiagnosticsPanel from "../../story/components/NarrativeDiagnosticsPanel.vue";
@@ -234,6 +235,15 @@ async function handleApplyTemplate() {
             @select-scene="handleSelectScene"
             @open-script="(id) => { selectedSceneId = id; mode = 'script'; }"
             @create-scene="handleCreateScene"
+          />
+        </template>
+        <template v-else-if="mode === 'flow'">
+          <QuestFlowView
+            :story-world-id="storyWorldId"
+            :selected-scene-id="selectedSceneId"
+            @select-scene="handleSelectScene"
+            @open-script="(id) => { selectedSceneId = id; mode = 'script'; }"
+            @create-scene="() => handleCreateScene()"
           />
         </template>
         <template v-else-if="selectedSceneId">
