@@ -18,7 +18,7 @@ import QuestFlowView from "../components/flow/QuestFlowView.vue";
 import CandidateReviewView from "../components/review/CandidateReviewView.vue";
 import SceneScriptEditor from "../components/script/SceneScriptEditor.vue";
 import NarrativeInspector from "../components/inspector/NarrativeInspector.vue";
-import NarrativeDiagnosticsPanel from "../../story/components/NarrativeDiagnosticsPanel.vue";
+import NarrativeBottomPanel from "../components/problems/NarrativeBottomPanel.vue";
 import Modal from "../../../components/ui/Modal.vue";
 import Button from "../../../components/ui/Button.vue";
 import { V2NarrativeClient } from "../../story/client.ts";
@@ -292,7 +292,7 @@ async function handleApplyTemplate() {
             class="flex items-center gap-1 hover:text-stone-900 dark:hover:text-stone-100 font-medium"
             @click="bottomDrawerOpen = !bottomDrawerOpen"
           >
-            <span v-if="!diagStore.report || diagStore.report.errorCount === 0" class="text-emerald-600 dark:text-emerald-400">✓ 剧情诊断：无问题</span>
+            <span v-if="!diagStore.report || diagStore.report.errorCount === 0" class="text-emerald-600 dark:text-emerald-400 font-medium">✓ 剧情诊断：无问题</span>
             <span v-else class="text-amber-600 dark:text-amber-400 font-bold">
               ⨯ {{ diagStore.report.errorCount }} 错误 &nbsp; △ {{ diagStore.report.warningCount }} 警告
             </span>
@@ -306,17 +306,13 @@ async function handleApplyTemplate() {
         </div>
       </div>
 
-      <!-- Collapsible Problems Drawer -->
-      <div v-if="bottomDrawerOpen" class="h-56 border-t border-stone-200 dark:border-stone-800 p-2 overflow-y-auto bg-white dark:bg-stone-900">
-        <div class="flex items-center justify-between pb-1 border-b border-stone-200 dark:border-stone-800 mb-2">
-          <span class="text-xs font-bold text-stone-700 dark:text-stone-300">剧情诊断与错误检测 (Problems)</span>
-          <Button variant="ghost" size="sm" class="h-6 px-1.5 text-xs" @click="bottomDrawerOpen = false">关闭</Button>
-        </div>
-        <NarrativeDiagnosticsPanel
-          :story-world-id="storyWorldId"
-          @select-scene="handleSelectScene"
-        />
-      </div>
+      <!-- Collapsible Problems & Diagnostics Drawer -->
+      <NarrativeBottomPanel
+        :story-world-id="storyWorldId"
+        :open="bottomDrawerOpen"
+        @close="bottomDrawerOpen = false"
+        @open-scene="handleSelectScene"
+      />
     </template>
 
     <!-- Template Modal Overlay -->
