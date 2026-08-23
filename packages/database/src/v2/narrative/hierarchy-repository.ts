@@ -88,13 +88,25 @@ export class SqliteNarrativeHierarchyRepository implements V2NarrativeHierarchyR
           s.ordinal,
           s.is_entry,
           s.document_mode,
-          (SELECT COUNT(*) FROM v2_scene_blocks b WHERE b.story_world_id = s.story_world_id AND b.scene_id = s.scene_id) as block_count,
-          (SELECT COUNT(*) FROM v2_choices c WHERE c.story_world_id = s.story_world_id AND c.source_scene_id = s.scene_id) as choice_count
+          COALESCE(b.block_count, 0) as block_count,
+          COALESCE(c.choice_count, 0) as choice_count
         FROM v2_scenes s
+        LEFT JOIN (
+          SELECT scene_id, COUNT(*) as block_count
+          FROM v2_scene_blocks
+          WHERE story_world_id = ?
+          GROUP BY scene_id
+        ) b ON b.scene_id = s.scene_id
+        LEFT JOIN (
+          SELECT source_scene_id, COUNT(*) as choice_count
+          FROM v2_choices
+          WHERE story_world_id = ?
+          GROUP BY source_scene_id
+        ) c ON c.source_scene_id = s.scene_id
         WHERE s.story_world_id = ?
         ORDER BY s.ordinal ASC, s.scene_id ASC
       `)
-      .all(storyWorldId) as unknown as readonly SceneOutlineRow[];
+      .all(storyWorldId, storyWorldId, storyWorldId) as unknown as readonly SceneOutlineRow[];
 
     // Load locations and participant character IDs for scenes
     const refs = this.db

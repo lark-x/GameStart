@@ -15,4 +15,6 @@ export interface V2SceneDocumentRepository {
     readonly blocks: readonly V2SceneBlock[];
   }): Promise<V2SceneDocumentAndBlocks>;
   listSceneBlocks(criteria: { readonly storyWorldId: string; readonly sceneId: string }): Promise<readonly V2SceneBlock[]>;
+  listAllSceneBlocks(storyWorldId: string): Promise<readonly V2SceneBlock[]>;
+  listAllScenes(storyWorldId: string): Promise<readonly V2NarrativeScene[]>;
 }

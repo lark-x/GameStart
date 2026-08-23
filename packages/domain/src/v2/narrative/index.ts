@@ -9,3 +9,4 @@ export * from "./template.ts";
 export * from "./context-fingerprint.ts";
 export * from "./diagnostics.ts";
 export * from "./hierarchy-validation.ts";
+export * from "./context-selection.ts";

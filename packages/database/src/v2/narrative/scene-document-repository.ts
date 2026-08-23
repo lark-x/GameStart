@@ -155,6 +155,34 @@ export class SqliteSceneDocumentRepository implements V2SceneDocumentRepository 
       .all(criteria.storyWorldId, criteria.sceneId) as unknown as readonly BlockRow[];
     return rows.map(toBlock);
   }
+
+  public async listAllSceneBlocks(storyWorldId: string): Promise<readonly V2SceneBlock[]> {
+    const rows = this.db
+      .prepare(`
+        SELECT block_id, story_world_id, scene_id, ordinal, kind, speaker_character_id, text,
+               payload_json, revision, created_at, updated_at
+        FROM v2_scene_blocks
+        WHERE story_world_id = ?
+        ORDER BY scene_id ASC, ordinal ASC, block_id ASC
+      `)
+      .all(storyWorldId) as unknown as readonly BlockRow[];
+    return rows.map(toBlock);
+  }
+
+  public async listAllScenes(storyWorldId: string): Promise<readonly V2NarrativeScene[]> {
+    const rows = this.db
+      .prepare(`
+        SELECT scene_id, story_world_id, arc_id, chapter_id, quest_id, title, body, is_entry,
+               COALESCE(ordinal, 0) as ordinal, COALESCE(revision, 1) as revision,
+               COALESCE(document_mode, 'legacy_body') as document_mode, created_at,
+               COALESCE(updated_at, created_at) as updated_at
+        FROM v2_scenes
+        WHERE story_world_id = ?
+        ORDER BY COALESCE(ordinal, 0) ASC, scene_id ASC
+      `)
+      .all(storyWorldId) as unknown as readonly SceneRow[];
+    return rows.map(toScene);
+  }
 }
 
 function toScene(row: SceneRow): V2NarrativeScene {
