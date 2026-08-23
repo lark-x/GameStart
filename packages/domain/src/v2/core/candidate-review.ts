@@ -17,14 +17,35 @@ export interface V2CoreCandidateProvenance {
   readonly summary?: string;
 }
 
+export interface V2CoreSceneCandidateBlock {
+  readonly blockId?: string;
+  readonly kind: "dialogue" | "narration" | "stage_direction" | "action" | "command";
+  readonly speakerCharacterId?: string | null;
+  readonly text?: string;
+  readonly payload?: Readonly<Record<string, unknown>>;
+}
+
 export interface V2CoreSceneCandidatePayload {
   readonly scene: {
     readonly sceneId: string;
     readonly title: string;
-    readonly body: string;
+    readonly body?: string;
+    readonly document?: {
+      readonly mode: "legacy_body" | "blocks";
+      readonly blocks?: readonly V2CoreSceneCandidateBlock[];
+    };
+    readonly arcId?: string | null;
+    readonly chapterId?: string | null;
+    readonly questId?: string | null;
     readonly locationId?: string;
     readonly participantCharacterIds: readonly string[];
   };
+  readonly references?: readonly {
+    readonly referenceId?: string;
+    readonly targetType: string;
+    readonly targetId: string;
+    readonly role: string;
+  }[];
   readonly choices: readonly {
     readonly label: string;
     readonly targetSceneId?: string;
@@ -60,6 +81,9 @@ export interface V2CoreCandidateApplyPlan {
     readonly sceneId: string;
     readonly title: string;
     readonly body?: string;
+    readonly arcId?: string;
+    readonly chapterId?: string;
+    readonly questId?: string;
     readonly locationId?: string;
     readonly participantCharacterIds: readonly string[];
     readonly documentMode?: "legacy_body" | "blocks";
@@ -71,6 +95,12 @@ export interface V2CoreCandidateApplyPlan {
       readonly payload?: Readonly<Record<string, unknown>>;
     }[];
   };
+  readonly references?: readonly {
+    readonly referenceId?: string;
+    readonly targetType: string;
+    readonly targetId: string;
+    readonly role: string;
+  }[];
   readonly choices: readonly {
     readonly choiceId: string;
     readonly sourceSceneId: string;
@@ -122,17 +152,34 @@ export function buildV2SceneCandidateApplyPlan(candidate: V2CoreSceneCandidate):
   if (candidate.status !== "pending" && candidate.status !== "changes_requested") {
     throw new V2DomainError("INVALID_CANDIDATE_TRANSITION", `Cannot apply a ${candidate.status} candidate`);
   }
+  const scene = candidate.payload.scene;
   return {
     scene: {
-      sceneId: candidate.payload.scene.sceneId,
-      title: candidate.payload.scene.title,
-      ...(candidate.payload.scene.body !== undefined ? { body: candidate.payload.scene.body } : {}),
-      ...(candidate.payload.scene.locationId !== undefined ? { locationId: candidate.payload.scene.locationId } : {}),
-      participantCharacterIds: candidate.payload.scene.participantCharacterIds ?? [],
+      sceneId: scene.sceneId,
+      title: scene.title,
+      ...(scene.body !== undefined ? { body: scene.body } : {}),
+      ...(scene.arcId ? { arcId: scene.arcId } : {}),
+      ...(scene.chapterId ? { chapterId: scene.chapterId } : {}),
+      ...(scene.questId ? { questId: scene.questId } : {}),
+      ...(scene.locationId !== undefined ? { locationId: scene.locationId } : {}),
+      participantCharacterIds: scene.participantCharacterIds ?? [],
+      ...(scene.document?.mode ? { documentMode: scene.document.mode } : {}),
+      ...(scene.document?.blocks
+        ? {
+            blocks: scene.document.blocks.map((b) => ({
+              ...(b.blockId ? { blockId: b.blockId } : {}),
+              kind: b.kind,
+              ...(b.speakerCharacterId ? { speakerCharacterId: b.speakerCharacterId } : {}),
+              ...(b.text ? { text: b.text } : {}),
+              ...(b.payload ? { payload: b.payload } : {}),
+            })),
+          }
+        : {}),
     },
+    ...(candidate.payload.references ? { references: candidate.payload.references } : {}),
     choices: candidate.payload.choices.map((choice, index) => ({
       choiceId: `${candidate.candidateId}:choice:${index + 1}`,
-      sourceSceneId: candidate.payload.scene.sceneId,
+      sourceSceneId: scene.sceneId,
       ...(choice.targetSceneId === undefined ? {} : { targetSceneId: choice.targetSceneId }),
       label: choice.label,
     })),
@@ -140,20 +187,34 @@ export function buildV2SceneCandidateApplyPlan(candidate: V2CoreSceneCandidate):
 }
 
 function assertSceneCandidatePayload(input: V2CoreSceneCandidatePayload): V2CoreSceneCandidatePayload {
+  const scene = input.scene;
+  const bodyText = scene.body !== undefined ? assertOptionalText(scene.body, "scene.body", 32000) : undefined;
   return {
     scene: {
-      sceneId: assertNonEmptyId(input.scene.sceneId, "scene.sceneId"),
-      title: assertNonEmptyText(input.scene.title, "scene.title", 160),
-      body: assertNonEmptyText(input.scene.body, "scene.body", 8000),
-      ...(input.scene.locationId === undefined ? {} : { locationId: assertNonEmptyId(input.scene.locationId, "scene.locationId") }),
-      participantCharacterIds: assertUniqueIds(input.scene.participantCharacterIds, "scene.participantCharacterIds"),
+      sceneId: assertNonEmptyId(scene.sceneId, "scene.sceneId"),
+      title: assertNonEmptyText(scene.title, "scene.title", 160),
+      ...(bodyText !== undefined ? { body: bodyText } : {}),
+      ...(scene.document
+        ? {
+            document: {
+              mode: scene.document.mode,
+              ...(scene.document.blocks ? { blocks: scene.document.blocks } : {}),
+            },
+          }
+        : {}),
+      ...(scene.arcId ? { arcId: scene.arcId } : {}),
+      ...(scene.chapterId ? { chapterId: scene.chapterId } : {}),
+      ...(scene.questId ? { questId: scene.questId } : {}),
+      ...(scene.locationId === undefined ? {} : { locationId: assertNonEmptyId(scene.locationId, "scene.locationId") }),
+      participantCharacterIds: assertUniqueIds(scene.participantCharacterIds ?? [], "scene.participantCharacterIds"),
     },
+    ...(input.references ? { references: input.references } : {}),
     choices: input.choices.map((choice, index) => ({
       label: assertNonEmptyText(choice.label, `choices[${index}].label`, 200),
       ...(choice.targetSceneId === undefined ? {} : { targetSceneId: assertNonEmptyId(choice.targetSceneId, `choices[${index}].targetSceneId`) }),
       ...(choice.consequenceSummary === undefined ? {} : { consequenceSummary: assertOptionalText(choice.consequenceSummary, `choices[${index}].consequenceSummary`, 1200) }),
     })),
-    validationNotes: input.validationNotes.map((note, index) => assertOptionalText(note, `validationNotes[${index}]`, 1200)),
+    validationNotes: (input.validationNotes ?? []).map((note, index) => assertOptionalText(note, `validationNotes[${index}]`, 1200)),
   };
 }
 

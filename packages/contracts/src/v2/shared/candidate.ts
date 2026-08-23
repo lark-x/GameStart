@@ -37,14 +37,35 @@ export interface V2CandidateProvenance {
   readonly summary?: string;
 }
 
+export interface V2SceneCandidateBlock {
+  readonly blockId?: string;
+  readonly kind: "dialogue" | "narration" | "stage_direction" | "action" | "command";
+  readonly speakerCharacterId?: string | null;
+  readonly text?: string;
+  readonly payload?: Record<string, unknown>;
+}
+
 export interface V2SceneCandidatePayload {
   readonly scene: {
     readonly sceneId: V2SceneId;
     readonly title: string;
-    readonly body: string;
+    readonly body?: string;
+    readonly document?: {
+      readonly mode: "legacy_body" | "blocks";
+      readonly blocks?: readonly V2SceneCandidateBlock[];
+    };
+    readonly arcId?: string | null;
+    readonly chapterId?: string | null;
+    readonly questId?: string | null;
     readonly locationId?: V2LocationId;
     readonly participantCharacterIds: readonly V2CharacterId[];
   };
+  readonly references?: readonly {
+    readonly referenceId?: string;
+    readonly targetType: string;
+    readonly targetId: string;
+    readonly role: string;
+  }[];
   readonly choices: readonly {
     readonly label: string;
     readonly targetSceneId?: V2SceneId;
