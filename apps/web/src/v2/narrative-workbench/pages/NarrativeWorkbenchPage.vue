@@ -1,12 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import NarrativeWorkbenchLayout from "../layouts/NarrativeWorkbenchLayout.vue";
 import type { NarrativeWorkbenchMode } from "../components/topbar/NarrativeModeTabs.vue";
 import type { SaveStatus } from "../components/topbar/NarrativeTopBar.vue";
 import { useNarrativeOutlineStore } from "../../story/stores/useNarrativeOutlineStore.ts";
 import { useSceneDocumentStore } from "../../story/stores/useSceneDocumentStore.ts";
-import { useNarrativeReferenceStore } from "../../story/stores/useNarrativeReferenceStore.ts";
 import { useNarrativeDiagnosticsStore } from "../../story/stores/useNarrativeDiagnosticsStore.ts";
 import { useNarrativeCanonLookupStore } from "../stores/useNarrativeCanonLookupStore.ts";
 import { useNarrativeSessionStore } from "../stores/useNarrativeSessionStore.ts";
@@ -41,7 +40,6 @@ const selectedSceneId = ref<string | null>((route.query.scene as string) || null
 
 const outlineStore = useNarrativeOutlineStore();
 const docStore = useSceneDocumentStore();
-const refStore = useNarrativeReferenceStore();
 const diagStore = useNarrativeDiagnosticsStore();
 const canonLookupStore = useNarrativeCanonLookupStore();
 const sessionStore = useNarrativeSessionStore();

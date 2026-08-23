@@ -57,6 +57,7 @@ test("useSceneNavigationGuard blocks dirty transitions and allows clean ones", a
   assert.equal(called, false);
   assert.equal(guard.showConfirmModal.value, false);
   assert.equal(guard.pendingSceneId.value, null);
+  assert.equal(navigatedSceneId, null);
 });
 
 test("useNarrativeSceneLoader tracks generations and handles race conditions", async () => {
@@ -77,6 +78,9 @@ test("useNarrativeSceneLoader tracks generations and handles race conditions", a
   // p1 should return false due to superseded generation
   const res1 = await p1.catch(() => false);
   assert.equal(res1, false);
+
+  const res2 = await p2.catch(() => false);
+  assert.equal(typeof res2, "boolean");
 
   // Cancel loading resets state
   loader.cancelLoading();
