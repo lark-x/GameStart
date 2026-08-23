@@ -1,18 +1,20 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import NarrativeWorkbenchLayout from "../layouts/NarrativeWorkbenchLayout.vue";
 import type { NarrativeWorkbenchMode } from "../components/topbar/NarrativeModeTabs.vue";
 import type { SaveStatus } from "../components/topbar/NarrativeTopBar.vue";
 import { useNarrativeOutlineStore } from "../../story/stores/useNarrativeOutlineStore.ts";
 import { useSceneDocumentStore } from "../../story/stores/useSceneDocumentStore.ts";
-import { useNarrativeReferenceStore } from "../../story/stores/useNarrativeReferenceStore.ts";
 import { useNarrativeDiagnosticsStore } from "../../story/stores/useNarrativeDiagnosticsStore.ts";
 import { useNarrativeCanonLookupStore } from "../stores/useNarrativeCanonLookupStore.ts";
 import { useNarrativeSessionStore } from "../stores/useNarrativeSessionStore.ts";
 import { useNarrativeChoiceStore } from "../stores/useNarrativeChoiceStore.ts";
 import { useNarrativeCandidateStore } from "../stores/useNarrativeCandidateStore.ts";
 import { useNarrativeRevisionStore } from "../stores/useNarrativeRevisionStore.ts";
+import { useSceneNavigationGuard } from "../composables/useSceneNavigationGuard.ts";
+import { useNarrativeSceneLoader } from "../composables/useNarrativeSceneLoader.ts";
+import { useNarrativeAutosave } from "../composables/useNarrativeAutosave.ts";
 import { createNarrativeMutationKey } from "../utils/idempotency.ts";
 import NarrativeExplorer from "../components/explorer/NarrativeExplorer.vue";
 import NarrativeOutlineBoard from "../components/outline/NarrativeOutlineBoard.vue";
@@ -38,13 +40,23 @@ const selectedSceneId = ref<string | null>((route.query.scene as string) || null
 
 const outlineStore = useNarrativeOutlineStore();
 const docStore = useSceneDocumentStore();
-const refStore = useNarrativeReferenceStore();
 const diagStore = useNarrativeDiagnosticsStore();
 const canonLookupStore = useNarrativeCanonLookupStore();
 const sessionStore = useNarrativeSessionStore();
 const revisionStore = useNarrativeRevisionStore();
 const choiceStore = useNarrativeChoiceStore();
 const candidateStore = useNarrativeCandidateStore();
+
+const sceneLoader = useNarrativeSceneLoader();
+const navGuard = useSceneNavigationGuard({
+  storyWorldId,
+  onNavigateScene: (sceneId) => {
+    selectedSceneId.value = sceneId;
+  },
+});
+const autosave = useNarrativeAutosave({
+  storyWorldId,
+});
 
 const explorerCollapsed = ref(false);
 const inspectorCollapsed = ref(false);
@@ -83,34 +95,17 @@ const chapterTitle = computed(() => activeScene.value?.chapter?.title);
 const questTitle = computed(() => activeScene.value?.quest?.title);
 const sceneTitle = computed(() => activeScene.value?.scene?.title || docStore.document?.title || "");
 
-const saveStatus = computed<SaveStatus>(() => {
-  if (docStore.saving) return "saving";
-  if (docStore.isDirty) return "dirty";
-  return "saved";
-});
+const saveStatus = computed<SaveStatus>(() => autosave.saveStatus.value);
 
 // Sync query params
 watch(mode, (newMode) => {
   router.replace({ query: { ...route.query, mode: newMode } });
 });
 
-let sceneAbortController: AbortController | null = null;
-
 watch(selectedSceneId, (newSceneId) => {
   router.replace({ query: { ...route.query, scene: newSceneId || undefined } });
-  if (sceneAbortController) {
-    sceneAbortController.abort();
-  }
-  sceneAbortController = new AbortController();
   if (newSceneId) {
-    docStore.fetchDocument(storyWorldId.value, newSceneId);
-    refStore.fetchSceneReferences(storyWorldId.value, newSceneId);
-  }
-});
-
-onUnmounted(() => {
-  if (sceneAbortController) {
-    sceneAbortController.abort();
+    sceneLoader.loadScene(storyWorldId.value, newSceneId);
   }
 });
 
@@ -132,8 +127,7 @@ onMounted(async () => {
         selectedSceneId.value = firstScene.sceneId;
       }
     } else if (selectedSceneId.value) {
-      await docStore.fetchDocument(storyWorldId.value, selectedSceneId.value);
-      await refStore.fetchSceneReferences(storyWorldId.value, selectedSceneId.value);
+      await sceneLoader.loadScene(storyWorldId.value, selectedSceneId.value);
     }
   }
 });
@@ -143,10 +137,13 @@ function handleBack() {
 }
 
 function handleSelectScene(sceneId: string) {
-  selectedSceneId.value = sceneId;
-  if (mode.value === "outline") {
-    mode.value = "script";
-  }
+  if (selectedSceneId.value === sceneId) return;
+  navGuard.requestSceneChange(sceneId, () => {
+    selectedSceneId.value = sceneId;
+    if (mode.value === "outline") {
+      mode.value = "script";
+    }
+  });
 }
 
 async function handleCreateScene(payload?: { arcId?: string; chapterId?: string; questId?: string }) {
@@ -386,6 +383,29 @@ async function handlePublishRelease() {
             <Button variant="ghost" size="sm" @click="templateModalOpen = false">取消</Button>
             <Button variant="primary" size="sm" :loading="templateApplying" @click="handleApplyTemplate">
               立即套用
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <!-- Unsaved Changes Confirmation Modal -->
+      <Modal :open="navGuard.showConfirmModal.value" title="未保存的场景修改" @close="navGuard.handleCancel()">
+        <div class="space-y-4">
+          <p class="text-xs text-stone-600 dark:text-stone-400 leading-relaxed">
+            当前场景存在未保存的剧本草稿修改。切换场景或离开将会使未保存的内容丢失，您希望如何处理？
+          </p>
+
+          <div v-if="navGuard.errorMessage.value" class="p-2 rounded bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-400 text-xs">
+            {{ navGuard.errorMessage.value }}
+          </div>
+
+          <div class="flex justify-end gap-2 pt-3 border-t border-stone-200 dark:border-stone-800">
+            <Button variant="ghost" size="sm" @click="navGuard.handleCancel()">取消</Button>
+            <Button variant="secondary" size="sm" @click="navGuard.handleDiscardAndProceed()">
+              放弃修改并继续
+            </Button>
+            <Button variant="primary" size="sm" :loading="navGuard.saving.value" @click="navGuard.handleSaveAndProceed()">
+              保存并继续
             </Button>
           </div>
         </div>
