@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed } from "vue";
 import type { V2SceneCandidateDto, V2SceneDocument } from "@living-network/contracts/v2";
 import {
@@ -6,11 +6,13 @@ import {
   GitFork,
   CheckCircle2,
   Users,
+  MapPin,
+  BookOpen,
 } from "@lucide/vue";
 
 const props = defineProps<{
   candidate: V2SceneCandidateDto;
-  baseDocument?: V2SceneDocument | null;
+  baseDocument?: V2SceneDocument | null | undefined;
 }>();
 
 const scenePayload = computed(() => props.candidate.payload.scene);
@@ -19,6 +21,10 @@ const candidateBlocks = computed(() => {
 });
 const baseBlocks = computed(() => {
   return props.baseDocument?.blocks ?? [];
+});
+
+const candidateReferences = computed(() => {
+  return props.candidate.payload.references;
 });
 
 const outgoingChoices = computed(() => {
@@ -62,6 +68,60 @@ const outgoingChoices = computed(() => {
             <div class="text-[11px] text-emerald-700 dark:text-emerald-300 mt-1">
               分块数: {{ candidateBlocks.length }} 块 | 选项数: {{ outgoingChoices.length }} 个
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- References Comparison -->
+    <div v-if="candidateReferences" class="p-4 rounded-xl bg-stone-50/60 dark:bg-stone-900/40 border border-stone-200/80 dark:border-stone-800 space-y-3">
+      <h4 class="font-bold text-stone-900 dark:text-stone-100 flex items-center gap-2">
+        <span>引用实体变更 (References)</span>
+      </h4>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <!-- Main Location -->
+        <div class="p-2.5 rounded-lg bg-white dark:bg-stone-950 border border-stone-200/60 dark:border-stone-800 space-y-1">
+          <div class="flex items-center gap-1.5 text-stone-500 font-semibold">
+            <MapPin class="h-3.5 w-3.5 text-amber-500" />
+            <span>主场景地点</span>
+          </div>
+          <span class="font-mono text-stone-800 dark:text-stone-200 block truncate">
+            {{ candidateReferences.mainLocationId || '(未指定)' }}
+          </span>
+        </div>
+
+        <!-- Participants -->
+        <div class="p-2.5 rounded-lg bg-white dark:bg-stone-950 border border-stone-200/60 dark:border-stone-800 space-y-1">
+          <div class="flex items-center gap-1.5 text-stone-500 font-semibold">
+            <Users class="h-3.5 w-3.5 text-sky-500" />
+            <span>出场角色 ({{ candidateReferences.participantCharacterIds?.length || 0 }})</span>
+          </div>
+          <div class="flex flex-wrap gap-1">
+            <span
+              v-for="charId in candidateReferences.participantCharacterIds || []"
+              :key="charId"
+              class="px-1.5 py-0.2 rounded font-mono text-[10px] bg-sky-50 dark:bg-sky-950 text-sky-700 dark:text-sky-300"
+            >
+              {{ charId }}
+            </span>
+          </div>
+        </div>
+
+        <!-- Lore Items -->
+        <div class="p-2.5 rounded-lg bg-white dark:bg-stone-950 border border-stone-200/60 dark:border-stone-800 space-y-1">
+          <div class="flex items-center gap-1.5 text-stone-500 font-semibold">
+            <BookOpen class="h-3.5 w-3.5 text-purple-500" />
+            <span>世界观设定 ({{ candidateReferences.loreItemIds?.length || 0 }})</span>
+          </div>
+          <div class="flex flex-wrap gap-1">
+            <span
+              v-for="loreId in candidateReferences.loreItemIds || []"
+              :key="loreId"
+              class="px-1.5 py-0.2 rounded font-mono text-[10px] bg-purple-50 dark:bg-purple-950 text-purple-700 dark:text-purple-300"
+            >
+              {{ loreId }}
+            </span>
           </div>
         </div>
       </div>

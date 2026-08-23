@@ -109,9 +109,10 @@ export const useNarrativeCandidateStore = defineStore("narrativeCandidate", {
           throw new Error(errData.error?.message || errData.message || `HTTP ${res.status}`);
         }
 
-        const data = (await res.json()) as { revision?: number };
-        if (data.revision !== undefined) {
-          revisionStore.setRevision(data.revision);
+        const data = (await res.json()) as { revision?: number; worldRevision?: number };
+        const nextRev = data.worldRevision ?? data.revision;
+        if (nextRev !== undefined) {
+          revisionStore.setRevision(nextRev);
         }
 
         await this.fetchCandidates(storyWorldId);
