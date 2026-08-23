@@ -23,6 +23,7 @@ import type {
   V2NarrativeTemplate,
 } from "@living-network/contracts/v2";
 import {
+  buildTaskScopedNarrativeContext,
   buildV2NarrativeContextFingerprint,
   createV2CanonLoreEntry,
   createV2NarrativeChapter,
@@ -490,10 +491,15 @@ export function createV2NarrativeUseCases(uow: V2NarrativeUnitOfWork): V2Narrati
               });
             });
 
+            const charNameMap: Record<string, string> = {};
+            for (const c of worldChars) {
+              charNameMap[c.characterId] = c.name;
+            }
+
             const docMode = request.documentMode ?? existingDoc.scene.documentMode;
             const renderedBody =
               docMode === "blocks"
-                ? renderSceneBlocksToPlainText(domainBlocks)
+                ? renderSceneBlocksToPlainText(domainBlocks, charNameMap)
                 : request.body !== undefined
                   ? request.body
                     ? request.body
@@ -972,53 +978,28 @@ export function createV2NarrativeUseCases(uow: V2NarrativeUnitOfWork): V2Narrati
 
     async getDiagnostics(storyWorldId: string): Promise<V2NarrativeDiagnosticsReport> {
       return uow.withNarrativeTransaction(async (ctx) => {
-        const arcs = await ctx.graphState.listArcs(storyWorldId as any);
-        const chapters = await ctx.hierarchy.listChapters(storyWorldId);
-        const quests = await ctx.hierarchy.listQuests(storyWorldId);
-        const scenes = await ctx.graphState.listScenes(storyWorldId as any);
-        const choices = await ctx.graphState.listChoices(storyWorldId as any);
-        const refs = await ctx.references.listAllReferences(storyWorldId);
-        const chars = await ctx.canon.listCharacters(storyWorldId as any);
-        const locs = await ctx.canon.listLocations(storyWorldId as any);
-
-        const allBlocks = [];
-        for (const s of scenes) {
-          const blocks = await ctx.sceneDocument.listSceneBlocks({ storyWorldId, sceneId: s.sceneId });
-          allBlocks.push(...blocks);
-        }
+        const [arcs, chapters, quests, scenes, allBlocks, choices, refs, chars, locs, lores, timelineEvents, facts, rules] = await Promise.all([
+          ctx.graphState.listArcs(storyWorldId as any),
+          ctx.hierarchy.listChapters(storyWorldId),
+          ctx.hierarchy.listQuests(storyWorldId),
+          ctx.sceneDocument.listAllScenes(storyWorldId),
+          ctx.sceneDocument.listAllSceneBlocks(storyWorldId),
+          ctx.graphState.listChoices(storyWorldId as any),
+          ctx.references.listAllReferences(storyWorldId),
+          ctx.canon.listCharacters(storyWorldId as any),
+          ctx.canon.listLocations(storyWorldId as any),
+          ctx.lore.listLoreEntries(storyWorldId),
+          ctx.canon.listTimelineEvents(storyWorldId as any),
+          ctx.canon.listFacts(storyWorldId as any),
+          ctx.canon.listRules(storyWorldId as any),
+        ]);
 
         return runNarrativeDiagnostics({
           storyWorldId,
           arcs: arcs.map((a) => ({ arcId: a.arcId, title: a.title })),
-          chapters: chapters.map((c) => ({
-            chapterId: c.chapterId,
-            storyWorldId: c.storyWorldId,
-            arcId: c.arcId,
-            title: c.title,
-            ordinal: c.ordinal,
-            revision: c.revision,
-          })),
-          quests: quests.map((q) => ({
-            questId: q.questId,
-            storyWorldId: q.storyWorldId,
-            ...(q.arcId ? { arcId: q.arcId } : {}),
-            ...(q.chapterId ? { chapterId: q.chapterId } : {}),
-            title: q.title,
-            kind: q.kind,
-            ordinal: q.ordinal,
-            revision: q.revision,
-          })),
-          scenes: scenes.map((s) => ({
-            sceneId: s.sceneId,
-            storyWorldId: s.storyWorldId,
-            ...(s.arcId ? { arcId: s.arcId } : {}),
-            title: s.title,
-            ...(s.body ? { body: s.body } : {}),
-            documentMode: "blocks",
-            isEntry: s.isEntry,
-            ordinal: 0,
-            revision: 1,
-          })),
+          chapters,
+          quests,
+          scenes,
           blocks: allBlocks,
           choices: choices.map((c) => ({
             choiceId: c.choiceId,
@@ -1026,10 +1007,16 @@ export function createV2NarrativeUseCases(uow: V2NarrativeUnitOfWork): V2Narrati
             sourceSceneId: c.sourceSceneId,
             ...(c.targetSceneId ? { targetSceneId: c.targetSceneId } : {}),
             label: c.label,
+            ...(c.gates ? { gates: c.gates } : {}),
+            ...(c.consequences ? { consequences: c.consequences } : {}),
           })),
           references: refs,
           characters: chars.map((c) => ({ characterId: c.characterId, name: c.name })),
           locations: locs.map((l) => ({ locationId: l.locationId, name: l.name })),
+          loreEntries: lores,
+          timelineEvents: timelineEvents.map((t) => ({ timelineEventId: t.timelineEventId, title: t.title })),
+          facts: facts.map((f) => ({ factId: f.factId, text: f.text })),
+          rules: rules.map((r) => ({ ruleId: r.ruleId, text: r.text })),
         });
       });
     },
@@ -1039,133 +1026,60 @@ export function createV2NarrativeUseCases(uow: V2NarrativeUnitOfWork): V2Narrati
         const world = await ctx.canon.getWorld(storyWorldId as any);
         if (!world) throw new V2HttpError(404, "NOT_FOUND", `Story world ${storyWorldId} not found`);
 
-        let targetScene = undefined;
-        let targetBlocks: any[] = [];
-        let sceneRefs: any[] = [];
+        const [arcs, chapters, quests, scenes, allBlocks, choices, refs, chars, locs, lores, timelineEvents, facts, rules] = await Promise.all([
+          ctx.graphState.listArcs(storyWorldId as any),
+          ctx.hierarchy.listChapters(storyWorldId),
+          ctx.hierarchy.listQuests(storyWorldId),
+          ctx.sceneDocument.listAllScenes(storyWorldId),
+          ctx.sceneDocument.listAllSceneBlocks(storyWorldId),
+          ctx.graphState.listChoices(storyWorldId as any),
+          ctx.references.listAllReferences(storyWorldId),
+          ctx.canon.listCharacters(storyWorldId as any),
+          ctx.canon.listLocations(storyWorldId as any),
+          ctx.lore.listLoreEntries(storyWorldId),
+          ctx.canon.listTimelineEvents(storyWorldId as any),
+          ctx.canon.listFacts(storyWorldId as any),
+          ctx.canon.listRules(storyWorldId as any),
+        ]);
 
-        if (request.targetSceneId) {
-          const doc = await ctx.sceneDocument.getSceneDocument({ storyWorldId, sceneId: request.targetSceneId });
-          if (doc) {
-            targetScene = doc.scene;
-            targetBlocks = [...doc.blocks];
-            sceneRefs = [...(await ctx.references.listReferencesBySource({
-              storyWorldId,
-              sourceType: "scene",
-              sourceId: request.targetSceneId,
-            }))];
-          }
-        }
-
-        let targetQuest = undefined;
-        const questIdToLoad = request.targetQuestId || targetScene?.questId;
-        if (questIdToLoad) {
-          targetQuest = await ctx.hierarchy.getQuest({ storyWorldId, questId: questIdToLoad });
-        }
-
-        const characters = await ctx.canon.listCharacters(storyWorldId as any);
-        const locations = await ctx.canon.listLocations(storyWorldId as any);
-        const lores = await ctx.lore.listLoreEntries(storyWorldId);
-
-        const participantCharIds = new Set<string>();
-        for (const ref of sceneRefs) {
-          if (ref.role === "participant" && ref.targetType === "character") {
-            participantCharIds.add(ref.targetId);
-          }
-        }
-        for (const b of targetBlocks) {
-          if (b.speakerCharacterId) {
-            participantCharIds.add(b.speakerCharacterId);
-          }
-        }
-
-        const relevantChars = characters.filter((c) => participantCharIds.has(c.characterId));
-        const locRef = sceneRefs.find((r) => r.role === "location" && r.targetType === "location");
-        const mainLoc = locRef ? locations.find((l) => l.locationId === locRef.targetId) : undefined;
-
-        const sources = [
-          { kind: "world", id: world.storyWorldId, revision: world.revision },
-          ...(targetQuest ? [{ kind: "quest", id: targetQuest.questId, revision: targetQuest.revision }] : []),
-          ...(targetScene ? [{ kind: "scene", id: targetScene.sceneId, revision: targetScene.revision }] : []),
-          ...relevantChars.map((c) => ({ kind: "character", id: c.characterId, revision: 1 })),
-          ...(mainLoc ? [{ kind: "location", id: mainLoc.locationId, revision: 1 }] : []),
-          ...lores.slice(0, 3).map((l) => ({ kind: "lore", id: l.loreEntryId, revision: l.revision })),
-        ];
-
-        const fingerprint = buildV2NarrativeContextFingerprint({
+        return buildTaskScopedNarrativeContext({
           storyWorldId,
+          worldName: world.name,
+          ...(world.summary ? { worldSummary: world.summary } : {}),
           worldRevision: world.revision,
-          sources,
-        });
-
-        const sectionList = [
-          {
-            title: "世界设定",
-            content: `# 世界设定：${world.name}\n${world.summary ?? "无额外世界摘要"}`,
-            tokenEstimate: Math.ceil((world.name.length + (world.summary?.length ?? 0)) / 2),
-          },
-          ...(targetQuest
-            ? [
-                {
-                  title: "当前任务",
-                  content: `## 当前任务：${targetQuest.title}\n${targetQuest.summary ?? "无任务描述"}`,
-                  tokenEstimate: Math.ceil((targetQuest.title.length + (targetQuest.summary?.length ?? 0)) / 2),
-                },
-              ]
-            : []),
-          ...(mainLoc
-            ? [
-                {
-                  title: "发生地点",
-                  content: `### 发生地点：${mainLoc.name}\n${mainLoc.summary ?? "无地点描述"}`,
-                  tokenEstimate: Math.ceil((mainLoc.name.length + (mainLoc.summary?.length ?? 0)) / 2),
-                },
-              ]
-            : []),
-          ...(relevantChars.length > 0
-            ? [
-                {
-                  title: "登场人物",
-                  content:
-                    `### 登场人物：\n` +
-                    relevantChars
-                      .map((c) => `- **${c.name}**：${c.summary ?? "无人物简介"}`)
-                      .join("\n"),
-                  tokenEstimate: Math.ceil(
-                    relevantChars.reduce((sum, c) => sum + c.name.length + (c.summary?.length ?? 0), 0) / 2,
-                  ),
-                },
-              ]
-            : []),
-          ...(targetScene
-            ? [
-                {
-                  title: "当前场景内容",
-                  content:
-                    `### 当前场景内容（${targetScene.title}）：\n` +
-                    (targetBlocks.length > 0
-                      ? renderSceneBlocksToPlainText(targetBlocks)
-                      : targetScene.body ?? "（空白场景）"),
-                  tokenEstimate: Math.ceil((targetScene.title.length + (targetScene.body?.length ?? 0)) / 2),
-                },
-              ]
-            : []),
-          {
-            title: "创作提示",
-            content: `### 创作提示 / 指令：\n${request.prompt ?? ""}`,
-            tokenEstimate: Math.ceil((request.prompt?.length ?? 0) / 2),
-          },
-        ];
-
-        const totalTokens = sectionList.reduce((sum, s) => sum + s.tokenEstimate, 0);
-
-        return {
-          contextHash: fingerprint.hash,
-          fingerprint: fingerprint as any,
-          sections: sectionList,
-          totalTokensEstimate: totalTokens,
-          selectedSources: sources.map((s) => `${s.kind}:${s.id}`),
-          omittedSources: [],
-        };
+          task: request.task,
+          ...(request.targetSceneId ? { targetSceneId: request.targetSceneId } : {}),
+          ...(request.targetQuestId ? { targetQuestId: request.targetQuestId } : {}),
+          ...(request.prompt ? { prompt: request.prompt } : {}),
+          ...(request.tokenBudget ? { tokenBudget: request.tokenBudget } : {}),
+          arcs: arcs.map((a) => ({ arcId: a.arcId, title: a.title, ...(a.summary ? { summary: a.summary } : {}) })),
+          chapters,
+          quests,
+          scenes,
+          blocks: allBlocks,
+          choices: choices.map((c) => ({
+            choiceId: c.choiceId,
+            sourceSceneId: c.sourceSceneId,
+            ...(c.targetSceneId ? { targetSceneId: c.targetSceneId } : {}),
+            label: c.label,
+          })),
+          references: refs,
+          characters: chars.map((c) => ({
+            characterId: c.characterId,
+            name: c.name,
+            ...(c.summary ? { summary: c.summary } : {}),
+            ...(c.profile ? { profile: c.profile } : {}),
+          })),
+          locations: locs.map((l) => ({
+            locationId: l.locationId,
+            name: l.name,
+            ...(l.summary ? { summary: l.summary } : {}),
+          })),
+          loreEntries: lores,
+          facts: facts.map((f) => ({ factId: f.factId, text: f.text })),
+          rules: rules.map((r) => ({ ruleId: r.ruleId, text: r.text })),
+          timelineEvents: timelineEvents.map((t) => ({ timelineEventId: t.timelineEventId, title: t.title })),
+        }) as unknown as V2NarrativeGenerationContextResponse;
       });
     },
   };
