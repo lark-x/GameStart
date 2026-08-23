@@ -211,7 +211,7 @@ onUnmounted(() => {
               >
                 <div class="v2-story-popover-item-info">
                   <span class="v2-story-popover-item-name">{{ world.name }}</span>
-                  <small class="v2-story-popover-item-desc">{{ world.description || "暂无描述" }}</small>
+                  <small class="v2-story-popover-item-desc">{{ world.summary || "暂无描述" }}</small>
                 </div>
                 <Check
                   v-if="world.storyWorldId === store.activeStoryWorldId"
