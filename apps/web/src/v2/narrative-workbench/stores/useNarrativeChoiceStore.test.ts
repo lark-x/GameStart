@@ -1,4 +1,4 @@
-﻿import assert from "node:assert/strict";
+import assert from "node:assert/strict";
 import test from "node:test";
 import { createPinia, setActivePinia } from "pinia";
 import { useNarrativeChoiceStore } from "./useNarrativeChoiceStore.ts";
@@ -44,7 +44,7 @@ test("useNarrativeChoiceStore advances revision on creation", async () => {
   setActivePinia(createPinia());
   const choiceStore = useNarrativeChoiceStore();
   const revisionStore = useNarrativeRevisionStore();
-  revisionStore.setWorldRevision(5);
+  revisionStore.initialize("world-1", 5);
 
   // Mock global fetch for choice creation
   const originalFetch = globalThis.fetch;

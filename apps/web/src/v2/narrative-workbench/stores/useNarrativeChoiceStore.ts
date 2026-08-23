@@ -120,10 +120,11 @@ export const useNarrativeChoiceStore = defineStore("narrativeChoice", {
           throw new Error(errData.message || `创建分支失败 (${res.status})`);
         }
 
-        const data = (await res.json()) as { item?: V2ChoiceDto; choice?: V2ChoiceDto; revision?: number };
+        const data = (await res.json()) as { item?: V2ChoiceDto; choice?: V2ChoiceDto; revision?: number; worldRevision?: number };
         const choice: V2ChoiceDto = data.item ?? data.choice ?? (data as unknown as V2ChoiceDto);
-        if (data.revision !== undefined) {
-          revisionStore.setRevision(data.revision);
+        const nextRev = data.worldRevision ?? data.revision;
+        if (nextRev !== undefined) {
+          revisionStore.setRevision(nextRev);
         }
         if (!this.choicesBySourceSceneId[request.sourceSceneId]) {
           this.choicesBySourceSceneId[request.sourceSceneId] = [];
@@ -175,9 +176,10 @@ export const useNarrativeChoiceStore = defineStore("narrativeChoice", {
           throw new Error(errData.message || `更新分支失败 (${res.status})`);
         }
 
-        const data = (await res.json()) as { item?: V2ChoiceDto; revision?: number };
-        if (data.revision !== undefined) {
-          revisionStore.setRevision(data.revision);
+        const data = (await res.json()) as { item?: V2ChoiceDto; revision?: number; worldRevision?: number };
+        const nextRev = data.worldRevision ?? data.revision;
+        if (nextRev !== undefined) {
+          revisionStore.setRevision(nextRev);
         }
 
         await this.fetchChoicesForWorld(storyWorldId);
