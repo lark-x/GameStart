@@ -1,12 +1,16 @@
 import { defineStore } from "pinia";
 import type {
   V2CandidateReviewAction,
+  V2IdempotencyKey,
+  V2Revision,
+  V2ReviewCandidateRequest,
   V2SceneCandidateDto,
 } from "@living-network/contracts/v2";
 
 export interface NarrativeCandidateState {
   candidates: V2SceneCandidateDto[];
   selectedCandidateId: string | null;
+  statusFilter: "all" | "pending" | "approved" | "rejected";
   loading: boolean;
   applying: boolean;
   error: string | null;
@@ -16,6 +20,7 @@ export const useNarrativeCandidateStore = defineStore("narrativeCandidate", {
   state: (): NarrativeCandidateState => ({
     candidates: [],
     selectedCandidateId: null,
+    statusFilter: "pending",
     loading: false,
     applying: false,
     error: null,
@@ -26,24 +31,41 @@ export const useNarrativeCandidateStore = defineStore("narrativeCandidate", {
       return state.candidates.find((c) => c.candidateId === state.selectedCandidateId) ?? null;
     },
 
+    filteredCandidates(state): readonly V2SceneCandidateDto[] {
+      if (state.statusFilter === "all") return state.candidates;
+      return state.candidates.filter((c) => c.status === state.statusFilter);
+    },
+
     pendingCandidates(state): readonly V2SceneCandidateDto[] {
       return state.candidates.filter((c) => c.status === "pending");
     },
   },
 
   actions: {
-    async fetchCandidates(storyWorldId: string, sceneId?: string): Promise<void> {
+    setStatusFilter(filter: "all" | "pending" | "approved" | "rejected"): void {
+      this.statusFilter = filter;
+    },
+
+    selectCandidate(candidateId: string): void {
+      this.selectedCandidateId = candidateId;
+    },
+
+    async fetchCandidates(storyWorldId: string): Promise<void> {
       this.loading = true;
       this.error = null;
       try {
-        const url = sceneId
-          ? `/api/v2/worlds/${storyWorldId}/scenes/${sceneId}/candidates`
-          : `/api/v2/worlds/${storyWorldId}/candidates`;
+        const url = `/api/v2/core/worlds/${storyWorldId}/candidates/scenes`;
         const res = await fetch(url).then((r) => r.ok ? r.json() : null).catch(() => null);
-        if (res && Array.isArray(res)) {
-          this.candidates = res as V2SceneCandidateDto[];
-          if (!this.selectedCandidateId && this.candidates.length > 0) {
-            this.selectedCandidateId = this.candidates[0]!.candidateId;
+        if (res) {
+          const list: V2SceneCandidateDto[] = Array.isArray(res)
+            ? res
+            : Array.isArray((res as { candidates?: V2SceneCandidateDto[] }).candidates)
+            ? (res as { candidates: V2SceneCandidateDto[] }).candidates
+            : [];
+          this.candidates = list;
+          if ((!this.selectedCandidateId || !this.candidates.some((c) => c.candidateId === this.selectedCandidateId)) && this.candidates.length > 0) {
+            const firstPending = this.candidates.find((c) => c.status === "pending");
+            this.selectedCandidateId = firstPending ? firstPending.candidateId : this.candidates[0]!.candidateId;
           }
         }
       } catch (err) {
@@ -51,10 +73,6 @@ export const useNarrativeCandidateStore = defineStore("narrativeCandidate", {
       } finally {
         this.loading = false;
       }
-    },
-
-    selectCandidate(candidateId: string): void {
-      this.selectedCandidateId = candidateId;
     },
 
     async reviewCandidate(
@@ -66,19 +84,30 @@ export const useNarrativeCandidateStore = defineStore("narrativeCandidate", {
       this.applying = true;
       this.error = null;
       try {
-        const res = await fetch(`/api/v2/worlds/${storyWorldId}/candidates/${candidateId}/review`, {
+        const candidate = this.candidates.find((c) => c.candidateId === candidateId);
+        const body: V2ReviewCandidateRequest = {
+          action,
+          reviewer: "creator",
+          ...(reason ? { reason } : {}),
+          expectedRevision: (candidate?.baseCanonRevision ?? 1) as V2Revision,
+          idempotencyKey: `review_${candidateId}_${Date.now()}` as V2IdempotencyKey,
+        };
+
+        const res = await fetch(`/api/v2/core/worlds/${storyWorldId}/candidates/scenes/${candidateId}/review`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action, reason }),
+          body: JSON.stringify(body),
         });
+
         if (!res.ok) {
-          const errData = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
-          throw new Error(errData.error?.message ?? `HTTP ${res.status}`);
+          const errData = (await res.json().catch(() => ({}))) as { error?: { message?: string }; message?: string };
+          throw new Error(errData.error?.message || errData.message || `HTTP ${res.status}`);
         }
+
         await this.fetchCandidates(storyWorldId);
         return true;
       } catch (err) {
-        this.error = err instanceof Error ? err.message : "审核失败";
+        this.error = err instanceof Error ? err.message : "审核操作失败";
         return false;
       } finally {
         this.applying = false;
