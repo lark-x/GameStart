@@ -15,7 +15,6 @@ import { useNarrativeDiagnosticsStore } from "../../../story/stores/useNarrative
 import type {
   V2ArcId,
   V2IdempotencyKey,
-  V2NarrativeOutlineScene,
   V2Revision,
 } from "@living-network/contracts/v2";
 
