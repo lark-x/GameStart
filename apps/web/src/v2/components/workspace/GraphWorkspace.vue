@@ -1,6 +1,6 @@
-<script setup lang="ts">
 import { ref, computed } from "vue";
-import { AlertCircle, CheckCircle2, ArrowRight, Plus, Pencil } from "@lucide/vue";
+import { useRouter } from "vue-router";
+import { AlertCircle, CheckCircle2, ArrowRight, Plus, Pencil, Sparkles } from "@lucide/vue";
 import Badge from "../../../components/ui/Badge.vue";
 import Button from "../../../components/ui/Button.vue";
 import Drawer from "../../../components/ui/Drawer.vue";
@@ -13,6 +13,8 @@ import type { V2GraphCreateInput, V2WorkspaceSnapshot } from "../../adapters";
 import type { V2ArcSummary, V2ChoiceSummary } from "../../adapters/types";
 import { useV2WorkspaceStore } from "../../stores/workspace";
 import ModulePurposeCard from "./ModulePurposeCard.vue";
+
+const router = useRouter();
 
 const props = defineProps<{
   snapshot: V2WorkspaceSnapshot;
@@ -212,9 +214,10 @@ async function submitCreate(): Promise<void> {
     <div class="graph-authoring-toolbar">
       <div><strong>故事结构</strong><span>新增 Arc、场景和分支选项</span></div>
       <div class="graph-authoring-actions">
+        <Button variant="primary" size="sm" :disabled="loading" @click="router.push(`/v2/worlds/${props.snapshot.world.storyWorldId}/narrative`)"><Sparkles :size="14" aria-hidden="true" />进入独立剧情工作台</Button>
         <Button variant="secondary" size="sm" :disabled="loading" @click="openCreate('arc')"><Plus :size="14" aria-hidden="true" />新增 Arc</Button>
         <Button variant="secondary" size="sm" :disabled="loading" @click="openCreate('scene')"><Plus :size="14" aria-hidden="true" />新增场景</Button>
-        <Button variant="primary" size="sm" :disabled="loading" @click="openCreate('choice')"><Plus :size="14" aria-hidden="true" />新增选项</Button>
+        <Button variant="secondary" size="sm" :disabled="loading" @click="openCreate('choice')"><Plus :size="14" aria-hidden="true" />新增选项</Button>
       </div>
     </div>
 

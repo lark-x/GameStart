@@ -29,6 +29,12 @@ export const v2Routes: readonly RouteRecordRaw[] = [
       { path: "workspace/characters", name: "v2-workspace-characters", component: () => import("./views/V2CharactersView.vue"), meta: { title: "角色中心", pageSize: "wide" } },
       { path: "workspace/characters/:characterId", name: "v2-workspace-character", component: () => import("./views/V2CharactersView.vue"), meta: { title: "角色中心", pageSize: "wide" } },
       {
+        path: "worlds/:storyWorldId/narrative",
+        name: "v2-narrative-workbench",
+        component: () => import("./narrative-workbench/pages/NarrativeWorkbenchPage.vue"),
+        meta: { title: "剧情工作台", layout: "focus", pageSize: "full" },
+      },
+      {
         path: "workspace/:area",
         name: "v2-workspace-area",
         component: () => import("./views/V2WorkspaceAreaView.vue"),

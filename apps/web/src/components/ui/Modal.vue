@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { onBeforeUnmount, onMounted } from "vue";
 import { X } from "@lucide/vue";
 import Button from "./Button.vue";
