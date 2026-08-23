@@ -12,7 +12,8 @@ import { useNarrativeCanonLookupStore } from "../stores/useNarrativeCanonLookupS
 import { useNarrativeSessionStore } from "../stores/useNarrativeSessionStore.ts";
 import { useNarrativeChoiceStore } from "../stores/useNarrativeChoiceStore.ts";
 import { useNarrativeCandidateStore } from "../stores/useNarrativeCandidateStore.ts";
-import NarrativeExplorer from "../../story/components/NarrativeExplorer.vue";
+import NarrativeExplorer from "../components/explorer/NarrativeExplorer.vue";
+import NarrativeOutlineBoard from "../components/outline/NarrativeOutlineBoard.vue";
 import SceneScriptEditor from "../../story/components/SceneScriptEditor.vue";
 import NarrativeInspector from "../../story/components/NarrativeInspector.vue";
 import NarrativeDiagnosticsPanel from "../../story/components/NarrativeDiagnosticsPanel.vue";
@@ -226,7 +227,16 @@ async function handleApplyTemplate() {
     <!-- Center Column: Primary Work Surface -->
     <template #main>
       <div class="h-full flex flex-col p-4 overflow-y-auto">
-        <template v-if="selectedSceneId">
+        <template v-if="mode === 'outline'">
+          <NarrativeOutlineBoard
+            :story-world-id="storyWorldId"
+            :selected-scene-id="selectedSceneId"
+            @select-scene="handleSelectScene"
+            @open-script="(id) => { selectedSceneId = id; mode = 'script'; }"
+            @create-scene="handleCreateScene"
+          />
+        </template>
+        <template v-else-if="selectedSceneId">
           <SceneScriptEditor
             :story-world-id="storyWorldId"
             :scene-id="selectedSceneId"
