@@ -165,11 +165,15 @@ export class V2SqliteCandidateSubmissionPort implements CandidateSubmissionPort 
       }
       const world = await canon.getWorld(input.candidate.storyWorldId);
       if (!world) throw new V2DomainError("INVALID_INPUT", "Scene candidate story world does not exist");
-      if (world.revision !== input.candidate.baseCanonRevision) {
-        throw new V2DomainError(
-          "STALE_REVISION",
-          `Candidate is based on revision ${input.candidate.baseCanonRevision}, current revision is ${world.revision}`,
-        );
+      // Exact-source candidates are submitted across unrelated world changes;
+      // their selected sources are rechecked atomically at approval time.
+      if (input.candidate.provenance.sourceRevisionSet === undefined || input.candidate.provenance.sourceRevisionSet.length === 0) {
+        if (world.revision !== input.candidate.baseCanonRevision) {
+          throw new V2DomainError(
+            "STALE_REVISION",
+            `Candidate is based on revision ${input.candidate.baseCanonRevision}, current revision is ${world.revision}`,
+          );
+        }
       }
       await candidateReview.createSceneCandidate(createV2SceneCandidate({
         candidateId: input.candidate.candidateId,

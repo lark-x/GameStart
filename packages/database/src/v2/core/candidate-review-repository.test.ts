@@ -120,6 +120,32 @@ test("V2 candidate submission port replays identical idempotent submissions", as
   }
 });
 
+test("V2 exact-source candidate submission survives an unrelated world revision", async () => {
+  const { db, cleanup } = openV2TempSqliteConnection();
+  try {
+    applyV2Migrations(db);
+    const unit = new V2SqliteCandidateReviewUnitOfWork(db);
+    await unit.withCandidateReviewTransaction(async ({ canon }) => {
+      await canon.createWorld(createV2CanonWorld({ storyWorldId: "world_exact_source" as never, name: "Exact Source World" }));
+      await canon.advanceRevision("world_exact_source" as never, 1 as never);
+    });
+    const candidate = createV2SceneCandidate({
+      candidateId: "candidate_exact_source",
+      storyWorldId: "world_exact_source",
+      baseCanonRevision: 1,
+      provenance: { source: "llm", sourceRevisionSet: [{ kind: "character", id: "character_a", revision: 7 }] },
+      payload: { scene: { sceneId: "scene_exact_source", title: "Exact Source", body: "Body", participantCharacterIds: [] }, choices: [], validationNotes: [] },
+    });
+    const result = await new V2SqliteCandidateSubmissionPort(db).submitSceneCandidate({
+      candidate: candidate as never,
+      idempotencyKey: "key_exact_source" as never,
+    });
+    assert.equal(result.status, "pending");
+  } finally {
+    db.close();
+    cleanup();
+  }
+});
 test("V2 candidate submission port rejects reviewed or stale envelopes", async () => {
   const { db, cleanup } = openV2TempSqliteConnection();
   try {

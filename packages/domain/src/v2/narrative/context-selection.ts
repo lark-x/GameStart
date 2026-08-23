@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import type {
   V2NarrativeChapter,
   V2NarrativeQuest,
@@ -367,8 +369,17 @@ export function buildTaskScopedNarrativeContext(
     sources: rawSources,
   });
 
+  const generationContextHash = `sha256:${createHash("sha256").update(JSON.stringify({
+    storyWorldId: input.storyWorldId,
+    task: input.task,
+    prompt: input.prompt ?? "",
+    tokenBudget: budget,
+    sourceFingerprint: fingerprint.hash,
+    sections: sections.map((section) => ({ title: section.title, content: section.content })),
+  })).digest("hex")}`;
+
   return {
-    contextHash: fingerprint.hash,
+    contextHash: generationContextHash,
     fingerprint,
     sections,
     totalTokensEstimate,

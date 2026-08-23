@@ -86,7 +86,7 @@ function toContractPayload(payload: ReturnType<typeof parseV2SceneCandidateText>
     scene: {
       sceneId: payload.scene.sceneId as V2SceneId,
       title: payload.scene.title,
-      body: payload.scene.body,
+      ...(payload.scene.body === undefined ? {} : { body: payload.scene.body }),
       ...(payload.scene.arcId === undefined ? {} : { arcId: payload.scene.arcId }),
       ...(payload.scene.chapterId === undefined ? {} : { chapterId: payload.scene.chapterId }),
       ...(payload.scene.questId === undefined ? {} : { questId: payload.scene.questId }),

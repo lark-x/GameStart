@@ -36,10 +36,13 @@ export function buildV2SceneGenerationUserPrompt(context: V2GenerationContextSna
     `baseCanonRevision: ${context.baseCanonRevision}`,
     `contextHash: ${context.contextHash}`,
     `creatorPrompt: ${context.prompt}`,
-    `facts: ${JSON.stringify(context.facts)}`,
-    `characters: ${JSON.stringify(context.characters)}`,
-    `existingScenes: ${JSON.stringify(context.scenes)}`,
-    ...(context.narrativeSections === undefined ? [] : [`narrativeContext: ${JSON.stringify(context.narrativeSections)}`]),
+    ...(context.narrativeSections && context.narrativeSections.length > 0
+      ? [`narrativeContext: ${JSON.stringify(context.narrativeSections)}`]
+      : [
+          `facts: ${JSON.stringify(context.facts)}`,
+          `characters: ${JSON.stringify(context.characters)}`,
+          `existingScenes: ${JSON.stringify(context.scenes)}`,
+        ]),
   ].join("\n");
 }
 

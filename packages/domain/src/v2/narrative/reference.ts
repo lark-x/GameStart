@@ -81,6 +81,37 @@ export function createV2NarrativeReference(input: {
   };
 }
 
+/**
+ * Boundary-friendly variant for structured external input. It validates string
+ * discriminants before delegating to the typed constructor, so API callers do
+ * not cast untrusted model output into domain unions.
+ */
+export function createV2NarrativeReferenceFromValues(input: {
+  readonly referenceId: string;
+  readonly storyWorldId: string;
+  readonly sourceType: string;
+  readonly sourceId: string;
+  readonly targetType: string;
+  readonly targetId: string;
+  readonly role: string;
+  readonly createdAt?: string;
+}): V2NarrativeReference {
+  if (!VALID_SOURCE_TYPES.has(input.sourceType)) {
+    throw new V2DomainError("INVALID_INPUT", `unsupported reference source type: ${input.sourceType}`);
+  }
+  if (!VALID_TARGET_TYPES.has(input.targetType)) {
+    throw new V2DomainError("INVALID_INPUT", `unsupported reference target type: ${input.targetType}`);
+  }
+  if (!VALID_ROLES.has(input.role)) {
+    throw new V2DomainError("INVALID_INPUT", `unsupported reference role: ${input.role}`);
+  }
+  return createV2NarrativeReference({
+    ...input,
+    sourceType: input.sourceType as V2NarrativeReferenceSourceType,
+    targetType: input.targetType as V2NarrativeReferenceTargetType,
+    role: input.role as V2NarrativeReferenceRole,
+  });
+}
 function assertNonEmptyId(value: string, field: string): string {
   if (typeof value !== "string" || value.trim().length === 0 || value.length > 128) {
     throw new V2DomainError("INVALID_INPUT", `${field} must be a non-empty id up to 128 characters`);
