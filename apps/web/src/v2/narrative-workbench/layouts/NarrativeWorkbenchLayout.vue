@@ -27,6 +27,7 @@ const emit = defineEmits<{
   preview: [];
   aiAssist: [];
   template: [];
+  publish: [];
   refresh: [];
 }>();
 </script>
@@ -51,6 +52,7 @@ const emit = defineEmits<{
       @preview="emit('preview')"
       @ai-assist="emit('aiAssist')"
       @template="emit('template')"
+      @publish="emit('publish')"
       @refresh="emit('refresh')"
     />
 

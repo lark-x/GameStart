@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import NarrativeWorkbenchLayout from "../layouts/NarrativeWorkbenchLayout.vue";
 import type { NarrativeWorkbenchMode } from "../components/topbar/NarrativeModeTabs.vue";
@@ -94,11 +94,23 @@ watch(mode, (newMode) => {
   router.replace({ query: { ...route.query, mode: newMode } });
 });
 
+let sceneAbortController: AbortController | null = null;
+
 watch(selectedSceneId, (newSceneId) => {
   router.replace({ query: { ...route.query, scene: newSceneId || undefined } });
+  if (sceneAbortController) {
+    sceneAbortController.abort();
+  }
+  sceneAbortController = new AbortController();
   if (newSceneId) {
     docStore.fetchDocument(storyWorldId.value, newSceneId);
     refStore.fetchSceneReferences(storyWorldId.value, newSceneId);
+  }
+});
+
+onUnmounted(() => {
+  if (sceneAbortController) {
+    sceneAbortController.abort();
   }
 });
 
@@ -185,11 +197,53 @@ async function handleApplyTemplate() {
       idempotencyKey: `tpl_app_${Date.now()}` as V2IdempotencyKey,
     });
     templateModalOpen.value = false;
-    await diagStore.fetchDiagnostics(storyWorldId.value);
+    await Promise.all([
+      diagStore.fetchDiagnostics(storyWorldId.value),
+      choiceStore.fetchChoicesForWorld(storyWorldId.value),
+    ]);
+    if (outlineStore.allScenes.length > 0) {
+      selectedSceneId.value = outlineStore.allScenes[0]!.sceneId;
+    }
   } catch (err) {
     console.error("Failed to apply template:", err);
   } finally {
     templateApplying.value = false;
+  }
+}
+
+async function handlePublishRelease() {
+  await diagStore.fetchDiagnostics(storyWorldId.value);
+  if (diagStore.errorCount > 0) {
+    bottomDrawerOpen.value = true;
+    alert(`无法发布：当前存在 ${diagStore.errorCount} 项阻碍发布的正典错误，请在下方问题面板中修复后重试。`);
+    return;
+  }
+
+  const version = prompt("请输入发布版本号 (例如 1.0.0)：", "1.0.0");
+  if (!version) return;
+
+  try {
+    const releaseId = `rel_${Date.now()}`;
+    const res = await fetch(`/api/v2/core/worlds/${storyWorldId.value}/releases`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        releaseId,
+        version: version.trim(),
+        sourceRevision: 1,
+        idempotencyKey: `rel_create_${Date.now()}`,
+      }),
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.message || `发布失败 (${res.status})`);
+    }
+
+    alert(`正典版本 ${version} 发布成功！已生成发布快照。`);
+    await diagStore.fetchDiagnostics(storyWorldId.value);
+  } catch (err) {
+    alert(err instanceof Error ? err.message : "发布失败");
   }
 }
 </script>
@@ -212,6 +266,7 @@ async function handleApplyTemplate() {
     @preview="previewActive = !previewActive"
     @ai-assist="mode = 'review'"
     @template="openTemplateModal"
+    @publish="handlePublishRelease"
     @refresh="outlineStore.fetchOutline(storyWorldId)"
   >
     <!-- Left Column: Explorer -->
