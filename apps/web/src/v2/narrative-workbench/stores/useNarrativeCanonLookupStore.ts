@@ -1,5 +1,5 @@
-import { defineStore } from "pinia";
-import type { V2CanonLoreEntry } from "@living-network/contracts/v2";
+﻿import { defineStore } from "pinia";
+import type { V2CanonLoreEntry, V2NarrativeSearchResultItem } from "@living-network/contracts/v2";
 import type { V2CharacterSummary, V2LocationSummary } from "../../adapters/types.ts";
 import { V2NarrativeClient } from "../../story/client.ts";
 
@@ -8,8 +8,16 @@ export interface NarrativeCanonLookupState {
   locations: V2LocationSummary[];
   loreEntries: V2CanonLoreEntry[];
   loading: boolean;
+  searchLoading: boolean;
   error: string | null;
   loadedWorldId: string | null;
+}
+
+export interface EntitySearchResultOption {
+  id: string;
+  type: "character" | "location" | "lore";
+  title: string;
+  subtitle?: string | undefined;
 }
 
 export const useNarrativeCanonLookupStore = defineStore("narrativeCanonLookup", {
@@ -18,6 +26,7 @@ export const useNarrativeCanonLookupStore = defineStore("narrativeCanonLookup", 
     locations: [],
     loreEntries: [],
     loading: false,
+    searchLoading: false,
     error: null,
     loadedWorldId: null,
   }),
@@ -53,6 +62,10 @@ export const useNarrativeCanonLookupStore = defineStore("narrativeCanonLookup", 
   },
 
   actions: {
+    getClient(): V2NarrativeClient {
+      return new V2NarrativeClient();
+    },
+
     async fetchWorldCanon(storyWorldId: string, force = false): Promise<void> {
       if (!force && this.loadedWorldId === storyWorldId && this.characters.length > 0) {
         return;
@@ -61,13 +74,13 @@ export const useNarrativeCanonLookupStore = defineStore("narrativeCanonLookup", 
       this.loading = true;
       this.error = null;
       try {
-        const narrativeClient = new V2NarrativeClient();
+        const narrativeClient = this.getClient();
         const [loreList, worldRes] = await Promise.all([
           narrativeClient.listLore(storyWorldId).catch(() => []),
           fetch(`/api/v2/worlds/${storyWorldId}`).then((r) => r.ok ? r.json() : null).catch(() => null),
         ]);
 
-        this.loreEntries = loreList as V2CanonLoreEntry[];
+        this.loreEntries = (loreList as V2CanonLoreEntry[]) ?? [];
         if (worldRes && typeof worldRes === "object") {
           const w = worldRes as { characters?: V2CharacterSummary[]; locations?: V2LocationSummary[] };
           this.characters = w.characters ?? [];
@@ -78,6 +91,65 @@ export const useNarrativeCanonLookupStore = defineStore("narrativeCanonLookup", 
         this.error = err instanceof Error ? err.message : "获取正典数据失败";
       } finally {
         this.loading = false;
+      }
+    },
+
+    async searchCanon(
+      storyWorldId: string,
+      query: string,
+      targetType?: "character" | "location" | "lore",
+    ): Promise<EntitySearchResultOption[]> {
+      const q = query.trim();
+      this.searchLoading = true;
+      try {
+        const client = this.getClient();
+        const res = await client.search(storyWorldId, q, 20);
+        const options: EntitySearchResultOption[] = [];
+
+        for (const item of res.items) {
+          if (item.kind === "character" && (!targetType || targetType === "character")) {
+            options.push({
+              id: item.id,
+              type: "character",
+              title: item.title,
+              ...(item.snippet ? { subtitle: item.snippet } : {}),
+            });
+            if (!this.characters.some((c) => c.characterId === item.id)) {
+              this.characters.push({
+                characterId: item.id,
+                name: item.title,
+                summary: item.snippet,
+              } as V2CharacterSummary);
+            }
+          } else if (item.kind === "location" && (!targetType || targetType === "location")) {
+            options.push({
+              id: item.id,
+              type: "location",
+              title: item.title,
+              ...(item.snippet ? { subtitle: item.snippet } : {}),
+            });
+            if (!this.locations.some((l) => l.locationId === item.id)) {
+              this.locations.push({
+                locationId: item.id,
+                name: item.title,
+                summary: item.snippet,
+              } as V2LocationSummary);
+            }
+          } else if (item.kind === "lore" && (!targetType || targetType === "lore")) {
+            options.push({
+              id: item.id,
+              type: "lore",
+              title: item.title,
+              ...(item.snippet ? { subtitle: item.snippet } : {}),
+            });
+          }
+        }
+        return options;
+      } catch (err) {
+        console.error("Canon search failed:", err);
+        return [];
+      } finally {
+        this.searchLoading = false;
       }
     },
 
