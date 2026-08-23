@@ -29,7 +29,7 @@ export const useNarrativeChoiceStore = defineStore("narrativeChoice", {
       this.choicesBySourceSceneId[sceneId] = choices;
     },
 
-    async fetchChoices(storyWorldId: string, _sceneId?: string): Promise<void> {
+    async fetchChoices(storyWorldId: string): Promise<void> {
       return this.fetchChoicesForWorld(storyWorldId);
     },
 

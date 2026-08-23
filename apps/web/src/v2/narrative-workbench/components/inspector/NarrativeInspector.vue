@@ -29,10 +29,6 @@ const props = defineProps<{
   locations: readonly V2LocationSummary[];
 }>();
 
-const emit = defineEmits<{
-  openFlowMode: [];
-}>();
-
 const docStore = useSceneDocumentStore();
 const refStore = useNarrativeReferenceStore();
 const canonStore = useNarrativeCanonLookupStore();
