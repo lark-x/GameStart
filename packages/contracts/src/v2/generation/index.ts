@@ -11,8 +11,12 @@ import type {
   V2JobStatus,
   V2Revision,
   V2SceneCandidatePayload,
+  V2SceneId,
   V2StoryWorldId,
 } from "../shared/index.ts";
+import type { V2NarrativeGenerationTask } from "../narrative/context.ts";
+import type { V2QuestId } from "../narrative/hierarchy.ts";
+import type { V2ContextSourceRevision } from "../narrative/context.ts";
 
 export interface V2GenerationContextFactRef {
   readonly id: string;
@@ -44,6 +48,10 @@ export interface V2GenerationContextSnapshot {
   readonly facts: readonly V2GenerationContextFactRef[];
   readonly characters: readonly V2GenerationContextCharacterRef[];
   readonly scenes: readonly V2GenerationContextSceneRef[];
+  /** Task-scoped narrative sections selected for the model prompt. */
+  readonly narrativeSections?: readonly { readonly title: string; readonly content: string }[];
+  /** Exact source set used to build task-scoped narrative context. */
+  readonly narrativeSourceRevisions?: readonly V2ContextSourceRevision[];
 }
 
 export interface V2ParsedSceneCandidate {
@@ -343,6 +351,10 @@ export interface V2GenerationContextPreviewApiRequest {
   readonly locationId?: V2LocationId;
   readonly conversationId?: V2ConversationId;
   readonly runId?: V2RunId;
+  /** Narrative operation used to select task-scoped context. */
+  readonly task?: V2NarrativeGenerationTask;
+  readonly targetSceneId?: V2SceneId;
+  readonly targetQuestId?: V2QuestId;
 }
 
 export interface V2GenerationContextPreviewApiResponse {

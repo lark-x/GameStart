@@ -87,9 +87,19 @@ function toContractPayload(payload: ReturnType<typeof parseV2SceneCandidateText>
       sceneId: payload.scene.sceneId as V2SceneId,
       title: payload.scene.title,
       body: payload.scene.body,
+      ...(payload.scene.arcId === undefined ? {} : { arcId: payload.scene.arcId }),
+      ...(payload.scene.chapterId === undefined ? {} : { chapterId: payload.scene.chapterId }),
+      ...(payload.scene.questId === undefined ? {} : { questId: payload.scene.questId }),
+      ...(payload.scene.document === undefined ? {} : { document: payload.scene.document }),
       ...(payload.scene.locationId === undefined ? {} : { locationId: payload.scene.locationId as V2LocationId }),
       participantCharacterIds: payload.scene.participantCharacterIds.map((id) => id as V2CharacterId),
     },
+    ...(payload.references === undefined ? {} : { references: payload.references.map((reference) => ({
+      ...(reference.referenceId === undefined ? {} : { referenceId: reference.referenceId }),
+      targetType: reference.targetType,
+      targetId: reference.targetId,
+      role: reference.role,
+    })) }),
     choices: payload.choices.map((choice) => ({
       label: choice.label,
       ...(choice.targetSceneId === undefined ? {} : { targetSceneId: choice.targetSceneId as V2SceneId }),
@@ -116,6 +126,7 @@ function candidateFor(input: {
       jobId: input.job.jobId,
       contextHash: input.job.contextHash,
       summary: `V2 scene generation job ${input.job.jobId}`,
+      ...(input.job.context.narrativeSourceRevisions === undefined ? {} : { sourceRevisionSet: input.job.context.narrativeSourceRevisions }),
     },
     createdAt: input.createdAt,
   };

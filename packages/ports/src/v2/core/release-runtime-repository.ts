@@ -12,6 +12,10 @@ import type {
 import type { V2CanonRepository } from "./canon-repository.ts";
 import type { V2CandidateReviewRepository } from "./candidate-review-repository.ts";
 import type { V2GraphStateRepository } from "./graph-state-repository.ts";
+import type { V2NarrativeHierarchyRepository } from "../narrative/hierarchy-repository.ts";
+import type { V2SceneDocumentRepository } from "../narrative/scene-document-repository.ts";
+import type { V2NarrativeReferenceRepository } from "../narrative/reference-repository.ts";
+import type { V2CanonLoreRepository } from "../narrative/lore-repository.ts";
 
 export interface V2RuntimeSaveRecord {
   readonly saveId: V2SaveId;
@@ -49,6 +53,10 @@ export interface V2ReleaseRuntimeUnitOfWork {
       readonly graphState: V2GraphStateRepository;
       readonly candidateReview: V2CandidateReviewRepository;
       readonly releaseRuntime: V2ReleaseRuntimeRepository;
+      readonly hierarchy?: V2NarrativeHierarchyRepository;
+      readonly sceneDocument?: V2SceneDocumentRepository;
+      readonly references?: V2NarrativeReferenceRepository;
+      readonly lore?: V2CanonLoreRepository;
     }) => Promise<T>,
   ): Promise<T>;
 }

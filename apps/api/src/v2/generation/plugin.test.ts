@@ -41,7 +41,7 @@ import type {
   V2ApprovedAssetRef,
 } from "@living-network/ports/v2";
 import { createV2FastifyApp } from "../platform/index.ts";
-import { createV2GenerationPlugin, type CharacterVisualProfileReaderPort } from "./plugin.ts";
+import { createV2GenerationPlugin, type CharacterVisualProfileReaderPort, type V2NarrativeGenerationContextProvider } from "./plugin.ts";
 
 const now = "2026-08-12T01:00:00.000Z" as V2IsoDateTime;
 
@@ -585,6 +585,37 @@ test("V2 generation context preview reads canon snapshot for the requested revis
   }
 });
 
+test("V2 generation uses task-scoped narrative context for preview, prepare, and jobs", async () => {
+  const canonSnapshots = new FakeCanonSnapshots();
+  const jobs = new FakeGenerationJobs();
+  const calls: Array<{ readonly storyWorldId: string; readonly task: string; readonly targetSceneId?: string; readonly targetQuestId?: string }> = [];
+  const narrativeContext: V2NarrativeGenerationContextProvider = {
+    async buildContext(storyWorldId, request) {
+      calls.push({ storyWorldId, task: request.task, ...(request.targetSceneId ? { targetSceneId: request.targetSceneId } : {}), ...(request.targetQuestId ? { targetQuestId: request.targetQuestId } : {}) });
+      return {
+        contextHash: "narrative-context-hash",
+        fingerprint: { storyWorldId: storyWorldId as V2StoryWorldId, worldRevision: 7, sources: [{ kind: "scene", id: "scene_bridge", revision: 9 }], hash: "narrative-context-hash" },
+        sections: [{ title: "当前场景内容", content: "桥上的风声", tokenEstimate: 5 }],
+        totalTokensEstimate: 5,
+        selectedSources: ["scene:scene_bridge"],
+        omittedSources: [],
+      };
+    },
+  };
+  const app = createV2FastifyApp({ generationPlugin: createV2GenerationPlugin({ canonSnapshots, narrativeContext, jobs, now: () => new Date(now), capabilities: { sceneGenerationEnabled: true, assetGenerationEnabled: true } }) });
+  await app.ready();
+  try {
+    const preview = await app.inject({ method: "POST", url: "/api/v2/generation/context-preview", payload: { storyWorldId: "world_generation", baseCanonRevision: 7, prompt: "续写", task: "continue_scene", targetSceneId: "scene_bridge", targetQuestId: "quest_bridge" } });
+    assert.equal(preview.statusCode, 200);
+    const context = (preview.json() as { context: V2GenerationContextSnapshot }).context;
+    assert.equal(context.contextHash, "narrative-context-hash");
+    assert.deepEqual(context.narrativeSections, [{ title: "当前场景内容", content: "桥上的风声" }]);
+    assert.deepEqual(context.narrativeSourceRevisions, [{ kind: "scene", id: "scene_bridge", revision: 9 }]);
+    assert.deepEqual(calls, [{ storyWorldId: "world_generation", task: "continue_scene", targetSceneId: "scene_bridge", targetQuestId: "quest_bridge" }]);
+  } finally {
+    await app.close();
+  }
+});
 test("V2 scene prepare returns the shared model request preview", async () => {
   const { app } = createApp();
   await app.ready();

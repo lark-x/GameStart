@@ -7,6 +7,11 @@ export interface V2ContextSourceRevision {
   readonly revision: number;
 }
 
+export function deriveV2ContextSourceRevision(value: unknown): number {
+  const digest = createHash("sha256").update(JSON.stringify(value)).digest("hex").slice(0, 8);
+  return Number.parseInt(digest, 16) || 1;
+}
+
 export interface V2NarrativeContextFingerprint {
   readonly storyWorldId: string;
   readonly worldRevision: number;
@@ -43,7 +48,6 @@ export function buildV2NarrativeContextFingerprint(input: {
 
   const payloadToHash = {
     storyWorldId: input.storyWorldId.trim(),
-    worldRevision: input.worldRevision,
     sources: sortedSources,
   };
 

@@ -7,6 +7,7 @@ import type {
   V2SceneId,
 } from "../shared/index.ts";
 import type { V2StateValue } from "./graph.ts";
+import type { V2SceneBlock } from "../narrative/scene-document.ts";
 
 export type V2CharacterRuntimeState = Record<string, Record<string, V2StateValue>>;
 export type V2RelationshipRuntimeOverlay = Record<string, number>;
@@ -32,6 +33,8 @@ export interface V2RuntimeSceneDto {
     readonly sceneId: V2SceneId;
     readonly title: string;
     readonly body?: string;
+    /** Structured narrative content takes precedence over legacy body text. */
+    readonly blocks?: readonly V2SceneBlock[];
   };
   readonly availableChoices: readonly {
     readonly choiceId: V2ChoiceId;

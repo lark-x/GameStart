@@ -37,6 +37,7 @@ import { createV2MemoryPlugin } from "../memory-runtime/plugin.ts";
 import { createV2GenerationPlugin } from "../generation/index.ts";
 import { createV2CoreUseCases } from "../core/use-cases.ts";
 import { v2NarrativePlugin } from "../narrative/index.ts";
+import { createV2NarrativeUseCases } from "../narrative/use-cases.ts";
 import { SqliteNarrativeUnitOfWork } from "@living-network/database/v2";
 import { createV2FastifyApp } from "./app.ts";
 import { createV2PlatformPlugin, getV2PlatformCapabilities } from "./plugin.ts";
@@ -152,6 +153,7 @@ export function createV2ApiRuntime(options: {
     new V2SqliteCandidateReviewUnitOfWork(db),
     new V2SqliteReleaseRuntimeUnitOfWork(db),
   );
+  const narrativeUseCases = createV2NarrativeUseCases(new SqliteNarrativeUnitOfWork(db));
   const memoryRuntime = createV2ApiMemoryRuntime(db);
   const maintenanceJobRepository = new V2SqliteChatMaintenanceJobRepository(db);
   const memoryPlugin = createV2MemoryPlugin({
@@ -210,6 +212,7 @@ export function createV2ApiRuntime(options: {
     },
     generationPlugin: createV2GenerationPlugin({
       canonSnapshots: new V2SqliteCanonSnapshotReader(db),
+      narrativeContext: narrativeUseCases,
       characterVisuals: new V2SqliteCanonRepository(db),
       jobs,
       assetJobs: assets,

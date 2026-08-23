@@ -16,6 +16,7 @@ export interface V2GenerationContextSnapshot {
   readonly facts: readonly unknown[];
   readonly characters: readonly unknown[];
   readonly scenes: readonly unknown[];
+  readonly narrativeSections?: readonly { readonly title: string; readonly content: string }[];
 }
 
 export interface V2SceneGenerationResult {
@@ -29,7 +30,7 @@ export interface V2SceneGenerationResult {
 export function buildV2SceneGenerationUserPrompt(context: V2GenerationContextSnapshot): string {
   return [
     "Generate exactly one V2 scene candidate as JSON.",
-    "The JSON shape must be {\"scene\":{\"sceneId\",\"title\",\"body\",\"participantCharacterIds\"},\"choices\":[{\"label\"}],\"validationNotes\":[]}.",
+    "The JSON shape must be {\"scene\":{\"sceneId\",\"title\",\"body\",\"document\":{\"mode\",\"blocks\"},\"participantCharacterIds\"},\"references\":[],\"choices\":[{\"label\"}],\"validationNotes\":[]}.",
     "Do not include markdown fences or commentary.",
     `storyWorldId: ${context.storyWorldId}`,
     `baseCanonRevision: ${context.baseCanonRevision}`,
@@ -38,6 +39,7 @@ export function buildV2SceneGenerationUserPrompt(context: V2GenerationContextSna
     `facts: ${JSON.stringify(context.facts)}`,
     `characters: ${JSON.stringify(context.characters)}`,
     `existingScenes: ${JSON.stringify(context.scenes)}`,
+    ...(context.narrativeSections === undefined ? [] : [`narrativeContext: ${JSON.stringify(context.narrativeSections)}`]),
   ].join("\n");
 }
 

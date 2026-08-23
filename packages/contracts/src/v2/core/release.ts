@@ -5,9 +5,22 @@ import type {
   V2Revision,
   V2StoryWorldId,
 } from "../shared/index.ts";
-import type { V2CanonSnapshotDto } from "./canon.ts";
+import type { V2CanonSnapshotDto, V2TimelineEventDto } from "./canon.ts";
 import type { V2GraphDiagnosticDto, V2GraphSnapshotDto } from "./graph.ts";
 import type { V2StateVariableDto } from "./state.ts";
+import type { V2NarrativeChapter, V2NarrativeQuest, V2NarrativeReference, V2CanonLoreEntry } from "../narrative/index.ts";
+import type { V2SceneBlock, V2SceneDocument } from "../narrative/scene-document.ts";
+
+export interface V2ReleaseNarrativeSnapshotDto {
+  readonly schemaVersion: 1;
+  readonly chapters: readonly V2NarrativeChapter[];
+  readonly quests: readonly V2NarrativeQuest[];
+  readonly sceneDocuments: readonly V2SceneDocument[];
+  readonly sceneBlocks: readonly V2SceneBlock[];
+  readonly loreEntries: readonly V2CanonLoreEntry[];
+  readonly references: readonly V2NarrativeReference[];
+  readonly timelineEvents: readonly V2TimelineEventDto[];
+}
 
 export interface V2ReleaseManifestDto {
   readonly releaseId: V2ReleaseId;
@@ -18,7 +31,7 @@ export interface V2ReleaseManifestDto {
   readonly canon: V2CanonSnapshotDto;
   readonly graph: V2GraphSnapshotDto;
   readonly stateSchema: readonly V2StateVariableDto[];
-  readonly narrative?: Record<string, unknown>;
+  readonly narrative?: V2ReleaseNarrativeSnapshotDto;
   readonly createdAt: string;
 }
 

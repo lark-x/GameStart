@@ -8,6 +8,7 @@ import type {
 } from "./index.ts";
 import {
   buildV2NarrativeContextFingerprint,
+  deriveV2ContextSourceRevision,
   type V2ContextSourceRevision,
   type V2NarrativeContextFingerprint,
 } from "./context-fingerprint.ts";
@@ -43,14 +44,15 @@ export interface V2NarrativeGenerationContextInput {
   readonly quests: readonly V2NarrativeQuest[];
   readonly scenes: readonly V2NarrativeScene[];
   readonly blocks: readonly V2SceneBlock[];
-  readonly choices: readonly { readonly choiceId: string; readonly sourceSceneId: string; readonly targetSceneId?: string; readonly label: string }[];
+  readonly choices: readonly { readonly choiceId: string; readonly sourceSceneId: string; readonly targetSceneId?: string; readonly label: string; readonly gates?: readonly { readonly stateKey: string; readonly operator: string; readonly value: unknown }[]; readonly consequences?: readonly { readonly stateKey?: string; readonly operation: string; readonly value?: unknown }[] }[];
   readonly references: readonly V2NarrativeReference[];
   readonly characters: readonly { readonly characterId: string; readonly name: string; readonly summary?: string; readonly profile?: { readonly persona?: { readonly traits?: readonly string[]; readonly values?: readonly string[]; readonly taboos?: readonly string[] } } }[];
   readonly locations: readonly { readonly locationId: string; readonly name: string; readonly summary?: string }[];
   readonly loreEntries?: readonly V2CanonLoreEntry[];
   readonly facts?: readonly { readonly factId: string; readonly text: string }[];
   readonly rules?: readonly { readonly ruleId: string; readonly text: string }[];
-  readonly timelineEvents?: readonly { readonly timelineEventId: string; readonly title: string }[];
+  readonly timelineEvents?: readonly { readonly timelineEventId: string; readonly title: string; readonly summary?: string; readonly localDate?: string }[];
+  readonly stateVariables?: readonly { readonly key: string; readonly valueType: string; readonly defaultValue: string | number | boolean }[];
 }
 
 export interface V2NarrativeGenerationContextResult {
@@ -104,6 +106,13 @@ export function buildTaskScopedNarrativeContext(
     ? input.choices.filter((c) => c.sourceSceneId === targetScene!.sceneId)
     : [];
 
+  const neighborSceneIds = new Set<string>();
+  if (targetScene) {
+    for (const choice of outChoices) if (choice.targetSceneId) neighborSceneIds.add(choice.targetSceneId);
+    for (const choice of input.choices) if (choice.targetSceneId === targetScene.sceneId) neighborSceneIds.add(choice.sourceSceneId);
+  }
+  const neighborScenes = input.scenes.filter((scene) => neighborSceneIds.has(scene.sceneId)).slice(0, 3);
+
   // 3. Identify Scene References (Location & Characters)
   const sceneRefs = targetScene
     ? input.references.filter((r) => r.sourceType === "scene" && r.sourceId === targetScene!.sceneId)
@@ -129,24 +138,6 @@ export function buildTaskScopedNarrativeContext(
   const relevantCharacters = input.characters.filter((c) => participantCharIds.has(c.characterId));
   const locRef = sceneRefs.find((r) => r.role === "location" && r.targetType === "location");
   const mainLocation = locRef ? input.locations.find((l) => l.locationId === locRef.targetId) : undefined;
-
-  // 4. Assemble Candidate Sources
-  const rawSources: V2ContextSourceRevision[] = [
-    { kind: "world", id: input.storyWorldId, revision: input.worldRevision },
-  ];
-  if (targetArc) rawSources.push({ kind: "arc", id: targetArc.arcId, revision: 1 });
-  if (targetChapter) rawSources.push({ kind: "chapter", id: targetChapter.chapterId, revision: targetChapter.revision });
-  if (targetQuest) rawSources.push({ kind: "quest", id: targetQuest.questId, revision: targetQuest.revision });
-  if (targetScene) rawSources.push({ kind: "scene", id: targetScene.sceneId, revision: targetScene.revision });
-  for (const c of relevantCharacters) {
-    rawSources.push({ kind: "character", id: c.characterId, revision: 1 });
-  }
-  if (mainLocation) {
-    rawSources.push({ kind: "location", id: mainLocation.locationId, revision: 1 });
-  }
-  for (const l of (input.loreEntries ?? []).slice(0, 5)) {
-    rawSources.push({ kind: "lore", id: l.loreEntryId, revision: l.revision });
-  }
 
   // 5. Build Structured Sections
   const sections: V2NarrativeContextPromptSection[] = [];
@@ -230,6 +221,8 @@ export function buildTaskScopedNarrativeContext(
       tokenEstimate: estimateTokens(sceneContent),
     });
     selectedSources.push(`scene:${targetScene.sceneId}`);
+    for (const block of sceneBlocks) selectedSources.push(`block:${block.blockId}`);
+    for (const reference of sceneRefs) selectedSources.push(`reference:${reference.referenceId}`);
   }
 
   // Section: Outgoing Choices & Branching (Medium Priority)
@@ -241,8 +234,22 @@ export function buildTaskScopedNarrativeContext(
       content: choicesContent,
       tokenEstimate: estimateTokens(choicesContent),
     });
+    for (const choice of outChoices) selectedSources.push(`choice:${choice.choiceId}`);
   }
 
+  // Section: Neighboring Scene Continuity (High Priority)
+  if (neighborScenes.length > 0) {
+    const neighborContent = neighborScenes.map((scene) => {
+      const blocks = input.blocks.filter((block) => block.sceneId === scene.sceneId).sort((left, right) => left.ordinal - right.ordinal);
+      const body = blocks.length > 0 ? renderSceneBlocksToPlainText(blocks, charNameMap) : scene.body ?? "（空白场景内容）";
+      return `### 相邻场景【${scene.title}】\n${body}`;
+    }).join("\n\n");
+    sections.push({ title: "相邻场景", content: neighborContent, tokenEstimate: estimateTokens(neighborContent) });
+    for (const scene of neighborScenes) {
+      selectedSources.push(`scene:${scene.sceneId}`);
+      for (const block of input.blocks.filter((candidate) => candidate.sceneId === scene.sceneId)) selectedSources.push(`block:${block.blockId}`);
+    }
+  }
   // Section: Lore & Knowledge (Medium Priority - Subject to token budget pruning)
   const loreEntries = input.loreEntries ?? [];
   if (loreEntries.length > 0) {
@@ -291,6 +298,26 @@ export function buildTaskScopedNarrativeContext(
     }
   }
 
+  // Section: Timeline (Medium Priority)
+  const timelineEvents = input.timelineEvents ?? [];
+  if (timelineEvents.length > 0) {
+    const timelineContent = `### 时间线\n${timelineEvents.slice(0, 10).map((event) => `- ${event.localDate ? `[${event.localDate}] ` : ""}${event.title}${event.summary ? `：${event.summary}` : ""}`).join("\n")}`;
+    const currentTotal = sections.reduce((sum, section) => sum + section.tokenEstimate, 0);
+    if (currentTotal + estimateTokens(timelineContent) < budget * 0.95) {
+      sections.push({ title: "时间线", content: timelineContent, tokenEstimate: estimateTokens(timelineContent) });
+      for (const event of timelineEvents.slice(0, 10)) selectedSources.push(`timeline_event:${event.timelineEventId}`);
+    } else {
+      for (const event of timelineEvents) omittedSources.push(`timeline_event:${event.timelineEventId}`);
+    }
+  }
+
+  // Section: Typed State Schema (Medium Priority)
+  const stateVariables = input.stateVariables ?? [];
+  if (stateVariables.length > 0) {
+    const stateContent = `### 剧情状态变量\n${stateVariables.map((state) => `- ${state.key} (${state.valueType})，默认值：${String(state.defaultValue)}`).join("\n")}`;
+    sections.push({ title: "剧情状态", content: stateContent, tokenEstimate: estimateTokens(stateContent) });
+    for (const state of stateVariables) selectedSources.push(`state:${state.key}`);
+  }
   // Section: Author Instruction & Task Directive (Highest Priority)
   const taskDescriptions: Record<V2NarrativeGenerationTask, string> = {
     create_scene: "创建新的剧情场景，请保持文风与正典角色口吻一致并输出结构化剧本内容。",
@@ -306,6 +333,31 @@ export function buildTaskScopedNarrativeContext(
     title: "创作指令",
     content: instructionContent,
     tokenEstimate: estimateTokens(instructionContent),
+  });
+
+  const sourceEntities = new Map<string, unknown>();
+  sourceEntities.set(`world:${input.storyWorldId}`, { name: input.worldName, summary: input.worldSummary });
+  if (targetArc) sourceEntities.set(`arc:${targetArc.arcId}`, targetArc);
+  if (targetChapter) sourceEntities.set(`chapter:${targetChapter.chapterId}`, targetChapter);
+  if (targetQuest) sourceEntities.set(`quest:${targetQuest.questId}`, targetQuest);
+  if (targetScene) sourceEntities.set(`scene:${targetScene.sceneId}`, { scene: targetScene, blocks: sceneBlocks });
+  for (const scene of neighborScenes) sourceEntities.set(`scene:${scene.sceneId}`, { scene, blocks: input.blocks.filter((block) => block.sceneId === scene.sceneId) });
+  for (const character of relevantCharacters) sourceEntities.set(`character:${character.characterId}`, character);
+  if (mainLocation) sourceEntities.set(`location:${mainLocation.locationId}`, mainLocation);
+  for (const lore of loreEntries) sourceEntities.set(`lore:${lore.loreEntryId}`, lore);
+  for (const fact of facts) sourceEntities.set(`fact:${fact.factId}`, fact);
+  for (const rule of rules) sourceEntities.set(`rule:${rule.ruleId}`, rule);
+  for (const block of sceneBlocks) sourceEntities.set(`block:${block.blockId}`, block);
+  for (const reference of sceneRefs) sourceEntities.set(`reference:${reference.referenceId}`, reference);
+  for (const choice of input.choices) sourceEntities.set(`choice:${choice.choiceId}`, choice);
+  for (const event of timelineEvents) sourceEntities.set(`timeline_event:${event.timelineEventId}`, event);
+  for (const state of stateVariables) sourceEntities.set(`state:${state.key}`, state);
+  const rawSources: V2ContextSourceRevision[] = [...new Set(selectedSources)].flatMap((key) => {
+    const value = sourceEntities.get(key);
+    if (value === undefined) return [];
+    const [kind, id] = key.split(":", 2);
+    if (kind === undefined || id === undefined) return [];
+    return [{ kind, id, revision: deriveV2ContextSourceRevision(value) }];
   });
 
   const totalTokensEstimate = sections.reduce((sum, s) => sum + s.tokenEstimate, 0);
