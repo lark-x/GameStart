@@ -18,7 +18,7 @@ import Button from "../../../components/ui/Button.vue";
 import { useSceneDocumentStore } from "../stores/useSceneDocumentStore.ts";
 import { useNarrativeReferenceStore } from "../stores/useNarrativeReferenceStore.ts";
 import type { V2CharacterSummary } from "../../adapters/types.ts";
-import type { V2SceneBlockKind } from "@living-network/contracts/v2";
+import type { V2CharacterId, V2SceneBlock, V2SceneBlockKind } from "@living-network/contracts/v2";
 
 const props = defineProps<{
   storyWorldId: string;
@@ -92,6 +92,30 @@ function handleBlockKeydown(e: KeyboardEvent, blockId: string, ordinal: number) 
           if (el) el.focus();
         }
       });
+    }
+  }
+}
+
+function handleSpeakerChange(blockId: string, value: string) {
+  const current = docStore.blocks.find((b) => b.blockId === blockId);
+  if (!current) return;
+  if (value) {
+    docStore.updateBlock(blockId, { speakerCharacterId: value as V2CharacterId });
+  } else {
+    const idx = docStore.blocks.findIndex((b) => b.blockId === blockId);
+    if (idx !== -1) {
+      const rest: V2SceneBlock = {
+        blockId: current.blockId,
+        storyWorldId: current.storyWorldId,
+        sceneId: current.sceneId,
+        ordinal: current.ordinal,
+        kind: current.kind,
+        ...(current.text ? { text: current.text } : {}),
+        payload: current.payload,
+        revision: current.revision,
+      };
+      docStore.blocks[idx] = rest;
+      docStore.isDirty = true;
     }
   }
 }
@@ -249,7 +273,7 @@ async function handleSave() {
                   <select
                     class="speaker-select"
                     :value="block.speakerCharacterId ?? ''"
-                    @change="(e) => docStore.updateBlock(block.blockId, { speakerCharacterId: (e.target as HTMLSelectElement).value || undefined })"
+                    @change="(e) => handleSpeakerChange(block.blockId, (e.target as HTMLSelectElement).value)"
                   >
                     <option value="">(旁白 / 未指定说话人)</option>
                     <option
