@@ -47,8 +47,8 @@ export const useNarrativeSearchStore = defineStore("narrativeSearch", {
         const client = this.getClient();
         const res = await client.search(storyWorldId, query.trim(), 20);
         this.results = res.items;
-      } catch (err: any) {
-        this.error = err.message || "Search failed";
+      } catch (err: unknown) {
+        this.error = err instanceof Error ? err.message : "Search failed";
       } finally {
         this.searching = false;
       }

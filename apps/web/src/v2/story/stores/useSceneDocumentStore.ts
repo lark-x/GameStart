@@ -1,6 +1,9 @@
 import { defineStore } from "pinia";
 import {
   renderSceneBlocksToPlainText,
+  type V2CharacterId,
+  type V2IdempotencyKey,
+  type V2Revision,
   type V2SceneBlock,
   type V2SceneBlockKind,
   type V2SceneDocument,
@@ -77,8 +80,8 @@ export const useSceneDocumentStore = defineStore("sceneDocument", {
         this.activeBlockId = this.blocks.length > 0 ? this.blocks[0]!.blockId : null;
         this.isDirty = false;
         this.lastSavedAt = doc.updatedAt ?? doc.createdAt ?? null;
-      } catch (err: any) {
-        this.error = err.message || "Failed to load scene document";
+      } catch (err: unknown) {
+        this.error = err instanceof Error ? err.message : "Failed to load scene document";
       } finally {
         this.loading = false;
       }
@@ -119,7 +122,7 @@ export const useSceneDocumentStore = defineStore("sceneDocument", {
         sceneId: this.document.sceneId,
         ordinal: targetIndex,
         kind,
-        ...(speakerCharacterId ? { speakerCharacterId: speakerCharacterId as any } : {}),
+        ...(speakerCharacterId ? { speakerCharacterId: speakerCharacterId as V2CharacterId } : {}),
         text: initialText,
         payload: {},
         revision: 1,
@@ -128,7 +131,7 @@ export const useSceneDocumentStore = defineStore("sceneDocument", {
       this.blocks.splice(targetIndex, 0, newBlock);
       // Re-index ordinals
       this.blocks.forEach((b, idx) => {
-        (b as any).ordinal = idx;
+        (b as { ordinal: number }).ordinal = idx;
       });
 
       this.activeBlockId = newBlockId;
@@ -154,7 +157,7 @@ export const useSceneDocumentStore = defineStore("sceneDocument", {
       this.blocks.splice(idx, 1);
       // Re-index ordinals
       this.blocks.forEach((b, i) => {
-        (b as any).ordinal = i;
+        (b as { ordinal: number }).ordinal = i;
       });
 
       // Update active selection
@@ -176,7 +179,7 @@ export const useSceneDocumentStore = defineStore("sceneDocument", {
       if (!moved) return;
       this.blocks.splice(toIndex, 0, moved);
       this.blocks.forEach((b, idx) => {
-        (b as any).ordinal = idx;
+        (b as { ordinal: number }).ordinal = idx;
       });
       this.isDirty = true;
     },
@@ -205,16 +208,16 @@ export const useSceneDocumentStore = defineStore("sceneDocument", {
             payload: b.payload,
           })),
           expectedSceneRevision: this.document.revision,
-          expectedRevision: 1 as any,
-          idempotencyKey: `save_doc:${Date.now()}` as any,
+          expectedRevision: 1 as V2Revision,
+          idempotencyKey: `save_doc:${Date.now()}` as V2IdempotencyKey,
         });
 
         this.document = saved;
         this.blocks = [...saved.blocks];
         this.isDirty = false;
         this.lastSavedAt = new Date().toISOString();
-      } catch (err: any) {
-        this.error = err.message || "Failed to save scene document";
+      } catch (err: unknown) {
+        this.error = err instanceof Error ? err.message : "Failed to save scene document";
         throw err;
       } finally {
         this.saving = false;

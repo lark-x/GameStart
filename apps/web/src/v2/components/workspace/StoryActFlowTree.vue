@@ -10,7 +10,7 @@ import {
   Star,
   Wand2,
 } from "@lucide/vue";
-import type { V2ArcId, V2SceneId } from "@living-network/contracts/v2";
+import type { V2IdempotencyKey, V2Revision } from "@living-network/contracts/v2";
 import Badge from "../../../components/ui/Badge.vue";
 import Button from "../../../components/ui/Button.vue";
 import Drawer from "../../../components/ui/Drawer.vue";
@@ -266,8 +266,8 @@ async function generateThreeActSkeleton() {
       const client = new V2NarrativeClient();
       await client.applyTemplate(worldId, {
         templateId: "three-act",
-        expectedRevision: 1 as any,
-        idempotencyKey: `act_skeleton_${Date.now()}` as any,
+        expectedRevision: 1 as V2Revision,
+        idempotencyKey: `act_skeleton_${Date.now()}` as V2IdempotencyKey,
       });
       emit("refreshed");
     }

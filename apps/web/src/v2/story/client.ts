@@ -40,9 +40,11 @@ export class V2NarrativeClientError extends Error {
 }
 
 async function readJson<T>(response: Response): Promise<T> {
-  const payload = (await response.json()) as any;
+  const payload = (await response.json()) as unknown;
   if (!response.ok) {
-    const err = payload?.error;
+    const err = payload && typeof payload === "object" && "error" in payload
+      ? (payload as { error?: { code?: string; message?: string } }).error
+      : undefined;
     throw new V2NarrativeClientError(
       typeof err?.code === "string" ? err.code : "HTTP_ERROR",
       typeof err?.message === "string" ? err.message : `HTTP ${response.status}`,

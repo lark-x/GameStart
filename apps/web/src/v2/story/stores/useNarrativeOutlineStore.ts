@@ -239,8 +239,8 @@ export const useNarrativeOutlineStore = defineStore("narrativeOutline", {
         if (!this.activeSceneId && this.allScenes.length > 0) {
           this.selectScene(this.allScenes[0]!.sceneId);
         }
-      } catch (err: any) {
-        this.error = err.message || "Failed to load outline";
+      } catch (err: unknown) {
+        this.error = err instanceof Error ? err.message : "Failed to load outline";
       } finally {
         this.loading = false;
       }

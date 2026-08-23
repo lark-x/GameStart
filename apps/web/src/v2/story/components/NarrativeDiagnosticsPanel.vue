@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { computed } from "vue";
 import {
   AlertCircle,
   AlertTriangle,
@@ -10,7 +9,6 @@ import {
   Sparkles,
 } from "@lucide/vue";
 import Badge from "../../../components/ui/Badge.vue";
-import Button from "../../../components/ui/Button.vue";
 import { useNarrativeDiagnosticsStore } from "../stores/useNarrativeDiagnosticsStore.ts";
 import { useNarrativeOutlineStore } from "../stores/useNarrativeOutlineStore.ts";
 import type { V2NarrativeDiagnostic } from "@living-network/contracts/v2";

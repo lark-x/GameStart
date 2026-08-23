@@ -1,18 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import {
-  AlertCircle,
   BookOpen,
   Check,
-  Compass,
   FileText,
-  Layers,
-  Plus,
   RefreshCw,
   Search,
   Sparkles,
   Wand2,
-  X,
 } from "@lucide/vue";
 import Badge from "../../../components/ui/Badge.vue";
 import Button from "../../../components/ui/Button.vue";
@@ -23,11 +18,17 @@ import NarrativeInspector from "./NarrativeInspector.vue";
 import NarrativeDiagnosticsPanel from "./NarrativeDiagnosticsPanel.vue";
 import StoryCastPool from "../../components/workspace/StoryCastPool.vue";
 import { useNarrativeOutlineStore } from "../stores/useNarrativeOutlineStore.ts";
-import { useSceneDocumentStore } from "../stores/useSceneDocumentStore.ts";
 import { useNarrativeDiagnosticsStore } from "../stores/useNarrativeDiagnosticsStore.ts";
 import { useNarrativeSearchStore } from "../stores/useNarrativeSearchStore.ts";
 import type { V2CharacterSummary, V2LocationSummary, V2WorkspaceSnapshot } from "../../adapters/types.ts";
-import type { V2NarrativeTemplate, V2NarrativeTemplateId } from "@living-network/contracts/v2";
+import type {
+  V2ArcId,
+  V2IdempotencyKey,
+  V2NarrativeSearchResultItem,
+  V2NarrativeTemplate,
+  V2NarrativeTemplateId,
+  V2Revision,
+} from "@living-network/contracts/v2";
 import { V2NarrativeClient } from "../client.ts";
 
 const props = defineProps<{
@@ -41,7 +42,6 @@ const emit = defineEmits<{
 }>();
 
 const outlineStore = useNarrativeOutlineStore();
-const docStore = useSceneDocumentStore();
 const diagStore = useNarrativeDiagnosticsStore();
 const searchStore = useNarrativeSearchStore();
 
@@ -69,8 +69,8 @@ async function handleApplyTemplate() {
   try {
     await outlineStore.applyTemplate(props.storyWorldId, {
       templateId: selectedTemplateId.value,
-      expectedRevision: 1 as any,
-      idempotencyKey: `tpl_app_${Date.now()}` as any,
+      expectedRevision: 1 as V2Revision,
+      idempotencyKey: `tpl_app_${Date.now()}` as V2IdempotencyKey,
     });
     templateModalOpen.value = false;
     await diagStore.fetchDiagnostics(props.storyWorldId);
@@ -92,7 +92,7 @@ function handleCreateScene(payload: { arcId?: string; chapterId?: string; questI
   client.saveSceneDocument(props.storyWorldId, sceneId, {
     title,
     documentMode: "blocks",
-    ...(payload.arcId ? { arcId: payload.arcId as any } : {}),
+    ...(payload.arcId ? { arcId: payload.arcId as V2ArcId } : {}),
     ...(payload.chapterId ? { chapterId: payload.chapterId } : {}),
     ...(payload.questId ? { questId: payload.questId } : {}),
     blocks: [
@@ -102,8 +102,8 @@ function handleCreateScene(payload: { arcId?: string; chapterId?: string; questI
       },
     ],
     expectedSceneRevision: 1,
-    expectedRevision: 1 as any,
-    idempotencyKey: `create_scene_${Date.now()}` as any,
+    expectedRevision: 1 as V2Revision,
+    idempotencyKey: `create_scene_${Date.now()}` as V2IdempotencyKey,
   }).then(async () => {
     await outlineStore.fetchOutline(props.storyWorldId);
     outlineStore.selectScene(sceneId);
@@ -111,11 +111,12 @@ function handleCreateScene(payload: { arcId?: string; chapterId?: string; questI
   });
 }
 
-function handleSearchInput(e: any) {
-  searchStore.performSearch(props.storyWorldId, e.target.value);
+function handleSearchInput(e: Event) {
+  const target = e.target as HTMLInputElement;
+  searchStore.performSearch(props.storyWorldId, target.value);
 }
 
-function handleSelectSearchResult(item: any) {
+function handleSelectSearchResult(item: V2NarrativeSearchResultItem) {
   if (item.sceneId) {
     outlineStore.selectScene(item.sceneId);
   }

@@ -1,27 +1,20 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from "vue";
+import { nextTick, ref, watch } from "vue";
 import {
   AlignLeft,
-  Check,
-  ChevronDown,
-  ChevronUp,
-  Code,
   FileCode,
   FileText,
   MessageSquare,
   MoveDown,
   MoveUp,
-  Plus,
   Save,
   Sparkles,
-  Terminal,
   Trash2,
   User,
   Zap,
 } from "@lucide/vue";
 import Badge from "../../../components/ui/Badge.vue";
 import Button from "../../../components/ui/Button.vue";
-import Textarea from "../../../components/ui/Textarea.vue";
 import { useSceneDocumentStore } from "../stores/useSceneDocumentStore.ts";
 import { useNarrativeReferenceStore } from "../stores/useNarrativeReferenceStore.ts";
 import type { V2CharacterSummary } from "../../adapters/types.ts";
@@ -43,13 +36,17 @@ const refStore = useNarrativeReferenceStore();
 // Textarea refs for focus management
 const textareaRefs = ref<Map<string, HTMLTextAreaElement>>(new Map());
 
-function setTextareaRef(blockId: string, el: any) {
-  if (el) {
-    const target = el.$el ? el.$el.querySelector("textarea") || el.$el : el;
-    textareaRefs.value.set(blockId, target);
-  } else {
-    textareaRefs.value.delete(blockId);
+function setTextareaRef(blockId: string, el: unknown) {
+  if (el && typeof el === "object") {
+    const target = (el as { $el?: HTMLElement }).$el
+      ? (el as { $el: HTMLElement }).$el.querySelector("textarea") || (el as { $el: HTMLElement }).$el
+      : (el as HTMLElement);
+    if (target instanceof HTMLTextAreaElement) {
+      textareaRefs.value.set(blockId, target);
+      return;
+    }
   }
+  textareaRefs.value.delete(blockId);
 }
 
 watch(
@@ -62,12 +59,6 @@ watch(
   },
   { immediate: true },
 );
-
-function getCharacterName(characterId?: string): string {
-  if (!characterId) return "旁白 / 未指定";
-  const found = props.characters.find((c) => c.characterId === characterId);
-  return found?.name || characterId;
-}
 
 function handleAddBlock(kind: V2SceneBlockKind, afterOrdinal?: number) {
   const newBlock = docStore.addBlock(afterOrdinal, kind);
@@ -129,8 +120,8 @@ async function handleSave() {
           <button
             class="mode-btn"
             :class="{ active: docStore.documentMode === 'blocks' }"
-            @click="docStore.setDocumentMode('blocks')"
             title="结构化分块剧本模式"
+            @click="docStore.setDocumentMode('blocks')"
           >
             <AlignLeft :size="14" />
             <span>剧本分块</span>
@@ -138,8 +129,8 @@ async function handleSave() {
           <button
             class="mode-btn"
             :class="{ active: docStore.documentMode === 'legacy_body' }"
-            @click="docStore.setDocumentMode('legacy_body')"
             title="传统纯文本模式"
+            @click="docStore.setDocumentMode('legacy_body')"
           >
             <FileCode :size="14" />
             <span>纯文本</span>
@@ -179,7 +170,7 @@ async function handleSave() {
           class="plain-body-textarea"
           :value="docStore.plainBody"
           placeholder="在此直接输入场景正文剧情..."
-          @input="(e: any) => docStore.setPlainBody(e.target.value)"
+          @input="(e) => docStore.setPlainBody((e.target as HTMLTextAreaElement).value)"
         ></textarea>
       </div>
 
@@ -243,7 +234,7 @@ async function handleSave() {
                 <select
                   class="block-kind-select"
                   :value="block.kind"
-                  @change="(e: any) => docStore.updateBlock(block.blockId, { kind: e.target.value })"
+                  @change="(e) => docStore.updateBlock(block.blockId, { kind: (e.target as HTMLSelectElement).value as V2SceneBlockKind })"
                 >
                   <option value="dialogue">💬 对白 (Dialogue)</option>
                   <option value="narration">📖 旁白 (Narration)</option>
@@ -258,7 +249,7 @@ async function handleSave() {
                   <select
                     class="speaker-select"
                     :value="block.speakerCharacterId ?? ''"
-                    @change="(e: any) => docStore.updateBlock(block.blockId, { speakerCharacterId: e.target.value || undefined })"
+                    @change="(e) => docStore.updateBlock(block.blockId, { speakerCharacterId: (e.target as HTMLSelectElement).value || undefined })"
                   >
                     <option value="">(旁白 / 未指定说话人)</option>
                     <option
@@ -299,7 +290,7 @@ async function handleSave() {
                   "
                   :value="block.text"
                   rows="2"
-                  @input="(e: any) => docStore.updateBlock(block.blockId, { text: e.target.value })"
+                  @input="(e) => docStore.updateBlock(block.blockId, { text: (e.target as HTMLTextAreaElement).value })"
                   @keydown="(e) => handleBlockKeydown(e, block.blockId, idx)"
                 ></textarea>
               </div>

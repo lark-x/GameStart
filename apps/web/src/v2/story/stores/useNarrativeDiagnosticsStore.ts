@@ -63,8 +63,8 @@ export const useNarrativeDiagnosticsStore = defineStore("narrativeDiagnostics", 
       try {
         const client = this.getClient();
         this.report = await client.getDiagnostics(storyWorldId);
-      } catch (err: any) {
-        this.error = err.message || "Failed to load diagnostics";
+      } catch (err: unknown) {
+        this.error = err instanceof Error ? err.message : "Failed to load diagnostics";
       } finally {
         this.loading = false;
       }

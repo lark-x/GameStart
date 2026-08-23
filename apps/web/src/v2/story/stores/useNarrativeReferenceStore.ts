@@ -1,8 +1,12 @@
 import { defineStore } from "pinia";
 import type {
+  V2CharacterId,
+  V2IdempotencyKey,
+  V2LocationId,
   V2NarrativeReference,
   V2NarrativeReferenceRole,
   V2NarrativeReferenceTargetType,
+  V2Revision,
   V2SceneReferencesDto,
 } from "@living-network/contracts/v2";
 import { V2NarrativeClient } from "../client.ts";
@@ -47,8 +51,8 @@ export const useNarrativeReferenceStore = defineStore("narrativeReference", {
       try {
         const client = this.getClient();
         this.sceneReferences = await client.getSceneReferences(storyWorldId, sceneId);
-      } catch (err: any) {
-        this.error = err.message || "Failed to load scene references";
+      } catch (err: unknown) {
+        this.error = err instanceof Error ? err.message : "Failed to load scene references";
       } finally {
         this.loading = false;
       }
@@ -68,11 +72,11 @@ export const useNarrativeReferenceStore = defineStore("narrativeReference", {
           : undefined;
 
         this.sceneReferences = await client.replaceSceneReferences(storyWorldId, sceneId, {
-          mainLocationId: locationId as any,
+          mainLocationId: (locationId as V2LocationId) ?? null,
           ...(current?.participantCharacterIds ? { participantCharacterIds: current.participantCharacterIds } : {}),
           ...(filteredRefs ? { references: filteredRefs } : {}),
-          expectedRevision: 1 as any,
-          idempotencyKey: `ref_loc:${Date.now()}` as any,
+          expectedRevision: 1 as V2Revision,
+          idempotencyKey: `ref_loc:${Date.now()}` as V2IdempotencyKey,
         });
       } finally {
         this.saving = false;
@@ -83,11 +87,11 @@ export const useNarrativeReferenceStore = defineStore("narrativeReference", {
       const client = this.getClient();
       const current = this.sceneReferences;
       const currentParticipants = [...(current?.participantCharacterIds ?? [])];
-      const idx = currentParticipants.indexOf(characterId as any);
+      const idx = currentParticipants.indexOf(characterId as V2CharacterId);
       if (idx >= 0) {
         currentParticipants.splice(idx, 1);
       } else {
-        currentParticipants.push(characterId as any);
+        currentParticipants.push(characterId as V2CharacterId);
       }
 
       this.saving = true;
@@ -104,8 +108,8 @@ export const useNarrativeReferenceStore = defineStore("narrativeReference", {
           ...(current?.mainLocationId ? { mainLocationId: current.mainLocationId } : {}),
           participantCharacterIds: currentParticipants,
           ...(filteredRefs ? { references: filteredRefs } : {}),
-          expectedRevision: 1 as any,
-          idempotencyKey: `ref_part:${Date.now()}` as any,
+          expectedRevision: 1 as V2Revision,
+          idempotencyKey: `ref_part:${Date.now()}` as V2IdempotencyKey,
         });
       } finally {
         this.saving = false;
@@ -136,8 +140,8 @@ export const useNarrativeReferenceStore = defineStore("narrativeReference", {
           ...(current?.mainLocationId ? { mainLocationId: current.mainLocationId } : {}),
           ...(current?.participantCharacterIds ? { participantCharacterIds: current.participantCharacterIds } : {}),
           references: refs,
-          expectedRevision: 1 as any,
-          idempotencyKey: `ref_add:${Date.now()}` as any,
+          expectedRevision: 1 as V2Revision,
+          idempotencyKey: `ref_add:${Date.now()}` as V2IdempotencyKey,
         });
       } finally {
         this.saving = false;

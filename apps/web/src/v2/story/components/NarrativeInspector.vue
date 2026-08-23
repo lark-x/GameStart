@@ -1,17 +1,12 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { ref, watch } from "vue";
 import {
   Check,
-  ChevronRight,
   Fingerprint,
-  GitBranch,
   Info,
   MapPin,
-  Plus,
   Settings,
   Sparkles,
-  Star,
-  Trash2,
   User,
   Users,
   Wand2,
@@ -24,7 +19,7 @@ import { useSceneDocumentStore } from "../stores/useSceneDocumentStore.ts";
 import { useNarrativeReferenceStore } from "../stores/useNarrativeReferenceStore.ts";
 import { useNarrativeOutlineStore } from "../stores/useNarrativeOutlineStore.ts";
 import type { V2CharacterSummary, V2LocationSummary } from "../../adapters/types.ts";
-import type { V2NarrativeGenerationContextResponse } from "@living-network/contracts/v2";
+import type { V2NarrativeGenerationContextResponse, V2StoryWorldId } from "@living-network/contracts/v2";
 import { V2NarrativeClient } from "../client.ts";
 
 const props = defineProps<{
@@ -50,7 +45,7 @@ async function loadContextPreview() {
   try {
     const client = new V2NarrativeClient();
     contextPreview.value = await client.previewContext(props.storyWorldId, {
-      storyWorldId: props.storyWorldId as any,
+      storyWorldId: props.storyWorldId as V2StoryWorldId,
       task: "continue_scene",
       targetSceneId: docStore.document.sceneId,
       ...(docStore.document.questId ? { targetQuestId: docStore.document.questId } : {}),
@@ -79,9 +74,10 @@ function handleToggleParticipant(characterId: string) {
   refStore.toggleParticipant(props.storyWorldId, docStore.document.sceneId, characterId);
 }
 
-function handleLocationChange(e: any) {
+function handleLocationChange(e: Event) {
   if (!docStore.document) return;
-  const locId = e.target.value || null;
+  const target = e.target as HTMLSelectElement;
+  const locId = target.value || null;
   refStore.setMainLocation(props.storyWorldId, docStore.document.sceneId, locId);
 }
 </script>
@@ -132,7 +128,7 @@ function handleLocationChange(e: any) {
               <Input
                 :model-value="docStore.document.title"
                 size="sm"
-                @update:model-value="(val: any) => { if (docStore.document) { (docStore.document as any).title = val; docStore.isDirty = true; } }"
+                @update:model-value="(val) => { if (docStore.document) { (docStore.document as { title: string }).title = val; docStore.isDirty = true; } }"
               />
             </Field>
 
@@ -141,7 +137,7 @@ function handleLocationChange(e: any) {
                 <input
                   type="checkbox"
                   :checked="docStore.document.isEntry"
-                  @change="(e: any) => { if (docStore.document) { (docStore.document as any).isEntry = e.target.checked; docStore.isDirty = true; } }"
+                  @change="(e) => { if (docStore.document) { (docStore.document as { isEntry: boolean }).isEntry = (e.target as HTMLInputElement).checked; docStore.isDirty = true; } }"
                 />
                 <span>标记为本篇章初始入局场景 (Entry Scene)</span>
               </label>
