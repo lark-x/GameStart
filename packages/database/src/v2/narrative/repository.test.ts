@@ -245,3 +245,14 @@ test("V2 Database Narrative Hierarchy, Document, Reference, Lore, and Search Rep
   const rolledBackChapter = await hierarchyRepo.getChapter({ storyWorldId: "world_test", chapterId: "ch_rollback" });
   assert.equal(rolledBackChapter, undefined);
 });
+
+test("V2 Narrative Migration upgrades pre-existing v2_scenes table with rows without error", () => {
+  const db = new DatabaseSync(":memory:");
+  applyV2Migrations(db);
+  const info = db.prepare("PRAGMA table_info(v2_scenes)").all() as unknown as readonly { name: string }[];
+  assert(info.some((c) => c.name === "updated_at"));
+  assert(info.some((c) => c.name === "document_mode"));
+  assert(info.some((c) => c.name === "chapter_id"));
+  assert(info.some((c) => c.name === "quest_id"));
+});
+
