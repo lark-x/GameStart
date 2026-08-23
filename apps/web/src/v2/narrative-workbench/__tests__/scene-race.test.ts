@@ -3,12 +3,16 @@ import test from "node:test";
 import { createPinia, setActivePinia } from "pinia";
 import { useNarrativeSceneLoader } from "../composables/useNarrativeSceneLoader.ts";
 import { useSceneDocumentStore } from "../../story/stores/useSceneDocumentStore.ts";
+import { useNarrativeReferenceStore } from "../../story/stores/useNarrativeReferenceStore.ts";
 import type { V2SceneDocument } from "@living-network/contracts/v2";
 
 test("Narrative Scene Race Condition - Generation token & AbortController cancellation", async () => {
   setActivePinia(createPinia());
   const docStore = useSceneDocumentStore();
+  const refStore = useNarrativeReferenceStore();
   const loader = useNarrativeSceneLoader();
+
+  refStore.fetchReferences = async () => [];
 
   let slowFetchAborted = false;
 
@@ -45,6 +49,6 @@ test("Narrative Scene Race Condition - Generation token & AbortController cancel
 
   // Verify scene-slow request was aborted and final active state is scene-fast
   assert.equal(slowFetchAborted, true);
-  assert.equal(loader.activeSceneId.value, "scene-fast");
+  assert.equal(loader.activeLoadedSceneId.value, "scene-fast");
   assert.equal(docStore.document?.sceneId, "scene-fast");
 });

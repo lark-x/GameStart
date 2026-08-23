@@ -34,7 +34,7 @@ test("Narrative Revision CAS Flow - Monotonic advancement and Idempotency Keys",
   // 6. Unique Idempotency keys generated per mutation
   const key1 = createNarrativeMutationKey("save_scene");
   const key2 = createNarrativeMutationKey("save_scene");
-  assert.ok(key1.startsWith("save_scene_"));
-  assert.ok(key2.startsWith("save_scene_"));
+  assert.ok(key1.startsWith("save_scene:"));
+  assert.ok(key2.startsWith("save_scene:"));
   assert.notEqual(key1, key2);
 });
