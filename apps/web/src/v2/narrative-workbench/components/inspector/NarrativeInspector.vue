@@ -56,7 +56,7 @@ function handlePickerSelect(id: string) {
   if (pickerType.value === "character") {
     refStore.addParticipant(props.storyWorldId, currentSceneId, id);
   } else if (pickerType.value === "location") {
-    refStore.setMainLocation(props.storyWorldId, currentSceneId, id as V2LocationId);
+    refStore.setMainLocation(props.storyWorldId, currentSceneId, id);
   } else if (pickerType.value === "lore") {
     refStore.addLoreItem(props.storyWorldId, currentSceneId, id);
   }
@@ -235,8 +235,8 @@ const participatingCharacters = computed(() => {
                   <span class="font-medium text-stone-800 dark:text-stone-200">{{ c.label }}</span>
                   <span class="font-mono text-[10px] text-stone-400">→ {{ c.targetSceneId }}</span>
                 </div>
-                <p v-if="c.conditionScript" class="text-[10px] font-mono text-amber-600 dark:text-amber-400">
-                  条件: {{ c.conditionScript }}
+                <p v-if="c.gates && c.gates.length > 0" class="text-[10px] font-mono text-amber-600 dark:text-amber-400">
+                  门禁: {{ c.gates.map((g) => `${g.stateKey} ${g.operator} ${g.value}`).join(' & ') }}
                 </p>
               </div>
             </div>
@@ -411,15 +411,18 @@ const participatingCharacters = computed(() => {
 
           <div v-if="contextPreview" class="p-3 rounded-xl bg-stone-50 dark:bg-stone-950/60 border border-stone-200 dark:border-stone-800 space-y-3 font-mono text-[11px]">
             <div>
-              <span class="text-stone-400 block mb-1 font-sans font-semibold">组装上下文预算</span>
+              <span class="text-stone-400 block mb-1 font-sans font-semibold">组装上下文预估</span>
               <div class="text-stone-600 dark:text-stone-400">
-                出场角色: {{ contextPreview.context.characters.length }} 个 | 地点: {{ contextPreview.context.locations.length }} 个 | 设定: {{ contextPreview.context.loreItems.length }} 条
+                Token 预估: ~{{ contextPreview.totalTokensEstimate }} | 段落数: {{ contextPreview.sections.length }} | 哈希: {{ contextPreview.contextHash.slice(0, 8) }}
               </div>
             </div>
 
-            <div v-if="contextPreview.systemPrompt">
-              <span class="text-stone-400 block mb-1 font-sans font-semibold">System Prompt 节选</span>
-              <pre class="whitespace-pre-wrap text-stone-700 dark:text-stone-300 bg-white dark:bg-stone-900 p-2 rounded border border-stone-200 dark:border-stone-800 max-h-40 overflow-y-auto">{{ contextPreview.systemPrompt }}</pre>
+            <div v-for="sec in contextPreview.sections" :key="sec.title" class="space-y-1">
+              <div class="flex items-center justify-between text-stone-400 font-sans font-semibold text-[10px]">
+                <span>{{ sec.title }}</span>
+                <span>~{{ sec.tokenEstimate }} tokens</span>
+              </div>
+              <pre class="whitespace-pre-wrap text-stone-700 dark:text-stone-300 bg-white dark:bg-stone-900 p-2 rounded border border-stone-200 dark:border-stone-800 max-h-32 overflow-y-auto">{{ sec.content }}</pre>
             </div>
           </div>
           <div v-else-if="!loadingContext" class="p-6 text-center text-stone-400 border border-dashed border-stone-200 dark:border-stone-800 rounded-xl">

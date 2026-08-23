@@ -48,10 +48,10 @@ const allOptions = computed<EntityOption[]>(() => {
   }
   if (props.type === "lore" && props.loreItems) {
     return props.loreItems.map((item) => ({
-      id: item.loreId,
+      id: item.loreEntryId,
       type: "lore" as const,
-      title: item.title,
-      subtitle: item.type ? `[${item.type}] ${item.summary || ""}` : item.summary || item.loreId,
+      title: item.name,
+      subtitle: item.type ? `[${item.type}] ${item.summary || ""}` : item.summary || item.loreEntryId,
     }));
   }
   return [];
