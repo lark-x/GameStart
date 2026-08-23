@@ -180,7 +180,7 @@ function handleSelectScene(sceneId: string) {
   });
 }
 
-async function handleCreateScene(payload?: { arcId?: string; chapterId?: string; questId?: string }) {
+async function handleCreateScene(payload?: { arcId?: string | undefined; chapterId?: string | undefined; questId?: string | undefined }) {
   const title = prompt("请输入新场景名称：", "新场景");
   if (!title) return;
   const sceneId = await outlineStore.createScene(storyWorldId.value, { ...payload, title });
@@ -314,7 +314,7 @@ async function handlePublishRelease() {
             @select-scene="handleSelectScene"
             @select-quest="(qId) => sessionStore.selectQuest(qId)"
             @open-script="(id) => { selectedSceneId = id; mode = 'script'; }"
-            @create-scene="(qId) => handleCreateScene({ questId: qId })"
+            @create-scene="(qId) => handleCreateScene(qId ? { questId: qId } : undefined)"
           />
         </template>
         <template v-else-if="mode === 'review'">
