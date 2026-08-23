@@ -91,7 +91,7 @@ watch(
   (newId) => {
     if (newId) {
       refStore.fetchReferences(props.storyWorldId, newId);
-      choiceStore.fetchChoices(props.storyWorldId, newId);
+      choiceStore.fetchChoices(props.storyWorldId);
       contextPreview.value = null;
     }
   },
