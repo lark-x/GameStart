@@ -12,8 +12,8 @@ import NarrativeExplorer from "../../story/components/NarrativeExplorer.vue";
 import SceneScriptEditor from "../../story/components/SceneScriptEditor.vue";
 import NarrativeInspector from "../../story/components/NarrativeInspector.vue";
 import NarrativeDiagnosticsPanel from "../../story/components/NarrativeDiagnosticsPanel.vue";
-import Modal from "../../../../components/ui/Modal.vue";
-import Button from "../../../../components/ui/Button.vue";
+import Modal from "../../../components/ui/Modal.vue";
+import Button from "../../../components/ui/Button.vue";
 import { V2NarrativeClient } from "../../story/client.ts";
 import type {
   V2ArcId,
