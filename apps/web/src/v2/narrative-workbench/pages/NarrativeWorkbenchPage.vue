@@ -8,6 +8,10 @@ import { useNarrativeOutlineStore } from "../../story/stores/useNarrativeOutline
 import { useSceneDocumentStore } from "../../story/stores/useSceneDocumentStore.ts";
 import { useNarrativeReferenceStore } from "../../story/stores/useNarrativeReferenceStore.ts";
 import { useNarrativeDiagnosticsStore } from "../../story/stores/useNarrativeDiagnosticsStore.ts";
+import { useNarrativeCanonLookupStore } from "../stores/useNarrativeCanonLookupStore.ts";
+import { useNarrativeSessionStore } from "../stores/useNarrativeSessionStore.ts";
+import { useNarrativeChoiceStore } from "../stores/useNarrativeChoiceStore.ts";
+import { useNarrativeCandidateStore } from "../stores/useNarrativeCandidateStore.ts";
 import NarrativeExplorer from "../../story/components/NarrativeExplorer.vue";
 import SceneScriptEditor from "../../story/components/SceneScriptEditor.vue";
 import NarrativeInspector from "../../story/components/NarrativeInspector.vue";
@@ -34,6 +38,10 @@ const outlineStore = useNarrativeOutlineStore();
 const docStore = useSceneDocumentStore();
 const refStore = useNarrativeReferenceStore();
 const diagStore = useNarrativeDiagnosticsStore();
+const canonLookupStore = useNarrativeCanonLookupStore();
+const sessionStore = useNarrativeSessionStore();
+const choiceStore = useNarrativeChoiceStore();
+const candidateStore = useNarrativeCandidateStore();
 
 const explorerCollapsed = ref(false);
 const inspectorCollapsed = ref(false);
@@ -93,8 +101,14 @@ watch(selectedSceneId, (newSceneId) => {
 
 onMounted(async () => {
   if (storyWorldId.value) {
-    await outlineStore.fetchOutline(storyWorldId.value);
-    await diagStore.fetchDiagnostics(storyWorldId.value);
+    sessionStore.initSession(storyWorldId.value, mode.value, selectedSceneId.value || undefined);
+    await Promise.all([
+      outlineStore.fetchOutline(storyWorldId.value),
+      diagStore.fetchDiagnostics(storyWorldId.value),
+      canonLookupStore.fetchWorldCanon(storyWorldId.value),
+      choiceStore.fetchChoicesForWorld(storyWorldId.value),
+      candidateStore.fetchCandidates(storyWorldId.value),
+    ]);
     if (!selectedSceneId.value && outlineStore.outline) {
       const firstScene = outlineStore.outline.arcs[0]?.chapters[0]?.quests[0]?.scenes[0]
         || outlineStore.outline.arcs[0]?.looseScenes[0]
@@ -216,7 +230,7 @@ async function handleApplyTemplate() {
           <SceneScriptEditor
             :story-world-id="storyWorldId"
             :scene-id="selectedSceneId"
-            :characters="[]"
+            :characters="canonLookupStore.characters"
             :is-preview="previewActive"
           />
         </template>
@@ -235,8 +249,8 @@ async function handleApplyTemplate() {
           <NarrativeInspector
             :story-world-id="storyWorldId"
             :scene-id="selectedSceneId"
-            :characters="[]"
-            :locations="[]"
+            :characters="canonLookupStore.characters"
+            :locations="canonLookupStore.locations"
           />
         </template>
       </div>
