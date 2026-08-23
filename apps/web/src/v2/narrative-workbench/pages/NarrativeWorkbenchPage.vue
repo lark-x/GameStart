@@ -14,6 +14,7 @@ import { useNarrativeChoiceStore } from "../stores/useNarrativeChoiceStore.ts";
 import { useNarrativeCandidateStore } from "../stores/useNarrativeCandidateStore.ts";
 import NarrativeExplorer from "../components/explorer/NarrativeExplorer.vue";
 import NarrativeOutlineBoard from "../components/outline/NarrativeOutlineBoard.vue";
+import QuestFlowView from "../components/flow/QuestFlowView.vue";
 import SceneScriptEditor from "../components/script/SceneScriptEditor.vue";
 import NarrativeInspector from "../components/inspector/NarrativeInspector.vue";
 import NarrativeDiagnosticsPanel from "../../story/components/NarrativeDiagnosticsPanel.vue";
@@ -135,7 +136,7 @@ function handleSelectScene(sceneId: string) {
   }
 }
 
-async function handleCreateScene(payload: { arcId?: string; chapterId?: string; questId?: string }) {
+async function handleCreateScene(payload?: { arcId?: string; chapterId?: string; questId?: string }) {
   const title = prompt("请输入新场景名称：", "新场景");
   if (!title) return;
 
@@ -144,9 +145,9 @@ async function handleCreateScene(payload: { arcId?: string; chapterId?: string; 
   await client.saveSceneDocument(storyWorldId.value, sceneId, {
     title,
     documentMode: "blocks",
-    ...(payload.arcId ? { arcId: payload.arcId as V2ArcId } : {}),
-    ...(payload.chapterId ? { chapterId: payload.chapterId } : {}),
-    ...(payload.questId ? { questId: payload.questId } : {}),
+    ...(payload?.arcId ? { arcId: payload.arcId as V2ArcId } : {}),
+    ...(payload?.chapterId ? { chapterId: payload.chapterId } : {}),
+    ...(payload?.questId ? { questId: payload.questId } : {}),
     blocks: [
       {
         kind: "narration",
@@ -234,6 +235,15 @@ async function handleApplyTemplate() {
             @select-scene="handleSelectScene"
             @open-script="(id) => { selectedSceneId = id; mode = 'script'; }"
             @create-scene="handleCreateScene"
+          />
+        </template>
+        <template v-else-if="mode === 'flow'">
+          <QuestFlowView
+            :story-world-id="storyWorldId"
+            :selected-scene-id="selectedSceneId"
+            @select-scene="handleSelectScene"
+            @open-script="(id) => { selectedSceneId = id; mode = 'script'; }"
+            @create-scene="() => handleCreateScene()"
           />
         </template>
         <template v-else-if="selectedSceneId">
