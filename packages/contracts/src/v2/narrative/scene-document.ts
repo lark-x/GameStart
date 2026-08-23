@@ -21,12 +21,12 @@ export interface V2SceneBlock {
   readonly sceneId: V2SceneId;
   readonly ordinal: number;
   readonly kind: V2SceneBlockKind;
-  readonly speakerCharacterId?: V2CharacterId;
-  readonly text?: string;
+  readonly speakerCharacterId?: V2CharacterId | undefined;
+  readonly text?: string | undefined;
   readonly payload: Readonly<Record<string, unknown>>;
   readonly revision: number;
-  readonly createdAt?: string;
-  readonly updatedAt?: string;
+  readonly createdAt?: string | undefined;
+  readonly updatedAt?: string | undefined;
 }
 
 export type V2SceneDocumentMode = "legacy_body" | "blocks";
@@ -34,43 +34,44 @@ export type V2SceneDocumentMode = "legacy_body" | "blocks";
 export interface V2SceneDocument {
   readonly sceneId: V2SceneId;
   readonly storyWorldId: V2StoryWorldId;
-  readonly arcId?: V2ArcId;
-  readonly chapterId?: V2ChapterId;
-  readonly questId?: V2QuestId;
   readonly title: string;
-  readonly body?: string;
+  readonly summary?: string | undefined;
   readonly documentMode: V2SceneDocumentMode;
-  readonly isEntry: boolean;
-  readonly ordinal: number;
-  readonly revision: number;
-  /** Version of the story world that contained this document when it was read. */
-  readonly worldRevision?: V2Revision;
+  readonly body?: string | undefined;
+  readonly arcId?: V2ArcId | undefined;
+  readonly chapterId?: string | undefined;
+  readonly questId?: string | undefined;
+  readonly isEntry?: boolean | undefined;
+  readonly ordinal?: number | undefined;
   readonly blocks: readonly V2SceneBlock[];
-  readonly createdAt?: string;
-  readonly updatedAt?: string;
+  readonly revision: number;
+  readonly worldRevision?: number | undefined;
+  readonly createdAt?: string | undefined;
+  readonly updatedAt?: string | undefined;
 }
 
 export interface V2SceneBlockInput {
-  readonly blockId?: string;
+  readonly blockId?: string | undefined;
   readonly kind: V2SceneBlockKind;
-  readonly speakerCharacterId?: V2CharacterId | null;
-  readonly text?: string;
-  readonly payload?: Readonly<Record<string, unknown>>;
+  readonly speakerCharacterId?: V2CharacterId | undefined;
+  readonly text?: string | undefined;
+  readonly payload?: Readonly<Record<string, unknown>> | undefined;
 }
 
 export interface V2SaveSceneDocumentRequest {
-  readonly title?: string;
-  readonly body?: string | null;
-  readonly documentMode?: V2SceneDocumentMode;
-  readonly arcId?: V2ArcId | null;
-  readonly chapterId?: V2ChapterId | null;
-  readonly questId?: V2QuestId | null;
-  readonly isEntry?: boolean;
-  readonly ordinal?: number;
-  readonly blocks?: readonly V2SceneBlockInput[];
-  readonly expectedSceneRevision?: number;
-  readonly expectedRevision?: V2Revision;
-  readonly idempotencyKey?: V2IdempotencyKey;
+  readonly title?: string | undefined;
+  readonly summary?: string | null | undefined;
+  readonly body?: string | null | undefined;
+  readonly documentMode?: V2SceneDocumentMode | undefined;
+  readonly arcId?: V2ArcId | null | undefined;
+  readonly chapterId?: V2ChapterId | null | undefined;
+  readonly questId?: V2QuestId | null | undefined;
+  readonly isEntry?: boolean | undefined;
+  readonly ordinal?: number | undefined;
+  readonly blocks?: readonly V2SceneBlockInput[] | undefined;
+  readonly expectedSceneRevision?: number | undefined;
+  readonly expectedRevision?: V2Revision | undefined;
+  readonly idempotencyKey?: V2IdempotencyKey | undefined;
 }
 
 export interface V2SaveSceneDocumentResponse {

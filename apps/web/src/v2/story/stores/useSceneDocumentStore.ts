@@ -22,6 +22,8 @@ export interface SceneDocumentState {
   saving: boolean;
   loading: boolean;
   error: string | null;
+  hasConflict: boolean;
+  conflictError: string | null;
   lastSavedAt: string | null;
   saveIdempotencyKey: V2IdempotencyKey | null;
 }
@@ -37,6 +39,8 @@ export const useSceneDocumentStore = defineStore("sceneDocument", {
     saving: false,
     loading: false,
     error: null,
+    hasConflict: false,
+    conflictError: null,
     lastSavedAt: null,
     saveIdempotencyKey: null,
   }),
@@ -227,14 +231,49 @@ export const useSceneDocumentStore = defineStore("sceneDocument", {
         this.document = saved;
         this.blocks = [...saved.blocks];
         this.isDirty = false;
+        this.hasConflict = false;
+        this.conflictError = null;
         this.saveIdempotencyKey = null;
         this.lastSavedAt = new Date().toISOString();
       } catch (err: unknown) {
-        this.error = err instanceof Error ? err.message : "Failed to save scene document";
+        const msg = err instanceof Error ? err.message : "Failed to save scene document";
+        this.error = msg;
+        if (msg.includes("STALE_REVISION") || msg.includes("409") || msg.includes("conflict")) {
+          this.hasConflict = true;
+          this.conflictError = "检测到云端场景版本更新或并发冲突。本地草稿已妥善保留，请选择如何同步。";
+        }
         throw err;
       } finally {
         this.saving = false;
       }
+    },
+
+    resolveConflictKeepDraft(latestDoc: V2SceneDocument): void {
+      if (this.document) {
+        this.document = {
+          ...this.document,
+          revision: latestDoc.revision,
+          ...(latestDoc.worldRevision !== undefined ? { worldRevision: latestDoc.worldRevision } : {}),
+        };
+      }
+      this.hasConflict = false;
+      this.conflictError = null;
+      this.isDirty = true;
+    },
+
+    resolveConflictReload(latestDoc: V2SceneDocument): void {
+      this.document = latestDoc;
+      this.blocks = [...latestDoc.blocks];
+      this.documentMode = latestDoc.documentMode;
+      this.plainBody = latestDoc.body ?? "";
+      this.hasConflict = false;
+      this.conflictError = null;
+      this.isDirty = false;
+    },
+
+    clearConflict(): void {
+      this.hasConflict = false;
+      this.conflictError = null;
     },
   },
 });
