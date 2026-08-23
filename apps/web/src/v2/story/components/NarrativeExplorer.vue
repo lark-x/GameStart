@@ -20,12 +20,7 @@ import Button from "../../../components/ui/Button.vue";
 import Input from "../../../components/ui/Input.vue";
 import { useNarrativeOutlineStore } from "../stores/useNarrativeOutlineStore.ts";
 import { useNarrativeDiagnosticsStore } from "../stores/useNarrativeDiagnosticsStore.ts";
-import type {
-  V2ArcId,
-  V2IdempotencyKey,
-  V2NarrativeOutlineScene,
-  V2Revision,
-} from "@living-network/contracts/v2";
+import type { V2NarrativeOutlineScene } from "@living-network/contracts/v2";
 
 const props = defineProps<{
   storyWorldId: string;
@@ -66,10 +61,8 @@ function handleAddChapter(arcId: string) {
   const title = prompt("请输入章节标题：", "新章节");
   if (!title) return;
   outlineStore.createChapter(props.storyWorldId, {
-    arcId: arcId as V2ArcId,
+    arcId,
     title,
-    expectedRevision: 1 as V2Revision,
-    idempotencyKey: `ch_add_${Date.now()}` as V2IdempotencyKey,
   });
 }
 
@@ -77,12 +70,9 @@ function handleAddQuest(arcId?: string, chapterId?: string) {
   const title = prompt("请输入任务标题：", "新任务");
   if (!title) return;
   outlineStore.createQuest(props.storyWorldId, {
-    ...(arcId ? { arcId: arcId as V2ArcId } : {}),
+    ...(arcId ? { arcId } : {}),
     ...(chapterId ? { chapterId } : {}),
     title,
-    kind: "main",
-    expectedRevision: 1 as V2Revision,
-    idempotencyKey: `q_add_${Date.now()}` as V2IdempotencyKey,
   });
 }
 

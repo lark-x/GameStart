@@ -22,12 +22,9 @@ import { useNarrativeDiagnosticsStore } from "../stores/useNarrativeDiagnosticsS
 import { useNarrativeSearchStore } from "../stores/useNarrativeSearchStore.ts";
 import type { V2CharacterSummary, V2LocationSummary, V2WorkspaceSnapshot } from "../../adapters/types.ts";
 import type {
-  V2ArcId,
-  V2IdempotencyKey,
   V2NarrativeSearchResultItem,
   V2NarrativeTemplate,
   V2NarrativeTemplateId,
-  V2Revision,
 } from "@living-network/contracts/v2";
 import { V2NarrativeClient } from "../client.ts";
 
@@ -69,8 +66,6 @@ async function handleApplyTemplate() {
   try {
     await outlineStore.applyTemplate(props.storyWorldId, {
       templateId: selectedTemplateId.value,
-      expectedRevision: 1 as V2Revision,
-      idempotencyKey: `tpl_app_${Date.now()}` as V2IdempotencyKey,
     });
     templateModalOpen.value = false;
     await diagStore.fetchDiagnostics(props.storyWorldId);
@@ -82,33 +77,12 @@ async function handleApplyTemplate() {
   }
 }
 
-function handleCreateScene(payload: { arcId?: string; chapterId?: string; questId?: string }) {
+async function handleCreateScene(payload: { arcId?: string; chapterId?: string; questId?: string }) {
   const title = prompt("请输入新场景名称：", "新场景");
   if (!title) return;
-
-  // We can save a new scene document via docStore/API
-  const sceneId = `scene_${Date.now().toString(36)}`;
-  const client = new V2NarrativeClient();
-  client.saveSceneDocument(props.storyWorldId, sceneId, {
-    title,
-    documentMode: "blocks",
-    ...(payload.arcId ? { arcId: payload.arcId as V2ArcId } : {}),
-    ...(payload.chapterId ? { chapterId: payload.chapterId } : {}),
-    ...(payload.questId ? { questId: payload.questId } : {}),
-    blocks: [
-      {
-        kind: "narration",
-        text: "初始场景叙述...",
-      },
-    ],
-    expectedSceneRevision: 1,
-    expectedRevision: 1 as V2Revision,
-    idempotencyKey: `create_scene_${Date.now()}` as V2IdempotencyKey,
-  }).then(async () => {
-    await outlineStore.fetchOutline(props.storyWorldId);
-    outlineStore.selectScene(sceneId);
-    emit("refreshed");
-  });
+  const sceneId = await outlineStore.createScene(props.storyWorldId, { ...payload, title });
+  outlineStore.selectScene(sceneId);
+  emit("refreshed");
 }
 
 function handleSearchInput(e: Event) {

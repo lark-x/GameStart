@@ -220,8 +220,21 @@ export class SqliteNarrativeHierarchyRepository implements V2NarrativeHierarchyR
       looseScenes: looseScenesByArc.get(arc.arc_id) ?? [],
     }));
 
+    let worldRevision = 1;
+    try {
+      const worldRow = this.db
+        .prepare("SELECT revision FROM v2_story_worlds WHERE story_world_id = ?")
+        .get(storyWorldId) as { revision: number } | undefined;
+      if (worldRow?.revision !== undefined) {
+        worldRevision = worldRow.revision;
+      }
+    } catch {
+      worldRevision = 1;
+    }
+
     return {
       storyWorldId: storyWorldId as any,
+      worldRevision: worldRevision as any,
       arcs: outlineArcs,
       unassignedScenes,
     };
