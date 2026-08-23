@@ -140,7 +140,7 @@ const stats = computed(() => {
           <div class="space-y-1">
             <div class="flex items-center gap-2">
               <span class="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-900/60">
-                篇章 {{ arc.act ?? '主线' }}
+                篇章
               </span>
               <h3 class="text-sm font-bold text-stone-900 dark:text-stone-100">{{ arc.title }}</h3>
               <span class="text-xs text-stone-400 font-mono">({{ arc.arcId }})</span>
