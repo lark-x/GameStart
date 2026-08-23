@@ -33,7 +33,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="h-screen w-screen flex flex-col bg-stone-50 dark:bg-stone-950 text-stone-900 dark:text-stone-100 overflow-hidden font-sans">
+  <div class="h-dvh w-full flex flex-col bg-stone-50 dark:bg-stone-950 text-stone-900 dark:text-stone-100 overflow-hidden font-sans">
     <!-- Focus Header / TopBar -->
     <NarrativeTopBar
       :world-name="worldName"
