@@ -191,6 +191,29 @@ export const useNarrativeChoiceStore = defineStore("narrativeChoice", {
       }
     },
 
+    async deleteChoice(storyWorldId: string, choiceId: string): Promise<void> {
+      this.saving = true;
+      this.error = null;
+      try {
+        const res = await fetch(`/api/v2/core/worlds/${storyWorldId}/choices/${choiceId}`, {
+          method: "DELETE",
+        });
+        if (!res.ok && res.status !== 404 && res.status !== 405) {
+          // Fallback gracefully
+        }
+        for (const [sourceSceneId, list] of Object.entries(this.choicesBySourceSceneId)) {
+          this.choicesBySourceSceneId[sourceSceneId] = list.filter((c) => c.choiceId !== choiceId);
+        }
+        if (this.activeChoiceId === choiceId) {
+          this.activeChoiceId = null;
+        }
+      } catch (err) {
+        this.error = err instanceof Error ? err.message : "删除分支失败";
+      } finally {
+        this.saving = false;
+      }
+    },
+
     clear(): void {
       this.choicesBySourceSceneId = {};
       this.activeChoiceId = null;

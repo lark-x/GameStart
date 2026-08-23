@@ -1,16 +1,10 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import {
-  Save,
-  Eye,
-  Edit3,
+  Plus,
   AlertTriangle,
   RotateCcw,
   FileText,
-  MessageSquare,
-  Compass,
-  Zap,
-  Terminal,
 } from "@lucide/vue";
 import { useSceneDocumentStore } from "../../../story/stores/useSceneDocumentStore.ts";
 import SceneBlockEditor from "./SceneBlockEditor.vue";
@@ -59,13 +53,7 @@ function handleActivateBlock(blockId: string): void {
   docStore.setActiveBlockId(blockId);
 }
 
-async function handleSave(): Promise<void> {
-  if (!docStore.isDirty || docStore.saving) return;
-  await docStore.saveDocument(props.storyWorldId);
-}
-
 async function handleResolveKeepDraft(): Promise<void> {
-  // Fetch fresh document metadata and resolve revision without wiping blocks
   try {
     const client = docStore.getClient();
     const fresh = await client.getSceneDocument(props.storyWorldId, props.sceneId);
@@ -88,205 +76,132 @@ async function handleResolveReload(): Promise<void> {
 </script>
 
 <template>
-  <div class="h-full flex flex-col max-w-4xl mx-auto w-full min-w-[320px] lg:min-w-[720px] select-none text-xs space-y-4">
-    <!-- Scene Script Header & Actions Bar -->
-    <div class="p-4 bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-800 shadow-sm flex items-center justify-between gap-4">
-      <div class="flex items-center gap-3 min-w-0">
-        <div class="p-2 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400">
-          <Edit3 class="h-5 w-5" />
-        </div>
-        <div class="min-w-0">
-          <div class="flex items-center gap-2">
-            <h2 class="text-sm font-bold text-stone-900 dark:text-stone-100 truncate">
-              {{ docStore.document?.title || '加载场景中...' }}
-            </h2>
-            <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-stone-100 dark:bg-stone-800 text-stone-500">
-              v{{ docStore.document?.revision ?? 1 }}
-            </span>
-          </div>
-          <p class="text-[11px] text-stone-400 truncate mt-0.5 font-mono">
-            {{ sceneId }}
-          </p>
-        </div>
-      </div>
-
-      <!-- Header Controls -->
-      <div class="flex items-center gap-2 shrink-0">
-        <!-- Save Status / Button -->
-        <button
-          type="button"
-          class="px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm"
-          :class="[
-            docStore.isDirty
-              ? 'bg-amber-500 hover:bg-amber-600 text-white animate-pulse'
-              : 'bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300'
-          ]"
-          :disabled="docStore.saving || !docStore.isDirty"
-          @click="handleSave"
-        >
-          <Save class="h-3.5 w-3.5" />
-          <span v-if="docStore.saving">保存中...</span>
-          <span v-else-if="docStore.isDirty">保存变更</span>
-          <span v-else>已保存</span>
-        </button>
-      </div>
+  <div class="h-full flex flex-col max-w-3xl mx-auto w-full select-none text-sm space-y-4 pb-12">
+    <!-- Scene Title Banner on Document Surface -->
+    <div class="pt-2 pb-1 border-b border-stone-200/80 dark:border-stone-800 flex items-baseline justify-between">
+      <h1 class="text-xl font-bold text-stone-900 dark:text-stone-100 tracking-tight">
+        {{ docStore.document?.title || "剧本编写" }}
+      </h1>
+      <span class="text-xs text-stone-400 font-mono">
+        {{ docStore.blocks.length }} 个剧本分块
+      </span>
     </div>
 
-    <!-- CAS Conflict Draft Protection Banner -->
+    <!-- Conflict Resolution Alert Bar -->
     <div
       v-if="docStore.hasConflict"
-      class="p-4 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/80 rounded-xl space-y-3"
+      class="p-3 bg-red-50 dark:bg-red-950/40 rounded-xl border border-red-200 dark:border-red-900/60 flex items-center justify-between gap-4 text-xs"
     >
-      <div class="flex items-start gap-2.5">
-        <AlertTriangle class="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-        <div class="space-y-1 text-xs">
-          <h4 class="font-bold text-amber-900 dark:text-amber-200">版本冲突警告 (CAS Conflict)</h4>
-          <p class="text-amber-800 dark:text-amber-300/90 leading-relaxed">
-            {{ docStore.conflictError }}
-          </p>
-        </div>
+      <div class="flex items-center gap-2 text-red-800 dark:text-red-300 min-w-0">
+        <AlertTriangle class="h-4 w-4 shrink-0 text-red-600" />
+        <span>正典版本已由其他写操作更新，检测到版本冲突。</span>
       </div>
 
-      <div class="flex items-center gap-3 pl-6">
+      <div class="flex items-center gap-2 shrink-0">
         <button
           type="button"
-          class="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-lg text-xs flex items-center gap-1.5 shadow-sm transition-colors"
-          @click="handleResolveKeepDraft"
+          class="px-2.5 py-1 rounded bg-white dark:bg-stone-900 border border-red-300 dark:border-red-800 text-red-700 dark:text-red-300 font-semibold hover:bg-red-100/50"
+          @click="handleResolveReload"
         >
-          <Save class="h-3 w-3" />
-          <span>保留本地草稿并强制同步 (Preserve Draft)</span>
+          <RotateCcw class="h-3 w-3 inline mr-1" />
+          重新加载
         </button>
         <button
           type="button"
-          class="px-3 py-1 bg-stone-200 dark:bg-stone-800 hover:bg-stone-300 dark:hover:bg-stone-700 text-stone-800 dark:text-stone-200 font-medium rounded-lg text-xs flex items-center gap-1.5 transition-colors"
-          @click="handleResolveReload"
+          class="px-2.5 py-1 rounded bg-red-600 text-white font-semibold hover:bg-red-700"
+          @click="handleResolveKeepDraft"
         >
-          <RotateCcw class="h-3 w-3" />
-          <span>放弃本地并拉取云端 (Reload Server)</span>
+          强制覆盖
         </button>
       </div>
     </div>
 
-    <!-- Script Surface: Preview Mode or Block Editor Mode -->
-    <template v-if="isPreview">
-      <!-- Plain text / Markdown preview -->
-      <div class="p-6 bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-800 shadow-sm space-y-4">
-        <div class="flex items-center justify-between pb-2 border-b border-stone-100 dark:border-stone-800 text-stone-500">
-          <div class="flex items-center gap-1.5 font-semibold text-xs">
-            <Eye class="h-3.5 w-3.5 text-amber-500" />
-            <span>剧本纯文本预览 (Script Preview)</span>
-          </div>
-          <span class="text-[11px]">{{ docStore.blocks.length }} 个分块</span>
+    <!-- Preview Mode Document Flow -->
+    <div v-if="isPreview" class="p-6 rounded-2xl bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 space-y-4 shadow-xs">
+      <div class="text-xs font-mono text-stone-400 uppercase tracking-wider pb-2 border-b border-stone-100 dark:border-stone-800">
+        剧本纯文本预览模式
+      </div>
+
+      <div v-for="block in docStore.blocks" :key="block.blockId" class="space-y-1">
+        <div v-if="block.kind === 'dialogue'" class="flex items-baseline gap-2">
+          <span class="font-bold text-stone-900 dark:text-stone-100 text-sm">
+            {{ characters.find((c) => c.characterId === block.speakerCharacterId)?.name || block.speakerCharacterId || '角色' }}：
+          </span>
+          <span class="text-stone-800 dark:text-stone-200 text-base leading-relaxed font-sans">
+            {{ block.text || '...' }}
+          </span>
         </div>
 
-        <div class="font-serif leading-relaxed text-sm text-stone-800 dark:text-stone-200 whitespace-pre-wrap select-text p-4 bg-stone-50/50 dark:bg-stone-950/30 rounded-lg">
-          {{ docStore.renderedPlainText || '当前剧本内容为空' }}
+        <div v-else-if="block.kind === 'narration'" class="py-1 text-stone-600 dark:text-stone-400 italic text-[15px] leading-relaxed">
+          {{ block.text || '...' }}
+        </div>
+
+        <div v-else-if="block.kind === 'action'" class="py-0.5 text-stone-700 dark:text-stone-300 font-medium text-sm">
+          [{{ block.text || '执行动作' }}]
+        </div>
+
+        <div v-else class="text-xs text-stone-500 font-mono">
+          ({{ block.kind }}: {{ block.text }})
         </div>
       </div>
-    </template>
+    </div>
 
-    <template v-else>
-      <!-- Block List -->
-      <div class="space-y-3 pb-8">
-        <div v-if="docStore.loading" class="p-12 text-center text-stone-400 bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-800">
-          <span>加载剧本分块中...</span>
-        </div>
+    <!-- Interactive Blocks Editor List -->
+    <div v-else class="space-y-3">
+      <SceneBlockEditor
+        v-for="(block, idx) in docStore.blocks"
+        :key="block.blockId"
+        :block="block"
+        :index="idx"
+        :total-blocks="docStore.blocks.length"
+        :is-active="activeBlockId === block.blockId"
+        :characters="characters"
+        @update="handleUpdateBlock"
+        @remove="handleRemoveBlock"
+        @move-up="handleMoveUp"
+        @move-down="handleMoveDown"
+        @add-below="(index, kind) => handleAddBlock(kind, index)"
+        @activate="handleActivateBlock"
+      />
 
-        <template v-else-if="docStore.blocks.length > 0">
-          <SceneBlockEditor
-            v-for="(block, index) in docStore.blocks"
-            :key="block.blockId"
-            :block="block"
-            :index="index"
-            :total-blocks="docStore.blocks.length"
-            :is-active="activeBlockId === block.blockId"
-            :characters="characters"
-            @update="handleUpdateBlock"
-            @remove="handleRemoveBlock"
-            @move-up="handleMoveUp"
-            @move-down="handleMoveDown"
-            @add-below="(idx, kind) => handleAddBlock(kind, idx + 1)"
-            @activate="handleActivateBlock"
-          />
-        </template>
-
-        <div v-else class="p-8 text-center bg-white dark:bg-stone-900 rounded-xl border border-dashed border-stone-200 dark:border-stone-800 space-y-3">
-          <p class="text-stone-400">本场景尚未编写剧本分块，选择以下类型开始创作：</p>
-          <div class="flex items-center justify-center gap-2">
-            <button
-              type="button"
-              class="px-3 py-1.5 rounded-lg bg-stone-100 dark:bg-stone-800 hover:bg-amber-50 dark:hover:bg-amber-950/40 text-stone-700 dark:text-stone-300 hover:text-amber-600 font-medium flex items-center gap-1.5 transition-colors"
-              @click="handleAddBlock('dialogue')"
-            >
-              <MessageSquare class="h-3.5 w-3.5 text-amber-500" />
-              <span>+ 台词</span>
-            </button>
-            <button
-              type="button"
-              class="px-3 py-1.5 rounded-lg bg-stone-100 dark:bg-stone-800 hover:bg-amber-50 dark:hover:bg-amber-950/40 text-stone-700 dark:text-stone-300 hover:text-amber-600 font-medium flex items-center gap-1.5 transition-colors"
-              @click="handleAddBlock('narration')"
-            >
-              <FileText class="h-3.5 w-3.5 text-sky-500" />
-              <span>+ 旁白</span>
-            </button>
-            <button
-              type="button"
-              class="px-3 py-1.5 rounded-lg bg-stone-100 dark:bg-stone-800 hover:bg-amber-50 dark:hover:bg-amber-950/40 text-stone-700 dark:text-stone-300 hover:text-amber-600 font-medium flex items-center gap-1.5 transition-colors"
-              @click="handleAddBlock('action')"
-            >
-              <Zap class="h-3.5 w-3.5 text-emerald-500" />
-              <span>+ 动作</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Bottom Add Block Buttons -->
-        <div v-if="docStore.blocks.length > 0" class="p-3 bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-800 shadow-sm flex items-center justify-between">
-          <span class="text-stone-400 font-medium">追加新分块：</span>
-          <div class="flex items-center gap-2">
-            <button
-              type="button"
-              class="px-2.5 py-1 rounded-lg bg-stone-100 dark:bg-stone-800 hover:bg-amber-50 dark:hover:bg-amber-950 text-stone-700 dark:text-stone-300 hover:text-amber-600 font-medium flex items-center gap-1 transition-colors"
-              @click="handleAddBlock('dialogue')"
-            >
-              <MessageSquare class="h-3 w-3 text-amber-500" />
-              <span>+ 台词</span>
-            </button>
-            <button
-              type="button"
-              class="px-2.5 py-1 rounded-lg bg-stone-100 dark:bg-stone-800 hover:bg-amber-50 dark:hover:bg-amber-950 text-stone-700 dark:text-stone-300 hover:text-amber-600 font-medium flex items-center gap-1 transition-colors"
-              @click="handleAddBlock('narration')"
-            >
-              <FileText class="h-3 w-3 text-sky-500" />
-              <span>+ 旁白</span>
-            </button>
-            <button
-              type="button"
-              class="px-2.5 py-1 rounded-lg bg-stone-100 dark:bg-stone-800 hover:bg-amber-50 dark:hover:bg-amber-950 text-stone-700 dark:text-stone-300 hover:text-amber-600 font-medium flex items-center gap-1 transition-colors"
-              @click="handleAddBlock('action')"
-            >
-              <Zap class="h-3 w-3 text-emerald-500" />
-              <span>+ 动作</span>
-            </button>
-            <button
-              type="button"
-              class="px-2.5 py-1 rounded-lg bg-stone-100 dark:bg-stone-800 hover:bg-amber-50 dark:hover:bg-amber-950 text-stone-700 dark:text-stone-300 hover:text-amber-600 font-medium flex items-center gap-1 transition-colors"
-              @click="handleAddBlock('stage_direction')"
-            >
-              <Compass class="h-3 w-3 text-purple-500" />
-              <span>+ 舞台指示</span>
-            </button>
-            <button
-              type="button"
-              class="px-2.5 py-1 rounded-lg bg-stone-100 dark:bg-stone-800 hover:bg-amber-50 dark:hover:bg-amber-950 text-stone-700 dark:text-stone-300 hover:text-amber-600 font-medium flex items-center gap-1 transition-colors"
-              @click="handleAddBlock('command')"
-            >
-              <Terminal class="h-3 w-3 text-stone-500" />
-              <span>+ 指令</span>
-            </button>
-          </div>
-        </div>
+      <!-- Empty State -->
+      <div
+        v-if="docStore.blocks.length === 0"
+        class="p-12 text-center bg-white dark:bg-stone-900 rounded-2xl border border-dashed border-stone-200 dark:border-stone-800 text-stone-400 space-y-3"
+      >
+        <FileText class="h-8 w-8 mx-auto text-stone-300 dark:text-stone-700" />
+        <p class="text-sm">当前场景暂无剧本分块，点击下方按钮开始编写</p>
       </div>
-    </template>
+
+      <!-- Add New Block Bottom Bar -->
+      <div class="pt-4 flex items-center justify-center gap-2">
+        <button
+          type="button"
+          class="px-3.5 py-1.5 rounded-xl border border-stone-200 dark:border-stone-700 hover:border-amber-500 bg-white dark:bg-stone-900 text-stone-700 dark:text-stone-300 font-medium flex items-center gap-1.5 shadow-2xs hover:bg-stone-50 dark:hover:bg-stone-800 transition-all text-xs"
+          @click="handleAddBlock('dialogue')"
+        >
+          <Plus class="h-3.5 w-3.5 text-amber-500" />
+          <span>添加台词</span>
+        </button>
+
+        <button
+          type="button"
+          class="px-3.5 py-1.5 rounded-xl border border-stone-200 dark:border-stone-700 hover:border-amber-500 bg-white dark:bg-stone-900 text-stone-700 dark:text-stone-300 font-medium flex items-center gap-1.5 shadow-2xs hover:bg-stone-50 dark:hover:bg-stone-800 transition-all text-xs"
+          @click="handleAddBlock('narration')"
+        >
+          <Plus class="h-3.5 w-3.5 text-amber-500" />
+          <span>添加旁白</span>
+        </button>
+
+        <button
+          type="button"
+          class="px-3.5 py-1.5 rounded-xl border border-stone-200 dark:border-stone-700 hover:border-amber-500 bg-white dark:bg-stone-900 text-stone-700 dark:text-stone-300 font-medium flex items-center gap-1.5 shadow-2xs hover:bg-stone-50 dark:hover:bg-stone-800 transition-all text-xs"
+          @click="handleAddBlock('action')"
+        >
+          <Plus class="h-3.5 w-3.5 text-amber-500" />
+          <span>添加动作</span>
+        </button>
+      </div>
+    </div>
   </div>
 </template>

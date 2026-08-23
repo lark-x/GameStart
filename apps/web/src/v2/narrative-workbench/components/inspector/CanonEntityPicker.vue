@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from "vue";
 import { Search, User, MapPin, BookOpen, X, Check, Loader2 } from "@lucide/vue";
 import type { V2CharacterSummary, V2LocationSummary } from "../../../adapters/types.ts";
@@ -16,6 +16,7 @@ export interface EntityOption {
 
 const props = defineProps<{
   type: EntityType;
+  open?: boolean | undefined;
   storyWorldId?: string | undefined;
   title?: string | undefined;
   characters?: readonly V2CharacterSummary[] | undefined;
@@ -131,7 +132,7 @@ function isSelected(id: string): boolean {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fadeIn">
+  <div v-if="open !== false" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fadeIn">
     <div class="w-full max-w-md bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
       <!-- Header -->
       <div class="p-4 border-b border-stone-100 dark:border-stone-800 flex items-center justify-between">

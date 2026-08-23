@@ -1,18 +1,20 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import {
-  Sparkles,
   CheckCircle,
   XCircle,
   Clock,
   Check,
   X,
   RefreshCw,
+  FileText,
+  Inbox,
 } from "@lucide/vue";
 import { useNarrativeCandidateStore } from "../../stores/useNarrativeCandidateStore.ts";
 import { useSceneDocumentStore } from "../../../story/stores/useSceneDocumentStore.ts";
 import { useNarrativeOutlineStore } from "../../../story/stores/useNarrativeOutlineStore.ts";
 import CandidateDiff from "./CandidateDiff.vue";
+import type { V2SceneDocument } from "@living-network/contracts/v2";
 
 const props = defineProps<{
   storyWorldId: string;
@@ -20,6 +22,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   merged: [sceneId: string];
+  createAiCandidate: [];
 }>();
 
 const candidateStore = useNarrativeCandidateStore();
@@ -28,6 +31,7 @@ const outlineStore = useNarrativeOutlineStore();
 
 const rejectReasonModalOpen = ref(false);
 const rejectReason = ref("");
+const baseDocument = ref<V2SceneDocument | null>(null);
 
 onMounted(() => {
   candidateStore.fetchCandidates(props.storyWorldId);
@@ -43,6 +47,24 @@ watch(
 );
 
 const selectedCandidate = computed(() => candidateStore.selectedCandidate);
+
+// Asynchronously load candidate target scene base document for accurate diffing
+watch(
+  selectedCandidate,
+  async (cand) => {
+    if (cand?.payload?.scene?.sceneId) {
+      try {
+        const client = docStore.getClient();
+        baseDocument.value = await client.getSceneDocument(props.storyWorldId, cand.payload.scene.sceneId);
+      } catch {
+        baseDocument.value = null;
+      }
+    } else {
+      baseDocument.value = null;
+    }
+  },
+  { immediate: true },
+);
 
 async function handleApprove() {
   if (!selectedCandidate.value) return;
@@ -78,14 +100,14 @@ async function handleReject() {
 
 <template>
   <div class="h-full flex flex-row overflow-hidden bg-stone-50/50 dark:bg-stone-950/20 text-xs">
-    <!-- Left List: Candidate Queue -->
-    <div class="w-80 border-r border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 flex flex-col shrink-0">
+    <!-- Left List: Candidate Queue (280px) -->
+    <div class="w-72 border-r border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 flex flex-col shrink-0">
       <!-- Queue Header -->
-      <div class="p-3 border-b border-stone-200 dark:border-stone-800 space-y-2">
+      <div class="p-3.5 border-b border-stone-200 dark:border-stone-800 space-y-2.5">
         <div class="flex items-center justify-between">
-          <div class="flex items-center gap-1.5 font-bold text-stone-900 dark:text-stone-100">
-            <Sparkles class="h-4 w-4 text-amber-500" />
-            <span>AI 候选与审核 (Review)</span>
+          <div class="flex items-center gap-2 font-bold text-stone-900 dark:text-stone-100 text-sm">
+            <Inbox class="h-4.5 w-4.5 text-amber-500" />
+            <span>AI 候选收件箱</span>
           </div>
           <button
             type="button"
@@ -98,13 +120,13 @@ async function handleReject() {
         </div>
 
         <!-- Filter tabs -->
-        <div class="flex items-center p-0.5 rounded-lg bg-stone-100 dark:bg-stone-800 text-[11px]">
+        <div class="flex items-center p-0.5 rounded-lg bg-stone-100 dark:bg-stone-800 text-xs">
           <button
             type="button"
             class="flex-1 py-1 rounded-md font-medium text-center transition-all"
             :class="[
               candidateStore.statusFilter === 'pending'
-                ? 'bg-white dark:bg-stone-900 text-amber-600 dark:text-amber-400 shadow-sm'
+                ? 'bg-white dark:bg-stone-900 text-amber-600 dark:text-amber-400 shadow-xs'
                 : 'text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
             ]"
             @click="candidateStore.setStatusFilter('pending')"
@@ -116,7 +138,7 @@ async function handleReject() {
             class="flex-1 py-1 rounded-md font-medium text-center transition-all"
             :class="[
               candidateStore.statusFilter === 'approved'
-                ? 'bg-white dark:bg-stone-900 text-emerald-600 dark:text-emerald-400 shadow-sm'
+                ? 'bg-white dark:bg-stone-900 text-emerald-600 dark:text-emerald-400 shadow-xs'
                 : 'text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
             ]"
             @click="candidateStore.setStatusFilter('approved')"
@@ -128,7 +150,7 @@ async function handleReject() {
             class="flex-1 py-1 rounded-md font-medium text-center transition-all"
             :class="[
               candidateStore.statusFilter === 'all'
-                ? 'bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 shadow-sm'
+                ? 'bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 shadow-xs'
                 : 'text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
             ]"
             @click="candidateStore.setStatusFilter('all')"
@@ -148,55 +170,57 @@ async function handleReject() {
             class="w-full p-3 rounded-xl text-left border transition-all space-y-1.5"
             :class="[
               candidateStore.selectedCandidateId === cand.candidateId
-                ? 'border-amber-500 bg-amber-50/40 dark:bg-amber-950/20 shadow-sm'
-                : 'border-stone-200/70 dark:border-stone-800 bg-white dark:bg-stone-900 hover:border-stone-300'
+                ? 'border-amber-500 bg-amber-50/40 dark:bg-amber-950/20 shadow-xs ring-1 ring-amber-500/20'
+                : 'border-stone-200 dark:border-stone-800 hover:border-stone-300 dark:hover:border-stone-700 bg-stone-50/30 dark:bg-stone-950/30'
             ]"
             @click="candidateStore.selectCandidate(cand.candidateId)"
           >
             <div class="flex items-center justify-between">
-              <span class="font-bold text-stone-900 dark:text-stone-100 truncate">
-                {{ cand.payload.scene.title || cand.candidateId }}
-              </span>
+              <div class="flex items-center gap-1.5 font-bold text-stone-900 dark:text-stone-100 truncate text-xs">
+                <FileText class="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                <span class="truncate">{{ cand.payload.scene.title }}</span>
+              </div>
               <span
-                class="px-1.5 py-0.5 rounded text-[10px] font-bold"
+                class="px-1.5 py-0.2 rounded text-[10px] font-bold font-mono"
                 :class="[
                   cand.status === 'pending' ? 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300' :
                   cand.status === 'approved' ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300' :
                   'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300'
                 ]"
               >
-                {{ cand.status === 'pending' ? '待审核' : cand.status === 'approved' ? '已合并' : '已驳回' }}
+                {{ cand.status === 'pending' ? '待审' : cand.status === 'approved' ? '已合并' : '已驳回' }}
               </span>
             </div>
 
-            <div class="flex items-center justify-between text-[10px] text-stone-400 font-mono">
-              <span>源: {{ cand.provenance.source }}</span>
-              <span>基线 Rev: {{ cand.baseCanonRevision }}</span>
+            <div class="flex items-center justify-between text-[11px] text-stone-400">
+              <span>分块: {{ cand.payload.scene.document?.blocks?.length ?? 0 }} 块</span>
+              <span>{{ new Date(cand.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</span>
             </div>
           </button>
         </template>
+
         <div v-else class="p-8 text-center text-stone-400">
-          暂无匹配的候选场景
+          暂无该状态下的候选内容
         </div>
       </div>
     </div>
 
-    <!-- Right Area: Candidate Detail & Diff Worksurface -->
-    <div class="flex-1 flex flex-col overflow-hidden">
+    <!-- Center/Right: Candidate Diff & Actions Surface -->
+    <div class="flex-1 flex flex-col overflow-hidden bg-white dark:bg-stone-900">
       <template v-if="selectedCandidate">
-        <!-- Worksurface Header -->
-        <div class="p-4 bg-white dark:bg-stone-900 border-b border-stone-200 dark:border-stone-800 flex items-center justify-between shadow-sm">
-          <div class="space-y-0.5">
+        <!-- Diff Top Action Bar -->
+        <div class="px-6 py-3.5 border-b border-stone-200 dark:border-stone-800 flex items-center justify-between bg-stone-50/60 dark:bg-stone-950/40 shrink-0">
+          <div>
             <div class="flex items-center gap-2">
-              <h3 class="font-bold text-stone-900 dark:text-stone-100 text-sm">
-                候选场景：{{ selectedCandidate.payload.scene.title }}
+              <h3 class="text-sm font-bold text-stone-900 dark:text-stone-100">
+                {{ selectedCandidate.payload.scene.title }}
               </h3>
-              <span class="px-2 py-0.5 rounded-full font-mono text-[10px] bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300">
-                ID: {{ selectedCandidate.candidateId }}
+              <span class="font-mono text-[10px] text-stone-400 px-1.5 py-0.2 rounded bg-stone-100 dark:bg-stone-800">
+                {{ selectedCandidate.candidateId }}
               </span>
             </div>
-            <p class="text-[11px] text-stone-400">
-              由 {{ selectedCandidate.provenance.source }} 于 {{ selectedCandidate.createdAt }} 生成
+            <p class="text-[11px] text-stone-400 mt-0.5">
+              对比基线正典版本并进行审核决策
             </p>
           </div>
 
@@ -210,16 +234,16 @@ async function handleReject() {
                 @click="openRejectModal"
               >
                 <X class="h-3.5 w-3.5" />
-                <span>驳回 (Reject)</span>
+                <span>驳回</span>
               </button>
               <button
                 type="button"
-                class="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold flex items-center gap-1.5 shadow-sm transition-all"
+                class="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold flex items-center gap-1.5 shadow-xs transition-all"
                 :disabled="candidateStore.applying"
                 @click="handleApprove"
               >
                 <Check class="h-3.5 w-3.5" />
-                <span>{{ candidateStore.applying ? '合并中...' : '一键合并入正典 (Accept)' }}</span>
+                <span>{{ candidateStore.applying ? '合并中...' : '一键合并入正典' }}</span>
               </button>
             </template>
             <div v-else-if="selectedCandidate.status === 'approved'" class="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-semibold px-3 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900">
@@ -238,48 +262,54 @@ async function handleReject() {
           <div class="max-w-4xl mx-auto">
             <CandidateDiff
               :candidate="selectedCandidate"
-              :base-document="docStore.document?.sceneId === selectedCandidate.payload.scene.sceneId ? docStore.document : null"
+              :base-document="baseDocument"
             />
           </div>
         </div>
       </template>
 
-      <!-- Empty State -->
+      <!-- Empty State (when candidate queue is completely empty) -->
       <div v-else class="flex-1 flex flex-col items-center justify-center p-12 text-stone-400 space-y-3">
         <Clock class="h-10 w-10 text-stone-300 dark:text-stone-700" />
-        <p class="text-sm">在左侧列表中选择一个候选场景进行对比与审核</p>
+        <p class="text-sm font-medium">当前没有待审核的 AI 候选内容</p>
+        <p class="text-xs text-stone-500">可在剧本或大纲中使用 AI 辅助生成新场景候选并在此对比合并</p>
       </div>
     </div>
 
-    <!-- Reject Reason Modal -->
+    <!-- Reject Reason Dialog -->
     <div
       v-if="rejectReasonModalOpen"
-      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs"
+      @click.self="rejectReasonModalOpen = false"
     >
-      <div class="w-full max-w-md bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 shadow-2xl p-5 space-y-4">
-        <h3 class="font-bold text-stone-900 dark:text-stone-100 text-sm">驳回候选场景</h3>
+      <div class="w-full max-w-md bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 shadow-xl p-5 space-y-4">
+        <h3 class="text-sm font-bold text-stone-900 dark:text-stone-100 flex items-center gap-1.5">
+          <XCircle class="h-4 w-4 text-red-500" />
+          <span>驳回 AI 候选内容</span>
+        </h3>
 
-        <div>
-          <label class="font-medium text-stone-600 dark:text-stone-400 block mb-1">驳回原因 (可选)</label>
+        <div class="space-y-1">
+          <label class="font-semibold text-stone-600 dark:text-stone-300">驳回原因与反馈 (可选)</label>
           <textarea
             v-model="rejectReason"
             rows="3"
-            placeholder="说明剧情不合逻辑或不符合设定的原因..."
-            class="w-full p-2.5 rounded-xl bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 outline-none text-stone-900 dark:text-stone-100 text-xs"
+            placeholder="例如：对白偏离角色性格设定 / 情节冲突..."
+            class="w-full p-2.5 rounded-xl bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 text-stone-900 dark:text-stone-100 outline-none focus:border-red-500 text-xs"
           />
         </div>
 
         <div class="flex justify-end gap-2 pt-2 border-t border-stone-100 dark:border-stone-800">
           <button
             type="button"
-            class="px-3 py-1.5 rounded-xl bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300"
+            class="px-3 py-1.5 rounded-lg border border-stone-200 dark:border-stone-700 text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800 font-medium"
             @click="rejectReasonModalOpen = false"
           >
             取消
           </button>
           <button
             type="button"
-            class="px-4 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold"
+            class="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold"
+            :disabled="candidateStore.applying"
             @click="handleReject"
           >
             确认驳回

@@ -64,8 +64,14 @@ export const useNarrativeCandidateStore = defineStore("narrativeCandidate", {
         if (!res.ok) {
           throw new Error(`Failed to load candidates: ${res.statusText}`);
         }
-        const data = (await res.json()) as V2SceneCandidateDto[];
-        this.candidates = Array.isArray(data) ? data : [];
+        const data = await res.json();
+        this.candidates = Array.isArray(data)
+          ? data
+          : Array.isArray((data as { candidates?: V2SceneCandidateDto[] }).candidates)
+          ? (data as { candidates: V2SceneCandidateDto[] }).candidates
+          : Array.isArray((data as { items?: V2SceneCandidateDto[] }).items)
+          ? (data as { items: V2SceneCandidateDto[] }).items
+          : [];
         if (this.candidates.length > 0 && !this.selectedCandidateId) {
           const firstPending = this.candidates.find((c) => c.status === "pending") ?? this.candidates[0];
           if (firstPending) {
