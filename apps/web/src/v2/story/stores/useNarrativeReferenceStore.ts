@@ -37,7 +37,7 @@ export const useNarrativeReferenceStore = defineStore("narrativeReference", {
 
     loreItemIds(state): readonly string[] {
       return (state.sceneReferences?.references ?? [])
-        .filter((r) => r.targetType === "lore" || r.role === "lore")
+        .filter((r) => r.targetType === "lore")
         .map((r) => r.targetId);
     },
 
@@ -79,14 +79,14 @@ export const useNarrativeReferenceStore = defineStore("narrativeReference", {
     },
 
     async addLoreItem(storyWorldId: string, sceneId: string, loreId: string): Promise<void> {
-      return this.addCustomReference(storyWorldId, sceneId, "lore", loreId, "lore");
+      return this.addCustomReference(storyWorldId, sceneId, "lore", loreId, "related");
     },
 
     async removeLoreItem(storyWorldId: string, sceneId: string, loreId: string): Promise<void> {
       const client = this.getClient();
       const current = this.sceneReferences;
       const refs = (current?.references ?? [])
-        .filter((r) => !(r.targetId === loreId && (r.targetType === "lore" || r.role === "lore")))
+        .filter((r) => !(r.targetId === loreId && r.targetType === "lore"))
         .map((r) => ({
           targetType: r.targetType,
           targetId: r.targetId,

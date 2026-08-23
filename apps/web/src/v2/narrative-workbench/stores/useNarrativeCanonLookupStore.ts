@@ -46,6 +46,10 @@ export const useNarrativeCanonLookupStore = defineStore("narrativeCanonLookup", 
       }
       return map;
     },
+
+    loreItems(state): readonly V2CanonLoreEntry[] {
+      return state.loreEntries;
+    },
   },
 
   actions: {
